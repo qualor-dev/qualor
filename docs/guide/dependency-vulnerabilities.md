@@ -80,7 +80,7 @@ The marks are the ones of [Releases and versions](./releases.md#which-versions-a
 | On a row | Meaning |
 |---|---|
 | severity, id | the severity (Critical, High, Medium, Low or Unknown), also the colour of the row's left edge, and the vulnerability's id |
-| package | the package, its installed versions, and "Fix x.y.z" with the version that fixes it, or "No fix yet" |
+| package | the package, its installed versions, and "Fix x.y.z" with the highest version that fixes it, or "No fix yet" |
 | status | Open, Not affected or Won't fix |
 | title | the advisory's title, on at most two lines |
 | **In** / **Not in** | the targets that have the vulnerability, and the tracked ones that do not |

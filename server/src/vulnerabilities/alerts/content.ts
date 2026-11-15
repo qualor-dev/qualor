@@ -7,6 +7,7 @@ import type {
   VulnerabilityMailRow,
 } from '../../mail/templates/notify-vulnerability-common';
 import type { Watcher } from '../../notifications/recipients';
+import { compareFixedVersions } from '../fixed-version';
 import { SEVERITIES, scopedRows } from '../summary';
 
 export {
@@ -100,7 +101,10 @@ function mergeMatch(row: VulnerabilityMailRow, r: Row): void {
     row.severity = r.severity;
   }
   row.title ??= r.title;
-  if (r.fixed_version !== null && (row.fixedVersion ?? '') < r.fixed_version) {
+  if (
+    r.fixed_version !== null &&
+    (row.fixedVersion === null || compareFixedVersions(row.fixedVersion, r.fixed_version) < 0)
+  ) {
     row.fixedVersion = r.fixed_version;
   }
 }

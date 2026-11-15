@@ -240,6 +240,31 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
     expect(names((await items(`${base}?severity=high&status=open`)).items)).toEqual(['CVE-b/b']);
   });
 
+  it('shows the highest fixed version of a group in the natural order', async () => {
+    const s = await setup();
+    const common = {
+      projectId: s.projectId,
+      packageName: 'lodash',
+      vulnerabilityId: 'CVE-1',
+      severity: 'high' as const,
+    };
+    await seedTargetRow(h.ctx.db, {
+      ...common,
+      branchId: s.main,
+      packageVersion: '4.9.0',
+      fixedVersion: '4.9.5',
+    });
+    await seedTargetRow(h.ctx.db, {
+      ...common,
+      branchId: s.release,
+      packageVersion: '4.17.0',
+      fixedVersion: '4.17.2',
+    });
+    const { items: list } = await items(`/projects/${s.projectId}/vulnerabilities`);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ fixedVersion: '4.17.2' });
+  });
+
   it('groups a pair across targets with in, notIn, installed versions and found date', async () => {
     const s = await setup();
     const common = {

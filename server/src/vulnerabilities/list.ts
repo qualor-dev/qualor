@@ -4,6 +4,7 @@ import type { Executor } from '../db/client';
 import { branches, projectVersions, users, vulnerabilityDecisions } from '../db/schema';
 import { notFound } from '../http/problem';
 import type { DecisionStatus, VexJustification } from './decisions';
+import { highestFixedVersion } from './fixed-version';
 import { IS_NEW, scopedRows, SEVERITIES, type VulnerabilitySeverity } from './summary';
 import { monitoringOn, trackedTargets, type Target } from './targets';
 
@@ -63,7 +64,7 @@ interface GroupRow extends Record<string, unknown> {
   sev_rank: number;
   ecosystem: string;
   title: string | null;
-  fixed_version: string | null;
+  fixed_versions: string[] | null;
   primary_url: string | null;
   installed: string[];
   targets: string[];
@@ -149,7 +150,8 @@ function groups(
              min(${SEVERITY_RANK}) AS sev_rank,
              min(ecosystem) AS ecosystem,
              min(title) AS title,
-             max(fixed_version) AS fixed_version,
+             array_agg(DISTINCT fixed_version) FILTER (WHERE fixed_version IS NOT NULL)
+               AS fixed_versions,
              min(primary_url) AS primary_url,
              array_agg(DISTINCT package_version) AS installed,
              array_agg(DISTINCT CASE WHEN branch_id IS NOT NULL
@@ -235,7 +237,7 @@ export async function listVulnerabilities(
       title: row.title,
       primaryUrl: row.primary_url,
       installedVersions: [...row.installed].sort(),
-      fixedVersion: row.fixed_version,
+      fixedVersion: highestFixedVersion(row.fixed_versions ?? []),
       in: scope.filter((t) => present.has(`${t.kind}:${t.id}`)),
       notIn: q.target ? [] : scope.filter((t) => !present.has(`${t.kind}:${t.id}`)),
       foundAt: row.found_at,

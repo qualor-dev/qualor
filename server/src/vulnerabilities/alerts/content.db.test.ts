@@ -171,6 +171,23 @@ describe('alertRows: the rows of an alert email', () => {
     expect(rows?.[0]?.targets).toEqual(['main']);
   });
 
+  it('gives a pair the highest fixed version in the natural order', async () => {
+    const p = await setup();
+    const ids = [
+      await p.item({ branchId: p.main }, 'CVE-2026-0003', {
+        packageVersion: '4.9.0',
+        fixedVersion: '4.9.5',
+      }),
+      await p.item({ branchId: p.release }, 'CVE-2026-0003', {
+        packageVersion: '4.17.0',
+        fixedVersion: '4.17.2',
+      }),
+    ];
+    const rows = (await alertRows(t.db, ids, { priority: false })).byProject.get(p.projectId);
+    expect(rows).toHaveLength(1);
+    expect(rows?.[0]).toMatchObject({ fixedVersion: '4.17.2' });
+  });
+
   it('shows the KEV entry only with priority', async () => {
     const p = await setup();
     const ids = [
