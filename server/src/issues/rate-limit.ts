@@ -93,7 +93,10 @@ export class IssueChangeLimiter {
 }
 
 /** Charges `n` issue changes to a user, or throws 429 `RATE_LIMITED` with `Retry-After`. */
-export type ChargeIssueChanges = (userId: string, n: number) => void;
+export type ChargeIssueChanges = ((userId: string, n: number) => void) & {
+  /** Returns `n` tokens charged for a change that was then refused or failed. */
+  refund(userId: string, n: number): void;
+};
 
 /**
  * One app's G7 bound (ruling G7), shared by every route that changes issues or acts on them for a
@@ -105,7 +108,7 @@ export function issueChangeCharge(
     burst: ISSUE_CHANGES_BURST,
   }),
 ): ChargeIssueChanges {
-  return (userId, n) => {
+  const charge = (userId: string, n: number): void => {
     const wait = limiter.take(userId, n);
     if (wait !== null) {
       throw new ProblemError(429, 'RATE_LIMITED', `Too many issue changes; retry in ${wait} s`, {
@@ -113,4 +116,7 @@ export function issueChangeCharge(
       });
     }
   };
+  return Object.assign(charge, {
+    refund: (userId: string, n: number) => limiter.refund(userId, n),
+  });
 }

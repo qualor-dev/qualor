@@ -8,6 +8,7 @@ import type { Executor } from '../db/client';
 import { branches, projectVersions } from '../db/schema';
 import { notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, noNul } from '../http/schemas';
+import { transitionComment } from '../issues/comment';
 import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
 import { setLockTimeout, TRANSITION_LOCK_TIMEOUT_MS } from '../issues/transitions';
 import { projectForUser } from '../projects/access';
@@ -20,7 +21,6 @@ import {
 import { decisionsOf, listVulnerabilities } from '../vulnerabilities/list';
 import { readTargetSummary, SEVERITIES } from '../vulnerabilities/summary';
 import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
-import { transitionComment } from './issues';
 
 const TRACKING_REASONS = [
   'pinned',
@@ -321,6 +321,14 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
     async (request) => {
       const principal = requireUser(request, 'write');
       const { packageName, vulnerabilityId, scope, status, replaceOverrideOf } = request.body;
+      // Access first: a non-member gets 404 and a viewer 403 before the handler reads the body, and
+      // neither is charged. (A zod-level 422 on a malformed body still answers before this check.)
+      const project = await projectForUser(
+        accessOf(deps),
+        principal,
+        request.params.id,
+        'issue.triage',
+      );
       if (request.body.reason !== undefined && status !== 'false_positive') {
         throw validationFailed([
           { path: 'body.reason', message: 'Only a false positive takes a reason' },
@@ -341,48 +349,49 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         });
       }
       chargeChanges(principal.user.id, 1);
-      const project = await projectForUser(
-        accessOf(deps),
-        principal,
-        request.params.id,
-        'issue.triage',
-      );
-      if (scope.kind !== 'project') {
-        await requireTarget(deps.db, project.id, scope, 'body.scope');
-      }
-      if (replaceOverrideOf) {
-        await requireTarget(deps.db, project.id, replaceOverrideOf, 'body.replaceOverrideOf');
-      }
-      if (!(await pairExists(deps.db, project.id, packageName, vulnerabilityId))) {
-        throw notFound('Vulnerability');
-      }
+      // From here a failure rolls the decision back or never starts one, so the request's own
+      // token goes back.
+      try {
+        if (scope.kind !== 'project') {
+          await requireTarget(deps.db, project.id, scope, 'body.scope');
+        }
+        if (replaceOverrideOf) {
+          await requireTarget(deps.db, project.id, replaceOverrideOf, 'body.replaceOverrideOf');
+        }
+        if (!(await pairExists(deps.db, project.id, packageName, vulnerabilityId))) {
+          throw notFound('Vulnerability');
+        }
 
-      return deps.db.transaction(async (tx) => {
-        await setLockTimeout(tx, TRANSITION_LOCK_TIMEOUT_MS);
-        // writeDecision takes the pair's lock first; nothing above it locks anything.
-        const { decision, appliedIssueIds } = await writeDecision(
-          tx,
-          {
-            projectId: project.id,
-            packageName,
-            vulnerabilityId,
-            scope,
-            status,
-            reason: request.body.reason ?? null,
-            comment,
-            userId: principal.user.id,
-            source: 'tab',
-            ...(replaceOverrideOf && { replaceOverrideOf }),
-          },
-          { recorder: deps.audit, context: actorOf(request) },
-        );
-        // The request paid for one change; each issue the decision changed costs one more, and a
-        // refusal rolls the decision back.
-        if (appliedIssueIds.length > 0) chargeChanges(principal.user.id, appliedIssueIds.length);
-        const dto = (await decisionsOf(tx, [decision.id])).get(decision.id);
-        if (!dto) throw new Error('The decision just written is missing');
-        return { decision: dto, appliedIssues: appliedIssueIds.length };
-      });
+        return await deps.db.transaction(async (tx) => {
+          await setLockTimeout(tx, TRANSITION_LOCK_TIMEOUT_MS);
+          // writeDecision takes the pair's lock first; nothing above it locks anything.
+          const { decision, appliedIssueIds } = await writeDecision(
+            tx,
+            {
+              projectId: project.id,
+              packageName,
+              vulnerabilityId,
+              scope,
+              status,
+              reason: request.body.reason ?? null,
+              comment,
+              userId: principal.user.id,
+              source: 'tab',
+              ...(replaceOverrideOf && { replaceOverrideOf }),
+            },
+            { recorder: deps.audit, context: actorOf(request) },
+          );
+          // The request paid for one change; each issue the decision changed costs one more, and a
+          // refusal rolls the decision back.
+          if (appliedIssueIds.length > 0) chargeChanges(principal.user.id, appliedIssueIds.length);
+          const dto = (await decisionsOf(tx, [decision.id])).get(decision.id);
+          if (!dto) throw new Error('The decision just written is missing');
+          return { decision: dto, appliedIssues: appliedIssueIds.length };
+        });
+      } catch (err) {
+        chargeChanges.refund(principal.user.id, 1);
+        throw err;
+      }
     },
   );
 };

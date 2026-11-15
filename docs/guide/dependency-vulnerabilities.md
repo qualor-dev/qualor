@@ -374,13 +374,14 @@ there shows dimmed with "Ignored in .trivyignore". It is not counted and is neve
 A decision counts as 1, plus 1 for each issue it changes, against the per-user budget of issue
 changes. The Issues tab uses the same budget: 120 changes a minute, with a burst of 500. Beyond it
 the API answers 429 `RATE_LIMITED` with a `Retry-After` header, and a decision is not saved.
+A refused or failed decision costs nothing.
 
 ## The API
 
 | Route | Needs | Answers |
 |---|---|---|
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
-| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
+| `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`, tracked or not; a merge request is not a target (404)), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 
 A decision is a body like this:

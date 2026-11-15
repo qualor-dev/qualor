@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IssueChangeLimiter } from './rate-limit';
+import { IssueChangeLimiter, issueChangeCharge } from './rate-limit';
 
 describe('the per-user bound on issue changes (scm.md §7, ruling G7)', () => {
   it('allows a burst, then the steady rate, and says how long to wait', () => {
@@ -42,6 +42,15 @@ describe('the per-user bound on issue changes (scm.md §7, ruling G7)', () => {
     expect(limiter.take('u', 2)).toBeNull();
     expect(limiter.take('u', 1)).toBe(1);
     expect(limiter.size).toBe(1);
+  });
+
+  it('refunds through the charge', () => {
+    const limiter = new IssueChangeLimiter({ perMinute: 60, burst: 5, now: () => 0 });
+    const charge = issueChangeCharge(limiter);
+    charge('u', 3);
+    expect(limiter.peek('u', 5)).not.toBeNull();
+    charge.refund('u', 3);
+    expect(limiter.peek('u', 5)).toBeNull();
   });
 
   it('charges at most the burst, and keeps users apart', () => {

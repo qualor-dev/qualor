@@ -28,6 +28,7 @@ import {
   type IssueFilters,
   type IssueListRow,
 } from '../issues/query';
+import { transitionComment } from '../issues/comment';
 import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
 import { overrideSeverity } from '../issues/severity';
 import {
@@ -36,12 +37,7 @@ import {
   triageSuggestionFor,
   withProvenance,
 } from '../llm/provenance';
-import {
-  commentRequired,
-  transitionIssues,
-  USER_STATUSES,
-  type UserStatus,
-} from '../issues/transitions';
+import { transitionIssues, USER_STATUSES } from '../issues/transitions';
 import { branchForUser, issueForUser, type IssueRow } from '../projects/access';
 import type { IssueStatus } from '../tracking/plan';
 import { vulnerabilitySettings } from '../versions/settings';
@@ -178,17 +174,6 @@ const transitionBody = {
 };
 /** api.md §3: a bulk transition names at most this many issues. */
 const BULK_TRANSITION_MAX_IDS = 500;
-
-/** A blank comment is no comment; 422 COMMENT_REQUIRED where §6 requires one. */
-export function transitionComment(to: UserStatus, raw: string | undefined): string | null {
-  const comment = raw?.trim() ? raw.trim() : null;
-  if (comment === null && commentRequired(to)) {
-    throw new ProblemError(422, 'COMMENT_REQUIRED', `A comment is required to set ${to}`, {
-      errors: [{ path: 'body.comment', message: `Required for ${to}` }],
-    });
-  }
-  return comment;
-}
 
 /** 422 REASON_REQUIRED: the transition of a false positive that writes a decision named none. */
 function reasonRequired(): ProblemError {
