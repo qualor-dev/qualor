@@ -20,7 +20,7 @@ import { decodeCursor, encodeCursor, pageQuery, pageSchema } from '../http/pagin
 import { notFound, validationFailed } from '../http/problem';
 import { idParams, iso, noNul } from '../http/schemas';
 import { projectForUser } from '../projects/access';
-import { branchMatches, normalizePatterns } from '../versions/branches';
+import { branchMatcher, normalizePatterns } from '../versions/branches';
 import { parseVersionLabel } from '../versions/label';
 import { vulnerabilitySettings, type VulnerabilitySettings } from '../versions/settings';
 import { computeTracking, type TrackingReason } from '../versions/tracking';
@@ -198,9 +198,10 @@ async function monitoringDto(
             ),
           ),
   ]);
+  const matches = branchMatcher(settings.branchPatterns);
   const matching = branchRows
     .map((b) => b.name)
-    .filter((name) => branchMatches(name, settings.branchPatterns))
+    .filter((name) => matches(name))
     .sort(compare)
     .slice(0, LIST_LIMIT);
   return {

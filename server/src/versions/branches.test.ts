@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { branchMatches, normalizePatterns } from './branches';
+import { branchMatcher, branchMatches, normalizePatterns } from './branches';
 import { isTrackedBranch, type VulnerabilitySettings } from './settings';
 
 describe('branchMatches', () => {
@@ -14,6 +14,27 @@ describe('branchMatches', () => {
   it('matches dot branches and returns false for no patterns', () => {
     expect(branchMatches('.hidden', ['*'])).toBe(true);
     expect(branchMatches('main', [])).toBe(false);
+  });
+
+  it('still matches after more pattern lists than the cache holds', () => {
+    for (let i = 0; i <= 1_000; i++) expect(branchMatches(`b${i}`, [`b${i}`])).toBe(true);
+    expect(branchMatches('b0', ['b0'])).toBe(true);
+    expect(branchMatches('b1', ['b0'])).toBe(false);
+    expect(branchMatches('b1000', ['b1000'])).toBe(true);
+  });
+});
+
+describe('branchMatcher', () => {
+  it.each([[['release/*']], [['**']]])('answers as branchMatches for %j', (patterns) => {
+    const match = branchMatcher(patterns);
+    for (const name of ['release/1.x', 'main', '.hidden/x']) {
+      expect(match(name), name).toBe(branchMatches(name, patterns));
+    }
+  });
+
+  it('matches nothing without patterns', () => {
+    const match = branchMatcher([]);
+    for (const name of ['main', 'release/1.x', '']) expect(match(name), name).toBe(false);
   });
 });
 

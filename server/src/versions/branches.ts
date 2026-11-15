@@ -1,8 +1,35 @@
 import picomatch from 'picomatch';
 
-/** True when the branch name matches any glob pattern. */
+/** Pattern lists whose matchers {@link branchMatches} keeps; the cache is cleared when full. */
+const CACHED_PATTERN_LISTS = 1_000;
+const matchers = new Map<string, (name: string) => boolean>();
+
+const matchesNothing = (): boolean => false;
+
+/**
+ * The glob patterns compiled once: true when a branch name matches any of them. No patterns:
+ * never matches. For a loop over many branches with one pattern list.
+ */
+export function branchMatcher(patterns: readonly string[]): (name: string) => boolean {
+  if (patterns.length === 0) return matchesNothing;
+  const match = picomatch([...patterns], { dot: true });
+  return (name) => match(name);
+}
+
+/**
+ * True when the branch name matches any glob pattern. The matcher of each pattern list is
+ * compiled once and cached (at most {@link CACHED_PATTERN_LISTS} lists).
+ */
 export function branchMatches(name: string, patterns: readonly string[]): boolean {
-  return patterns.length > 0 && picomatch.isMatch(name, [...patterns], { dot: true });
+  if (patterns.length === 0) return false;
+  const key = JSON.stringify(patterns);
+  let match = matchers.get(key);
+  if (match === undefined) {
+    if (matchers.size >= CACHED_PATTERN_LISTS) matchers.clear();
+    match = branchMatcher(patterns);
+    matchers.set(key, match);
+  }
+  return match(name);
 }
 
 /** Trims, drops empty entries and removes duplicates, keeping order. */
