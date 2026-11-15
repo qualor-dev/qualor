@@ -94,6 +94,17 @@ describe('fetchServerVulndb', () => {
     });
   });
 
+  it('fails on metadata over 16 KiB', async () => {
+    const s = await serve((_req, res) => {
+      const body = Buffer.alloc(16 * 1024 + 1, 0x20);
+      res.writeHead(200, { 'content-type': 'application/json', 'content-length': body.length });
+      res.end(body);
+    });
+    expect(await fetchServerVulndb(endpoint(s.url), silentLogger)).toEqual({
+      failed: expect.stringContaining('larger than 16384'),
+    });
+  });
+
   it('fails when nobody listens, without the token in the reason', async () => {
     const s = await serve((_req, res) => json(res, 200, meta));
     const url = s.url;
@@ -162,27 +173,77 @@ describe('downloadServerVulndb', () => {
   it('refuses a wrong sha256', async () => {
     const wrong = Buffer.from(payload);
     wrong[0] = wrong[0]! ^ 0xff;
-    await expectFailed((_req, res) => send(res, wrong));
+    const { got } = await expectFailed((_req, res) => send(res, wrong));
+    expect(got).toEqual({ ok: false, reason: 'checksum mismatch' });
   });
 
   it('refuses extra bytes', async () => {
     const more = Buffer.concat([payload, Buffer.from('extra')]);
-    await expectFailed((_req, res) => send(res, more));
+    const { got } = await expectFailed((_req, res) => send(res, more));
+    expect(got).toEqual({ ok: false, reason: 'size mismatch' });
   });
 
   it('refuses extra bytes in a chunked body', async () => {
-    await expectFailed((_req, res) => {
+    const { got } = await expectFailed((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/gzip' });
       res.end(Buffer.concat([payload, Buffer.from('extra')]));
     });
+    expect(got).toEqual({ ok: false, reason: 'size mismatch' });
+  });
+
+  it('writes nothing after a refused chunk', async () => {
+    // A late chunk can already be queued when the first refusal destroys the response; the
+    // handler must not write it. The window cannot be forced, so this also holds without the guard.
+    const writes: number[] = [];
+    const third = Math.ceil(payload.length / 3);
+    const { got } = await expectFailed(
+      (_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/gzip' });
+        for (let at = 0; at < payload.length; at += third)
+          res.write(payload.subarray(at, at + third));
+        for (let i = 0; i < 5; i++) res.write(Buffer.alloc(100, 0x78));
+        res.end();
+      },
+      {
+        createStream: (file, o) => {
+          const stream = createWriteStream(file, o);
+          const write = stream.write.bind(stream) as (chunk: Buffer) => boolean;
+          stream.write = ((chunk: Buffer) => {
+            writes.push(chunk.length);
+            return write(chunk);
+          }) as typeof stream.write;
+          return stream;
+        },
+      },
+    );
+    expect(got).toEqual({ ok: false, reason: 'size mismatch' });
+    const total = writes.reduce((a, b) => a + b, 0);
+    expect(total).toBeLessThanOrEqual(payload.length);
+    const count = writes.length;
+    await new Promise((r) => setTimeout(r, 100));
+    expect(writes).toHaveLength(count);
   });
 
   it('refuses a short body', async () => {
     const short = payload.subarray(0, payload.length - 10);
-    await expectFailed((_req, res) => {
+    const { got } = await expectFailed((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/gzip' });
       res.end(short);
     });
+    expect(got).toEqual({ ok: false, reason: 'size mismatch' });
+  });
+
+  it('refuses a digest without its sha256: prefix', async () => {
+    const dir = tmp();
+    const s = await serve((_req, res) => send(res, payload));
+    const got = await downloadServerVulndb(
+      endpoint(s.url),
+      hex,
+      payload.length,
+      path.join(dir, 'db.tar.gz'),
+    );
+    expect(got).toEqual({ ok: false, reason: 'unexpected response' });
+    expect(s.requests).toEqual([]);
   });
 
   it('refuses a connection closed mid-body', async () => {
@@ -242,10 +303,37 @@ describe('downloadServerVulndb', () => {
   it('fails on a 404', async () => {
     const { got } = await expectFailed((_req, res) => problem(res, 404, 'NOT_FOUND'));
     expect(got).toEqual({ ok: false, reason: 'server answered 404' });
+    expect(JSON.stringify(got)).not.toContain(TOKEN);
+  });
+
+  it('fails without the token in the reason when nobody listens', async () => {
+    const s = await serve((_req, res) => send(res, payload));
+    const url = s.url;
+    await new Promise<void>((r) => s.server.close(() => r()));
+    const got = await downloadServerVulndb(
+      endpoint(url),
+      digest,
+      payload.length,
+      path.join(tmp(), 'db.tar.gz'),
+    );
+    expect(got).toEqual({ ok: false, reason: expect.stringContaining('connection failed') });
+    expect(JSON.stringify(got)).not.toContain(TOKEN);
   });
 
   it('fails before reading when content-length differs from sizeBytes', async () => {
-    await expectFailed((_req, res) => send(res, payload), undefined, payload.length - 1);
+    const opened: string[] = [];
+    const { got } = await expectFailed(
+      (_req, res) => send(res, payload),
+      {
+        createStream: (file, o) => {
+          opened.push(file);
+          return createWriteStream(file, o);
+        },
+      },
+      payload.length - 1,
+    );
+    expect(got).toEqual({ ok: false, reason: 'size mismatch' });
+    expect(opened).toEqual([]);
   });
 
   it('retries once on 503 with a short retry-after', async () => {

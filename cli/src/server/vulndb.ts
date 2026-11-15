@@ -193,7 +193,7 @@ function attempt(
       }
       const declared = r.headers['content-length'];
       if (declared !== undefined && Number(declared) !== sizeBytes) {
-        fail('unexpected response');
+        fail('size mismatch');
         return;
       }
       // Readable by all, like server.json: the archive is public advisory data, and a CI cache
@@ -224,10 +224,11 @@ function attempt(
         if (err) fail('cannot write the database file');
       };
       r.on('data', (chunk: Buffer) => {
+        if (settled) return;
         armIdle();
         received += chunk.length;
         if (received > sizeBytes) {
-          fail('unexpected response');
+          fail('size mismatch');
           return;
         }
         hash.update(chunk);
@@ -244,8 +245,12 @@ function attempt(
       });
       r.on('end', () => {
         if (settled) return;
-        if (received !== sizeBytes || hash.digest('hex') !== hex) {
-          fail('unexpected response');
+        if (received !== sizeBytes) {
+          fail('size mismatch');
+          return;
+        }
+        if (hash.digest('hex') !== hex) {
+          fail('checksum mismatch');
           return;
         }
         clearTimeout(idle);
@@ -272,7 +277,7 @@ export async function downloadServerVulndb(
   dest: string,
   opts: DownloadOptions = {},
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const hex = /^(?:sha256:)?([0-9a-f]{64})$/.exec(digest)?.[1];
+  const hex = /^sha256:([0-9a-f]{64})$/.exec(digest)?.[1];
   if (
     hex === undefined ||
     !Number.isInteger(sizeBytes) ||
