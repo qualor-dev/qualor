@@ -441,6 +441,8 @@ describe('DependenciesPage (6M §8)', () => {
     const { root } = await render();
     expect(text(root.querySelector('.deps-none'))).toBe('This branch or version has no packages.');
     expect(text(root)).not.toContain('No package matches.');
+    expect(root.querySelector('.deps-summary')).toBeNull();
+    expect(text(root)).not.toContain('0 of 0 packages');
   });
 
   it('says no package matches when a filter finds none in a non-empty inventory (D26-2)', async () => {
@@ -454,7 +456,7 @@ describe('DependenciesPage (6M §8)', () => {
     const { root } = await render(`/?version=${VERSION_ID}`);
     expect(lastQuery()?.get('version')).toBe(VERSION_ID);
     expect(text(root.querySelector('.empty-state'))).toBe(
-      'No dependency list for this version. The tag scan found no lockfile Trivy reads, or Trivy did not run.',
+      'No dependency list for this version. Trivy did not run, or the scanner is older than the server.',
     );
     expect(root.querySelector('table')).toBeNull();
   });
@@ -549,6 +551,44 @@ describe('DependenciesPage (6M §8)', () => {
           true,
         ],
       ]);
+    });
+
+    it('is not offered while the answer for another branch loads', async () => {
+      const { root, fixture } = await render();
+      expect(exportButton(root)).toBeDefined();
+      let release!: (reply: { body: unknown }) => void;
+      let query!: URLSearchParams;
+      server.on(
+        'GET',
+        ROUTE,
+        (r) =>
+          new Promise((resolve) => {
+            query = r.query;
+            release = resolve;
+          }),
+      );
+      choose(root, 'deps-branch', DEV_ID);
+      // The answer is held back: waiting for a stable fixture would never end.
+      await settle();
+      fixture.detectChanges();
+      expect(root.querySelector('table')).not.toBeNull();
+      expect(exportButton(root)).toBeUndefined();
+      expect(links(root)).toEqual([]);
+      release({ body: fake.answer(query) });
+      await settle(fixture);
+      expect(links(root).map((l) => l[1])).toEqual([
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=develop&format=cyclonedx',
+        '/api/v0/projects/sbom?projectKey=acme%2Fx&branch=develop&format=spdx',
+      ]);
+    });
+
+    it('stays while a filter reloads the same branch', async () => {
+      const { root, fixture } = await render();
+      server.on('GET', ROUTE, () => new Promise(() => undefined));
+      choose(root, 'deps-group', 'weak-copyleft');
+      await settle();
+      fixture.detectChanges();
+      expect(exportButton(root)).toBeDefined();
     });
 
     it('downloads the branch shown by its name', async () => {

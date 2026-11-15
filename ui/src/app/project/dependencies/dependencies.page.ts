@@ -249,20 +249,27 @@ export class DependenciesPage {
     return error ? problemMessage(error) : null;
   });
 
+  /** The branch or version the page asks for, as the route takes it; undefined until it is known. */
+  private readonly targetQuery = computed(() => {
+    const version = this.urlVersion();
+    if (version) return { version };
+    // The main branch is the route's default: it is asked for at once, found or not.
+    if (!this.urlBranch()) return {};
+    const branch = this.branch();
+    return branch ? branchQuery(branch) : undefined;
+  });
+  private readonly targetKey = computed(() => JSON.stringify(this.targetQuery() ?? null));
+
   protected readonly answer = resource({
     params: () => {
       const projectId = this.projectId();
       const filters = this.filters();
-      const version = this.urlVersion();
-      if (version) return { projectId, branch: { version }, filters };
-      // The main branch is the route's default: it is asked for at once, found or not.
-      if (!this.urlBranch()) return { projectId, branch: {}, filters };
-      const branch = this.branch();
-      return branch ? { projectId, branch: branchQuery(branch), filters } : undefined;
+      const branch = this.targetQuery();
+      return branch ? { projectId, branch, filters } : undefined;
     },
-    loader: ({ params }) => {
+    loader: async ({ params }) => {
       const f = params.filters;
-      return ok(
+      const data = await ok(
         this.api.client.GET('/api/v0/projects/{id}/dependencies', {
           params: {
             path: { id: params.projectId },
@@ -281,6 +288,7 @@ export class DependenciesPage {
           },
         }),
       );
+      return { target: JSON.stringify(params.branch), data };
     },
   });
   /** The latest answer, kept while the next one loads so the table does not flash empty. */
@@ -289,11 +297,16 @@ export class DependenciesPage {
     DependencyAnswer | null
   >({
     source: () => ({
-      value: this.answer.hasValue() ? this.answer.value() : undefined,
+      value: this.answer.hasValue() ? this.answer.value().data : undefined,
       failed: this.answer.error() !== undefined,
     }),
     computation: (source, previous) =>
       source.failed ? null : (source.value ?? previous?.value ?? null),
+  });
+  /** The target the shown answer is for; kept while the next one loads, as `current`. */
+  private readonly answeredTarget = linkedSignal<string | undefined, string | null>({
+    source: () => (this.answer.hasValue() ? this.answer.value().target : undefined),
+    computation: (target, previous) => target ?? previous?.value ?? null,
   });
   protected readonly loading = computed(() => this.answer.isLoading());
   /** The project's key, which the export route takes. */
@@ -301,11 +314,15 @@ export class DependenciesPage {
   /**
    * What Export SBOM downloads: the branch or version shown, while the sbom feature is active and
    * it has an inventory. The route names a branch by its name and exports no merge request; it
-   * names a version by its label, known only for the newest 100 the selector lists.
+   * names a version by its label, known only for the newest 100 the selector lists. It waits for
+   * the answer of the target now chosen.
    */
   protected readonly sbomOption = computed<ExportOption | null>(() => {
     if (!this.info.features().includes('sbom') || !this.current()?.inventory) return null;
     if (!this.projectKey()) return null;
+    // While the answer for a new target loads, the old one is shown: no export for the new target
+    // until it is known to have an inventory, or a click could ask the route for a 404.
+    if (this.answeredTarget() !== this.targetKey()) return null;
     const versionId = this.urlVersion();
     if (versionId) {
       const version = this.versionList().find((v) => v.id === versionId);

@@ -128,7 +128,7 @@
   <div class="panel-head">
     <h2 id="deps-heading" i18n="@@deps.heading">Dependencies</h2>
     @if (current(); as answer) {
-      @if (answer.inventory) {
+      @if (answer.inventory && answer.summary.total > 0) {
         <p class="panel-sub deps-summary">
           <span i18n="@@deps.summary"
             >{{ answer.summary.known }} of {{ answer.summary.total }} packages have a known
@@ -152,8 +152,8 @@
         <img src="art/empty.webp" alt="" width="900" height="675" />
         @if (urlVersion()) {
           <p i18n="@@deps.noVersionInventory">
-            No dependency list for this version. The tag scan found no lockfile Trivy reads, or
-            Trivy did not run.
+            No dependency list for this version. Trivy did not run, or the scanner is older than the
+            server.
           </p>
         } @else {
           <p i18n="@@deps.noInventory">
