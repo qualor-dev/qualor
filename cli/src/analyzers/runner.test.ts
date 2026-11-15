@@ -658,8 +658,9 @@ describe('runAnalyzers', () => {
     expect(cwdOut).toBe(root);
     expect(hung?.timedOut).toBe(true);
     // Only proves the 300 ms timeout killed a child that would hang for ever (the tool's
-    // hang mode never exits); a busy gate stretches the kill by seconds.
-    expect(hung?.durationMs).toBeLessThan(30_000);
+    // hang mode never exits); a busy gate stretches the kill by seconds. The bound stays well
+    // below the 30 s testTimeout, which would otherwise end the test first.
+    expect(hung?.durationMs).toBeLessThan(20_000);
   });
 
   it("sets ctx.exec's env overlay over the analyzer environment for that command only, and sanitizes it again (ruling G9-15)", async () => {

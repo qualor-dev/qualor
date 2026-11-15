@@ -13,9 +13,9 @@ const TAG_COMMENT = /^ # v5\.1\.0(?![\w.])/;
 
 const read = (file: string): string =>
   readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-const inDir = (dir: string, ext: string): string[] =>
+const inDir = (dir: string, ...exts: string[]): string[] =>
   readdirSync(new URL(`../${dir}/`, import.meta.url))
-    .filter((name) => name.endsWith(ext))
+    .filter((name) => exts.some((ext) => name.endsWith(ext)))
     .map((name) => `${dir}/${name}`);
 
 /** The files that must hold such references (a renamed file or a lost step fails the test). */
@@ -34,8 +34,8 @@ const PINNED_FILES = [
 const SOURCES = [
   ...new Set([
     ...PINNED_FILES,
-    ...inDir('integrations/github', '.yml'),
-    ...inDir('.github/workflows', '.yml'),
+    ...inDir('integrations/github', '.yml', '.yaml'),
+    ...inDir('.github/workflows', '.yml', '.yaml'),
     ...inDir('docs/guide', '.md'),
     ...inDir('deploy/dockerhub', '.md'),
   ]),

@@ -9,9 +9,9 @@ import { BUSINESS_URL, DEPENDENCIES, PAYMENTS, PAYMENTS_REPORT_FILE, SIEM_URL } 
  * Plan 5D (rbac-audit.md §14.4, §17; sso-scim.md §4.4, §18): the enterprise server's database
  * served under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`,
  * `vuln.priority`, `vuln.alerts`, `sbom`; `server/scripts/e2e/serve.ts`), after the enterprise
- * tests. The stream enterprise.spec.ts configured is kept and paused: its
- * fields and buttons are disabled with the reason, Save sends retention alone, and Remove under
- * Stream status deletes it (the guide's steps, docs/guide/roles-and-audit.md).
+ * tests. The stream enterprise.spec.ts configured is kept and paused: its fields and buttons are
+ * disabled with the reason, Save sends retention alone, and Remove under Stream status deletes it
+ * (the guide's steps, docs/guide/roles-and-audit.md).
  */
 
 test('a Business admin sees the kept stream paused and saves retention without it', async ({

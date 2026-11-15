@@ -173,6 +173,18 @@ describe(`the filtered Trivy database (${DB})`, () => {
     },
   );
 
+  it.runIf(present)(
+    'has a data-source entry for every kept ID: a renamed source fails here',
+    () => {
+      const ids = new Set(
+        [...db().entries('data-source').values()].map(
+          (entry) => (JSON.parse(entry.toString('utf8')) as { ID?: string }).ID,
+        ),
+      );
+      for (const id of KEPT) expect(ids.has(id), id).toBe(true);
+    },
+  );
+
   it.runIf(present)('keeps a bucket for every ecosystem purlOf maps', () => {
     for (const prefix of PREFIXES)
       expect(
