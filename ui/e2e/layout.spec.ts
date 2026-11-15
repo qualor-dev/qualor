@@ -49,6 +49,8 @@ test.describe('on a laptop with two organizations', () => {
     ).json()) as { items: { id: string }[] };
     await page.goto(`/projects/${payments.id}/issues/${issues.items[0]!.id}`);
     await expect(page.getByRole('combobox', { name: 'Organization', exact: true })).toBeVisible();
+    // The web font swaps in late (font-display: swap): its wider links can wrap the bar again.
+    await page.evaluate(() => document.fonts.ready);
     // The issue, its code and its history in, before anything is measured: only then is the page
     // tall enough to scroll as far as below. The room the setup checklist keeps at the page's end
     // (main's bottom padding) does not count.
@@ -62,8 +64,20 @@ test.describe('on a laptop with two organizations', () => {
         ),
       )
       .toBeGreaterThanOrEqual(280);
-    const bar = (await page.locator('.app-header').boundingBox())!;
-    expect(bar.height).toBeGreaterThan(72);
+    // The shell writes the bar's height + 12 into --sticky-top from a ResizeObserver, which runs
+    // after a frame's rAF callbacks: a bar that just grew still has the old value for a frame.
+    // Measure once the property holds the bar's height, and the bar is the wrapped, two-row one.
+    let barHeight = -1;
+    await expect
+      .poll(async () => {
+        barHeight = await page.evaluate(() => {
+          const h = document.querySelector('.app-header')!.getBoundingClientRect().height;
+          const top = getComputedStyle(document.documentElement).getPropertyValue('--sticky-top');
+          return top === `${h + 12}px` ? h : -1;
+        });
+        return barHeight;
+      })
+      .toBeGreaterThan(72);
     // Scrolled, the details column sticks below the bar, not under it.
     const stuck = await page.evaluate(
       () =>
@@ -75,6 +89,6 @@ test.describe('on a laptop with two organizations', () => {
         }),
     );
     expect(await page.evaluate(() => window.scrollY)).toBe(280);
-    expect(stuck).toBeGreaterThanOrEqual(bar.height);
+    expect(stuck).toBeGreaterThanOrEqual(barHeight);
   });
 });
