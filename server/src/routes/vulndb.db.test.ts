@@ -30,9 +30,11 @@ import {
 import { rbacContext } from '../../test/rbac';
 import { OFFICIAL_EPSS_URL, OFFICIAL_KEV_URL, writeVulndbSettings } from '../vulndb/settings';
 import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
+import { readPriorityState } from '../vulndb/priority/state';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 import type * as Store from '../vulndb/store';
+import type * as Update from '../vulndb/update';
 
 /** pruneDatasets, made to fail while `failing` is set. */
 const prune = vi.hoisted(() => ({ failing: false }));
@@ -46,6 +48,39 @@ vi.mock('../vulndb/store', async (importOriginal) => {
     },
   };
 });
+
+/** requestVulndbUpdateNow and rescheduleVulndbUpdate, made to fail while `failing` is set. */
+const scheduling = vi.hoisted(() => ({ failing: false }));
+vi.mock('../vulndb/update', async (importOriginal) => {
+  const actual = await importOriginal<typeof Update>();
+  return {
+    ...actual,
+    requestVulndbUpdateNow: async (...args: Parameters<typeof actual.requestVulndbUpdateNow>) => {
+      if (scheduling.failing) throw new Error('schedule failed');
+      return actual.requestVulndbUpdateNow(...args);
+    },
+    rescheduleVulndbUpdate: async (...args: Parameters<typeof actual.rescheduleVulndbUpdate>) => {
+      if (scheduling.failing) throw new Error('schedule failed');
+      return actual.rescheduleVulndbUpdate(...args);
+    },
+  };
+});
+
+/** Runs `action` while every insert into audit_events fails, as a recorder that throws. */
+async function whileAuditFails<T>(ctx: TestContext, action: () => Promise<T>): Promise<T> {
+  await ctx.db.execute(sql`
+    CREATE FUNCTION refuse_audit() RETURNS trigger LANGUAGE plpgsql
+      AS $$ BEGIN RAISE EXCEPTION 'audit refused'; END $$`);
+  await ctx.db.execute(sql`
+    CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
+      FOR EACH ROW EXECUTE FUNCTION refuse_audit()`);
+  try {
+    return await action();
+  } finally {
+    await ctx.db.execute(sql`DROP TRIGGER refuse_audit ON audit_events`);
+    await ctx.db.execute(sql`DROP FUNCTION refuse_audit()`);
+  }
+}
 
 describe('/system/vulnerability-db (API)', () => {
   let ctx: TestContext;
@@ -480,6 +515,40 @@ describe('/system/vulnerability-db (API)', () => {
       expect(await rechecks()).toEqual([{ status: 'queued', payload: { all: true } }]);
     });
 
+    it('queues nothing when the audit of Update now fails', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      // A failed re-check: Update now would also queue a full one.
+      await updateVulndbState(ctx.db, (s) => ({
+        ...s,
+        lastRecheckError: { code: 'RECHECK_FAILED', message: 'Trivy failed (TIMEOUT)' },
+      }));
+      const res = await whileAuditFails(ctx, () => post());
+      expect(res.statusCode, res.body).toBe(500);
+      expect(await updateJobs()).toEqual([]);
+      expect(await ctx.db.select().from(jobs).where(eq(jobs.queue, RECHECK_QUEUE))).toEqual([]);
+    });
+
+    it('saves the settings when scheduling the update fails', async () => {
+      await put({ enabled: false });
+      scheduling.failing = true;
+      try {
+        // Switched on: an update now. A new interval: a moved run.
+        const on = await put({ enabled: true });
+        expect(on.statusCode, on.body).toBe(200);
+        expect(on.json().enabled).toBe(true);
+        const interval = await put({ intervalHours: 12 });
+        expect(interval.statusCode, interval.body).toBe(200);
+      } finally {
+        scheduling.failing = false;
+      }
+      expect((await get()).json()).toMatchObject({ enabled: true, intervalHours: 12 });
+      const warned = ctx.logs.filter((l) => l.includes('"vulndb update not scheduled"'));
+      expect(warned).toHaveLength(2);
+      for (const line of warned) {
+        expect(JSON.parse(line)).toMatchObject({ level: 40, errorClass: 'Error' });
+      }
+    });
+
     it('switching monitoring on also queues a full re-check; other changes do not', async () => {
       const rechecks = () =>
         ctx.db
@@ -611,6 +680,14 @@ describe('/system/vulnerability-db (API)', () => {
       expect(ctx.logs.some((l) => l.includes('old vulnerability datasets were not pruned'))).toBe(
         true,
       );
+    });
+
+    it('stores nothing current when the audit fails', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+      const res = await whileAuditFails(ctx, () => upload(trivyArchive()));
+      expect(res.statusCode, res.body).toBe(500);
+      expect((await readVulndbState(ctx.db)).currentDatasetId).toBeNull();
+      expect(await ctx.db.select().from(jobs).where(eq(jobs.queue, RECHECK_QUEUE))).toEqual([]);
     });
 
     it('answers 422 for an invalid archive and keeps the current dataset', async () => {
@@ -836,6 +913,15 @@ describe('KEV and EPSS on /system/vulnerability-db (API)', () => {
       expect(await licensed.db.select().from(vulnerabilityEpss)).toHaveLength(3);
       const events = (await auditRows(licensed)).filter((e) => e.action === 'vulndb.file_uploaded');
       expect(events.at(-1)?.details).toMatchObject({ dataset: 'epss' });
+    });
+
+    it('stores no KEV rows when the audit fails', async () => {
+      const res = await whileAuditFails(licensed, () =>
+        upload('kev', kevFile(['CVE-2024-0001', 'CVE-2024-0002'])),
+      );
+      expect(res.statusCode, res.body).toBe(500);
+      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(0);
+      expect((await readPriorityState(licensed.db)).kev.digest).toBeNull();
     });
 
     it('answers 422 INVALID_DATA for a bad file and keeps the old rows', async () => {

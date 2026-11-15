@@ -8,6 +8,7 @@ import type { VulndbSettingsChangedField } from '../audit/catalogue';
 import { actorOf } from '../audit/recorder';
 import { requireInstanceAdmin } from '../auth/access';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
+import type { Executor, Tx } from '../db/client';
 import { jobs } from '../db/schema';
 import { sendContinue } from '../http/expect-continue';
 import { closeAfterRefusal } from '../http/lingering-close';
@@ -180,6 +181,16 @@ function mirrorFieldsChanged(
   }
   return fields;
 }
+
+/** The `vulndb.file_uploaded` details of a KEV or EPSS upload. */
+interface UploadDetails {
+  dataset: PriorityDataset;
+  sizeBytes: number;
+  builtAt: string | null;
+}
+
+const errorClass = (err: unknown): string =>
+  err instanceof Error ? err.constructor.name : typeof err;
 
 /** 413 TOO_LARGE for a body over `maxBytes`. */
 function tooLargeProblem(maxBytes: number): ProblemError {
@@ -373,11 +384,19 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         return { fields, before, after };
       });
       request.log.info({ userId: principal.user.id, fields: changed }, 'vulndb settings changed');
-      // R5: switching monitoring on, or pointing it at another source, fetches data now rather
-      // than at the next scheduled check.
-      if (wantsUpdateNow(before, after, passwordSent)) await requestVulndbUpdateNow(deps.db);
-      // M4: a new interval counts from the last check, not from the run already waiting.
-      else if (before.intervalHours !== after.intervalHours) await rescheduleVulndbUpdate(deps.db);
+      // After the commit, so never a 500: the settings are stored, and the reaper's
+      // ensureVulndbScheduled puts back a run that is missing.
+      try {
+        // R5: switching monitoring on, or pointing it at another source, fetches data now rather
+        // than at the next scheduled check.
+        if (wantsUpdateNow(before, after, passwordSent)) await requestVulndbUpdateNow(deps.db);
+        // M4: a new interval counts from the last check, not from the run already waiting.
+        else if (before.intervalHours !== after.intervalHours) {
+          await rescheduleVulndbUpdate(deps.db);
+        }
+      } catch (err) {
+        request.log.warn({ errorClass: errorClass(err) }, 'vulndb update not scheduled');
+      }
       return readDto();
     },
   );
@@ -393,19 +412,23 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
     },
     async (request, reply) => {
       const principal = requireInstanceAdmin(request);
-      const queued = await requestVulndbUpdateNow(deps.db);
-      // R19: a failed re-check is tried again too, whatever the source: an unchanged download
-      // queues none, and an uploaded file is never downloaded.
-      if ((await readVulndbState(deps.db)).lastRecheckError !== null) {
-        await enqueueRecheck(deps.db, { all: true });
-      }
-      await deps.audit.record(deps.db, actorOf(request), [
-        {
-          action: 'vulndb.update_requested',
-          target: { type: 'vulndb_settings', id: 'vulndb' },
-          details: {},
-        },
-      ]);
+      // One transaction, so a failed audit queues nothing: LOCKS.vulndbSchedule, then
+      // LOCKS.vulnerabilityRecheck (enqueueRecheck, last).
+      const queued = await deps.db.transaction(async (tx) => {
+        const moved = await requestVulndbUpdateNow(tx);
+        // R19: a failed re-check is tried again too, whatever the source: an unchanged download
+        // queues none, and an uploaded file is never downloaded.
+        const retry = (await readVulndbState(tx)).lastRecheckError !== null;
+        await deps.audit.record(tx, actorOf(request), [
+          {
+            action: 'vulndb.update_requested',
+            target: { type: 'vulndb_settings', id: 'vulndb' },
+            details: {},
+          },
+        ]);
+        if (retry) await enqueueRecheck(tx, { all: true });
+        return moved;
+      });
       request.log.info({ userId: principal.user.id, queued }, 'vulndb update requested');
       return reply.code(202).send(await readDto());
     },
@@ -503,29 +526,33 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         });
       }
       const { dataset } = stored;
-      if (!(await makeDatasetCurrent(deps.db, dataset.id))) {
-        throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
-          detail:
-            'The upload expired before it was stored, because it took too long. Upload the file again',
-        });
-      }
-      await enqueueRecheck(deps.db, { all: true });
+      // One transaction, so a failed audit leaves the dataset not current and queues no re-check:
+      // LOCKS.vulndbState, then LOCKS.vulnerabilityRecheck (enqueueRecheck, last).
+      await deps.db.transaction(async (tx) => {
+        if (!(await makeDatasetCurrent(tx, dataset.id))) {
+          throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
+            detail:
+              'The upload expired before it was stored, because it took too long. Upload the file again',
+          });
+        }
+        await deps.audit.record(tx, actorOf(request), [
+          {
+            action: 'vulndb.file_uploaded',
+            target: { type: 'vulndb_settings', id: 'vulndb' },
+            details: { sizeBytes: dataset.sizeBytes, builtAt: isoOrNull(dataset.builtAt) },
+          },
+        ]);
+        await enqueueRecheck(tx, { all: true });
+      });
       // After the re-check is queued, and never a 500: an old dataset left now goes with the next.
       try {
         await pruneDatasets(deps.db);
       } catch (err) {
         request.log.warn(
-          { errorClass: err instanceof Error ? err.constructor.name : typeof err },
+          { errorClass: errorClass(err) },
           'old vulnerability datasets were not pruned',
         );
       }
-      await deps.audit.record(deps.db, actorOf(request), [
-        {
-          action: 'vulndb.file_uploaded',
-          target: { type: 'vulndb_settings', id: 'vulndb' },
-          details: { sizeBytes: dataset.sizeBytes, builtAt: isoOrNull(dataset.builtAt) },
-        },
-      ]);
       request.log.info(
         { userId: principal.user.id, sizeBytes: dataset.sizeBytes },
         'vulndb file uploaded',
@@ -580,7 +607,13 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         return payload;
       },
     };
-    const handle = async (request: FastifyRequest, reply: FastifyReply, userId: string) => {
+    /** Reads and stores the file; `onStored` (the audit) runs last in the store's transaction. */
+    const handle = async (
+      request: FastifyRequest,
+      reply: FastifyReply,
+      userId: string,
+      onStored: (tx: Tx, details: UploadDetails) => Promise<void>,
+    ): Promise<void> => {
       if (!deps.edition.limits().vulnerabilities.priority) throw priorityNotLicensed();
       if (!(request.body instanceof Readable)) {
         throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', priorityTypeMessage);
@@ -603,6 +636,8 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         { etag: null, lastModified: null, url: null },
         new Date(),
         request.log,
+        (tx, state) =>
+          onStored(tx, { dataset, sizeBytes: state.sizeBytes ?? total, builtAt: state.dataDate }),
       );
       if ('problem' in stored) {
         // The body fit; the parser refused its inflated size or its entry count, and says which.
@@ -613,16 +648,12 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         throw new ProblemError(status, code, title, { detail: stored.problem.message });
       }
       request.log.info({ userId, dataset, sizeBytes: total }, 'vulndb priority file uploaded');
-      return { dataset, sizeBytes: stored.sizeBytes ?? total, builtAt: stored.dataDate };
     };
     return { options, handle };
   };
 
-  const audit = (
-    request: FastifyRequest,
-    details: { dataset: PriorityDataset; sizeBytes: number; builtAt: string | null },
-  ) =>
-    deps.audit.record(deps.db, actorOf(request), [
+  const audit = (executor: Executor, request: FastifyRequest, details: UploadDetails) =>
+    deps.audit.record(executor, actorOf(request), [
       {
         action: 'vulndb.file_uploaded',
         target: { type: 'vulndb_settings', id: 'vulndb' },
@@ -635,7 +666,9 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
     priorityUpload('kev').options,
     async (request, reply) => {
       const principal = requireInstanceAdmin(request);
-      await audit(request, await priorityUpload('kev').handle(request, reply, principal.user.id));
+      await priorityUpload('kev').handle(request, reply, principal.user.id, (tx, details) =>
+        audit(tx, request, details),
+      );
       return readDto();
     },
   );
@@ -644,7 +677,9 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
     priorityUpload('epss').options,
     async (request, reply) => {
       const principal = requireInstanceAdmin(request);
-      await audit(request, await priorityUpload('epss').handle(request, reply, principal.user.id));
+      await priorityUpload('epss').handle(request, reply, principal.user.id, (tx, details) =>
+        audit(tx, request, details),
+      );
       return readDto();
     },
   );

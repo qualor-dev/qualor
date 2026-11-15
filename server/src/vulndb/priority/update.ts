@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Config } from '../../config';
-import type { Db, Executor } from '../../db/client';
+import type { Db, Executor, Tx } from '../../db/client';
 import { LOCKS } from '../../db/locks';
 import type { MailDeps } from '../../mail/outbox';
 import { enqueueVulnerabilityAlerts } from '../../vulnerabilities/alerts/enqueue';
@@ -85,7 +85,9 @@ async function parseFile(
  * writes the state, so two stores at once (the job and an upload) leave the table and the state on
  * the same file. The same bytes as the stored file write only the validators and the check times:
  * no row, and `storedAt` stays; `source` follows the latest store, so an upload marks the file as
- * uploaded. Logs what it stored, with the entries it skipped.
+ * uploaded. `inTransaction` (the upload's audit) runs last in that transaction, on both paths,
+ * with the state written: when it throws, nothing is stored. Logs what it stored, with the
+ * entries it skipped.
  */
 export async function storePriorityFile(
   db: Db,
@@ -95,6 +97,7 @@ export async function storePriorityFile(
   validators: PriorityValidators,
   now: Date,
   logger?: Pick<FastifyBaseLogger, 'info'>,
+  inTransaction?: (tx: Tx, state: PriorityDatasetState) => Promise<void>,
 ): Promise<PriorityDatasetState | PriorityProblem> {
   const at = now.toISOString();
   const digest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
@@ -112,6 +115,7 @@ export async function storePriorityFile(
         lastCheckAt: at,
         lastError: null,
       }));
+      await inTransaction?.(tx, confirmed);
       return { state: confirmed, count: null };
     }
     const { count: replaced, added, relisted } = await parsed.replace(tx);
@@ -130,6 +134,7 @@ export async function storePriorityFile(
     }));
     // 4b: inside the transaction, so a queued job cannot be claimed before these rows are visible.
     if (added + relisted > 0) await enqueueVulnerabilityAlerts(tx);
+    await inTransaction?.(tx, stored);
     return { state: stored, count: replaced };
   });
   if (count !== null) {

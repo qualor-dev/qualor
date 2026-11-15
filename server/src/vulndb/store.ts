@@ -297,11 +297,12 @@ export async function storeDataset(db: Db, input: StoreDatasetInput): Promise<St
 }
 
 /**
- * Names a `ready` dataset current and clears the state's `lastError`, under LOCKS.vulndbState.
- * False (the state untouched) when the row is gone or not `ready`: a prune or a delete got there
- * first, which a caller answers as a problem, never a crash.
+ * Names a `ready` dataset current and clears the state's `lastError`, under LOCKS.vulndbState, in
+ * one transaction (a savepoint when `db` is a transaction already). False (the state untouched)
+ * when the row is gone or not `ready`: a prune or a delete got there first, which a caller answers
+ * as a problem, never a crash.
  */
-export async function makeDatasetCurrent(db: Db, datasetId: string): Promise<boolean> {
+export async function makeDatasetCurrent(db: Executor, datasetId: string): Promise<boolean> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbState})`);
     const [row] = await tx

@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
-import type { Db } from '../db/client';
+import type { Db, Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { LOCKS } from '../db/locks';
 import { communityLimits, type Limits } from '../limits';
@@ -62,9 +62,10 @@ type ScheduleMode =
 /**
  * Every `vulndb.update` job shares one concurrency key, so two presses of Update now, a scheduled
  * run during a manual one and two replicas leave one queued job and at most one running. Under
- * LOCKS.vulndbSchedule. True when a job was inserted or moved.
+ * LOCKS.vulndbSchedule, in one transaction (a savepoint when `db` is a transaction already). True
+ * when a job was inserted or moved.
  */
-async function schedule(db: Db, mode: ScheduleMode): Promise<boolean> {
+async function schedule(db: Executor, mode: ScheduleMode): Promise<boolean> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbSchedule})`);
     const delay = mode.kind === 'now' ? 0 : mode.delaySeconds;
@@ -115,9 +116,10 @@ export async function ensureVulndbScheduled(db: Db): Promise<boolean> {
  * Update now (POST update, and a PUT that turns monitoring on or changes the source): the queued
  * run moves to now, or one is inserted. While an update runs, the one queued run is the follow-up
  * that picks up the change (a new source, or "Update now" after the download began); the
- * concurrency key starts it only when the running one has ended.
+ * concurrency key starts it only when the running one has ended. Inside a transaction,
+ * LOCKS.vulndbSchedule is held until that commits.
  */
-export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
+export function requestVulndbUpdateNow(db: Executor): Promise<boolean> {
   return schedule(db, { kind: 'now' });
 }
 
