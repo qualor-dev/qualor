@@ -171,6 +171,17 @@ describe('ComplianceReportsComponent (4E-1 §4)', () => {
     expect(downloads(without!)).toHaveLength(3);
   });
 
+  it('hands out one list of formats for every report that attaches an SBOM', async () => {
+    const a = complianceReport({ id: NEW, sbom: { sha256: 'cd'.repeat(32) } });
+    const b = complianceReport({ id: OLD, sbom: { sha256: 'ef'.repeat(32) } });
+    FakeCompliance.install(server, [a, b]);
+    const { fixture } = await render();
+    const component = fixture.componentInstance as unknown as {
+      formatsOf(report: ComplianceReport): readonly string[];
+    };
+    expect(component.formatsOf(a!)).toBe(component.formatsOf(b!));
+  });
+
   it('stops polling when it is destroyed', async () => {
     FakeCompliance.install(server, [
       complianceReport({ id: NEW, status: 'pending', summary: null, sha256: null }),

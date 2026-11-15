@@ -6,6 +6,7 @@ import {
   me,
   ORG_ID,
   page,
+  problem,
   provideFakeServer,
   settle,
 } from '../../testing/fake-server';
@@ -98,6 +99,37 @@ describe('ProjectCompliancePage (4E-1 §4)', () => {
     expect(
       server.requestsTo('GET', '/api/v0/ee/compliance/reports')[0]?.query.get('projectId'),
     ).toBe(ID);
+  });
+
+  it('says that only the newest 100 versions are listed', async () => {
+    const note = 'The newest 100 versions are listed.';
+    const server = setup(['project.read', 'project.compliance.create']);
+    FakeCompliance.install(server, []);
+    expect((await render()).textContent).not.toContain(note);
+    TestBed.resetTestingModule();
+    const more = setup(['project.read', 'project.compliance.create']);
+    more.on('GET', `/api/v0/projects/${ID}/versions`, {
+      body: page([{ id: VERSION, label: '1.2.0', tracked: true }], 'x'),
+    });
+    FakeCompliance.install(more, []);
+    expect((await render()).textContent).toContain(note);
+  });
+
+  it('shows the error of a version list that failed, and still lists the branches', async () => {
+    const server = setup(['project.read', 'project.compliance.create']);
+    server.on('GET', `/api/v0/projects/${ID}/versions`, {
+      status: 500,
+      body: problem(500, 'INTERNAL'),
+    });
+    FakeCompliance.install(server, []);
+    const root = await render();
+    const alert = root.querySelector('.compliance-create .alert.alert-error');
+    expect(alert?.textContent?.trim()).toBe('The request failed (HTTP 500, INTERNAL).');
+    const select = root.querySelector<HTMLSelectElement>('#compliance-target');
+    expect([...(select?.options ?? [])].map((o) => o.textContent?.trim())).toEqual([
+      'develop',
+      'main',
+    ]);
   });
 
   it('shows a reader the list without Create report', async () => {

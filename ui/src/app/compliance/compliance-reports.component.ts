@@ -47,6 +47,7 @@ const PAGE_SIZE = 50;
 const HASH_PREFIX = 12;
 const SEVERITIES = ['blocker', 'high', 'medium', 'low', 'info'] as const;
 const FORMATS = ['json', 'csv', 'pdf'] as const;
+const FORMATS_WITH_SBOM = [...FORMATS, 'sbom'] as const;
 /**
  * The standards' names (4E-1 §2.2). A report carries only their ids; one this list does not know
  * (a newer server) is shown by its id.
@@ -82,6 +83,10 @@ export class ComplianceReportsComponent {
   readonly canCreate = input(false);
   readonly branches = input<ComplianceBranch[]>([]);
   readonly versions = input<ComplianceVersion[]>([]);
+  /** Said under the target select when the versions are cut off (more exist than are listed). */
+  readonly versionsNote = input<string | null>(null);
+  /** The message of the branch or version list that failed to load. */
+  readonly targetsError = input<string | null>(null);
 
   protected readonly list = resource({
     params: () => this.scope(),
@@ -152,7 +157,7 @@ export class ComplianceReportsComponent {
   protected readonly severities = SEVERITIES;
   /** JSON, CSV and PDF, and the SBOM when the report attaches one (plan 5, V13). */
   protected formatsOf(report: ComplianceReport): readonly string[] {
-    return report.sbom ? [...FORMATS, 'sbom'] : FORMATS;
+    return report.sbom ? FORMATS_WITH_SBOM : FORMATS;
   }
   private destroyed = false;
 

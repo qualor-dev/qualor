@@ -77,6 +77,18 @@ export class ProjectCompliancePage {
       : [],
   );
 
+  /** Said under the select when the versions list was cut at the page limit. */
+  protected readonly versionsNote = computed(() =>
+    this.versionList.hasValue() && this.versionList.value().nextCursor !== null
+      ? $localize`:@@compliance.versionsTruncated:The newest ${VERSION_LIMIT}:limit: versions are listed.`
+      : null,
+  );
+  /** The failed list of the branches or the versions; the other one is still offered. */
+  protected readonly targetsError = computed(() => {
+    const err = this.branchList.error() ?? this.versionList.error();
+    return err === undefined ? null : problemMessage(err);
+  });
+
   constructor() {
     effect(() => this.project.use(this.projectId()));
   }

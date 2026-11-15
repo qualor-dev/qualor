@@ -848,6 +848,7 @@
     "lineMap.tip.line": "Line {$line}",
     "compliance.title": "Compliance reports",
     "compliance.notLicensed": " Compliance reports need an enterprise licence with the compliance-export feature. ",
+    "compliance.versionsTruncated": "The newest {$limit} versions are listed.",
     "deps.branch": "Branch",
     "deps.versions": "Versions",
     "deps.search.label": "Search packages",

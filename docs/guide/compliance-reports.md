@@ -17,6 +17,8 @@ main branch of each of its projects). It holds:
 - every triage decision, with who made it, when and why;
 - each project's quality gate and a short security trend.
 
+The target list of the Compliance tab offers the newest 100 versions and says so when there are more.
+
 Qualor builds the report once, when you ask for it. Later scans, triage and upgrades never change
 it. You download it as JSON, CSV or PDF, and its SHA-256 lets anyone check a copy. A report of a
 branch or version that has a dependency inventory also attaches its

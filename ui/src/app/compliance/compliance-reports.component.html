@@ -3,6 +3,9 @@
 } @else {
   @if (canCreate()) {
     <div class="compliance-create">
+      @if (targetsError(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
       @if (projectScope()) {
         <div class="field">
           <label for="compliance-target" i18n="@@compliance.target">Target</label>
@@ -24,6 +27,9 @@
               </optgroup>
             }
           </select>
+          @if (versionsNote(); as note) {
+            <p class="hint">{{ note }}</p>
+          }
         </div>
       }
       <button
