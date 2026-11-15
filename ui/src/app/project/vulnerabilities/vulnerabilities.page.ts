@@ -205,10 +205,18 @@ export class VulnerabilitiesPage {
   constructor() {
     // A change moves a version between the table and the fold, and the row it was made on is gone
     // or kept: once the summary is read again, focus goes to the row's link, else the fold's button,
-    // else the table's scroll box. A row that stays keeps focus on its trigger.
+    // else the table's scroll box. The menu closes and every trigger is disabled while the change
+    // runs, so the browser drops focus to the body, a row that stays included: its link takes it.
+    // A failed change sets the same key (the summary is still there), and a reload that ends in
+    // an error clears it, so it cannot fire at a later read.
     effect(() => {
       const key = this.pendingFocus();
-      if (key === null || this.summary.status() !== 'resolved') return;
+      if (key === null) return;
+      if (this.summary.status() === 'error') {
+        this.pendingFocus.set(null);
+        return;
+      }
+      if (this.summary.status() !== 'resolved') return;
       this.pendingFocus.set(null);
       keepFocus(
         this.injector,
@@ -324,6 +332,8 @@ export class VulnerabilitiesPage {
       this.summary.reload();
     } catch (err) {
       this.error.set(problemMessage(err));
+      // The menu closed and the triggers are disabled: the row's link takes focus at once.
+      this.pendingFocus.set(`version:${versionId}`);
     } finally {
       this.busy.set(false);
     }

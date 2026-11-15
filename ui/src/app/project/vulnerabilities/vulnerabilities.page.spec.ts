@@ -647,7 +647,7 @@ describe('VulnerabilitiesPage', () => {
         expect(document.activeElement).toBe(link(root, '1.249.0'));
       });
 
-      it('keeps focus on the trigger of a row that stays', async () => {
+      it("focuses the link of a row that stays when its disabled trigger drops focus, as a browser's does", async () => {
         const root = (attached = await renderMoving(
           { targets: TARGETS },
           {
@@ -660,8 +660,25 @@ describe('VulnerabilitiesPage', () => {
           (b) => text(b) === 'Pin',
         ) as HTMLElement;
         pin.click();
+        // The menu closes and the trigger is disabled: a browser drops focus to the body.
+        (document.activeElement as HTMLElement | null)?.blur();
         await settle();
-        expect(document.activeElement).toBe(trigger);
+        expect(document.activeElement).toBe(rows(root)[2]?.querySelector('a.row-link'));
+      });
+
+      it("focuses the row's link after a refused change", async () => {
+        const root = (attached = await renderMoving({ targets: TARGETS }, { targets: TARGETS }));
+        server.on('PATCH', /^\/api\/v0\/projects\/[^/]+\/versions\/[^/]+$/, {
+          status: 403,
+          body: problem(403, 'FORBIDDEN'),
+        });
+        const trigger = rows(root)[2]?.querySelector<HTMLElement>('.menu-trigger');
+        trigger?.focus();
+        focusItem(rows(root)[2], 'Pin').click();
+        (document.activeElement as HTMLElement | null)?.blur();
+        await settle();
+        expect(root.querySelector('[role="alert"]')).not.toBeNull();
+        expect(document.activeElement).toBe(rows(root)[2]?.querySelector('a.row-link'));
       });
     });
 
