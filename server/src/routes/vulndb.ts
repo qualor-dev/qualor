@@ -13,6 +13,11 @@ import { sendContinue } from '../http/expect-continue';
 import { closeAfterRefusal } from '../http/lingering-close';
 import { ProblemError } from '../http/problem';
 import { isoOrNull } from '../http/schemas';
+import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
+import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
+import { readPriorityState, priorityStatus } from '../vulndb/priority/state';
+import { storePriorityFile } from '../vulndb/priority/update';
+import { enqueueRecheck } from '../vulndb/recheck-queue';
 import {
   OFFICIAL_EPSS_URL,
   OFFICIAL_KEV_URL,
@@ -26,14 +31,9 @@ import {
   type PriorityDataset,
   type VulndbSettings,
 } from '../vulndb/settings';
-import { PRIORITY_FEATURE, priorityNotLicensed } from '../vulndb/priority/feature';
-import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
-import { readPriorityState, priorityStatus } from '../vulndb/priority/state';
-import { storePriorityFile } from '../vulndb/priority/update';
 import { readVulndbState, VULNDB_UPDATE_QUEUE, vulndbStatus } from '../vulndb/state';
-import { enqueueRecheck } from '../vulndb/recheck-queue';
-import { requestVulndbUpdateNow, rescheduleVulndbUpdate } from '../vulndb/update';
 import { currentDataset, makeDatasetCurrent, pruneDatasets, storeDataset } from '../vulndb/store';
+import { requestVulndbUpdateNow, rescheduleVulndbUpdate } from '../vulndb/update';
 
 const UPLOAD_TYPES = ['application/gzip', 'application/octet-stream'] as const;
 
@@ -233,8 +233,9 @@ const PRIORITY_FILES = {
   epss: 'epss_scores-current.csv.gz',
 } as const satisfies Record<PriorityDataset, string>;
 
-export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
-  const readDto = async (): Promise<SettingsDto> => {
+/** The settings and the status, as every route of both plugins answers them. */
+function vulndbDto(deps: RouteDeps): () => Promise<SettingsDto> {
+  return async () => {
     const settings = await readVulndbSettings(deps.db);
     const state = await readVulndbState(deps.db);
     const current = await currentDataset(deps.db, state);
@@ -307,6 +308,10 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       lastRecheck: state.lastRecheck,
     };
   };
+}
+
+export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app, { deps }) => {
+  const readDto = vulndbDto(deps);
 
   app.get(
     '/system/vulnerability-db',
@@ -405,6 +410,17 @@ export const vulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       return reply.code(202).send(await readDto());
     },
   );
+};
+
+/**
+ * The three file uploads, in a plugin of their own (routes/index.ts registers it): the raw-stream
+ * parsers stay in its encapsulation context, so the settings PUT keeps the default 415 for them.
+ */
+export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
+  app,
+  { deps },
+) => {
+  const readDto = vulndbDto(deps);
 
   // The upload is handed to the handler as the raw request stream; storeDataset enforces the
   // limit. Scoped to this plugin: no other route sees these content types.

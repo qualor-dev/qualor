@@ -181,6 +181,17 @@ describe('/system/vulnerability-db (API)', () => {
     expect(await ctx.db.select().from(jobs).where(inArray(jobs.queue, queues))).toEqual([]);
   });
 
+  it('answers 415 to settings sent as a raw stream', async () => {
+    // The upload routes' raw-stream parsers stay in their own plugin.
+    const res = await ctx.app.inject({
+      method: 'PUT',
+      url,
+      headers: { ...admin.headers, 'content-type': 'application/octet-stream' },
+      payload: Buffer.from('x'),
+    });
+    expect(res.statusCode, res.body).toBe(415);
+  });
+
   it('answers 422 on an unknown key inside scanners', async () => {
     const res = await put({ scanners: { extra: true } });
     expect(res.statusCode).toBe(422);
