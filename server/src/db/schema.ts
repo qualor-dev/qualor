@@ -933,9 +933,10 @@ export const vulnerabilityTargetChecks = pgTable(
 
 /**
  * A tracked target in alert scope, recorded by the alert job (4b A1–A3, R3, R6). The row goes when
- * the target leaves the scope, so its return is a new first observation.
- * - `day_one`: its project had no alert target row when this one was recorded. That is the
- *   project's day one: the upgrade, a switch turned on, the feature activated.
+ * the target leaves the scope, so its return is recorded anew, with a new baseline.
+ * - `day_one`: recorded on its project's day one, the project's first observation ever. That is
+ *   remembered in `vulnerability_alert_projects` until the project is deleted, so a target added
+ *   later, a main branch replaced or a project back in scope is no day one (D17).
  * - `observed_at`: when the job recorded the target, on the database clock that `checked_at` uses.
  *   The target had a re-check by then, which may be stale.
  * - `seeded_at`: when its baseline was taken. That happens at the first pass after a re-check
@@ -969,6 +970,18 @@ export const vulnerabilityAlertTargets = pgTable(
     ),
   ],
 );
+
+/**
+ * A project the alert job has observed (D17): written with its first alert target, at
+ * `day_one_at`, and deleted only with the project. Its targets come and go; its day one does not
+ * repeat.
+ */
+export const vulnerabilityAlertProjects = pgTable('vulnerability_alert_projects', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  dayOneAt: at('day_one_at').notNull().defaultNow(),
+});
 
 /** One vulnerability the alert job has reported on a target; deduplicates by (target, id). */
 export const vulnerabilityAlertItems = pgTable(

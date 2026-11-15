@@ -22,15 +22,17 @@ export interface ObservedAlerts {
  * Brings the alert memory in line with `scope` (`alertScope`) as of `now` (4b A1–A3, R3, R4, R6).
  * The caller holds LOCKS.vulnerabilityAlerts in `tx`, and queues a re-check of
  * `recheckProjectIds`; this function enqueues nothing.
- * 1. Deletes the target rows out of scope; their items go with them.
+ * 1. Deletes the target rows out of scope; their items go with them. The project rows stay.
  * 2. Records each target in scope without a row, unseeded, without items. `observed_at` is the
  *    database's `now()`, the clock the re-check stamps `checked_at` with (A12), so a job clock
  *    ahead of the database's never holds back step 3. It needs a re-check row with a basis (R3)
  *    and a dependency inventory (for a branch {@link branchHasInventory}, for a version
  *    `has_inventory`; without one, its first inventory would count as all new, spec §8.5). An
  *    empty inventory is one: the packages added to it later are new. It must still exist (R4).
- *    The row is `day_one` when its project had no row left after step 1: the project's first
- *    observation, or its return.
+ *    The row is `day_one` on the project's day one, its first observation ever: the project has
+ *    no `vulnerability_alert_projects` row yet. That row is written with the project's first
+ *    target and stays until the project is deleted, so a target added later, a main branch
+ *    replaced or a project back in scope is no day one (D17).
  * 3. Seeds, at `now`, each unseeded target re-checked since it was recorded
  *    (`checked_at >= observed_at`). Every pair it holds now becomes a baseline item. Rows written
  *    before the target entered the scope (R17 keeps them) are never taken for its baseline (R6).
@@ -83,15 +85,16 @@ export async function observeAlerts(
     };
   }
 
-  // A statement never sees its own inserts, so `day_one` reads the rows left after the delete.
-  // The two partial unique indexes skip a target that has its row already. `observed_at` is on
-  // the database clock, as `checked_at` is: step 3 compares the two (A12).
+  // `day_one` holds for a project without a project row. That row is written after this
+  // statement, so every target its day one records gets it. The two partial unique indexes skip a
+  // target that has its row already. `observed_at` is on the database clock, as `checked_at` is:
+  // step 3 compares the two (A12).
   const added = await tx.execute<{ projectId: string }>(sql`
     INSERT INTO vulnerability_alert_targets
            (id, project_id, branch_id, version_id, day_one, observed_at)
     SELECT s.id, s.project_id, s.branch_id, s.version_id,
-           NOT EXISTS (SELECT 1 FROM vulnerability_alert_targets a
-                        WHERE a.project_id = s.project_id),
+           NOT EXISTS (SELECT 1 FROM vulnerability_alert_projects p
+                        WHERE p.project_id = s.project_id),
            now()
       FROM unnest(${sql.param(ids)}::uuid[], ${sql.param(projectIds)}::uuid[],
                   ${sql.param(branchIds)}::uuid[], ${sql.param(versionIds)}::uuid[])
@@ -106,6 +109,15 @@ export async function observeAlerts(
                          WHERE c.version_id = s.version_id AND c.basis <> ''))
     ON CONFLICT DO NOTHING
     RETURNING project_id AS "projectId"`);
+  const addedProjectIds = added.rows.map((row) => row.projectId);
+  if (addedProjectIds.length > 0) {
+    // A project's first target writes its row. The targets just inserted hold a key-share lock on
+    // each project, so none is gone.
+    await tx.execute(sql`
+      INSERT INTO vulnerability_alert_projects (project_id)
+      SELECT DISTINCT u.id FROM unnest(${sql.param(addedProjectIds)}::uuid[]) AS u(id)
+      ON CONFLICT DO NOTHING`);
+  }
 
   // Every row left is in scope (step 1). The basis condition is R3's, for a branch that lost it.
   const seeded = await tx.execute<{ id: string }>(sql`
@@ -136,7 +148,7 @@ export async function observeAlerts(
     targetsSeeded: seededNow.size,
     itemsAdded,
     targetsRemoved,
-    recheckProjectIds: [...new Set(added.rows.map((row) => row.projectId))].sort(),
+    recheckProjectIds: [...new Set(addedProjectIds)].sort(),
   };
 }
 

@@ -76,6 +76,7 @@ const TABLES = [
   'vulndb_datasets',
   'vulnerability_decisions',
   'vulnerability_alert_items',
+  'vulnerability_alert_projects',
   'vulnerability_alert_targets',
   'vulnerability_epss',
   'vulnerability_kev',

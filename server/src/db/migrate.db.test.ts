@@ -67,8 +67,9 @@ describe('runMigrations / pendingMigrations', () => {
     // chat webhooks that have the weekly digest), 0027_vulnerability_decisions_repair (0.16, the
     // decisions of main Trivy issues closed with false positive or won't fix),
     // 0028_vulnerability_vendor_ids (0.16, Trivy's vendor ids on a match; every package matched
-    // again, approved 2026-11-14).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(29);
+    // again, approved 2026-11-14), 0029_vulnerability_alert_projects (0.16, the day one of each
+    // project's vulnerability alerts, approved 2026-11-15).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(30);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -327,6 +328,7 @@ describe('runMigrations / pendingMigrations', () => {
       'target_vulnerabilities', // 0021_vulndb
       'vulnerability_decisions', // 0022_vulnerability_decisions
       'vulnerability_alert_items', // 0024_vulnerability_alerts
+      'vulnerability_alert_projects', // 0029_vulnerability_alert_projects
       'vulnerability_alert_targets', // 0024_vulnerability_alerts
       'vulnerability_epss', // 0023_vulnerability_priority
       'vulnerability_kev', // 0023_vulnerability_priority
@@ -1147,5 +1149,68 @@ describe('runMigrations / pendingMigrations', () => {
       `SELECT vendor_ids FROM vulnerability_matches WHERE vulnerability_id = 'CVE-2021-23337'`,
     );
     expect(added).toEqual([{ vendor_ids: [] }]);
+  });
+
+  it('0029 gives each project with alert targets its day-one row', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo28 = migrationsUpTo(29); // 0000_extensions … 0028_vulnerability_vendor_ids
+    try {
+      await runMigrations(db.pool, upTo28.dir);
+    } finally {
+      upTo28.remove();
+    }
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 29);
+    const org = randomUUID();
+    const [a, b, none] = [randomUUID(), randomUUID(), randomUUID()];
+    const [aMain, aRelease] = [randomUUID(), randomUUID()];
+    const [bMain, noneMain] = [randomUUID(), randomUUID()];
+    const [aFirst, aLater, bTarget] = [randomUUID(), randomUUID(), randomUUID()];
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0029', 'Mig')`,
+      [org],
+    );
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name)
+       VALUES ($1, $4, 'mig/a', 'A'), ($2, $4, 'mig/b', 'B'), ($3, $4, 'mig/none', 'None')`,
+      [a, b, none, org],
+    );
+    await db.pool.query(
+      `INSERT INTO branches (id, project_id, kind, name, is_main)
+       VALUES ($1, $5, 'branch', 'main', true), ($2, $5, 'branch', 'release/1.x', false),
+              ($3, $6, 'branch', 'main', true), ($4, $7, 'branch', 'main', true)`,
+      [aMain, aRelease, bMain, noneMain, a, b, none],
+    );
+    // A's earliest target is not its first row; B's target has an item already emailed.
+    await db.pool.query(
+      `INSERT INTO vulnerability_alert_targets (id, project_id, branch_id, day_one, observed_at, seeded_at)
+       VALUES ($1, $4, $5, false, '2026-11-03T10:00:00Z', '2026-11-03T11:00:00Z'),
+              ($2, $4, $6, true, '2026-11-01T09:00:00Z', '2026-11-01T10:00:00Z'),
+              ($3, $7, $8, true, '2026-11-02T08:00:00Z', '2026-11-02T09:00:00Z')`,
+      [aLater, aFirst, bTarget, a, aRelease, aMain, b, bMain],
+    );
+    await db.pool.query(
+      `INSERT INTO vulnerability_alert_items (id, target_id, vulnerability_id, baseline, found_at, kev_notified_at)
+       VALUES ($1, $2, 'CVE-2021-44228', true, '2026-11-02T09:00:00Z', '2026-11-02T09:00:00Z')`,
+      [randomUUID(), bTarget],
+    );
+    const memory = async () => ({
+      targets: (await db.pool.query(`SELECT * FROM vulnerability_alert_targets ORDER BY id`)).rows,
+      items: (await db.pool.query(`SELECT * FROM vulnerability_alert_items ORDER BY id`)).rows,
+    });
+    const before = await memory();
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    const { rows } = await db.pool.query(
+      `SELECT project_id, day_one_at FROM vulnerability_alert_projects ORDER BY day_one_at`,
+    );
+    expect(rows).toEqual([
+      { project_id: a, day_one_at: new Date('2026-11-01T09:00:00Z') },
+      { project_id: b, day_one_at: new Date('2026-11-02T08:00:00Z') },
+    ]);
+    // The alert memory is unchanged: the emailed item stays marked.
+    expect(await memory()).toEqual(before);
+    expect(before.items).toMatchObject([{ kev_notified_at: new Date('2026-11-02T09:00:00Z') }]);
   });
 });

@@ -204,6 +204,13 @@
       "when": 1794669357224,
       "tag": "0028_vulnerability_vendor_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794747498737,
+      "tag": "0029_vulnerability_alert_projects",
+      "breakpoints": true
     }
   ]
 }
