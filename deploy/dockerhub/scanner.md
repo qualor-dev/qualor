@@ -60,7 +60,7 @@ qualor:
   runs-on: ubuntu-latest
   container: { image: qualor/scanner:0.15, options: --user 1001 }
   steps:
-    - uses: actions/checkout@v4 # pin it to a commit SHA
+    - uses: actions/checkout@v5 # pin it to a commit SHA
       with: { fetch-depth: 0 }
     - run: qualor scan
       env: { QUALOR_URL: '${{ vars.QUALOR_URL }}', QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' }

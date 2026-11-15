@@ -303,7 +303,8 @@ describe('the cache actions in the templates', () => {
     for (const name of ['qualor.yml', 'qualor-dotnet.yml']) {
       const uses = read(name).match(/uses: actions\/cache\/(restore|save)@\S+.*/g) ?? [];
       expect(uses).toHaveLength(2);
-      for (const u of uses) expect(u).toMatch(/@[0-9a-f]{40} # v4\.\d+\.\d+$/);
+      // The version itself is pinned in tools/action-pins.test.ts.
+      for (const u of uses) expect(u).toMatch(/@[0-9a-f]{40} # v\d+\.\d+\.\d+$/);
     }
   });
 });

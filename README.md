@@ -107,7 +107,7 @@ Ultimate only. A self-managed GitLab needs its own copy of the component. See
 **GitHub Actions**, with the Qualor Action:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@v5
   with:
     fetch-depth: 0
     persist-credentials: false

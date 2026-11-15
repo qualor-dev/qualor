@@ -95,7 +95,7 @@ GitHub Actions, in the workflow of [GitHub](./github.md#2-the-workflow):
 
 ```yaml
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false

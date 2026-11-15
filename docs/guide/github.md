@@ -51,7 +51,7 @@ jobs:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -74,8 +74,10 @@ jobs:
 
 The step fails when the gate fails, when an analyzer that `qualor.yml` marks as required fails, or
 when the upload is refused because the token is wrong or revoked. It needs a Linux runner with
-Docker (`ubuntu-latest` or self-hosted). The scanner cannot write into the checkout: an option that
-writes a file, such as `--output`, needs a path under `/tmp`.
+Docker (`ubuntu-latest` or self-hosted). A self-hosted runner needs version 2.327.1 or later: the
+`actions/checkout` and `actions/cache` versions on this page run on Node 24. The scanner cannot
+write into the checkout: an option that writes a file, such as `--output`, needs a path under
+`/tmp`.
 
 On a tag push, the scan records a [version](./releases.md) instead, and applies no quality gate.
 
@@ -107,7 +109,7 @@ A Docker action cannot call `actions/cache`, so put a restore step, a `mkdir` st
 around it. The `mkdir` step lets the Action's user write the directory.
 
 ```yaml
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .qualor/trivy
           key: qualor-trivy-db-${{ github.run_id }}
@@ -117,7 +119,7 @@ around it. The `mkdir` step lets the Action's user write the directory.
         with:
           server-url: ${{ vars.QUALOR_URL }}
           token: ${{ secrets.QUALOR_TOKEN }}
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         if: always() && hashFiles('.qualor/trivy/server.json') != ''
         with:
           path: .qualor/trivy
@@ -146,7 +148,9 @@ It takes the same inputs, plus `build-command` (default `dotnet build --no-incre
 `--no-incremental`. When the build fails, nothing is uploaded.
 
 The `dotnet` Action scans a copy of the checkout and keeps no vulnerability database cache: it
-downloads the database on each run. Leave the cache steps out.
+downloads the database on each run. Leave the cache steps out. Do not point
+`QUALOR_TRIVY_CACHE_DIR` into the workspace for the `dotnet` Action: the scan runs on a copy, so
+the directory would be trusted without the check the main Action gets.
 
 The token goes only to `qualor dotnet end`, but the build runs your repository's code in the same
 container and could read it. If that is not acceptable, use the template
@@ -176,13 +180,13 @@ jobs:
       image: ${{ vars.QUALOR_SCANNER_IMAGE }}
       options: --user 1001
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       # The scanner's vulnerability database archive, kept between runs.
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .qualor/trivy
           key: qualor-trivy-db-${{ github.run_id }}
@@ -193,7 +197,7 @@ jobs:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
       - if: always() && hashFiles('.qualor/trivy/server.json') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .qualor/trivy
           key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}
@@ -419,7 +423,9 @@ plain job that runs `qualor/scanner:<version>` in a container on a runner labell
 the scanner, edit the version in the file. GitHub.com and GHE.com get the Action.
 
 The job takes `actions/checkout@v4` and `actions/cache@v4` by tag. GitHub Enterprise Server
-resolves the actions it ships by tag, but not a github.com commit.
+resolves the actions it ships by tag, but not a github.com commit. The job stays on v4, which runs
+on Node 20: the Node 24 versions of the GitHub.com workflows are not yet checked on GitHub
+Enterprise Server.
 
 ### Undo CI setup
 

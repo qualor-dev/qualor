@@ -30,13 +30,13 @@ jobs:
       image: ${{ vars.QUALOR_SCANNER_IMAGE }}
       options: --user 1001
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       # The scanner's vulnerability database archive, kept between runs.
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .qualor/trivy
           key: qualor-trivy-db-${{ github.run_id }}
@@ -50,7 +50,7 @@ jobs:
           QUALOR_URL: ${{ vars.QUALOR_URL }}
           QUALOR_TOKEN: ${{ secrets.QUALOR_TOKEN }}
       - if: always() && hashFiles('.qualor/trivy/server.json') != ''
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: .qualor/trivy
           key: qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}

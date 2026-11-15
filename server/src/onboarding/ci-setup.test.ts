@@ -683,7 +683,7 @@ describe('GitHub', () => {
       doc: parse(plan.files[0]?.content ?? ''),
     };
   }
-  const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262';
+  const CHECKOUT = 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09';
 
   it('cloud non-C#: the scan-action workflow', () => {
     const { doc, content } = wf();
@@ -821,8 +821,8 @@ describe('GitHub', () => {
         'actions/cache/save@v4',
       ]);
       expect(uses({ host: 'cloud', csharp })).toEqual([
-        'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830',
-        'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830',
+        'actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25',
+        'actions/cache/save@caa296126883cff596d87d8935842f9db880ef25',
       ]);
     }
   });

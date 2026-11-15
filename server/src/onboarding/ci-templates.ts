@@ -2,10 +2,10 @@
 // Keep in step with templates/qualor.yml, integrations/github/*.yml and docs/guide/{github,gitlab}.md.
 
 /** Pinned like the repository's own templates (integrations/github/qualor.yml). */
-const CHECKOUT = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0';
-/** The cache actions, pinned by commit like the checkout (actions/cache v4.3.0). */
-const CACHE_RESTORE = 'actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
-const CACHE_SAVE = 'actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0';
+const CHECKOUT = 'actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0';
+/** The cache actions, pinned by commit like the checkout (actions/cache v5.1.0). */
+const CACHE_RESTORE = 'actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0';
+const CACHE_SAVE = 'actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0';
 /**
  * GHES takes the cache actions by tag, like its checkout: without GitHub Connect it resolves only
  * the actions it ships, and no github.com commit.
