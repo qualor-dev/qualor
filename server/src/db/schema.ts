@@ -942,6 +942,9 @@ export const vulnerabilityTargetChecks = pgTable(
  * - `seeded_at`: when its baseline was taken. That happens at the first pass after a re-check
  *   that followed `observed_at`, and every pair present then becomes a baseline item. Null until
  *   then. Only a seeded target gets new items.
+ * - `items_checked_at`: the `checked_at` of the target's re-check when a pass last read its pairs
+ *   for new items (D18). A pass reads only the seeded targets whose re-check moved past it. Null
+ *   until the first read, so the first pass after 0030 reads every seeded target once.
  */
 export const vulnerabilityAlertTargets = pgTable(
   'vulnerability_alert_targets',
@@ -955,6 +958,7 @@ export const vulnerabilityAlertTargets = pgTable(
     dayOne: boolean('day_one').notNull(),
     observedAt: at('observed_at').notNull().defaultNow(),
     seededAt: at('seeded_at'),
+    itemsCheckedAt: at('items_checked_at'),
   },
   (t) => [
     uniqueIndex('vulnerability_alert_targets_branch_uq')

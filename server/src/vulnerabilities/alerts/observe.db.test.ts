@@ -50,6 +50,8 @@ type TargetKey = { branchId: string } | { versionId: string };
 
 /** A piece of the statement that reads a slice's missing pairs (`addItems`). */
 const MISSING_READ = 'JOIN target_vulnerabilities v ON v.branch_id = s.id';
+/** A piece of the statement that reads which targets of a slice to scan (`addItems`, D18). */
+const SCAN_READ = 'IS DISTINCT FROM a.items_checked_at';
 
 /** The database clock of `db`'s transaction: `now()`, which stamps `observed_at` (A12). */
 const clockOf = async (db: Executor): Promise<Date> =>
@@ -101,6 +103,15 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       clocks.set(now.getTime(), await clockOf(tx));
       return observed;
     });
+
+  /** A pass, and how many times it read missing pairs (`MISSING_READ`): once per slice it scans. */
+  const countedPass = async (now: Date, targetSlice?: number) => {
+    let reads = 0;
+    const observed = await pass(now, ALERTS, targetSlice, (text) => {
+      if (text.includes(MISSING_READ)) reads += 1;
+    });
+    return { observed, reads };
+  };
 
   /** The `observed_at` of a target the pass at job clock `now` recorded: its database clock. */
   const recordedAt = (now: Date): Date => {
@@ -674,6 +685,7 @@ describe('vulnerability alerts: the scope and the observe step', () => {
 
   it('does not fail when a target is deleted between the read and the insert', async () => {
     const p = await seededP();
+    // Each row comes with its re-check, which moves the check row: the pass reads both targets.
     await p.vulnerable({ branchId: p.main }, 'CVE-3', 'axios');
     await p.vulnerable({ versionId: p.v234 }, 'CVE-6', 'axios');
     let deleted = false;
@@ -740,12 +752,91 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     expect(await pass(T4, ALERTS, 1, countReads)).toEqual(
       counts({ targetsSeeded: 1, itemsAdded: 2 }),
     );
-    // One read per target: the four of P and q's main.
-    expect(reads).toBe(5);
+    // One read per slice that holds a target re-checked since its last read: 2.5.0, seeded now,
+    // and 2.3.4, whose new row came with its re-check. The other three are not read.
+    expect(reads).toBe(2);
     expect(await itemsOf({ versionId: v250 })).toEqual([item('CVE-7', true, T4)]);
     expect(await itemsOf({ versionId: p.v234 })).toEqual([
       item('CVE-2', true, T2),
       item('CVE-6', false, T4),
     ]);
+  });
+
+  it('reads nothing on a pass with nothing new', async () => {
+    await seededP();
+    expect(await countedPass(T3)).toEqual({ observed: counts(), reads: 0 });
+  });
+
+  it('reads only the targets re-checked since the last pass', async () => {
+    const p = await seededP();
+    await p.vulnerable({ branchId: p.main }, 'CVE-8', 'axios');
+    // A row written without its re-check: the version is not read for it yet.
+    await p.vulnerable({ versionId: p.v234 }, 'CVE-9', 'axios', { recheck: false });
+    expect(await pass(T3)).toEqual(counts({ itemsAdded: 1 }));
+    expect(await itemsOf({ branchId: p.main })).toEqual([
+      item('CVE-1', true, T2),
+      item('CVE-8', false, T3),
+    ]);
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([item('CVE-2', true, T2)]);
+    await rechecked({ versionId: p.v234 });
+    expect(await pass(T4)).toEqual(counts({ itemsAdded: 1 }));
+    expect(await itemsOf({ versionId: p.v234 })).toEqual([
+      item('CVE-2', true, T2),
+      item('CVE-9', false, T4),
+    ]);
+  });
+
+  it('stores the checked_at it read', async () => {
+    await seededP();
+    // As text: to the microsecond, as the pass compares them.
+    const stamps = await t.db.execute<{ read: string | null; checked: string }>(sql`
+      SELECT a.items_checked_at::text AS read, c.checked_at::text AS checked
+        FROM vulnerability_alert_targets a
+        JOIN vulnerability_target_checks c
+          ON c.branch_id = a.branch_id OR c.version_id = a.version_id`);
+    expect(stamps.rows).toHaveLength(2);
+    expect(stamps.rows.map((row) => row.read)).toEqual(stamps.rows.map((row) => row.checked));
+  });
+
+  it('reads a target again when its check moves during the pass', async () => {
+    const p = await seededP();
+    await rechecked({ branchId: p.main });
+    let moved = false;
+    const observed = await pass(T3, ALERTS, undefined, async (text) => {
+      if (moved || !text.includes(SCAN_READ)) return;
+      moved = true;
+      // A re-check in a second connection, committed after the pass read the check row: a new
+      // pair, and the check row moved past what the pass read.
+      await t.db.transaction((tx) =>
+        seedTargetRow(tx, {
+          projectId: p.projectId,
+          branchId: p.main,
+          packageName: 'axios',
+          vulnerabilityId: 'CVE-3',
+        }),
+      );
+    });
+    expect(moved).toBe(true);
+    // The read of the pairs comes after the commit: the pair is an item already.
+    expect(observed).toEqual(counts({ itemsAdded: 1 }));
+    // The pass stored the check it read, not the one after: the next pass reads main again.
+    expect(await countedPass(T4)).toEqual({ observed: counts(), reads: 1 });
+    expect(await itemsOf({ branchId: p.main })).toEqual([
+      item('CVE-1', true, T2),
+      item('CVE-3', false, T3),
+    ]);
+    expect(await countedPass(T5)).toEqual({ observed: counts(), reads: 0 });
+  });
+
+  it('scans a target from before 0030 once, and adds nothing it already holds', async () => {
+    const p = await seededP();
+    // A target seeded before 0030: its pairs were never read against a check.
+    await t.db
+      .update(vulnerabilityAlertTargets)
+      .set({ itemsCheckedAt: null })
+      .where(eq(vulnerabilityAlertTargets.branchId, p.main));
+    expect(await countedPass(T3)).toEqual({ observed: counts(), reads: 1 });
+    expect(await countedPass(T4)).toEqual({ observed: counts(), reads: 0 });
+    expect(await itemsOf({ branchId: p.main })).toEqual([item('CVE-1', true, T2)]);
   });
 });

@@ -41,10 +41,13 @@ export interface ObservedAlerts {
  *    transaction began at or after this one's, and committed before step 3 reads, seeds it in the
  *    same pass, which is harmless.
  * 4. Adds an item, found at `now`, for each (target, vulnerability id) pair of
- *    `target_vulnerabilities` that a seeded target has no item for. Steps 3 and 4 share one read
- *    per `targetSlice` targets. An item is a baseline when step 3 of this call seeded its target.
- *    A package bump keeps the pair, so it adds nothing. A target deleted since the read is
- *    skipped.
+ *    `target_vulnerabilities` that a seeded target has no item for. It reads only the seeded
+ *    targets whose re-check is newer than their last read (`items_checked_at`, D18): a re-check
+ *    writes a target's rows and its check row together, so a target not re-checked since has no
+ *    new pair. A target seeded in step 3 is always read, and a re-check of every project makes
+ *    the next pass read every target. One read per `targetSlice` targets. An item is a baseline
+ *    when step 3 of this call seeded its target. A package bump keeps the pair, so it adds
+ *    nothing. A target deleted since the read is skipped.
  *
  * `target_vulnerabilities` is only read: the rows of a target out of scope stay there.
  */
@@ -155,7 +158,16 @@ export async function observeAlerts(
 const nonNull = (ids: readonly (string | null)[]): string[] =>
   ids.filter((id): id is string => id !== null);
 
-/** Steps 3 and 4 for one slice of the scope's targets; returns the items added. */
+/** A seeded target whose pairs a pass reads, with the `checked_at` of its re-check then. */
+interface Scanned extends Record<string, unknown> {
+  id: string;
+  branchId: string | null;
+  versionId: string | null;
+  /** As text: a JS Date would cut the microseconds, and the next pass would read it again. */
+  checkedAt: string | null;
+}
+
+/** Step 4 for one slice of the scope's targets; returns the items added. */
 async function addItems(
   tx: Executor,
   branchIds: readonly string[],
@@ -163,23 +175,45 @@ async function addItems(
   seededNow: ReadonlySet<string>,
   at: SQL,
 ): Promise<number> {
-  // Ids are uuidv7 from the application, as for every table: the missing pairs are read first.
+  // Read 1: the seeded targets re-checked since their last read, or never read (null after 0030,
+  // and for a target seeded in step 3 of this pass). It comes before read 2: a re-check that
+  // commits in between moves `checked_at` past the value stored below, so the next pass reads the
+  // target again. A pair is never missed, at worst read twice.
+  const scanned = await tx.execute<Scanned>(sql`
+    SELECT a.id, a.branch_id AS "branchId", NULL::uuid AS "versionId",
+           c.checked_at::text AS "checkedAt"
+      FROM unnest(${sql.param(branchIds)}::uuid[]) AS s(id)
+      JOIN vulnerability_alert_targets a ON a.branch_id = s.id
+      LEFT JOIN vulnerability_target_checks c ON c.branch_id = s.id
+     WHERE a.seeded_at IS NOT NULL
+       AND (a.items_checked_at IS NULL OR c.checked_at IS DISTINCT FROM a.items_checked_at)
+    UNION ALL
+    SELECT a.id, NULL::uuid, a.version_id, c.checked_at::text
+      FROM unnest(${sql.param(versionIds)}::uuid[]) AS s(id)
+      JOIN vulnerability_alert_targets a ON a.version_id = s.id
+      LEFT JOIN vulnerability_target_checks c ON c.version_id = s.id
+     WHERE a.seeded_at IS NOT NULL
+       AND (a.items_checked_at IS NULL OR c.checked_at IS DISTINCT FROM a.items_checked_at)`);
+  if (scanned.rows.length === 0) return 0;
+
+  // Read 2: their missing pairs, before the insert: ids are uuidv7 from the application.
+  const scannedBranches = nonNull(scanned.rows.map((row) => row.branchId));
+  const scannedVersions = nonNull(scanned.rows.map((row) => row.versionId));
   const missing = await tx.execute<{ targetId: string; vulnerabilityId: string }>(sql`
     SELECT p.target_id AS "targetId", p.vulnerability_id AS "vulnerabilityId"
       FROM (SELECT a.id AS target_id, v.vulnerability_id
-              FROM unnest(${sql.param(branchIds)}::uuid[]) AS s(id)
+              FROM unnest(${sql.param(scannedBranches)}::uuid[]) AS s(id)
               JOIN vulnerability_alert_targets a ON a.branch_id = s.id
               JOIN target_vulnerabilities v ON v.branch_id = s.id
-             WHERE a.seeded_at IS NOT NULL
             UNION
             SELECT a.id, v.vulnerability_id
-              FROM unnest(${sql.param(versionIds)}::uuid[]) AS s(id)
+              FROM unnest(${sql.param(scannedVersions)}::uuid[]) AS s(id)
               JOIN vulnerability_alert_targets a ON a.version_id = s.id
-              JOIN target_vulnerabilities v ON v.version_id = s.id
-             WHERE a.seeded_at IS NOT NULL) p
+              JOIN target_vulnerabilities v ON v.version_id = s.id) p
      WHERE NOT EXISTS (SELECT 1 FROM vulnerability_alert_items i
                         WHERE i.target_id = p.target_id AND i.vulnerability_id = p.vulnerability_id)
      ORDER BY p.target_id, p.vulnerability_id`);
+
   let added = 0;
   for (let from = 0; from < missing.rows.length; from += BATCH_ROWS) {
     const part = missing.rows.slice(from, from + BATCH_ROWS);
@@ -197,5 +231,13 @@ async function addItems(
       ON CONFLICT (target_id, vulnerability_id) DO NOTHING`);
     added += inserted.rowCount ?? 0;
   }
+
+  // Each target read keeps the `checked_at` of read 1, not the one current now.
+  await tx.execute(sql`
+    UPDATE vulnerability_alert_targets a SET items_checked_at = u.checked_at
+      FROM unnest(${sql.param(scanned.rows.map((row) => row.id))}::uuid[],
+                  ${sql.param(scanned.rows.map((row) => row.checkedAt))}::timestamptz[])
+           AS u(id, checked_at)
+     WHERE a.id = u.id`);
   return added;
 }

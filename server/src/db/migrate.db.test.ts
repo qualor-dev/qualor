@@ -68,8 +68,9 @@ describe('runMigrations / pendingMigrations', () => {
     // decisions of main Trivy issues closed with false positive or won't fix),
     // 0028_vulnerability_vendor_ids (0.16, Trivy's vendor ids on a match; every package matched
     // again, approved 2026-11-14), 0029_vulnerability_alert_projects (0.16, the day one of each
-    // project's vulnerability alerts, approved 2026-11-15).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(30);
+    // project's vulnerability alerts, approved 2026-11-15), 0030_vulnerability_alert_items_checked
+    // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(31);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -1194,8 +1195,14 @@ describe('runMigrations / pendingMigrations', () => {
        VALUES ($1, $2, 'CVE-2021-44228', true, '2026-11-02T09:00:00Z', '2026-11-02T09:00:00Z')`,
       [randomUUID(), bTarget],
     );
+    // The target columns of 0029: a later migration may add one.
     const memory = async () => ({
-      targets: (await db.pool.query(`SELECT * FROM vulnerability_alert_targets ORDER BY id`)).rows,
+      targets: (
+        await db.pool.query(
+          `SELECT id, project_id, branch_id, version_id, day_one, observed_at, seeded_at
+             FROM vulnerability_alert_targets ORDER BY id`,
+        )
+      ).rows,
       items: (await db.pool.query(`SELECT * FROM vulnerability_alert_items ORDER BY id`)).rows,
     });
     const before = await memory();
@@ -1212,5 +1219,46 @@ describe('runMigrations / pendingMigrations', () => {
     // The alert memory is unchanged: the emailed item stays marked.
     expect(await memory()).toEqual(before);
     expect(before.items).toMatchObject([{ kev_notified_at: new Date('2026-11-02T09:00:00Z') }]);
+  });
+
+  it('0030 adds items_checked_at, empty on existing targets', async () => {
+    const db = await createTestDatabase({ migrated: false });
+    t = db;
+    const upTo29 = migrationsUpTo(30); // 0000_extensions … 0029_vulnerability_alert_projects
+    try {
+      await runMigrations(db.pool, upTo29.dir);
+    } finally {
+      upTo29.remove();
+    }
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(journalLength() - 30);
+    const [org, project, main, target] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await db.pool.query(
+      `INSERT INTO organizations (id, key, name) VALUES ($1, 'mig-0030', 'Mig')`,
+      [org],
+    );
+    await db.pool.query(
+      `INSERT INTO projects (id, organization_id, key, name) VALUES ($1, $2, 'mig/a', 'A')`,
+      [project, org],
+    );
+    await db.pool.query(
+      `INSERT INTO branches (id, project_id, kind, name, is_main)
+       VALUES ($1, $2, 'branch', 'main', true)`,
+      [main, project],
+    );
+    await db.pool.query(
+      `INSERT INTO vulnerability_alert_targets (id, project_id, branch_id, day_one, observed_at, seeded_at)
+       VALUES ($1, $2, $3, true, '2026-11-01T09:00:00Z', '2026-11-01T10:00:00Z')`,
+      [target, project, main],
+    );
+
+    await runMigrations(db.pool, MIGRATIONS_DIR);
+    expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
+    // Never scanned: the first pass after the upgrade reads the target's pairs once.
+    const { rows } = await db.pool.query(
+      `SELECT id, seeded_at, items_checked_at FROM vulnerability_alert_targets`,
+    );
+    expect(rows).toEqual([
+      { id: target, seeded_at: new Date('2026-11-01T10:00:00Z'), items_checked_at: null },
+    ]);
   });
 });

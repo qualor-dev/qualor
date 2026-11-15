@@ -687,6 +687,8 @@ describe('the daily vulnerability digest', () => {
           vulnerabilityId,
         })),
       );
+      // The re-check that wrote the rows moves the check row with them.
+      await recheckTargets(t.db);
 
       expect(await run()).toEqual({ mails: 0, deliveries: 1, items: count });
       const [delivery] = await deliveries();
