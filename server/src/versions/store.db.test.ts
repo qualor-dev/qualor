@@ -37,12 +37,15 @@ describe('upsertVersion', () => {
     await t.close();
   });
 
+  /** The analysis the last {@link write} made. */
+  let lastAnalysisId = '';
   async function write(
     label: string,
     source: 'tag' | 'label',
     extra: { dependencies?: (typeof DEP)[]; at?: string } = {},
   ) {
     const [analysis] = await t.db.insert(analyses).values({ projectId }).returning();
+    lastAnalysisId = analysis!.id;
     return upsertVersion(t.db, {
       projectId,
       label,
@@ -57,6 +60,8 @@ describe('upsertVersion', () => {
   }
   const read = async (label: string) =>
     (await t.db.select().from(projectVersions).where(eq(projectVersions.label, label)))[0]!;
+  const packagesOf = async (versionId: string) =>
+    t.db.select().from(versionDependencies).where(eq(versionDependencies.versionId, versionId));
 
   it('keeps a tag version when a label write meets it, with its inventory', async () => {
     const created = await write('1.0.0', 'tag', { dependencies: [DEP] });
@@ -141,5 +146,35 @@ describe('upsertVersion', () => {
   it('sets has_inventory on a label version', async () => {
     await write('4.0.0', 'label', { dependencies: [DEP] });
     expect((await read('4.0.0')).hasInventory).toBe(true);
+  });
+
+  it('dates a version taken over by a tag scan without an inventory', async () => {
+    for (const [label, tagAt] of [
+      ['7.0.0', '2026-10-05T10:00:00Z'],
+      // An older tag date: a takeover is never stale.
+      ['7.1.0', '2026-09-20T10:00:00Z'],
+    ] as const) {
+      await write(label, 'label', { dependencies: [DEP], at: '2026-10-01T10:00:00Z' });
+      const result = await write(label, 'tag', { at: tagAt });
+      expect(result, label).not.toBe('stale');
+      const version = await read(label);
+      expect(version, label).toMatchObject({
+        source: 'tag',
+        tag: `v${label}`,
+        analyzedAt: new Date(tagAt),
+        analysisId: lastAnalysisId,
+        hasInventory: true,
+      });
+      // The packages and ids stay those of the label scan.
+      expect(await packagesOf(version.id), label).toHaveLength(1);
+    }
+  });
+
+  it('keeps a tag version when a label write without inventory meets it', async () => {
+    await write('6.0.0', 'tag', { dependencies: [DEP] });
+    const before = await read('6.0.0');
+    expect(await write('6.0.0', 'label', { at: '2026-10-02T10:00:00Z' })).toBe('kept');
+    expect(await read('6.0.0')).toEqual(before);
+    expect(await packagesOf(before.id)).toHaveLength(1);
   });
 });

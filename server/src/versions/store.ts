@@ -13,8 +13,8 @@ export interface UpsertVersionInput {
   analyzedAt: Date;
   /**
    * The report's dependency inventory and `.trivyignore` ids (null when it carried none). Left
-   * out when the report carried no inventory: an existing version then keeps its packages, its
-   * ids, its analysis and its date.
+   * out when the report carried no inventory: an existing version then keeps its packages and its
+   * ids, and its analysis and date unless a tag scan takes it over from a label.
    */
   inventory?: { dependencies: readonly DependencyEntry[]; ignores: DependencyIgnore[] | null };
 }
@@ -61,7 +61,14 @@ export async function upsertVersion(
     .values({ projectId: input.projectId, label: input.label, ...owner, ...snapshot })
     .onConflictDoUpdate({
       target: [projectVersions.projectId, projectVersions.label],
-      set: { ...owner, ...(inventory ? snapshot : {}), updatedAt: sql`now()` },
+      set: {
+        ...owner,
+        // Without an inventory a takeover still dates the version by its tag scan; the version
+        // keeps its packages and ids, and so its has_inventory.
+        ...(takesOver && { analysisId: input.analysisId, analyzedAt: input.analyzedAt }),
+        ...(inventory && snapshot),
+        updatedAt: sql`now()`,
+      },
       // The 'kept' rule again, under the row's lock: a tag scan's version that committed after
       // the read above is not replaced either.
       setWhere: sql`${projectVersions.source} <> 'tag' OR excluded.source = 'tag'`,
