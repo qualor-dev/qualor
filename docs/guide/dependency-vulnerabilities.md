@@ -31,8 +31,8 @@ Some states replace the table:
 | The tab says | When |
 |---|---|
 | "No vulnerability data yet." | the server has no database. Instance admins get a link to **Settings → Vulnerability database**. Everyone else is told to ask an instance admin |
-| "Vulnerability monitoring is turned off for this server." | the instance switch is off. Instance admins get a link to **Settings → Vulnerability database**. Everyone else is told to ask an instance admin. The project's Vulnerability monitoring settings say the same |
-| "Vulnerability monitoring is off for this project." | the project's switch is off. Organization and project admins get a link to the project settings |
+| "Vulnerability monitoring is turned off for this server." | a link to the tab is opened while the instance switch is off. Instance admins get a link to **Settings → Vulnerability database**. Everyone else is told to ask an instance admin. The project's Vulnerability monitoring settings say the same |
+| "Vulnerability monitoring is off for this project." | a link to the tab is opened while the project's switch is off. Organization and project admins get a link to the project settings |
 | "Not checked yet." | the server has not checked the tracked targets yet. It checks them after the next database update or analysis |
 
 A project with no released versions shows the CI snippets of

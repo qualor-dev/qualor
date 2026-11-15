@@ -165,7 +165,7 @@ qualor:
     when: always
 ```
 
-The directory is inside the checkout; [how the scanner checks it](./languages-and-analyzers.md#the-vulnerability-database).
+The directory is inside the checkout: [the scanner checks each archive first](./languages-and-analyzers.md#the-vulnerability-database).
 
 ## 3. Merge request comments and commit status
 

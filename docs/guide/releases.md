@@ -162,6 +162,10 @@ The panel has the project's switch, then three sections. **Save** applies the ch
 While the project has no version, the panel shows the two CI snippets of
 [Record a version on each tag](#record-a-version-on-each-tag).
 
+With the server's vulnerability monitoring switch off, the panel says so ("Vulnerability monitoring is
+turned off for this server.") and offers no **Manage in Vulnerabilities** link, because the tab is
+hidden. Instance admins get a link to **Settings → Vulnerability database** in its place.
+
 ## Version labels on branch analyses
 
 With **Also take versions from branch analyses that carry project.version** on, an analysis of a
