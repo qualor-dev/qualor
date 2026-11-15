@@ -477,7 +477,7 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         openapi: {
           problems: [403, 413, 415, 422],
           problemDescriptions: {
-            403: 'FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only',
+            403: 'instance admins only',
             413: 'TOO_LARGE: the file is over QUALOR_VULNDB_UPLOAD_MAX_BYTES (default 1 GiB)',
             422: 'INVALID_DATABASE: the file is not a usable Trivy database, or the upload expired; `detail` says why',
           },
@@ -613,7 +613,7 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         openapi: {
           problems: [403, 413, 415, 422],
           problemDescriptions: {
-            403: `FEATURE_NOT_LICENSED (the enterprise feature ${PRIORITY_FEATURE} is not active), FORBIDDEN or INSUFFICIENT_SCOPE`,
+            403: `FEATURE_NOT_LICENSED: the enterprise feature ${PRIORITY_FEATURE} is not active`,
             413: `TOO_LARGE: the body is over ${maxBytes} bytes, or the unpacked file is over its cap or has too many entries; \`detail\` says which`,
             422: 'INVALID_DATA: the file is not a usable catalog or score file; `detail` says why',
           },

@@ -581,7 +581,7 @@ export function ssoRoutes(ctx: PluginContext): FastifyPluginAsync {
           openapi: {
             problems: [429, 503],
             problemDescriptions: {
-              403: 'SESSION_REQUIRED (a browser session only, never a token); FORBIDDEN',
+              403: 'a browser session only, never a token',
               503: 'SSO_UNAVAILABLE: the identity provider cannot be used now',
             },
           },

@@ -439,7 +439,7 @@ export function auditRoutes(ctx: PluginContext): FastifyPluginAsync {
           openapi: {
             problems: [403, 409],
             problemDescriptions: {
-              403: 'Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED (a stream object needs audit-log.stream)',
+              403: 'FEATURE_NOT_LICENSED: a stream object needs audit-log.stream',
               409: 'AUDIT_CHAIN_ANCHOR_MALFORMED (the audit-chain setting must be restored)',
             },
           },

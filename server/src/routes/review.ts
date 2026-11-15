@@ -369,7 +369,6 @@ export const reviewRoutes: FastifyPluginAsyncZod<{
         openapi: {
           problems: [409],
           problemDescriptions: {
-            403: 'FORBIDDEN or INSUFFICIENT_SCOPE',
             409: 'AI_DISABLED (switching it on needs the AI provider configured, in an organisation that may use AI), AI_REVIEW_CONSENT_REQUIRED (switching it on, from off or while consentCurrent is false, needs acknowledgeDataSharing), or AI_REVIEW_PROVIDER_CHANGED (the acknowledgement names another host, model or set of models than the provider configured now; nothing is stored)',
             422: 'VALIDATION_FAILED, or PROJECT_NOT_IN_ORGANIZATION (a project id belongs to another organisation; errors[] names it)',
           },

@@ -125,7 +125,7 @@ export const licensePolicyRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           problems: [400, 409],
           problemDescriptions: {
             400: 'INVALID_LICENSE_ID: an entry of `forbidden` or `allowed` is not an SPDX licence id or "id WITH exception" term; `details.invalid` lists them',
-            403: 'FEATURE_NOT_LICENSED (the enterprise feature license-policy is not active), FORBIDDEN or INSUFFICIENT_SCOPE',
+            403: 'FEATURE_NOT_LICENSED: the enterprise feature license-policy is not active',
             409: 'LICENSE_POLICIES_UNREADABLE: the stored licence policies (instance setting `licensePolicy`) are not an object with an `organizations` object; nothing is changed until an operator fixes or deletes the row',
           },
         },

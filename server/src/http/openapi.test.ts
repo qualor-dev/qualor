@@ -75,6 +75,37 @@ describe('OpenAPI document (api.md §6.1)', () => {
       );
     });
 
+    it('composes a route’s own 403 with the default, as the 409 path does (b1m6)', () => {
+      const text = (path: string, method: string) =>
+        op(path, method).responses['403']?.description ?? '';
+      const standard =
+        'Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)';
+      const auto = text('/api/v0/projects/{id}/ai/auto-fix', 'put');
+      expect(auto.startsWith(standard)).toBe(true);
+      expect(auto).toContain('FEATURE_NOT_LICENSED');
+      expect(auto).toContain('CSRF_FAILED');
+      expect(text('/api/v0/organizations/{id}/ai/review', 'put')).toBe(standard);
+      expect(text('/api/v0/oauth/requests/{id}/decision', 'post')).toContain('CLIENT_NOT_ALLOWED');
+      const codes = [
+        'FORBIDDEN',
+        'INSUFFICIENT_SCOPE',
+        'TOKEN_NOT_ALLOWED',
+        'SESSION_REQUIRED',
+        'CSRF_FAILED',
+        'PASSWORD_CHANGE_REQUIRED',
+      ];
+      for (const [path, item] of Object.entries(doc.paths)) {
+        for (const [method, operation] of Object.entries(item)) {
+          const description = operation.responses['403']?.description ?? '';
+          for (const code of codes) {
+            expect(description.split(code).length - 1, `${method} ${path}: ${code}`).toBeLessThan(
+              2,
+            );
+          }
+        }
+      }
+    });
+
     it('documents 409 AUDIT_CHAIN_ANCHOR_MALFORMED on every audited core change, and on no other (rbac-audit.md §10.2)', () => {
       const text = (path: string, method: string) =>
         op(path, method).responses['409']?.description ?? '';

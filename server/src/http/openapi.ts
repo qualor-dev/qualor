@@ -113,6 +113,9 @@ function documentProblems(
   if (derived && !isPublic) {
     statuses.add(401);
     statuses.add(403);
+    // As the 409 above: a route's own 403 follows the default, so the default's codes stay.
+    const own403 = descriptions[403];
+    if (own403 !== undefined) descriptions[403] = `${PROBLEM_DESCRIPTIONS[403]}; ${own403}`;
   }
   const parameters = operation.parameters ?? [];
   if (derived && parameters.some((p) => p.in === 'path')) statuses.add(404);

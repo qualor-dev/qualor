@@ -101,7 +101,7 @@ export const autoFixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         openapi: {
           problems: [409],
           problemDescriptions: {
-            403: 'FEATURE_NOT_LICENSED (switching it on, from off, needs the enterprise feature llm.auto-fix), FORBIDDEN or INSUFFICIENT_SCOPE',
+            403: 'FEATURE_NOT_LICENSED: switching it on, from off, needs the enterprise feature llm.auto-fix',
             409: 'AI_DISABLED (switching it on, from off, needs the AI provider configured, in an organisation that may use AI with Suggest a fix on)',
           },
         },
@@ -173,7 +173,7 @@ export const autoFixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         openapi: {
           problems: [409],
           problemDescriptions: {
-            403: 'FEATURE_NOT_LICENSED (the enterprise feature llm.auto-fix is not active), FORBIDDEN or INSUFFICIENT_SCOPE',
+            403: 'FEATURE_NOT_LICENSED: the enterprise feature llm.auto-fix is not active',
             409: 'AUTO_FIX_OPT_OUT_LIMIT_REACHED (the organisation has 1 000 projects opted out)',
           },
         },

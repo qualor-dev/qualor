@@ -266,7 +266,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
           problems: [404],
           problemDescriptions: {
             404: 'The project is not found, or target names no branch or version of it; a merge request is not a target (NOT_FOUND)',
-            403: `FEATURE_NOT_LICENSED (\`exploited=true\` needs the enterprise feature ${PRIORITY_FEATURE}), FORBIDDEN or INSUFFICIENT_SCOPE`,
+            403: `FEATURE_NOT_LICENSED: \`exploited=true\` needs the enterprise feature ${PRIORITY_FEATURE}`,
           },
         },
       },

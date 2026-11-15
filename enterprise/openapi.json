@@ -1251,7 +1251,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED (a stream object needs audit-log.stream)",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: a stream object needs audit-log.stream",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4662,7 +4662,7 @@
             }
           },
           "403": {
-            "description": "SESSION_REQUIRED (a browser session only, never a token); FORBIDDEN",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); a browser session only, never a token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10421,7 +10421,7 @@
             }
           },
           "403": {
-            "description": "The feature is not licensed (FEATURE_NOT_LICENSED), or the caller is not an instance administrator (FORBIDDEN)",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the feature is not licensed; instance administrators only",
             "content": {
               "application/problem+json": {
                 "schema": {

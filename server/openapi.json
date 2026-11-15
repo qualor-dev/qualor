@@ -11542,7 +11542,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope)",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature sbom is not licensed; a personal token needs the `read` scope",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11651,7 +11651,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope)",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature sbom is not licensed; a personal token needs the `read` scope",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12503,7 +12503,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (`exploited=true` needs the enterprise feature vuln.priority), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `exploited=true` needs the enterprise feature vuln.priority",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -29532,7 +29532,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); instance admins only",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30161,7 +30161,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature vuln.priority is not active",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30790,7 +30790,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature vuln.priority is not active",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -31286,7 +31286,7 @@
             }
           },
           "403": {
-            "description": "Authenticated but not allowed (FORBIDDEN, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED), or CLIENT_NOT_ALLOWED: the administrator no longer allows this client",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); CLIENT_NOT_ALLOWED: the administrator no longer allows this client",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -35718,7 +35718,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (switching it on, from off, needs the enterprise feature llm.auto-fix), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: switching it on, from off, needs the enterprise feature llm.auto-fix",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -35832,7 +35832,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature llm.auto-fix is not active), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature llm.auto-fix is not active",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -36632,7 +36632,7 @@
             }
           },
           "403": {
-            "description": "FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -37394,7 +37394,7 @@
             }
           },
           "403": {
-            "description": "FEATURE_NOT_LICENSED (the enterprise feature license-policy is not active), FORBIDDEN or INSUFFICIENT_SCOPE",
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature license-policy is not active",
             "content": {
               "application/problem+json": {
                 "schema": {

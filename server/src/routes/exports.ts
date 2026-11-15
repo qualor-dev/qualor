@@ -57,7 +57,7 @@ const file = (description: string, types: readonly string[]) => ({
 });
 
 const problemDescriptions = {
-  403: `FEATURE_NOT_LICENSED (the enterprise feature ${SBOM_FEATURE} is not licensed), INSUFFICIENT_SCOPE (a personal token needs the \`read\` scope)`,
+  403: `FEATURE_NOT_LICENSED: the enterprise feature ${SBOM_FEATURE} is not licensed; a personal token needs the \`read\` scope`,
   404: 'PROJECT_NOT_FOUND (the project does not exist, the caller cannot see it, or a project token belongs to another project), or NOT_FOUND (no such branch or version; for the SBOM, a target without a dependency inventory; for the VEX, vulnerability monitoring is off or the target has not been checked yet)',
   422: 'Validation failed (VALIDATION_FAILED; also `branch` together with `version`)',
 };

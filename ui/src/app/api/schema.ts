@@ -5737,7 +5737,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature sbom is not licensed; a personal token needs the `read` scope */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -5815,7 +5815,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature sbom is not licensed), INSUFFICIENT_SCOPE (a personal token needs the `read` scope) */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature sbom is not licensed; a personal token needs the `read` scope */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -6082,7 +6082,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (`exploited=true` needs the enterprise feature vuln.priority), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `exploited=true` needs the enterprise feature vuln.priority */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13036,7 +13036,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FORBIDDEN or INSUFFICIENT_SCOPE: instance admins only */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); instance admins only */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13220,7 +13220,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature vuln.priority is not active */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13404,7 +13404,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature vuln.priority is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature vuln.priority is not active */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -13742,7 +13742,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Authenticated but not allowed (FORBIDDEN, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED), or CLIENT_NOT_ALLOWED: the administrator no longer allows this client */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); CLIENT_NOT_ALLOWED: the administrator no longer allows this client */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -15348,7 +15348,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (switching it on, from off, needs the enterprise feature llm.auto-fix), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: switching it on, from off, needs the enterprise feature llm.auto-fix */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -15440,7 +15440,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature llm.auto-fix is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature llm.auto-fix is not active */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -15699,7 +15699,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
                 403: {
                     headers: {
                         [name: string]: unknown;
@@ -16104,7 +16104,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FEATURE_NOT_LICENSED (the enterprise feature license-policy is not active), FORBIDDEN or INSUFFICIENT_SCOPE */
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: the enterprise feature license-policy is not active */
                 403: {
                     headers: {
                         [name: string]: unknown;

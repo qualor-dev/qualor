@@ -73,7 +73,7 @@ export const oauthConsentRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         openapi: {
           problems: [404],
           problemDescriptions: {
-            403: 'Authenticated but not allowed (FORBIDDEN, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED), or CLIENT_NOT_ALLOWED: the administrator no longer allows this client',
+            403: 'CLIENT_NOT_ALLOWED: the administrator no longer allows this client',
             422: 'Validation failed (VALIDATION_FAILED; errors[] names each field), also when body.scopes names a scope the client did not ask for',
           },
         },

@@ -131,6 +131,42 @@ describe('enterprise/openapi.json (rbac-audit.md §17)', () => {
     ).toEqual(['application/samlmetadata+xml']);
   }, 60_000);
 
+  it('composes a route’s own 403 with the default and keeps the derived:false texts (b1m6)', async () => {
+    const doc = (await enterpriseOpenApiDocument()) as Doc;
+    const text = (path: string, method: string) =>
+      doc.paths[path]?.[method]?.responses?.['403']?.description ?? '';
+    const standard =
+      'Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)';
+    const bundle = text('/api/v0/ee/support/bundle', 'get');
+    expect(bundle.startsWith(standard)).toBe(true);
+    expect(bundle).toContain('FEATURE_NOT_LICENSED');
+    for (const [path, method] of [
+      ['/api/v0/ee/sso/{id}/start', 'get'],
+      ['/api/v0/ee/sso/finish', 'get'],
+      ['/api/v0/ee/sso/saml/{id}/acs', 'post'],
+      ['/api/v0/ee/scim/v2/{*}', 'get'],
+    ] as const) {
+      expect(text(path, method).startsWith(standard), `${method} ${path}`).toBe(false);
+      expect(text(path, method), `${method} ${path}`).toContain('FEATURE_NOT_LICENSED');
+    }
+    const codes = [
+      'FORBIDDEN',
+      'INSUFFICIENT_SCOPE',
+      'TOKEN_NOT_ALLOWED',
+      'SESSION_REQUIRED',
+      'CSRF_FAILED',
+      'PASSWORD_CHANGE_REQUIRED',
+    ];
+    for (const [path, item] of Object.entries(doc.paths)) {
+      for (const [method, operation] of Object.entries(item)) {
+        const description = operation.responses?.['403']?.description ?? '';
+        for (const code of codes) {
+          expect(description.split(code).length - 1, `${method} ${path}: ${code}`).toBeLessThan(2);
+        }
+      }
+    }
+  }, 60_000);
+
   it('matches the committed file (run `pnpm --filter @qualor/enterprise openapi` to update it)', async () => {
     expect(await readFile(ENTERPRISE_OPENAPI_PATH, 'utf8')).toBe(
       serializeOpenApi(await enterpriseOpenApiDocument()),

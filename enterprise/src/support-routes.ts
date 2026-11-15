@@ -29,7 +29,7 @@ export function supportRoutes(ctx: PluginContext): FastifyPluginAsync {
           openapi: {
             problems: [429],
             problemDescriptions: {
-              403: 'The feature is not licensed (FEATURE_NOT_LICENSED), or the caller is not an instance administrator (FORBIDDEN)',
+              403: 'FEATURE_NOT_LICENSED: the feature is not licensed; instance administrators only',
               429: 'A support bundle is already being prepared on this instance (RATE_LIMITED)',
             },
           },
