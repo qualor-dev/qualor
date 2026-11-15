@@ -3,6 +3,7 @@ import { createWriteStream, rmSync, renameSync, type WriteStream } from 'node:fs
 import http, { type IncomingMessage } from 'node:http';
 import https from 'node:https';
 import { z } from 'zod';
+import { trackWorkDir, untrackWorkDir } from '../analyzers/runner';
 import { VERSION } from '../index';
 import type { Logger } from '../log';
 import { isMissingEndpoint } from './baseline-client';
@@ -139,6 +140,8 @@ function attempt(
       const stream = out;
       const cleanup = () => {
         if (!result.ok) unlinkQuietly(partial);
+        // Renamed to `dest` or removed: nothing left for the signal handler.
+        untrackWorkDir(partial);
         resolve(result);
       };
       if (stream === undefined) cleanup();
@@ -196,6 +199,8 @@ function attempt(
         fail('size mismatch');
         return;
       }
+      // Ctrl+C or a cancelled job removes the partial file too (B1-d), until `finish` settles.
+      trackWorkDir(partial);
       // Readable by all, like server.json: the archive is public advisory data, and a CI cache
       // step that runs as another user (actions/cache after the scan-action) must read it.
       const stream = (opts.createStream ?? createWriteStream)(partial, {

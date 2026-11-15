@@ -258,6 +258,14 @@ export function trackWorkDir(dir: string): void {
   activeWorkDirs.add(dir);
 }
 
+/**
+ * Forgets a tracked path without removing it: a file that was renamed into place, or one its owner
+ * has removed already.
+ */
+export function untrackWorkDir(dir: string): void {
+  activeWorkDirs.delete(dir);
+}
+
 /** Removes a `createWorkDir` directory (failures are logged at debug, never thrown). */
 export function releaseWorkDir(dir: string, log: Logger): void {
   activeWorkDirs.delete(dir);

@@ -12,23 +12,42 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import type { ServerResponse } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { json, problem, useTestServers } from '../../test/http';
 import { useTempDirs } from '../../test/tmp';
+import type * as Runner from '../analyzers/runner';
+import { releaseWorkDir, removeActiveWorkDirs, trackWorkDir } from '../analyzers/runner';
 import { readDatabaseDate } from '../analyzers/trivy';
 import { silentLogger } from '../log';
 import type { ServerEndpoint } from '../server/http';
 import { resolveVulnerabilityDb, vulnerabilityCacheDir } from './vulndb';
 
+// The real signal-cleanup registry, watched: which paths a Ctrl+C would remove, and when.
+vi.mock('../analyzers/runner', async (importOriginal) => {
+  const real = await importOriginal<typeof Runner>();
+  return {
+    ...real,
+    trackWorkDir: vi.fn(real.trackWorkDir),
+    releaseWorkDir: vi.fn(real.releaseWorkDir),
+  };
+});
+
 const serve = useTestServers();
 const tmp = useTempDirs();
+beforeEach(() => {
+  vi.mocked(trackWorkDir).mockClear();
+  vi.mocked(releaseWorkDir).mockClear();
+});
 afterEach(() => {
   vi.restoreAllMocks();
 });
+/** POSIX only: file links (a privilege on Windows), modes, removing a file that is open. */
+const posix = process.platform !== 'win32';
 const TOKEN = 'qlr_prj_vulndb_choice_token';
 const NOW = new Date('2026-10-31T12:00:00Z');
 const HOUR = 60 * 60 * 1000;
@@ -77,6 +96,18 @@ interface FakeVulndb {
   archives?: Buffer[];
   /** Answers every download with this status instead. */
   downloadStatus?: number;
+  /** Answers the download of a served archive instead of `sendArchive`. */
+  onDownload?: (res: ServerResponse, body: Buffer) => void | Promise<void>;
+}
+
+/** The download route's answer: the whole archive. */
+function sendArchive(res: ServerResponse, body: Buffer): void {
+  res.writeHead(200, {
+    'content-type': 'application/gzip',
+    'content-length': String(body.length),
+    etag: `"${sha(body)}"`,
+  });
+  res.end(body);
 }
 
 /** The scanner routes of a Qualor server (metadata and download), recording request paths. */
@@ -84,7 +115,7 @@ async function fakeServer(
   o: FakeVulndb,
 ): Promise<{ endpoint: ServerEndpoint; paths: string[]; close: () => Promise<void> }> {
   const paths: string[] = [];
-  const s = await serve((req, res) => {
+  const s = await serve(async (req, res) => {
     const u = new URL(req.url ?? '/', 'http://x');
     paths.push(u.pathname);
     if (u.pathname === META_PATH) {
@@ -98,12 +129,7 @@ async function fakeServer(
       problem(res, o.downloadStatus ?? 404, 'NOT_FOUND');
       return;
     }
-    res.writeHead(200, {
-      'content-type': 'application/gzip',
-      'content-length': String(body.length),
-      etag: `"${sha(body)}"`,
-    });
-    res.end(body);
+    await (o.onDownload ?? sendArchive)(res, body);
   });
   const close = () =>
     new Promise<void>((resolve) => {
@@ -161,6 +187,7 @@ async function choose(o: {
   root?: string;
   tempRoot?: string;
   env?: Record<string, string>;
+  unpackLimits?: { maxBytes?: number; deadlineMs?: number };
 }) {
   return resolveVulnerabilityDb({
     endpoint: o.endpoint,
@@ -169,6 +196,7 @@ async function choose(o: {
     log: silentLogger,
     now: () => NOW,
     tempRoot: o.tempRoot ?? tmp(),
+    ...(o.unpackLimits !== undefined && { unpackLimits: o.unpackLimits }),
   });
 }
 
@@ -507,7 +535,6 @@ describe('resolveVulnerabilityDb: a new archive that is not usable keeps the cac
 });
 
 describe('resolveVulnerabilityDb: private copies a killed scan left behind', () => {
-  const posix = process.platform !== 'win32';
   /** The entry itself (a link too), not what it points to. */
   const present = (p: string) => {
     try {
@@ -674,6 +701,167 @@ describe('resolveVulnerabilityDb: a poisoned or broken cache (Review Focus 1)', 
     await got.cleanup();
     expect(readdirSync(tempRoot)).toEqual([]);
   });
+});
+
+describe('resolveVulnerabilityDb: the server’s inflate caps (B1-e)', () => {
+  it('treats an archive past the inflate cap as no Trivy database', async () => {
+    const archive = trivyArchive({
+      metadata: metadataJson(2, NEW.updatedAt),
+      db: Buffer.alloc(2 * 1024 * 1024),
+    });
+    const bomb: Dataset = { archive, digest: sha(archive), db: '', updatedAt: NEW.updatedAt };
+    const server = await fakeServer({ meta: meta(bomb), archives: [archive] });
+    const tempRoot = tmp();
+    const cache = fillCache(path.join(tmp(), 'cache'), archive);
+    const got = await choose({
+      endpoint: server.endpoint,
+      cache,
+      tempRoot,
+      unpackLimits: { maxBytes: 1024 * 1024 },
+    });
+    expect(got.dir).toBeNull();
+    expect(got.warnings).toEqual([failed('the archive is not a Trivy database', IMAGE)]);
+    expect(downloads(server.paths)).toEqual([]);
+    expect(readdirSync(cache)).toEqual(['db.tar.gz']);
+    await got.cleanup();
+    expect(readdirSync(tempRoot)).toEqual([]);
+  });
+
+  it('tries a slow unpack again', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const cache = fillCache(path.join(tmp(), 'cache'), NEW.archive);
+    const slow = await choose({
+      endpoint: server.endpoint,
+      cache,
+      unpackLimits: { deadlineMs: -1 },
+    });
+    expect(slow.dir).toBeNull();
+    expect(slow.warnings).toEqual([failed('unpacking the database took too long', IMAGE)]);
+    expect(readdirSync(cache)).toEqual(['db.tar.gz']);
+    await slow.cleanup();
+    // A slow disk is not the archive's fault: the next scan unpacks the same archive.
+    const next = await choose({ endpoint: server.endpoint, cache });
+    expect(next.dir).toBe(cache);
+    expect(databaseIn(next.dir)).toEqual(holds(NEW));
+    expect(next.warnings).toEqual([]);
+    expect(downloads(server.paths)).toEqual([]);
+    await next.cleanup();
+  });
+});
+
+describe('resolveVulnerabilityDb: a temporary directory that cannot be made (D13-2)', () => {
+  const WRITE_FAILED = failed('cannot write the database file', IMAGE);
+  /** mkdtemp fails under a directory that does not exist. */
+  const missing = () => path.join(tmp(), 'missing');
+
+  it('a cache inside the checkout holding the current archive: no download', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const root = tmp();
+    const cache = fillCache(path.join(root, '.qualor', 'trivy'), NEW.archive);
+    const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot: missing() });
+    expect(downloads(server.paths)).toEqual([]);
+    expect(got.dir).toBeNull();
+    expect(got.warnings).toEqual([WRITE_FAILED]);
+    await got.cleanup();
+  });
+
+  it('a cache inside the checkout without an archive: one download', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const root = tmp();
+    const cache = path.join(root, '.qualor', 'trivy');
+    const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot: missing() });
+    expect(downloads(server.paths)).toHaveLength(1);
+    expect(got.dir).toBeNull();
+    expect(got.warnings).toEqual([WRITE_FAILED]);
+    expect(readdirSync(cache)).toEqual([]);
+    await got.cleanup();
+  });
+
+  it('a cache that cannot be created: no download', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const blocker = path.join(tmp(), 'file');
+    writeFileSync(blocker, 'a file, not a directory');
+    const got = await choose({
+      endpoint: server.endpoint,
+      cache: path.join(blocker, 'cache'),
+      tempRoot: missing(),
+    });
+    expect(downloads(server.paths)).toEqual([]);
+    expect(got.dir).toBeNull();
+    expect(got.warnings).toEqual([WRITE_FAILED]);
+    await got.cleanup();
+  });
+});
+
+describe('resolveVulnerabilityDb: Ctrl+C during a download (D13-3)', () => {
+  const INCOMING = /^db\.[0-9a-f]{12}\.tar\.gz$/;
+  const partials = (dir: string) => readdirSync(dir).filter((n) => n.endsWith('.partial'));
+  /** Polls `ready` every 5 ms for at most 5 s. */
+  async function until(ready: () => boolean): Promise<boolean> {
+    for (let i = 0; i < 1000; i++) {
+      if (ready()) return true;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    return false;
+  }
+
+  it('tracks the incoming archive in the cache until it is kept', async () => {
+    let atDownload: string[] = [];
+    const server = await fakeServer({
+      meta: meta(NEW),
+      archives: [NEW.archive],
+      onDownload: (res, body) => {
+        atDownload = vi.mocked(trackWorkDir).mock.calls.map(([p]) => p);
+        sendArchive(res, body);
+      },
+    });
+    const cache = path.join(tmp(), 'cache');
+    const got = await choose({ endpoint: server.endpoint, cache });
+    const incoming = atDownload.filter(
+      (p) => path.dirname(p) === cache && INCOMING.test(path.basename(p)),
+    );
+    expect(incoming).toHaveLength(1);
+    expect(vi.mocked(releaseWorkDir).mock.calls.map(([p]) => p)).toContain(incoming[0]);
+    // Released after its rename: the cache keeps the archive.
+    expect(readFileSync(path.join(cache, 'db.tar.gz')).equals(NEW.archive)).toBe(true);
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    await got.cleanup();
+  });
+
+  it.runIf(posix)(
+    'leaves no partial file after a scan stopped mid-download, and the next scan downloads once',
+    async () => {
+      const cache = path.join(tmp(), 'cache');
+      let removed: boolean | null = null;
+      const stopped = await fakeServer({
+        meta: meta(NEW),
+        archives: [NEW.archive],
+        onDownload: async (res, body) => {
+          res.writeHead(200, {
+            'content-type': 'application/gzip',
+            'content-length': String(body.length),
+          });
+          res.write(body.subarray(0, Math.floor(body.length / 2)));
+          const found = await until(() => partials(cache).length === 1);
+          // What the SIGINT/SIGTERM handler runs.
+          removeActiveWorkDirs();
+          removed = found && partials(cache).length === 0;
+          res.destroy();
+        },
+      });
+      const first = await choose({ endpoint: stopped.endpoint, cache });
+      expect(removed).toBe(true);
+      expect(first.dir).toBeNull();
+      await first.cleanup();
+
+      const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+      const got = await choose({ endpoint: server.endpoint, cache });
+      expect(downloads(server.paths)).toHaveLength(1);
+      expect(databaseIn(got.dir)).toEqual(holds(NEW));
+      await got.cleanup();
+      expect(readdirSync(cache).sort()).toEqual(['db', 'db.tar.gz', 'server.json']);
+    },
+  );
 });
 
 describe('resolveVulnerabilityDb: the cache directory', () => {

@@ -11,13 +11,29 @@ import https from 'node:https';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { json, problem, useTestServers } from '../../test/http';
 import { TEST_CA_PEM, TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from '../../test/tls';
 import { useTempDirs } from '../../test/tmp';
+import type * as Runner from '../analyzers/runner';
+import { trackWorkDir, untrackWorkDir } from '../analyzers/runner';
 import { silentLogger } from '../log';
 import type { ServerEndpoint } from './http';
 import { downloadServerVulndb, fetchServerVulndb } from './vulndb';
+
+// The real signal-cleanup registry, watched: which paths the download leaves for a Ctrl+C.
+vi.mock('../analyzers/runner', async (importOriginal) => {
+  const real = await importOriginal<typeof Runner>();
+  return {
+    ...real,
+    trackWorkDir: vi.fn(real.trackWorkDir),
+    untrackWorkDir: vi.fn(real.untrackWorkDir),
+  };
+});
+beforeEach(() => {
+  vi.mocked(trackWorkDir).mockClear();
+  vi.mocked(untrackWorkDir).mockClear();
+});
 
 const serve = useTestServers();
 const tmp = useTempDirs();
@@ -400,6 +416,36 @@ describe('downloadServerVulndb', () => {
     });
     expect(got).toEqual({ ok: false, reason: 'cannot write the database file' });
     expect(leftovers(dir)).toEqual([]);
+  });
+
+  it('tracks the partial file for the signal cleanup while it downloads', async () => {
+    const paths = (fn: typeof trackWorkDir) => vi.mocked(fn).mock.calls.map(([p]) => p);
+    const download = async (body: Buffer) => {
+      const dest = path.join(tmp(), 'db.tar.gz');
+      const s = await serve((_req, res) => send(res, body));
+      const opened: { file: string; tracked: string[]; untracked: string[] }[] = [];
+      const got = await downloadServerVulndb(endpoint(s.url), digest, payload.length, dest, {
+        createStream: (file, o) => {
+          // Before the first byte reaches the file.
+          opened.push({ file, tracked: paths(trackWorkDir), untracked: paths(untrackWorkDir) });
+          return createWriteStream(file, o);
+        },
+      });
+      expect(opened).toHaveLength(1);
+      const { file, tracked, untracked } = opened[0]!;
+      expect(file.slice(0, dest.length)).toBe(dest);
+      expect(file.slice(dest.length)).toMatch(/^\.[0-9a-f]{12}\.partial$/);
+      expect(tracked).toEqual([file]);
+      expect(untracked).toEqual([]);
+      expect(paths(untrackWorkDir)).toEqual([file]);
+      vi.mocked(trackWorkDir).mockClear();
+      vi.mocked(untrackWorkDir).mockClear();
+      return got;
+    };
+    expect(await download(payload)).toEqual({ ok: true });
+    const wrong = Buffer.from(payload);
+    wrong[0] = wrong[0]! ^ 0xff;
+    expect(await download(wrong)).toEqual({ ok: false, reason: 'checksum mismatch' });
   });
 
   describe('TLS', () => {

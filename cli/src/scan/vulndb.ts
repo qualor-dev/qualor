@@ -15,7 +15,14 @@ import { open, type FileHandle } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { readTarGz, TarError, type TarWant } from '@qualor/shared/tar';
+import {
+  readTarGz,
+  TarError,
+  VULNDB_INFLATE_DEADLINE_MS,
+  VULNDB_MAX_INFLATED_BYTES,
+  type TarLimits,
+  type TarWant,
+} from '@qualor/shared/tar';
 import { real, within } from '../analyzers/binary';
 import { createWorkDir, releaseWorkDir, trackWorkDir } from '../analyzers/runner';
 import { cacheInRepository, readDatabaseDate } from '../analyzers/trivy';
@@ -34,6 +41,8 @@ export interface VulnerabilityDbInput {
   now: () => Date;
   /** Where a private copy is extracted (the system's temporary directory by default). */
   tempRoot?: string;
+  /** Test seam: smaller inflate caps than the server's (`VULNDB_MAX_INFLATED_BYTES`, …). */
+  unpackLimits?: { maxBytes?: number; deadlineMs?: number };
 }
 
 export interface VulnerabilityDbChoice {
@@ -89,6 +98,7 @@ const UNTRUSTED: Warning = {
 const IMAGE = 'using the database in the scanner image';
 const UNUSABLE = 'the archive is not a Trivy database';
 const WRITE_FAILED = 'cannot write the database file';
+const TOO_SLOW = 'unpacking the database took too long';
 
 /** The cache files (P4): the archive, and what the server said of it (a hint, never trusted). */
 const ARCHIVE = 'db.tar.gz';
@@ -294,9 +304,11 @@ const wantedEntry: TarWant = (name) => {
 
 /**
  * Extracts the open archive into `db`: `trivy.db` streamed to disk, `metadata.json` checked
- * (schema version 2 and a date) and written; nothing else. Null when done, else why not.
+ * (schema version 2 and a date) and written; nothing else. Null when done, else why not. Past
+ * `limits`' bytes the archive is unusable (a bomb or a broken file); past its deadline it is not
+ * (a slow disk), so the next scan tries it again.
  */
-async function unpack(fh: FileHandle, db: string): Promise<Failure | null> {
+async function unpack(fh: FileHandle, db: string, limits: TarLimits): Promise<Failure | null> {
   // Filled by the entry callback.
   const found: { metadata: Buffer | null; db: boolean } = { metadata: null, db: false };
   try {
@@ -319,10 +331,13 @@ async function unpack(fh: FileHandle, db: string): Promise<Failure | null> {
           createWriteStream(path.join(db, 'trivy.db'), { flags: 'wx', mode: 0o644 }),
         );
       },
+      limits,
     );
   } catch (err) {
-    if (err instanceof TarError) return { reason: UNUSABLE, bad: true };
-    throw err;
+    if (!(err instanceof TarError)) throw err;
+    return err.limit === 'deadline'
+      ? { reason: TOO_SLOW, bad: false }
+      : { reason: UNUSABLE, bad: true };
   }
   const meta = found.metadata;
   if (!found.db || meta === null) return { reason: UNUSABLE, bad: true };
@@ -498,8 +513,12 @@ class Choice {
       if (file === null || !regularFile(file, MAX_ARCHIVE_BYTES)) {
         return { ok: false, digest: null };
       }
-      // O_NONBLOCK: a FIFO swapped in after the check cannot block the scan.
-      fh = await open(file, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+      // Swapped in after the check, a FIFO cannot block the scan (O_NONBLOCK) and a link is not
+      // followed (O_NOFOLLOW: the open fails). Windows has neither flag.
+      fh = await open(
+        file,
+        constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0),
+      );
       const stat = await fh.stat();
       if (!stat.isFile() || stat.size === 0 || stat.size > MAX_ARCHIVE_BYTES) {
         return { ok: false, digest: null };
@@ -535,17 +554,25 @@ class Choice {
       if (updatedAt !== null) return { dir: cache, updatedAt };
     }
     const shared = cache !== null && !this.inside && this.cacheWritable() ? cache : null;
-    const staging = path.join(shared ?? this.workDir(), `db.${hex6()}.tmp`);
-    // A staging copy in the cache is removed on Ctrl+C too (the work directory already is).
-    if (shared !== null) trackWorkDir(staging);
+    let staging: string | null = null;
     const discard = () => {
+      if (staging === null) return;
       if (shared === null) removeQuietly(staging, this.log);
       else releaseWorkDir(staging, this.log);
     };
-    const db = path.join(staging, 'db');
     try {
+      // A private work directory that cannot be made is a write failure, as a full disk is.
+      staging = path.join(shared ?? this.workDir(), `db.${hex6()}.tmp`);
+      // A staging copy in the cache is removed on Ctrl+C too (the work directory already is).
+      if (shared !== null) trackWorkDir(staging);
+      const db = path.join(staging, 'db');
       mkdirSync(db, { recursive: true });
-      const problem = await unpack(fh, db);
+      // The server's caps: a bomb cannot fill the disk, a stalled disk cannot hold the scan.
+      const limits = this.input.unpackLimits;
+      const problem = await unpack(fh, db, {
+        maxBytes: limits?.maxBytes ?? VULNDB_MAX_INFLATED_BYTES,
+        deadline: Date.now() + (limits?.deadlineMs ?? VULNDB_INFLATE_DEADLINE_MS),
+      });
       const updatedAt = problem === null ? readDatabaseDate(staging) : null;
       if (problem !== null || updatedAt === null) {
         discard();
@@ -736,22 +763,35 @@ async function downloadCurrent(
   attempts: Attempts,
   writable: boolean,
 ): Promise<VulnerabilityDbChoice | null> {
-  const incoming =
-    writable && c.cache !== null
-      ? path.join(c.cache, `db.${hex6()}.tar.gz`)
-      : path.join(c.workDir(), ARCHIVE);
-  const mib = Math.max(1, Math.round(current.sizeBytes / 1024 / 1024));
-  c.log.info(`downloading the vulnerability database from the server (${mib} MiB)`);
-  const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, incoming);
-  if (got.ok) {
-    const used = await useDownload(c, input, current, attempts, incoming, writable);
-    if (used !== null) return used;
-    attempts.reason ??= 'unexpected response';
-  } else {
-    attempts.reason = got.reason;
+  const cache = writable ? c.cache : null;
+  let incoming: string;
+  try {
+    incoming =
+      cache !== null ? path.join(cache, `db.${hex6()}.tar.gz`) : path.join(c.workDir(), ARCHIVE);
+  } catch (err) {
+    c.log.debug(`cannot make a directory for the vulnerability database: ${message(err)}`);
+    attempts.reason = WRITE_FAILED;
+    return null;
   }
-  removeQuietly(incoming, c.log);
-  return null;
+  // Ctrl+C removes an archive in the cache until it is kept (the work directory already is).
+  if (cache !== null) trackWorkDir(incoming);
+  try {
+    const mib = Math.max(1, Math.round(current.sizeBytes / 1024 / 1024));
+    c.log.info(`downloading the vulnerability database from the server (${mib} MiB)`);
+    const got = await downloadServerVulndb(endpoint, current.digest, current.sizeBytes, incoming);
+    if (got.ok) {
+      const used = await useDownload(c, input, current, attempts, incoming, writable);
+      if (used !== null) return used;
+      attempts.reason ??= 'unexpected response';
+    } else {
+      attempts.reason = got.reason;
+    }
+    removeQuietly(incoming, c.log);
+    return null;
+  } finally {
+    // Renamed to the cached archive or removed by now: the release only forgets it.
+    if (cache !== null) releaseWorkDir(incoming, c.log);
+  }
 }
 
 async function served(
