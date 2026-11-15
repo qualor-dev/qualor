@@ -21,8 +21,9 @@ Trivy is the statically linked upstream build, the same binary as in `qualor/sca
 the Go modules it compiles in are under MPL-2.0 (hashicorp's `go-getter`, `hcl/v2` and eight
 others, and `cyphar/filepath-securejoin`); their source is in `qualor/scanner-sources:<same tag>`,
 and the full list is in the notice of `qualor/scanner`. The image carries no Trivy database:
-the server downloads it, or an administrator uploads it, and its sources keep their own terms
-(GitHub Advisory Database CC-BY-4.0, the NVD, Red Hat and others; see
+the server downloads it, or an administrator uploads it. The vulnerability database the server
+downloads at runtime stays under its sources' terms; Qualor's licences do not cover it (GitHub
+Advisory Database CC-BY-4.0, the NVD, Red Hat and others; see
 https://github.com/aquasecurity/trivy-db).
 
 Named individually, because they read the untrusted OIDC and SAML bytes of single sign-on: `openid-client` 6.8.8 (Filip Skokan), `jose` 6.2.12, `oauth4webapi` 3.8.8, `@node-saml/node-saml`

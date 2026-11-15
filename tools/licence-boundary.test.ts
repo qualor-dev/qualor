@@ -65,6 +65,8 @@ describe('the licence boundary (AGENTS.md rule 8, enterprise.md §16)', () => {
       /a valid, paid Qualor Enterprise subscription or a trial, each evidenced by a licence key issued for you/,
     );
     expect(text).toMatch(/A trial key has no grace period/);
+    // Third-party data, such as the vulnerability databases, is not the Software (D31-6).
+    expect(text).toMatch(/third-party data, such as vulnerability databases, keep their own terms/);
     // The README says the same.
     const readme = read('enterprise/README.md').replace(/\s+/g, ' ');
     expect(readme).toMatch(/only while a licence key is valid, including its 14-day grace period/);

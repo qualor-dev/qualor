@@ -40,7 +40,8 @@ Everything outside enterprise/ is licensed under the MIT licence in the root LIC
    to use it in production without a subscription or a trial. You may not otherwise distribute,
    sublicense or sell the Software or modified versions of it.
 
-7. Third-party components keep their own licences.
+7. Third-party components, and third-party data, such as vulnerability databases, keep their own
+   terms and are not covered by this licence.
 
 8. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
    BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND

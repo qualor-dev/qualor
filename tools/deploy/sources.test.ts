@@ -519,6 +519,8 @@ describe('the notices (rulings L1 and L2)', () => {
     for (const part of ['glibc', 'gcc-12', 'openssl', 'Node.js', 'ICU', 'NODE-LICENSE.txt']) {
       expect(notice, part).toContain(part);
     }
+    // D31-6: the database the server downloads is third-party data, outside Qualor's licences.
+    expect(notice.replace(/\s+/g, ' ')).toMatch(/stays under its sources' terms/);
   });
 
   it('names every bundled Java library in the README of the scanner sources image', () => {
