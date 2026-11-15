@@ -36,7 +36,7 @@ for C and C++ included.
 - From Qualor 0.9.0: Qualor's Roslyn taint engine for the C# security rules, run by
   `qualor dotnet end` on the rules release when it includes the engine (it needs the .NET SDK, so it runs only in this
   image).
-- Runs as the user `node` (uid 1000), like the scanner; about 5.8 GB (about 1.7 GB more than
+- Runs as the user `node` (uid 1000), like the scanner; about 4.4 GB (about 1.7 GB more than
   `qualor/scanner`). It is built from the `qualor/scanner` image of the same tag, and released
   with that tag right after it.
 

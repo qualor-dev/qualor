@@ -79,7 +79,7 @@ Before `qualor scan`:
 ### What is inside
 
 The `qualor` CLI (entrypoint `qualor`, default command `scan`) is a single binary built with
-Bun. It runs as the user `node` (uid 1000) in `/src`. The image is about 4.1 GB, and every base
+Bun. It runs as the user `node` (uid 1000) in `/src`. The image is about 2.7 GB, and every base
 image is pinned by digest.
 
 | Tool                       | Version                                                                             | For                                                  |

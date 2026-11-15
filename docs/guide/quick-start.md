@@ -81,7 +81,7 @@ GitLab, or to see each part.
 docker pull qualor/scanner:0.15
 ```
 
-It is about 4.1 GB, 1.4 GB of which is Trivy's vulnerability database. CI runners pull it the same
+It is about 2.7 GB, 91 MiB of which is Trivy's vulnerability database. CI runners pull it the same
 way.
 
 ### 3. Create a project and a token
