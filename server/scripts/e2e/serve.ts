@@ -324,10 +324,13 @@ async function main(): Promise<void> {
   }
 
   // The licensed server (plan 4C): its own database, the key in the environment, the plugin.
+  // 6G R7, 6-15: chat kinds may post to the fake Slack receiver here too (the Business server's
+  // exploited-vulnerability webhook, business.spec.ts).
   const enterpriseEnv = {
     DATABASE_URL: databaseUrl(adminUrl, enterpriseName),
     QUALOR_LICENSE: signTest(E2E_SIGNER, planPayload('E2E Enterprise', ENTERPRISE_FEATURES)),
     QUALOR_PLUGIN_PATHS: plugin,
+    QUALOR_CHAT_TEST_HOSTS: `127.0.0.1:${chatPort}`,
   };
   // QUALOR_PUBLIC_URL: enabling an SSO connection needs it (sso-scim.md §4.1); the seeding server
   // uses the served one's, so the connections' addresses are those the served server shows.

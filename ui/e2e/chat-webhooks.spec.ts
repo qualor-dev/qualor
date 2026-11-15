@@ -16,6 +16,9 @@ test('a Slack webhook: create, masked in the list, Send test reaches the receive
   const dialog = page.getByRole('dialog', { name: 'New webhook' });
   await dialog.getByRole('radio', { name: 'Slack' }).check();
   await expect(dialog.getByRole('link', { name: 'How to get a Slack webhook URL' })).toBeVisible();
+  // The exploited-vulnerability event needs `vuln.alerts` (Business, business.spec.ts).
+  await expect(dialog.getByRole('checkbox', { name: 'Weekly security digest' })).toBeVisible();
+  await expect(dialog.getByText('Exploited vulnerabilities (at once)')).toHaveCount(0);
   await expect(dialog.getByText('QUALOR_PUBLIC_URL is not set')).toHaveCount(0);
   await dialog.getByLabel('URL').fill(`${CHAT_URL}/services/T0E2E/B0E2E/e2eSecretPart9876`);
   await dialog.getByLabel('Time zone of the weekly digest (Monday 09:00)').fill('Europe/Berlin');

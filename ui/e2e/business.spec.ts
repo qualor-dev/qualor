@@ -1,9 +1,16 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { expect, expectAccessible, test } from './fixtures';
-import { BUSINESS_URL, DEPENDENCIES, PAYMENTS, PAYMENTS_REPORT_FILE, SIEM_URL } from './seed-data';
+import {
+  BUSINESS_URL,
+  CHAT_URL,
+  DEPENDENCIES,
+  PAYMENTS,
+  PAYMENTS_REPORT_FILE,
+  SIEM_URL,
+} from './seed-data';
 
 /**
  * Plan 5D (rbac-audit.md §14.4, §17; sso-scim.md §4.4, §18): the enterprise server's database
@@ -16,6 +23,27 @@ import { BUSINESS_URL, DEPENDENCIES, PAYMENTS, PAYMENTS_REPORT_FILE, SIEM_URL } 
 
 /** D26-2: the branch the empty-inventory test analyses (no other test knows it). */
 const EMPTY_BRANCH = 'e2e-no-deps';
+
+/**
+ * The QUALOR_SECRET_KEY all e2e servers share (server/scripts/e2e/serve.ts), built at run time as
+ * notifications.spec.ts does: Gitleaks scans the repository (tools/deploy/gitleaks.test.ts), and
+ * the allowlist pins the literal to serve.ts alone.
+ */
+const E2E_SECRET_KEY = `e2e-secret-key-${'that-is-at-least-32-characters-long'}`;
+
+/**
+ * 4b: a vulnerability email's stop-link token, made as server/src/notifications/unsubscribe.ts
+ * makes it (the UI's tests never import server code): base64url("<userId>") "."
+ * base64url(HMAC-SHA256 under HKDF-SHA256(secret, salt "qualor", info "unsubscribe vulnerabilities
+ * v1")). The server's unit tests pin the algorithm; if the two drift, the stop step fails.
+ */
+function vulnerabilityUnsubscribeToken(userId: string): string {
+  const key = Buffer.from(
+    hkdfSync('sha256', E2E_SECRET_KEY, 'qualor', 'unsubscribe vulnerabilities v1', 32),
+  );
+  const payload = Buffer.from(userId, 'utf8').toString('base64url');
+  return `${payload}.${createHmac('sha256', key).update(payload).digest('base64url')}`;
+}
 
 test('a Business admin sees the kept stream paused and saves retention without it', async ({
   page,
@@ -425,4 +453,79 @@ test('a Business server exports the SBOM of a project with an inventory', async 
   const spdx = await page.request.get(`/api/v0/projects/sbom?projectKey=${key}&format=spdx`);
   expect(spdx.status()).toBe(200);
   expect(((await spdx.json()) as { spdxVersion: string }).spdxVersion).toBe('SPDX-2.3');
+});
+
+// 6-15 (D28-3): a chat webhook offers the exploited-vulnerability event with `vuln.alerts`. The
+// licensed servers accept the fake Slack receiver's host too (QUALOR_CHAT_TEST_HOSTS, serve.ts);
+// nothing is posted to it until such an event. The test removes its webhook.
+test('a Business admin creates a Slack webhook for exploited vulnerabilities', async ({ page }) => {
+  await page.goto('/settings/webhooks');
+  await expect(page.getByRole('heading', { level: 2, name: 'Webhooks' })).toBeVisible();
+  await page.getByRole('button', { name: 'New webhook' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New webhook' });
+  await dialog.getByRole('radio', { name: 'Slack' }).check();
+  await dialog.getByLabel('URL').fill(`${CHAT_URL}/services/T0E2E/B0E2E/e2eExploitedPart4321`);
+  const exploited = dialog.getByRole('checkbox', { name: 'Exploited vulnerabilities (at once)' });
+  await exploited.check();
+  await expect(exploited).toBeChecked();
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v0/webhooks',
+  );
+  await dialog.getByRole('button', { name: 'Add webhook' }).click();
+  const answer = await created;
+  expect(answer.status()).toBe(201);
+  const webhook = (await answer.json()) as { id: string; organizationId: string };
+  const me = (await (await page.request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
+  try {
+    await expect(page.getByText('Webhook added.')).toBeVisible();
+    const list = await page.request.get(
+      `/api/v0/webhooks?organizationId=${webhook.organizationId}`,
+    );
+    const { items } = (await list.json()) as { items: { id: string; events: string[] }[] };
+    expect(items.find((w) => w.id === webhook.id)?.events).toContain('vulnerabilities.exploited');
+  } finally {
+    const removed = await page.request.delete(`/api/v0/webhooks/${webhook.id}`, {
+      headers: { 'x-qualor-csrf': me.csrfToken },
+    });
+    expect(removed.status()).toBe(204);
+  }
+});
+
+// 4ab#71 (D28-4): the fourth Watch box and the stop link of a vulnerability email, which turns
+// that box off on every watch of the user and keeps the watches. The test removes its watch.
+test('a Business user stops vulnerability emails from the link', async ({ page }) => {
+  const me = (await (await page.request.get('/api/v0/auth/me')).json()) as {
+    user: { id: string };
+    csrfToken: string;
+  };
+  const headers = { 'x-qualor-csrf': me.csrfToken };
+  const projectId = await paymentsId(page);
+  const watch = async () =>
+    (await (await page.request.get(`/api/v0/projects/${projectId}/watch`)).json()) as {
+      watching: boolean;
+      events: { newVulnerabilities: boolean };
+    };
+  // An earlier, interrupted run may have left the watch.
+  await page.request.delete(`/api/v0/projects/${projectId}/watch`, { headers });
+  try {
+    await page.goto(`/projects/${projectId}`);
+    await page.getByRole('button', { name: 'Watch', exact: true }).click();
+    const menu = page.getByRole('group', { name: 'Email notifications for this project' });
+    const box = menu.getByRole('checkbox', { name: 'New vulnerabilities in tracked versions' });
+    await box.check();
+    await expect(box).toBeChecked();
+    await expect.poll(async () => (await watch()).events.newVulnerabilities).toBe(true);
+
+    await page.goto(`/unsubscribe/vulnerabilities#t=${vulnerabilityUnsubscribeToken(me.user.id)}`);
+    await expect(page.getByRole('heading', { name: 'Stop vulnerability emails?' })).toBeVisible();
+    await expectAccessible(page);
+    await page.getByRole('button', { name: 'Stop emails' }).click();
+    await expect(page.getByText('You no longer get vulnerability emails.')).toBeVisible();
+    expect(await watch()).toMatchObject({
+      watching: true,
+      events: { newVulnerabilities: false },
+    });
+  } finally {
+    await page.request.delete(`/api/v0/projects/${projectId}/watch`, { headers });
+  }
 });
