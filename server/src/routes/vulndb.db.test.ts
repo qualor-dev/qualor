@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -975,28 +974,6 @@ describe('KEV and EPSS on /system/vulnerability-db (API)', () => {
         code: 'TOO_LARGE',
         detail: `The file is larger than ${PRIORITY_FILE_MAX_BYTES} bytes`,
       });
-    });
-
-    it('answers 413 to a streamed KEV file past 32 MiB', async () => {
-      const MiB = 1024 * 1024;
-      const chunks = [
-        ...Array.from({ length: 32 }, () => Buffer.alloc(MiB, 0x20)),
-        Buffer.from('x'),
-      ];
-      const res = await licensed.app.inject({
-        method: 'PUT',
-        url: `${url}/file/kev`,
-        headers: { ...admin.headers, 'content-type': 'application/octet-stream' },
-        payload: Readable.from(chunks),
-      });
-      // No length to refuse up front: the route counted the bytes as they came.
-      expect(res.raw.req.headers['content-length']).toBeUndefined();
-      expect(res.statusCode, res.body).toBe(413);
-      expect(res.json()).toMatchObject({
-        code: 'TOO_LARGE',
-        detail: 'The file is larger than 33554432 bytes',
-      });
-      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(0);
     });
 
     it.each([

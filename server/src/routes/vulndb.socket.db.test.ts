@@ -66,9 +66,9 @@ const kevFile = (ids: string[]): Buffer =>
   );
 
 /** Waits until `done()`, for at most 5 s. */
-async function until(done: () => boolean): Promise<void> {
+async function until(done: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 5_000;
-  while (!done()) {
+  while (!(await done())) {
     if (Date.now() > deadline) throw new Error('timed out waiting');
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
@@ -164,6 +164,50 @@ describe('vulnerability database uploads over a real socket', () => {
       expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(0);
       // Nobody reads it, but the answer is the abort's, not a bad file's.
       expect(answered.at(-1)).toBe(499);
+    });
+
+    // Here, not with inject: the response, not the request, tells an abort from an expiry. A
+    // server's request is destroyed after any full read, so this 422 would read as an abort (499).
+    it('answers 422 to an upload that expired while it was sent, not 499', async () => {
+      await ctx.db.delete(vulndbDatasets);
+      const archive = trivyArchive();
+      const half = Math.floor(archive.length / 2);
+      let text = '';
+      const socket = net.createConnection({ host: '127.0.0.1', port });
+      socket.on('data', (d: Buffer) => {
+        text += d.toString('utf8');
+      });
+      socket.on('error', () => {});
+      try {
+        await new Promise<void>((resolve) => socket.once('connect', resolve));
+        socket.write(
+          head('/system/vulnerability-db/file', admin, [
+            'Content-Type: application/gzip',
+            `Content-Length: ${archive.length}`,
+          ]),
+        );
+        socket.write(archive.subarray(0, half));
+        // The store's row exists before it reads a byte; a prune of an hour-old upload deletes it.
+        let incomplete: { id: string }[] = [];
+        await until(async () => {
+          incomplete = await ctx.db
+            .select({ id: vulndbDatasets.id })
+            .from(vulndbDatasets)
+            .where(eq(vulndbDatasets.status, 'incomplete'));
+          return incomplete.length > 0;
+        });
+        await ctx.db.delete(vulndbDatasets).where(eq(vulndbDatasets.id, incomplete[0]!.id));
+        socket.write(archive.subarray(half));
+        await until(() => text.includes('"code"'));
+      } finally {
+        socket.destroy();
+      }
+      expect(text.startsWith('HTTP/1.1 422 '), text).toBe(true);
+      expect(text).toContain('"code":"INVALID_DATABASE"');
+      expect(text).toContain(
+        'The upload expired before it was stored, because it took too long. Upload the file again',
+      );
+      expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(0);
     });
 
     // Here, not with inject: the store stops reading the request early, and light-my-request's
@@ -266,6 +310,43 @@ describe('vulnerability database uploads over a real socket', () => {
       expect(exchange.sent()).toBe(true);
       expect(text).toMatch(/^HTTP\/1\.1 100 Continue\r\n\r\nHTTP\/1\.1 200 /);
       expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(1);
+    });
+
+    // D11-14. Chunked, so there is no length to refuse up front: the route counts the bytes as they
+    // come. The overrun is the last byte, sent with the body's end once the server has read the
+    // rest, so the request is complete when the route stops reading. Stopping earlier leaves it
+    // unread, and Node destroys the socket with it: the client then gets no answer at all.
+    it('answers 413 to a KEV file sent chunked past 32 MiB and stores nothing', async () => {
+      let accepted: Socket | undefined;
+      licensed.app.server.once('connection', (s: Socket) => {
+        accepted = s;
+      });
+      let text = '';
+      const socket = net.createConnection({ host: '127.0.0.1', port: licensedPort });
+      socket.on('data', (d: Buffer) => {
+        text += d.toString('utf8');
+      });
+      socket.on('error', () => {});
+      try {
+        await new Promise<void>((resolve) => socket.once('connect', resolve));
+        const start = head('/system/vulnerability-db/file/kev', licensedAdmin, [
+          'Content-Type: application/octet-stream',
+          'Transfer-Encoding: chunked',
+        ]);
+        const piece = chunk(Buffer.alloc(MiB, 0x20));
+        socket.write(start);
+        for (let i = 0; i < 32; i++) socket.write(piece);
+        const sent = Buffer.byteLength(start) + 32 * piece.length;
+        await until(() => accepted?.bytesRead === sent);
+        socket.write(Buffer.concat([chunk(Buffer.from('x')), Buffer.from('0\r\n\r\n')]));
+        await until(() => text.includes('"code"'));
+      } finally {
+        socket.destroy();
+      }
+      expect(text.startsWith('HTTP/1.1 413 '), text.slice(0, 200)).toBe(true);
+      expect(text).toContain('"code":"TOO_LARGE"');
+      expect(text).toContain('The file is larger than 33554432 bytes');
+      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(0);
     });
 
     it('stores a KEV file sent chunked after 100 Continue, as a proxy sends it', async () => {
