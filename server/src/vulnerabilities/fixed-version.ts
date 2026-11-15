@@ -3,6 +3,7 @@
  * ecosystem's scheme, so no scheme's rules apply; one natural order covers them all:
  *
  * - A leading `<digits>:` or `<digits>!` is an epoch, compared first (no epoch is epoch 0).
+ * - A `v` or `V` that leads the rest before a digit is dropped (`v1.2.5` > `1.2.4`).
  * - The rest is split into digit runs and letter runs; anything else separates them.
  * - Two digit runs compare as numbers (of any length), two letter runs ignoring case. A letter
  *   run sorts before a digit run and before the end (`1.0rc1` < `1.0`); the end sorts before a
@@ -16,6 +17,8 @@
  */
 
 const EPOCH = /^(\d+)[:!]/;
+const V_PREFIX = /^[vV](?=\d)/;
+/** ASCII runs only (`\d` and `[A-Za-z]`), so a token's first code unit tells a number apart. */
 const TOKEN = /[0-9]+|[A-Za-z]+/g;
 
 /** Digit strings as numbers of any length: no leading zeros, then the length, then the digits. */
@@ -41,7 +44,7 @@ function compareTokens(a: string | undefined, b: string | undefined): number {
 
 function split(version: string): { epoch: string; tokens: string[] } {
   const epoch = EPOCH.exec(version);
-  const rest = epoch === null ? version : version.slice(epoch[0].length);
+  const rest = (epoch === null ? version : version.slice(epoch[0].length)).replace(V_PREFIX, '');
   return { epoch: epoch?.[1] ?? '0', tokens: rest.match(TOKEN) ?? [] };
 }
 
