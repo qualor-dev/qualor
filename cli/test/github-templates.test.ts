@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expectDbCache } from '@qualor/shared/test/ci-cache';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { parseCommandLine } from '../src/args';
@@ -20,35 +21,6 @@ interface Step {
   with?: Record<string, unknown>;
   run?: string;
   env?: Record<string, string>;
-}
-
-const CACHE_PIN = /^actions\/cache\/(restore|save)@[0-9a-f]{40}$/;
-
-/** The restore step comes before the scan, the save step (on always()) after it; neither holds the token. */
-function expectDbCache(
-  steps: { uses?: string; if?: string; with?: unknown; env?: unknown }[],
-  scan: unknown,
-): void {
-  const restore = steps.find((s) => s.uses?.startsWith('actions/cache/restore@'));
-  const save = steps.find((s) => s.uses?.startsWith('actions/cache/save@'));
-  expect(restore?.uses).toMatch(CACHE_PIN);
-  expect(save?.uses).toMatch(CACHE_PIN);
-  expect(restore?.with).toEqual({
-    path: '.qualor/trivy',
-    key: 'qualor-trivy-db-${{ github.run_id }}',
-    'restore-keys': 'qualor-trivy-db-',
-  });
-  expect(save?.with).toEqual({
-    path: '.qualor/trivy',
-    key: "qualor-trivy-db-${{ hashFiles('.qualor/trivy/server.json') }}",
-  });
-  expect(save?.if).toBe("always() && hashFiles('.qualor/trivy/server.json') != ''");
-  expect(steps.indexOf(restore!)).toBeLessThan(steps.indexOf(scan as never));
-  expect(steps.indexOf(save!)).toBeGreaterThan(steps.indexOf(scan as never));
-  for (const step of [restore, save]) {
-    expect(step?.env).toBeUndefined();
-    expect(JSON.stringify(step)).not.toMatch(/QUALOR_TOKEN|secrets\./);
-  }
 }
 
 describe('integrations/github/qualor.yml', () => {
