@@ -61,10 +61,11 @@ function licenseEnv(env: AnalyzerContext['env']): Record<string, string> {
 /**
  * The second Trivy run (spec §1): the vulnerability pass's flags (an empty config, offline, no
  * telemetry, no WebAssembly modules, every `TRIVY_*` variable dropped, the dead proxy) with
- * `--scanners license` instead of `vuln`, no `.trivyignore` (it lists vulnerability ids) and none
- * of the built-in `--skip-dirs`: pnpm's and Go's licences are read from `node_modules` and the
- * module cache. It needs no vulnerability database (`cacheDir` may be empty). Writes Trivy's empty
- * config and module directory into `ctx.workDir`.
+ * `--scanners license` instead of `vuln`, and no `.trivyignore` (it lists vulnerability ids). Of
+ * the vulnerability pass's `--skip-dirs` it keeps the directory excludes and the database cache
+ * inside the checkout (`ctx.trivyCacheSkipDir`), not the built-in ones: pnpm's and Go's licences
+ * are read from `node_modules` and the module cache. It needs no vulnerability database
+ * (`cacheDir` may be empty). Writes Trivy's empty config and module directory into `ctx.workDir`.
  */
 export function licenseCommand(ctx: AnalyzerContext, cacheDir: string): AnalyzerCommand {
   const emptyConfig = path.join(ctx.workDir, 'trivy-licenses.yaml');
@@ -73,6 +74,7 @@ export function licenseCommand(ctx: AnalyzerContext, cacheDir: string): Analyzer
   mkdirSync(modules, { recursive: true });
   const out = path.join(ctx.workDir, 'licenses.json');
   const timeout = ctx.config.analyzers.trivy.licenseTimeoutSeconds;
+  const inRepository = ctx.trivyCacheSkipDir ?? null;
   return {
     command: ctx.resolveBinary('trivy') ?? 'trivy',
     args: [
@@ -97,7 +99,11 @@ export function licenseCommand(ctx: AnalyzerContext, cacheDir: string): Analyzer
       '--pkg-types',
       'library',
       '--list-all-pkgs',
-      ...licenseSkipDirs(ctx.config.sources.exclude).flatMap((d) => ['--skip-dirs', d]),
+      // The scan's database cache inside the checkout holds the archive, not the project's lockfiles.
+      ...[
+        ...licenseSkipDirs(ctx.config.sources.exclude),
+        ...(inRepository === null ? [] : [inRepository]),
+      ].flatMap((d) => ['--skip-dirs', d]),
       '--timeout',
       `${timeout}s`,
       '--format',

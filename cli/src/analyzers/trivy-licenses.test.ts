@@ -104,6 +104,27 @@ describe('the licence pass command (spec §1)', () => {
     expect(readFileSync(work('trivy-licenses.yaml'), 'utf8')).toBe('');
   });
 
+  it('skips the scan’s cache directory inside the checkout, after the user’s excludes', () => {
+    const ctx = {
+      ...fakeContext(tmp(), {
+        binaries: { trivy: 'trivy' },
+        workDir: tmp(),
+        config: { sources: { exclude: ['legacy/**'] } },
+      }),
+      // The scan's database step names it (D13-5): Trivy never reads the archive there.
+      trivyCacheSkipDir: 'ci/trivy',
+    };
+    const { args } = licenseCommand(ctx, tmp());
+    const last = args.lastIndexOf('--skip-dirs');
+    expect(args.slice(last - 2, last + 3)).toEqual([
+      '--skip-dirs',
+      'legacy',
+      '--skip-dirs',
+      'ci/trivy',
+      '--timeout',
+    ]);
+  });
+
   it('takes its own timeout', () => {
     const ctx = fakeContext(tmp(), {
       binaries: { trivy: 'trivy' },

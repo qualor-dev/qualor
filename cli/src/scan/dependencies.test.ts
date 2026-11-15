@@ -45,6 +45,7 @@ const options = (o: {
   trivy?: string | null;
   run?: (spec: ProcessSpec) => Promise<ProcessResult>;
   env?: Record<string, string>;
+  cacheSkipDir?: string | null;
 }) => {
   const root = tmp();
   const tempRoot = tmp();
@@ -58,6 +59,7 @@ const options = (o: {
     env: o.env ?? {},
     resolveBinary: () => (o.trivy === undefined ? '/opt/qualor/bin/trivy' : o.trivy),
     runProcess: o.run ?? fakeTrivy(recordedText('npm-lockfile-only')).run,
+    ...(o.cacheSkipDir !== undefined && { cacheSkipDir: o.cacheSkipDir }),
   };
 };
 
@@ -95,6 +97,14 @@ describe('collectDependencies: the licence pass in a scan (spec §1)', () => {
     expect(spec?.env['HTTPS_PROXY']).toBe('http://127.0.0.1:9');
     // The work directory (Trivy's empty config, cache and output) is gone afterwards.
     expect(readdirSync(o.tempRoot)).toEqual([]);
+  });
+
+  it('skips the vulnerability database cache inside the checkout (D13-5)', async () => {
+    const fake = fakeTrivy(recordedText('npm-lockfile-only'));
+    await collectDependencies(options({ run: fake.run, cacheSkipDir: 'ci/trivy' }));
+    const args = fake.calls[0]?.args ?? [];
+    expect(args).toContain('ci/trivy');
+    expect(args[args.indexOf('ci/trivy') - 1]).toBe('--skip-dirs');
   });
 
   it('reports the inventory and an ok engine with Trivy’s version', async () => {

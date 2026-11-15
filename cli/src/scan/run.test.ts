@@ -943,8 +943,12 @@ describe('qualor scan on a tag: version mode', () => {
     },
   };
 
-  async function tagScan(repo: string, extra: string[] = []) {
-    const c = captureIO({ cwd: repo, env: SCAN_TEST_ENV });
+  async function tagScan(
+    repo: string,
+    extra: string[] = [],
+    o: { env?: Record<string, string>; licensePass?: typeof licensePass } = {},
+  ) {
+    const c = captureIO({ cwd: repo, env: { ...SCAN_TEST_ENV, ...o.env } });
     const code = await runScan(
       scanFlags([
         '--dry-run',
@@ -958,7 +962,7 @@ describe('qualor scan on a tag: version mode', () => {
       ]),
       c.io,
       silentLogger,
-      { analyzers: [forbidden], licensePass },
+      { analyzers: [forbidden], licensePass: o.licensePass ?? licensePass },
     );
     return {
       code,
@@ -966,6 +970,34 @@ describe('qualor scan on a tag: version mode', () => {
       report: () => readReport(path.join(repo, 'out/report.json.gz')),
     };
   }
+
+  it('leaves a QUALOR_TRIVY_CACHE_DIR inside the repository out of the inventory and the licence pass (D13-1, D13-5)', async () => {
+    const repo = fixtureRepo('deps-vulnerable');
+    const planted = 'ci-cache/trivy/package-lock.json';
+    writeTree(repo, { [planted]: '{"lockfileVersion":3,"packages":{}}\n' });
+    const seen: string[][] = [];
+    const run = await tagScan(repo, [], {
+      env: { QUALOR_TRIVY_CACHE_DIR: path.join(repo, 'ci-cache', 'trivy') },
+      licensePass: {
+        ...licensePass,
+        // Trivy as if it had read the planted lockfile too.
+        runProcess: async (spec: ProcessSpec) => {
+          seen.push([...spec.args]);
+          const result = await licensePass.runProcess(spec);
+          const out = spec.args[spec.args.indexOf('--output') + 1] ?? '';
+          const results = [...inventory.Results, { ...inventory.Results[0], Target: planted }];
+          writeFileSync(out, JSON.stringify({ ...inventory, Results: results }));
+          return result;
+        },
+      },
+    });
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.report().dependencies?.map((d) => d.path)).toEqual(['web/package-lock.json']);
+    expect(seen).toHaveLength(1);
+    const args = seen[0] ?? [];
+    expect(args).toContain('ci-cache/trivy');
+    expect(args[args.indexOf('ci-cache/trivy') - 1]).toBe('--skip-dirs');
+  });
 
   it('reports the inventory and .trivyignore ids only, even with licenses: false', async () => {
     const repo = fixtureRepo('deps-vulnerable');
@@ -1490,6 +1522,31 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
       },
     ]);
     const files = report.files.map((f) => f.path);
+    expect(files).toContain('ci-cache/notes.txt');
+    expect(files.filter((f) => f.startsWith('ci-cache/trivy/'))).toEqual([]);
+  });
+
+  it('a QUALOR_TRIVY_CACHE_DIR inside the repository stays out of the report with Trivy off too (D13-1)', async () => {
+    const repo = fixtureRepo('ts-basic');
+    writeTree(repo, {
+      'qualor.yml': 'version: 1\nanalyzers:\n  trivy:\n    enabled: false\n',
+      'ci-cache/trivy/db.tar.gz': gzipSync(Buffer.from('the server’s archive')),
+      'ci-cache/trivy/server.json': '{"digest":"sha256:0","fetchedAt":"2026-10-31T00:00:00Z"}\n',
+      'ci-cache/trivy/db/metadata.json': '{"Version":2,"UpdatedAt":"2030-01-01T00:00:00Z"}\n',
+      'ci-cache/trivy/db/trivy.db': 'a database a branch put here\n',
+      'ci-cache/notes.txt': 'next to the cache\n',
+    });
+    const c = captureIO({
+      cwd: repo,
+      env: { ...SCAN_TEST_ENV, QUALOR_TRIVY_CACHE_DIR: path.join(repo, 'ci-cache', 'trivy') },
+    });
+    const code = await runScan(dryFlags(), c.io, silentLogger, {
+      analyzers: [trivyStub()],
+      resolveTrivy: trivyFound,
+      licensePass: { resolveBinary: () => null },
+    });
+    expect(code, c.stderr()).toBe(0);
+    const files = readReport(path.join(repo, 'out', 'r.json.gz')).files.map((f) => f.path);
     expect(files).toContain('ci-cache/notes.txt');
     expect(files.filter((f) => f.startsWith('ci-cache/trivy/'))).toEqual([]);
   });

@@ -71,6 +71,11 @@ export interface CollectDependenciesOptions extends DependencyPassHooks {
    * `analyzers.trivy.enabled: false` still turns the pass off.
    */
   force?: boolean;
+  /**
+   * The vulnerability database cache inside the checkout (repo-relative, `/`-separated): one more
+   * `--skip-dirs`, as in the vulnerability pass. Null or absent: none.
+   */
+  cacheSkipDir?: string | null;
 }
 
 /** `analyzers.trivy`: the licence pass runs unless Trivy or the pass itself is switched off. */
@@ -217,6 +222,7 @@ export async function collectDependencies(
       repoBinary: () => null,
       env: analyzerEnv,
       exec: () => Promise.reject(new Error('the licence pass runs no helper command')),
+      trivyCacheSkipDir: o.cacheSkipDir ?? null,
     };
     const cacheDir = path.join(workDir, 'cache');
     mkdirSync(cacheDir);

@@ -56,7 +56,7 @@ import {
   versionLabel,
 } from './version';
 import { collectDependencies, type DependencyPassHooks } from './dependencies';
-import { resolveVulnerabilityDb, type VulnerabilityDbChoice } from './vulndb';
+import { repositoryCacheDirOf, resolveVulnerabilityDb, type VulnerabilityDbChoice } from './vulndb';
 import {
   analyzeFiles,
   duplicationFilter,
@@ -199,6 +199,8 @@ async function buildVersionReport(inputs: {
   scope: readonly { path: string }[];
   warnings: Warnings;
   analysisDate: Date;
+  /** The vulnerability database cache inside the checkout: the licence pass skips it too. */
+  repositoryCacheDir: string | null;
 }): Promise<BuiltReport> {
   const { settings, projectKey, io, log, deps, scm, scope, warnings, analysisDate } = inputs;
   const { root, config } = settings;
@@ -209,6 +211,7 @@ async function buildVersionReport(inputs: {
     log,
     env: io.env,
     force: true,
+    cacheSkipDir: inputs.repositoryCacheDir,
     ...deps.licensePass,
   });
   if (licenses !== null) warnings.addAll(licenses.warnings);
@@ -268,6 +271,12 @@ async function buildReport(inputs: {
   external: { captures: SarifCapture[]; warnings: Warnings };
   /** The vulnerability pass's database (vuln plan 3); null when none was chosen. */
   vulnerabilityDb: VulnerabilityDbChoice | null;
+  /**
+   * The vulnerability database cache inside the checkout (`repositoryCacheDirOf`), or null. It
+   * holds the archive, not the project: never a file of the scan nor read by Trivy, whether or not
+   * a database was chosen.
+   */
+  repositoryCacheDir: string | null;
 }): Promise<BuiltReport> {
   const { settings, flags, projectKey, endpoint, analyzers, io, log, deps } = inputs;
   const { root, config } = settings;
@@ -297,8 +306,7 @@ async function buildReport(inputs: {
     log,
   });
 
-  // The vulnerability database cache inside the checkout holds the archive, not the project.
-  const cacheDir = inputs.vulnerabilityDb?.repositoryCacheDir ?? null;
+  const cacheDir = inputs.repositoryCacheDir;
   const scope = discoverFiles({
     root,
     config,
@@ -364,6 +372,7 @@ async function buildReport(inputs: {
         knownPaths,
         log,
         env: io.env,
+        cacheSkipDir: cacheDir,
         ...deps.licensePass,
       })
     : null;
@@ -949,6 +958,8 @@ async function buildScanReport(
   scan: PreparedScan & { external: { captures: SarifCapture[]; warnings: Warnings } },
 ): Promise<BuiltReport> {
   const { settings, analyzers, tag, endpoint, projectKey, external } = scan;
+  // Left out of every scan, also one that chooses no database (Trivy off, a tag scan).
+  const repositoryCacheDir = repositoryCacheDirOf(settings.root, io.env);
   const build = (vulnerabilityDb: VulnerabilityDbChoice | null) =>
     buildReport({
       settings,
@@ -961,6 +972,7 @@ async function buildScanReport(
       deps,
       external,
       vulnerabilityDb,
+      repositoryCacheDir,
     });
   const choose = deps.vulnerabilityDb === undefined ? resolveVulnerabilityDb : deps.vulnerabilityDb;
   if (choose === null || tag !== null || !trivyRuns(analyzers, settings, io.env, deps, log)) {

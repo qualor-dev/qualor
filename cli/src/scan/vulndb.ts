@@ -86,6 +86,19 @@ function repositoryPath(root: string, dir: string): string | null {
   return null;
 }
 
+/**
+ * The cache directory (`vulnerabilityCacheDir`) as a `/`-separated path inside the checkout `root`,
+ * or null: outside it, or no home directory to name it. Every scan leaves it out of its files and
+ * its Trivy runs, with Trivy off and on a tag scan too.
+ */
+export function repositoryCacheDirOf(root: string, env: Env): string | null {
+  try {
+    return repositoryPath(root, vulnerabilityCacheDir(env));
+  } catch {
+    return null;
+  }
+}
+
 type Warning = VulnerabilityDbChoice['warnings'][number];
 type Current = NonNullable<ServerVulndb['current']>;
 
@@ -419,7 +432,7 @@ class Choice {
     this.cache = cache;
     this.archive = cache === null ? null : path.join(cache, ARCHIVE);
     this.inside = cache !== null && cacheInRepository(input.root, cache);
-    this.repositoryCacheDir = cache === null ? null : repositoryPath(input.root, cache);
+    this.repositoryCacheDir = repositoryCacheDirOf(input.root, input.env);
     const named = input.env['QUALOR_TRIVY_CACHE_DIR'];
     this.namedInside = named !== undefined && named !== '' && path.isAbsolute(named) && this.inside;
   }
