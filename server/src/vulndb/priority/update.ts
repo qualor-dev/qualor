@@ -84,7 +84,8 @@ async function parseFile(
  * (always in that order), compares the sha256 with the stored file's, replaces the table and
  * writes the state, so two stores at once (the job and an upload) leave the table and the state on
  * the same file. The same bytes as the stored file write only the validators and the check times:
- * no row, and `storedAt` stays. Logs what it stored, with the entries it skipped.
+ * no row, and `storedAt` stays; `source` follows the latest store, so an upload marks the file as
+ * uploaded. Logs what it stored, with the entries it skipped.
  */
 export async function storePriorityFile(
   db: Db,
@@ -106,6 +107,7 @@ export async function storePriorityFile(
       const confirmed = await updatePriorityStateLocked(tx, dataset, (s) => ({
         ...s,
         ...validators,
+        source,
         refreshedAt: at,
         lastCheckAt: at,
         lastError: null,
@@ -212,21 +214,32 @@ export async function checkPriorityDatasets(
     try {
       error = await checkDataset(deps, settings, dataset);
     } catch (err) {
-      // Neither the source's answer nor a parse problem: log its class, show a fixed text.
-      deps.logger?.warn(
-        { component: 'vulndb', dataset, errorClass: errorClass(err) },
-        'priority data update failed',
-      );
+      // Neither the source's answer nor a parse problem: log its class, show a fixed text. A stop
+      // of the server cuts the download, so what it ran into says nothing: no warning.
+      if (!stopping()) {
+        deps.logger?.warn(
+          { component: 'vulndb', dataset, errorClass: errorClass(err) },
+          'priority data update failed',
+        );
+      }
       error = UPDATE_FAILED;
     }
     if (error === null) continue;
     // The stop cut the download: what it ran into says nothing about the source.
     if (stopping()) return;
     const checkedAt = now().toISOString();
-    await updatePriorityState(deps.db, dataset, (s) => ({
-      ...s,
-      lastCheckAt: checkedAt,
-      lastError: error,
-    }));
+    try {
+      await updatePriorityState(deps.db, dataset, (s) => ({
+        ...s,
+        lastCheckAt: checkedAt,
+        lastError: error,
+      }));
+    } catch (err) {
+      // The other dataset still runs.
+      deps.logger?.warn(
+        { component: 'vulndb', dataset, errorClass: errorClass(err) },
+        'priority data state not written',
+      );
+    }
   }
 }

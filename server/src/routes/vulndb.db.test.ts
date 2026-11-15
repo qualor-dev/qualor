@@ -1,5 +1,5 @@
 import { gzipSync } from 'node:zlib';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   addMember,
@@ -246,12 +246,12 @@ describe('/system/vulnerability-db (API)', () => {
         runAt: new Date(Date.now() + 86_400_000),
       });
     };
-    const dueNow = async () => {
-      const rows = await ctx.db
-        .select({ runAt: jobs.runAt })
-        .from(jobs)
-        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
-      return rows.filter((r) => r.runAt.getTime() <= Date.now() + 1000).length;
+    const dueNow = async (): Promise<number> => {
+      const counted = await ctx.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM jobs
+            WHERE queue = ${VULNDB_UPDATE_QUEUE} AND run_at <= now() + interval '1 second'`,
+      );
+      return counted.rows[0]?.n ?? 0;
     };
 
     it('is for instance admins only', async () => {
@@ -373,6 +373,46 @@ describe('/system/vulnerability-db (API)', () => {
         .from(jobs)
         .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
       expect(row?.runAt.toISOString()).toBe(dueSince.toISOString());
+    });
+
+    it('keeps the boot run within its minute when the interval changes', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      const bootRun = new Date(Date.now() + 45_000);
+      await ctx.db.insert(jobs).values({
+        id: uuidv7(),
+        queue: VULNDB_UPDATE_QUEUE,
+        payload: {},
+        concurrencyKey: VULNDB_UPDATE_QUEUE,
+        runAt: bootRun,
+      });
+      await updateVulndbState(ctx.db, (s) => ({
+        ...s,
+        lastCheckAt: new Date(Date.now() - 3_600_000).toISOString(),
+      }));
+      expect((await put({ intervalHours: 24 })).statusCode).toBe(200);
+      const [row] = await ctx.db
+        .select({ runAt: jobs.runAt })
+        .from(jobs)
+        .where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      expect(row?.runAt.toISOString()).toBe(bootRun.toISOString());
+      expect((await get()).json().nextCheckAt).toBe(bootRun.toISOString());
+    });
+
+    it('moves the boot run to now when the new interval has already passed', async () => {
+      await ctx.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
+      await ctx.db.insert(jobs).values({
+        id: uuidv7(),
+        queue: VULNDB_UPDATE_QUEUE,
+        payload: {},
+        concurrencyKey: VULNDB_UPDATE_QUEUE,
+        runAt: new Date(Date.now() + 45_000),
+      });
+      await updateVulndbState(ctx.db, (s) => ({
+        ...s,
+        lastCheckAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+      }));
+      expect((await put({ intervalHours: 1 })).statusCode).toBe(200);
+      expect(await dueNow()).toBe(1);
     });
 
     it('a new interval before the first check leaves the first one where it is', async () => {

@@ -12,7 +12,14 @@ import {
 import { instanceSettings, jobs, mailMessages, users, vulndbDatasets } from '../db/schema';
 import { notifyIfVulndbStale } from '../mail/alerts/vulndb-stale';
 import { runUntilIdle } from '../queue/worker';
-import type { fetchHttpsFile, fetchLayerDescriptor, HttpsFile, openBlob, OciProblem } from './oci';
+import type {
+  fetchHttpsFile,
+  fetchLayerDescriptor,
+  HttpsFile,
+  HttpsFileOptions,
+  openBlob,
+  OciProblem,
+} from './oci';
 import { PRIORITY_STATE_KEY, readPriorityState, updatePriorityState } from './priority/state';
 import {
   OFFICIAL_EPSS_URL,
@@ -21,7 +28,7 @@ import {
   writeVulndbSettings,
 } from './settings';
 import { readVulndbState, updateVulndbState, VULNDB_UPDATE_QUEUE } from './state';
-import { currentDataset } from './store';
+import { currentDataset, makeDatasetCurrent, storeDataset } from './store';
 import type * as Store from './store';
 import {
   ensureVulndbScheduled,
@@ -252,6 +259,7 @@ describe('vulnerability database updates', () => {
       currentDatasetId: before,
       lastError: { code: 'DIGEST_MISMATCH' },
     });
+    expect(await t.db.select().from(vulndbDatasets)).toHaveLength(1);
     expect(rechecks).toHaveLength(1);
   });
 
@@ -283,6 +291,22 @@ describe('vulnerability database updates', () => {
       message: 'The update failed. See the server log',
     });
     expect((await queued()).rows).toHaveLength(1);
+  });
+
+  it('logs no warning for a source that throws because the server stops', async () => {
+    const registry = fakeRegistry(trivyArchive());
+    const stop = new AbortController();
+    registry.fetchLayerDescriptor = (() => {
+      stop.abort();
+      throw new Error('boom');
+    }) as typeof fetchLayerDescriptor;
+    const warnings: unknown[] = [];
+    await runOnce(registry, {
+      shutdown: stop.signal,
+      logger: { ...silent, warn: (_: unknown, message?: unknown) => void warnings.push(message) },
+    });
+    expect(warnings).not.toContain('vulnerability database update failed');
+    expect((await readVulndbState(t.db)).lastError).toBeNull();
   });
 
   it('a stop cuts a slow download: the run ends at once, records nothing and retries in a minute', async () => {
@@ -449,13 +473,19 @@ describe('vulnerability database updates', () => {
     });
 
     it('boot brings a late run forward to a minute and keeps one across replicas', async () => {
+      const bootTwice = async (): Promise<void> => {
+        await Promise.all([scheduleVulndbAtBoot(t.db), scheduleVulndbAtBoot(t.db)]);
+        const rows = (await queued()).rows;
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.secs).toBeGreaterThan(50);
+        expect(rows[0]!.secs).toBeLessThanOrEqual(60);
+      };
+      // Two replicas on an empty queue.
+      await bootTwice();
+      // And with a run an interval away.
+      await t.db.delete(jobs).where(eq(jobs.queue, VULNDB_UPDATE_QUEUE));
       await ensureVulndbScheduled(t.db);
-      await scheduleVulndbAtBoot(t.db);
-      await scheduleVulndbAtBoot(t.db);
-      const rows = (await queued()).rows;
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.secs).toBeGreaterThan(50);
-      expect(rows[0]!.secs).toBeLessThanOrEqual(60);
+      await bootTwice();
     });
 
     it('ensure adds a run only when none is queued or running', async () => {
@@ -512,7 +542,6 @@ describe('vulnerability database updates', () => {
     it('is also checked for an uploaded file, and sends nothing for fresh data', async () => {
       await settings({ source: { kind: 'upload' } });
       const registry = fakeRegistry(trivyArchive());
-      const { storeDataset, makeDatasetCurrent } = await import('./store');
       const stored = await storeDataset(t.db, {
         kind: 'trivy',
         source: 'upload',
@@ -595,9 +624,11 @@ describe('vulnerability database updates', () => {
     function fakeFiles(initial: (url: string) => Promise<HttpsFile | OciProblem>) {
       const fake = {
         urls: [] as string[],
+        options: [] as HttpsFileOptions[],
         answer: initial,
-        fetch: (async (url) => {
+        fetch: (async (url, options) => {
           fake.urls.push(url);
+          fake.options.push(options);
           return fake.answer(url);
         }) as typeof fetchHttpsFile,
       };
@@ -630,6 +661,19 @@ describe('vulnerability database updates', () => {
       expect(state.kev).toMatchObject({ count: 1, lastError: null });
       expect(state.epss).toMatchObject({ count: 1, lastError: null });
       expect((await readVulndbState(t.db)).lastError).toBeNull();
+    });
+
+    it('hands the shutdown signal to the KEV and EPSS downloads', async () => {
+      const files = freshFiles();
+      const stop = new AbortController();
+      await runOnce(fakeRegistry(trivyArchive()), {
+        limits: PRIORITY,
+        fetchHttpsFile: files.fetch,
+        shutdown: stop.signal,
+      });
+      expect(files.options).toHaveLength(2);
+      expect(files.options[0]?.signal).toBe(stop.signal);
+      expect(files.options[1]?.signal).toBe(stop.signal);
     });
 
     it('fetches nothing without the feature, and leaves the priority state alone', async () => {

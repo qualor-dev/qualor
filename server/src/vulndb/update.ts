@@ -124,7 +124,8 @@ export function requestVulndbUpdateNow(db: Db): Promise<boolean> {
 /**
  * A new check interval (PUT): the waiting run moves to the last check plus the new interval, or to
  * now when that time has passed, and `nextCheckAt` follows. A run that is already due stays as it
- * is: a new interval never delays it. Before a first check the waiting run
+ * is: a new interval never delays it. A run due within VULNDB_BOOT_DELAY_SECONDS (the boot run)
+ * only moves earlier. Before a first check the waiting run
  * stays where it is (a minute after the start); a running check schedules the next one with the
  * new interval itself. Under LOCKS.vulndbSchedule.
  */
@@ -132,11 +133,14 @@ export async function rescheduleVulndbUpdate(db: Db): Promise<void> {
   const { lastCheckAt } = await readVulndbState(db);
   if (lastCheckAt === null) return;
   const hours = (await readVulndbSettings(db)).intervalHours;
+  const target = sql`greatest(now(), ${lastCheckAt}::timestamptz + make_interval(hours => ${hours}))`;
   const runAt = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbSchedule})`);
     const moved = await tx.execute<{ run_at: string | Date }>(sql`
       UPDATE jobs
-         SET run_at = greatest(now(), ${lastCheckAt}::timestamptz + make_interval(hours => ${hours})),
+         SET run_at = CASE WHEN run_at <= now() + make_interval(secs => ${VULNDB_BOOT_DELAY_SECONDS})
+                           THEN least(run_at, ${target})
+                           ELSE ${target} END,
              updated_at = now()
        WHERE queue = ${VULNDB_UPDATE_QUEUE} AND status = 'queued' AND run_at > now()
       RETURNING run_at`);
@@ -308,10 +312,13 @@ async function checkAndRecord(
     error = settings.source.kind === 'upload' ? undefined : await checkSource(deps, settings);
   } catch (err) {
     // Neither the registry's answer nor a classified storage problem: log it, show a fixed text.
-    deps.logger?.warn(
-      { component: 'vulndb', errorClass: errorClass(err) },
-      'vulnerability database update failed',
-    );
+    // A stop of the server cuts the check, so what it ran into says nothing: no warning.
+    if (!stopping()) {
+      deps.logger?.warn(
+        { component: 'vulndb', errorClass: errorClass(err) },
+        'vulnerability database update failed',
+      );
+    }
     error = problemOf('UPDATE_FAILED', 'The update failed. See the server log');
   }
   // The stop cut the check: what it ran into says nothing about the source.

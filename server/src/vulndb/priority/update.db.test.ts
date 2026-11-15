@@ -21,6 +21,7 @@ import {
   updatePriorityState,
   type PriorityDatasetState,
 } from './state';
+import type * as State from './state';
 import type * as Store from './store';
 import { checkPriorityDatasets, storePriorityFile, type PriorityUpdateDeps } from './update';
 
@@ -40,6 +41,22 @@ vi.mock('./store', async (importOriginal) => {
         await new Promise((resolve) => setTimeout(resolve, pause.ms));
       }
       return replaced;
+    },
+  };
+});
+
+/** While `failOnce.kev` is set, the next updatePriorityState of KEV throws. */
+const failOnce = vi.hoisted(() => ({ kev: false }));
+vi.mock('./state', async (importOriginal) => {
+  const actual = await importOriginal<typeof State>();
+  return {
+    ...actual,
+    updatePriorityState: async (...args: Parameters<typeof actual.updatePriorityState>) => {
+      if (failOnce.kev && args[1] === 'kev') {
+        failOnce.kev = false;
+        throw new Error('state write failed');
+      }
+      return actual.updatePriorityState(...args);
     },
   };
 });
@@ -357,6 +374,60 @@ describe('checkPriorityDatasets', () => {
       },
     ]);
   });
+
+  it('still checks EPSS when the KEV error cannot be recorded', async () => {
+    const warnings: { fields: unknown; message: unknown }[] = [];
+    const files = fakeFiles({
+      [OFFICIAL_KEV_URL]: { code: 'UNREACHABLE', message: 'No connection within 3 s' },
+      [OFFICIAL_EPSS_URL]: file(epssFile([A])),
+    });
+    failOnce.kev = true;
+    try {
+      await checkPriorityDatasets(
+        deps(files.fetch, {
+          logger: {
+            info: () => undefined,
+            warn: (fields: unknown, message?: unknown) => void warnings.push({ fields, message }),
+          },
+        }),
+        DEFAULT_VULNDB_SETTINGS,
+      );
+    } finally {
+      failOnce.kev = false;
+    }
+    const state = await readPriorityState(t.db);
+    expect(state.epss).toMatchObject({ lastError: null, count: 1 });
+    expect(warnings).toEqual([
+      {
+        fields: { component: 'vulndb', dataset: 'kev', errorClass: 'Error' },
+        message: 'priority data state not written',
+      },
+    ]);
+  });
+
+  it('logs no warning for a download that fails because the server stops', async () => {
+    const warnings: unknown[] = [];
+    const stop = new AbortController();
+    const files = fakeFiles({
+      [OFFICIAL_KEV_URL]: () => {
+        stop.abort();
+        return Promise.reject(new Error('aborted'));
+      },
+      [OFFICIAL_EPSS_URL]: file(epssFile([A])),
+    });
+    await checkPriorityDatasets(
+      deps(files.fetch, {
+        shutdown: stop.signal,
+        logger: {
+          info: () => undefined,
+          warn: (_: unknown, message?: unknown) => void warnings.push(message),
+        },
+      }),
+      DEFAULT_VULNDB_SETTINGS,
+    );
+    expect(warnings).toEqual([]);
+    expect((await readPriorityState(t.db)).kev.lastError).toBeNull();
+  });
 });
 
 describe('storePriorityFile', () => {
@@ -440,9 +511,23 @@ describe('storePriorityFile', () => {
     expect(got).toEqual({
       ...before,
       ...validators,
+      source: 'official',
       refreshedAt: later.toISOString(),
       lastCheckAt: later.toISOString(),
       lastError: null,
+    });
+  });
+
+  it('marks an official file uploaded again as uploaded', async () => {
+    const body = kevFile([A]);
+    await storePriorityFile(t.db, 'kev', body, 'official', none, now);
+    const before = (await readPriorityState(t.db)).kev;
+    const later = new Date(now.getTime() + 60_000);
+    const got = await storePriorityFile(t.db, 'kev', body, 'upload', none, later);
+    expect(got).toMatchObject({
+      source: 'upload',
+      storedAt: before.storedAt,
+      count: before.count,
     });
   });
 
