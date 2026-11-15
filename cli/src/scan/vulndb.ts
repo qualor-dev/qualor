@@ -311,6 +311,11 @@ async function sha256(fh: FileHandle): Promise<string> {
 type Failure = {
   reason: string;
   /** The archive itself is unusable (not a write error). */ bad: boolean;
+  /**
+   * Unpacking ran past its deadline (a slow disk, not the archive): the scan unpacks nothing more,
+   * and the archive is not bad, so the next scan tries it again.
+   */
+  slow?: true;
 };
 
 /** The archive entries `unpack` reads: `trivy.db` streamed, `metadata.json` kept, no other. */
@@ -353,7 +358,7 @@ async function unpack(fh: FileHandle, db: string, limits: TarLimits): Promise<Fa
   } catch (err) {
     if (!(err instanceof TarError)) throw err;
     return err.limit === 'deadline'
-      ? { reason: TOO_SLOW, bad: false }
+      ? { reason: TOO_SLOW, bad: false, slow: true }
       : { reason: UNUSABLE, bad: true };
   }
   const meta = found.metadata;
@@ -711,17 +716,27 @@ async function metadataFailed(c: Choice, reason: string): Promise<VulnerabilityD
 interface Attempts {
   /** The digests the server accepts: the current one first. */
   accepted: Set<string>;
-  /** Digests of archives that are not a Trivy database: never tried again. */
+  /** Digests of archives that are not a Trivy database: never tried again in this scan. */
   bad: Set<string>;
+  /** An unpack ran past its deadline: the next one on this disk would too, so none follows. */
+  slow: boolean;
   /** Why the server's database is not used, once something failed. */
   reason: string | null;
 }
 
 /** Records why an archive could not be used, and whether it is not a Trivy database at all. */
-function note(attempts: Attempts, used: Used): void {
+function note(attempts: Attempts, used: Used, log: Logger): void {
   if (used.ok || used.failure === undefined) return;
-  if (used.failure.bad && used.digest !== null) attempts.bad.add(used.digest);
   attempts.reason = used.failure.reason;
+  if (used.failure.slow === true) {
+    attempts.slow = true;
+    log.debug(
+      `unpacking ${used.digest ?? 'the archive'} took too long: this scan unpacks no other copy; the next scan tries it again`,
+    );
+  } else if (used.failure.bad && used.digest !== null) {
+    attempts.bad.add(used.digest);
+    log.debug(`the archive ${used.digest} is not a Trivy database: not tried again in this scan`);
+  }
 }
 
 /** An archive the server accepts and that did not prove bad. */
@@ -749,7 +764,7 @@ async function useDownload(
 ): Promise<VulnerabilityDbChoice | null> {
   const used = await c.use(incoming, (digest) => usable(attempts, digest));
   if (!used.ok) {
-    note(attempts, used);
+    note(attempts, used, c.log);
     return null;
   }
   if (writable) {
@@ -821,6 +836,7 @@ async function served(
   const attempts: Attempts = {
     accepted: new Set([current.digest, ...meta.accepted]),
     bad: new Set<string>(),
+    slow: false,
     reason: null,
   };
   const now = input.now().getTime();
@@ -840,12 +856,14 @@ async function served(
         fresh),
   );
   if (cached.ok) return c.result(cached.dir, []);
-  note(attempts, cached);
+  note(attempts, cached, c.log);
 
-  if (cached.digest !== current.digest) {
+  if (!attempts.slow && cached.digest !== current.digest) {
     const downloaded = await downloadCurrent(c, input, endpoint, current, attempts, writable);
     if (downloaded !== null) return downloaded;
   }
+  // After a slow unpack the scan takes its fallback at once: the next unpack would be as slow.
+  if (attempts.slow) return c.fallback(attempts.reason ?? TOO_SLOW);
 
   // The download failed: a cached archive the server still accepts (another scan may have just
   // fetched the current one).

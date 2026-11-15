@@ -17,13 +17,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type * as Tar from '@qualor/shared/tar';
+import { readTarGz } from '@qualor/shared/tar';
 import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
 import { json, problem, useTestServers } from '../../test/http';
 import { useTempDirs } from '../../test/tmp';
 import type * as Runner from '../analyzers/runner';
 import { releaseWorkDir, removeActiveWorkDirs, trackWorkDir } from '../analyzers/runner';
 import { readDatabaseDate } from '../analyzers/trivy';
-import { silentLogger } from '../log';
+import { createLogger, silentLogger, type Logger } from '../log';
 import type { ServerEndpoint } from '../server/http';
 import { resolveVulnerabilityDb, vulnerabilityCacheDir } from './vulndb';
 
@@ -36,12 +38,18 @@ vi.mock('../analyzers/runner', async (importOriginal) => {
     releaseWorkDir: vi.fn(real.releaseWorkDir),
   };
 });
+// The real tar reader, counted: each call is one unpack of an archive.
+vi.mock('@qualor/shared/tar', async (importOriginal) => {
+  const real = await importOriginal<typeof Tar>();
+  return { ...real, readTarGz: vi.fn(real.readTarGz) };
+});
 
 const serve = useTestServers();
 const tmp = useTempDirs();
 beforeEach(() => {
   vi.mocked(trackWorkDir).mockClear();
   vi.mocked(releaseWorkDir).mockClear();
+  vi.mocked(readTarGz).mockClear();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -188,12 +196,13 @@ async function choose(o: {
   tempRoot?: string;
   env?: Record<string, string>;
   unpackLimits?: { maxBytes?: number; deadlineMs?: number };
+  log?: Logger;
 }) {
   return resolveVulnerabilityDb({
     endpoint: o.endpoint,
     root: o.root ?? tmp(),
     env: { ...(o.cache !== undefined && { QUALOR_TRIVY_CACHE_DIR: o.cache }), ...o.env },
-    log: silentLogger,
+    log: o.log ?? silentLogger,
     now: () => NOW,
     tempRoot: o.tempRoot ?? tmp(),
     ...(o.unpackLimits !== undefined && { unpackLimits: o.unpackLimits }),
@@ -703,40 +712,85 @@ describe('resolveVulnerabilityDb: a poisoned or broken cache (Review Focus 1)', 
   });
 });
 
-describe('resolveVulnerabilityDb: the server’s inflate caps (B1-e)', () => {
-  it('treats an archive past the inflate cap as no Trivy database', async () => {
+describe('resolveVulnerabilityDb: the server’s inflate caps (B1-e, B1-e′)', () => {
+  const TOO_SLOW = 'unpacking the database took too long';
+  /** A current archive whose trivy.db is 2 MiB: past a 1 MiB cap. */
+  function bomb(): Dataset {
     const archive = trivyArchive({
       metadata: metadataJson(2, NEW.updatedAt),
       db: Buffer.alloc(2 * 1024 * 1024),
     });
-    const bomb: Dataset = { archive, digest: sha(archive), db: '', updatedAt: NEW.updatedAt };
-    const server = await fakeServer({ meta: meta(bomb), archives: [archive] });
+    return { archive, digest: sha(archive), db: '', updatedAt: NEW.updatedAt };
+  }
+  /** A debug logger and its lines. */
+  function debugLog(): { log: Logger; lines: string[] } {
+    const lines: string[] = [];
+    return { log: createLogger('debug', (text) => lines.push(text)), lines };
+  }
+  const markedBad = (lines: string[], digest: string) =>
+    lines.some((l) => l.includes(`${digest} is not a Trivy database: not tried again`));
+  const unpacks = () => vi.mocked(readTarGz).mock.calls.length;
+
+  it('treats an archive past the inflate cap as no Trivy database, and never unpacks it again in the scan', async () => {
+    const big = bomb();
+    const server = await fakeServer({ meta: meta(big), archives: [big.archive] });
     const tempRoot = tmp();
-    const cache = fillCache(path.join(tmp(), 'cache'), archive);
+    const cache = fillCache(path.join(tmp(), 'cache'), big.archive);
+    const { log, lines } = debugLog();
     const got = await choose({
       endpoint: server.endpoint,
       cache,
       tempRoot,
       unpackLimits: { maxBytes: 1024 * 1024 },
+      log,
     });
     expect(got.dir).toBeNull();
     expect(got.warnings).toEqual([failed('the archive is not a Trivy database', IMAGE)]);
+    expect(unpacks()).toBe(1);
+    expect(markedBad(lines, big.digest)).toBe(true);
     expect(downloads(server.paths)).toEqual([]);
     expect(readdirSync(cache)).toEqual(['db.tar.gz']);
     await got.cleanup();
     expect(readdirSync(tempRoot)).toEqual([]);
   });
 
-  it('tries a slow unpack again', async () => {
+  it('goes on to another accepted archive after one past the inflate cap', async () => {
+    const big = bomb();
+    const server = await fakeServer({
+      meta: meta(big, [big, OLD], 'every'),
+      archives: [big.archive],
+    });
+    const cache = fillCache(path.join(tmp(), 'cache'), OLD.archive);
+    const got = await choose({
+      endpoint: server.endpoint,
+      cache,
+      unpackLimits: { maxBytes: 1024 * 1024 },
+    });
+    expect(downloads(server.paths)).toHaveLength(1);
+    expect(unpacks()).toBe(2);
+    expect(databaseIn(got.dir)).toEqual(holds(OLD));
+    expect(got.warnings).toEqual([
+      failed('the archive is not a Trivy database', cached('2026-10-30')),
+    ]);
+    await got.cleanup();
+  });
+
+  it('unpacks a slow archive once in the scan, does not mark it bad, and the next scan tries it again', async () => {
     const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
     const cache = fillCache(path.join(tmp(), 'cache'), NEW.archive);
+    const { log, lines } = debugLog();
     const slow = await choose({
       endpoint: server.endpoint,
       cache,
       unpackLimits: { deadlineMs: -1 },
+      log,
     });
+    // No second attempt in the retry step: the next unpack on this disk would be as slow.
+    expect(unpacks()).toBe(1);
     expect(slow.dir).toBeNull();
-    expect(slow.warnings).toEqual([failed('unpacking the database took too long', IMAGE)]);
+    expect(slow.warnings).toEqual([failed(TOO_SLOW, IMAGE)]);
+    expect(markedBad(lines, NEW.digest)).toBe(false);
+    expect(lines.some((l) => l.includes(`unpacking ${NEW.digest} took too long`))).toBe(true);
     expect(readdirSync(cache)).toEqual(['db.tar.gz']);
     await slow.cleanup();
     // A slow disk is not the archive's fault: the next scan unpacks the same archive.
@@ -745,6 +799,31 @@ describe('resolveVulnerabilityDb: the server’s inflate caps (B1-e)', () => {
     expect(databaseIn(next.dir)).toEqual(holds(NEW));
     expect(next.warnings).toEqual([]);
     expect(downloads(server.paths)).toEqual([]);
+    await next.cleanup();
+  });
+
+  it('takes the fallback at once after a slow unpack of a download, without unpacking the cached archive', async () => {
+    const server = await fakeServer({
+      meta: meta(NEW, [NEW, OLD], 'every'),
+      archives: [NEW.archive],
+    });
+    const cache = fillCache(path.join(tmp(), 'cache'), OLD.archive);
+    const slow = await choose({
+      endpoint: server.endpoint,
+      cache,
+      unpackLimits: { deadlineMs: -1 },
+    });
+    expect(downloads(server.paths)).toHaveLength(1);
+    expect(unpacks()).toBe(1);
+    expect(slow.dir).toBeNull();
+    expect(slow.warnings).toEqual([failed(TOO_SLOW, IMAGE)]);
+    // The download was not kept: it never proved usable (row 6).
+    expect(readFileSync(path.join(cache, 'db.tar.gz')).equals(OLD.archive)).toBe(true);
+    expect(readdirSync(cache)).toEqual(['db.tar.gz']);
+    await slow.cleanup();
+    const next = await choose({ endpoint: server.endpoint, cache });
+    expect(downloads(server.paths)).toHaveLength(2);
+    expect(databaseIn(next.dir)).toEqual(holds(NEW));
     await next.cleanup();
   });
 });
