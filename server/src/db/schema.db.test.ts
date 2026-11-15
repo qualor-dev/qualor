@@ -1,9 +1,10 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, expectPgError, type TestDatabase } from '../../test/db';
 import { MIGRATIONS_DIR } from '../../test/paths';
 import { PG_CHECK_VIOLATION, PG_UNIQUE_VIOLATION } from './errors';
 import { pendingMigrations } from './migrate';
+import { first } from './rows';
 import {
   analyses,
   apiTokens,
@@ -12,8 +13,12 @@ import {
   jobs,
   organizations,
   projects,
+  projectVersions,
   rules,
   users,
+  vulnerabilityAlertItems,
+  vulnerabilityAlertProjects,
+  vulnerabilityAlertTargets,
 } from './schema';
 
 const TABLES = [
@@ -303,5 +308,143 @@ describe('first migration (data-model.md §4)', () => {
       })
       .returning();
     expect(issue!.severityRank).toBe(1);
+  });
+});
+
+describe('the vulnerability alert tables: one target, uniques and cascades (4b A1–A3)', () => {
+  let t: TestDatabase;
+  let organizationId: string;
+  let n = 0;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+    organizationId = first(
+      await t.db.insert(organizations).values({ key: 'alerts', name: 'Alerts' }).returning(),
+    ).id;
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  const item = (targetId: string, vulnerabilityId: string) =>
+    t.db.insert(vulnerabilityAlertItems).values({ targetId, vulnerabilityId, baseline: true });
+
+  /** A project with its day-one row, a branch and a version. */
+  const project = async () => {
+    n += 1;
+    const projectId = first(
+      await t.db
+        .insert(projects)
+        .values({ organizationId, key: `alerts/p${n}`, name: `P${n}` })
+        .returning(),
+    ).id;
+    await t.db.insert(vulnerabilityAlertProjects).values({ projectId });
+    const branch = async (name: string) =>
+      first(await t.db.insert(branches).values({ projectId, kind: 'branch', name }).returning()).id;
+    const version = async (label: string) =>
+      first(
+        await t.db
+          .insert(projectVersions)
+          .values({ projectId, label, source: 'tag', tag: label, analyzedAt: new Date() })
+          .returning(),
+      ).id;
+    const insertTarget = (key: { branchId?: string; versionId?: string }) =>
+      t.db
+        .insert(vulnerabilityAlertTargets)
+        .values({ projectId, ...key, dayOne: true })
+        .returning();
+    /** A target with an item for each id. */
+    const target = async (key: { branchId: string } | { versionId: string }, ...ids: string[]) => {
+      const targetId = first(await insertTarget(key)).id;
+      for (const vulnerabilityId of ids) await item(targetId, vulnerabilityId);
+      return targetId;
+    };
+    return {
+      projectId,
+      branch,
+      version,
+      insertTarget,
+      target,
+      main: await branch('main'),
+      v1: await version('1.0.0'),
+    };
+  };
+
+  /** Of `targetIds`, the targets left, then the targets that still have items. */
+  const left = async (targetIds: string[]) => ({
+    targets: (
+      await t.db
+        .select({ id: vulnerabilityAlertTargets.id })
+        .from(vulnerabilityAlertTargets)
+        .where(inArray(vulnerabilityAlertTargets.id, targetIds))
+    )
+      .map((row) => row.id)
+      .sort(),
+    withItems: [
+      ...new Set(
+        (
+          await t.db
+            .select({ targetId: vulnerabilityAlertItems.targetId })
+            .from(vulnerabilityAlertItems)
+            .where(inArray(vulnerabilityAlertItems.targetId, targetIds))
+        ).map((row) => row.targetId),
+      ),
+    ].sort(),
+  });
+
+  it('gives a target exactly one of a branch and a version', async () => {
+    const p = await project();
+    await expectPgError(p.insertTarget({}), PG_CHECK_VIOLATION);
+    await expectPgError(p.insertTarget({ branchId: p.main, versionId: p.v1 }), PG_CHECK_VIOLATION);
+  });
+
+  it('keeps one target per branch and per version, and one item per target and vulnerability', async () => {
+    const p = await project();
+    const main = await p.target({ branchId: p.main }, 'CVE-1');
+    await p.target({ versionId: p.v1 });
+    await expectPgError(p.insertTarget({ branchId: p.main }), PG_UNIQUE_VIOLATION);
+    await expectPgError(p.insertTarget({ versionId: p.v1 }), PG_UNIQUE_VIOLATION);
+    await expectPgError(item(main, 'CVE-1'), PG_UNIQUE_VIOLATION);
+    // Another vulnerability on the target, and another target of the project, are fine.
+    await item(main, 'CVE-2');
+    await p.target({ branchId: await p.branch('release') }, 'CVE-1');
+  });
+
+  it('deletes a target and its items with its branch or its version', async () => {
+    const p = await project();
+    const main = await p.target({ branchId: p.main }, 'CVE-1', 'CVE-2');
+    const v1 = await p.target({ versionId: p.v1 }, 'CVE-1');
+    const release = await p.target({ branchId: await p.branch('release') }, 'CVE-1');
+    const all = [main, v1, release];
+    await t.db.delete(branches).where(eq(branches.id, p.main));
+    const kept = [v1, release].sort();
+    expect(await left(all)).toEqual({ targets: kept, withItems: kept });
+    await t.db.delete(projectVersions).where(eq(projectVersions.id, p.v1));
+    expect(await left(all)).toEqual({ targets: [release], withItems: [release] });
+  });
+
+  it('deletes the items of a target with the target', async () => {
+    const p = await project();
+    const main = await p.target({ branchId: p.main }, 'CVE-1', 'CVE-2');
+    const v1 = await p.target({ versionId: p.v1 }, 'CVE-1');
+    await t.db.delete(vulnerabilityAlertTargets).where(eq(vulnerabilityAlertTargets.id, main));
+    expect(await left([main, v1])).toEqual({ targets: [v1], withItems: [v1] });
+  });
+
+  it('deletes the targets, their items and the day-one row with the project', async () => {
+    const p = await project();
+    const q = await project();
+    const pTargets = [
+      await p.target({ branchId: p.main }, 'CVE-1'),
+      await p.target({ versionId: p.v1 }, 'CVE-1'),
+    ];
+    const qMain = await q.target({ branchId: q.main }, 'CVE-1');
+    await t.db.delete(projects).where(eq(projects.id, p.projectId));
+    expect(await left([...pTargets, qMain])).toEqual({ targets: [qMain], withItems: [qMain] });
+    const dayOneRows = await t.db
+      .select({ projectId: vulnerabilityAlertProjects.projectId })
+      .from(vulnerabilityAlertProjects)
+      .where(inArray(vulnerabilityAlertProjects.projectId, [p.projectId, q.projectId]));
+    expect(dayOneRows).toEqual([{ projectId: q.projectId }]);
   });
 });
