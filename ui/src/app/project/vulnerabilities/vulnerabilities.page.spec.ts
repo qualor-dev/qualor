@@ -500,6 +500,25 @@ describe('VulnerabilitiesPage', () => {
       expect(root.querySelector('[role="alert"]')).not.toBeNull();
       expect(rows(root)).toHaveLength(3);
     });
+
+    it('closes on a scroll of the table, which leaves an export menu open', async () => {
+      const root = await render({ sbom: true, targets: TARGETS }, { permissions: SETTINGS });
+      const exportHide = vi.fn();
+      const rowHide = vi.fn();
+      const panels: [Element | null, ReturnType<typeof vi.fn>][] = [
+        [root.querySelector('#vuln-export-sbom'), exportHide],
+        [root.querySelector('.row-menu-panel'), rowHide],
+      ];
+      for (const [panel, hide] of panels) {
+        if (!panel) throw new Error('no panel');
+        // jsdom has no Popover API.
+        Object.assign(panel, { hidePopover: hide });
+        vi.spyOn(panel, 'matches').mockReturnValue(true);
+      }
+      root.querySelector('.panel-scroll')?.dispatchEvent(new Event('scroll'));
+      expect(rowHide).toHaveBeenCalledTimes(1);
+      expect(exportHide).not.toHaveBeenCalled();
+    });
   });
 
   describe('the untracked rows of the expanded fold', () => {

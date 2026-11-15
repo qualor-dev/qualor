@@ -1,0 +1,31 @@
+<button
+  #trigger
+  type="button"
+  class="btn"
+  [attr.popovertarget]="menuId()"
+  (click)="place(trigger, menu)"
+>
+  {{ label() }}
+</button>
+<div
+  #menu
+  [id]="menuId()"
+  popover
+  role="group"
+  class="menu-panel export-panel"
+  [attr.aria-label]="label()"
+>
+  @if (selectable()) {
+    <label class="export-target">
+      <span i18n="@@vuln.export.target">Target</span>
+      <select [value]="selected()" (change)="pick($event)">
+        @for (o of options(); track o.value) {
+          <option [value]="o.value" [selected]="o.value === selected()">{{ o.name }}</option>
+        }
+      </select>
+    </label>
+  }
+  @for (l of links(); track l.href) {
+    <a [attr.href]="l.href" download (click)="close()">{{ l.label }}</a>
+  }
+</div>

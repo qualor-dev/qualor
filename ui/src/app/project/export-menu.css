@@ -1,0 +1,13 @@
+/* Export SBOM and Export VEX: a manual-position popover in the top layer, placed by place(). */
+.export-panel {
+  min-width: 16rem;
+}
+.export-target {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+}
+.export-panel a {
+  display: block;
+  padding: 8px 12px;
+}

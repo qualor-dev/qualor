@@ -18,7 +18,6 @@ import { problemMessage } from '../../api/errors';
 import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
 import { keepFocus, rowByKey } from '../../shared/focus';
-import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
 import { menuIndex } from '../../shared/menu-keys';
@@ -26,6 +25,7 @@ import { closePopover } from '../../shared/popover';
 import { SeverityChips } from './severity-chips';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
 import { CurrentProject } from '../current-project';
+import { ExportMenu, type ExportKind, type ExportOption } from '../export-menu';
 
 type Summary = ResponseBody<'/api/v0/projects/{id}/vulnerabilities/targets', 'get'>;
 type Target = Summary['targets'][number];
@@ -41,15 +41,6 @@ const CHOICES: Record<'auto' | 'pinned' | 'unsupported', Tracking[]> = {
   unsupported: ['auto', 'pinned'],
 };
 
-/** The two export menus: what each offers, and which targets the server answers 200 for. */
-type ExportKind = 'sbom' | 'vex';
-
-interface ExportOption {
-  value: string;
-  kind: 'branch' | 'version';
-  name: string;
-}
-
 function one(params: Params, key: string): string {
   const value: unknown = params[key];
   return typeof value === 'string' ? value : '';
@@ -64,7 +55,15 @@ function one(params: Params, key: string): string {
  */
 @Component({
   selector: 'q-vulnerabilities-page',
-  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink, SeverityChips, VulnerabilityList],
+  imports: [
+    DateTimePipe,
+    ExportMenu,
+    Icon,
+    NgTemplateOutlet,
+    RouterLink,
+    SeverityChips,
+    VulnerabilityList,
+  ],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
   host: {
@@ -171,7 +170,8 @@ export class VulnerabilitiesPage {
   private readonly vexOptions = computed(() =>
     this.answer()?.monitoring === 'on' ? this.exportOptions((t) => t.checkedAt !== null) : [],
   );
-  private readonly picked = signal<Record<ExportKind, string | null>>({ sbom: null, vex: null });
+  /** The project's key, which the export routes take; empty until the project is read. */
+  protected readonly projectKey = computed(() => this.project.current()?.key ?? '');
 
   protected readonly busy = signal(false);
   /** The `data-key` of the row a change was made on, until the summary is read again. */
@@ -230,46 +230,6 @@ export class VulnerabilitiesPage {
     return kind === 'sbom' ? this.sbomOptions() : this.vexOptions();
   }
 
-  /** The chosen target; else the one being viewed when it is offered, else the first. */
-  protected selectedOf(kind: ExportKind): string {
-    const options = this.optionsOf(kind);
-    const wanted = [this.picked()[kind], this.target()];
-    return wanted.find((w) => options.some((o) => o.value === w)) ?? options[0]?.value ?? '';
-  }
-
-  protected pick(kind: ExportKind, event: Event): void {
-    const value = inputValue(event);
-    this.picked.update((p) => ({ ...p, [kind]: value }));
-  }
-
-  protected exportLabel(kind: ExportKind): string {
-    return kind === 'sbom'
-      ? $localize`:@@vuln.export.sbom:Export SBOM`
-      : $localize`:@@vuln.export.vex:Export VEX`;
-  }
-
-  protected exportLinks(kind: ExportKind): { label: string; href: string }[] {
-    const option = this.optionsOf(kind).find((o) => o.value === this.selectedOf(kind));
-    const key = this.project.current()?.key;
-    if (!option || !key) return [];
-    const enc = encodeURIComponent;
-    const base = `/api/v0/projects/${kind}?projectKey=${enc(key)}&${option.kind === 'branch' ? 'branch' : 'version'}=${enc(option.name)}`;
-    const formats =
-      kind === 'sbom'
-        ? [
-            {
-              format: 'cyclonedx',
-              label: $localize`:@@vuln.export.cyclonedx:CycloneDX 1.6 (JSON)`,
-            },
-            { format: 'spdx', label: $localize`:@@vuln.export.spdx:SPDX 2.3 (JSON)` },
-          ]
-        : [
-            { format: 'cyclonedx', label: $localize`:@@vuln.export.cyclonedxVex:CycloneDX VEX` },
-            { format: 'openvex', label: $localize`:@@vuln.export.openvex:OpenVEX` },
-          ];
-    return formats.map((f) => ({ label: f.label, href: `${base}&format=${f.format}` }));
-  }
-
   /**
    * Whether a target gets the quiet "main" tag (brief §C): the main branch, unless its name says it
    * already.
@@ -315,9 +275,12 @@ export class VulnerabilitiesPage {
     closePopover(menu);
   }
 
-  /** The menu popovers the page holds are in the top layer and do not follow a scroll: close them. */
+  /**
+   * The row menus are in the top layer and do not follow a scroll: close them. The export menus
+   * close themselves on a scroll of the window, and a scroll of the table leaves them be.
+   */
   protected closeMenus(): void {
-    for (const menu of this.host.nativeElement.querySelectorAll<HTMLElement>('.menu-panel')) {
+    for (const menu of this.host.nativeElement.querySelectorAll<HTMLElement>('.row-menu-panel')) {
       this.close(menu);
     }
   }
