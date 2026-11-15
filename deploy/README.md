@@ -278,15 +278,24 @@ ESLint runs from the project's own `node_modules` (install the dependencies firs
 needs compiled classes, so build Java projects before `qualor scan`.
 
 **Trivy's vulnerability database.** The image carries a snapshot, pinned in
-`tools/analyzers/install.sh` (`TRIVY_DB_DIGEST`, `TRIVY_DB_CREATED`). A scan against a server 0.15
-or later takes the server's database instead, and the snapshot is the fallback: when the server
-offers none or cannot be reached, the vulnerability data is as old as the image. Reports carry the
-database's date (`engines[].database`) and a `VULNERABILITY_DB_STALE` warning past 14 days. Refresh
-the snapshot by moving the pin and rebuilding the image: `pnpm trivy-db:pin` writes the newest
-snapshot's digest into `install.sh` (upstream builds one every 6 hours and deletes old ones after a
-time it does not document, so the pin must also move when a build reports it gone; the CIs cache
-the pinned layer, which gives a grace period), then build and release as below; a weekly image
-rebuild keeps it fresh enough.
+`tools/analyzers/install.sh` (`TRIVY_DB_DIGEST`, `TRIVY_DB_CREATED`) and filtered to its library
+sources by `tools/analyzers/filter-trivy-db.sh`. A scan against a server 0.15 or later takes the
+server's database instead, and the snapshot is the fallback: when the server offers none or cannot
+be reached, the vulnerability data is as old as the image. Reports carry the database's date
+(`engines[].database`) and a `VULNERABILITY_DB_STALE` warning past 14 days. A weekly image rebuild
+keeps the snapshot fresh enough. To refresh it:
+
+1. `pnpm trivy-db:pin` writes the newest snapshot's digest and date into `install.sh`. Upstream
+   builds one every 6 hours and deletes old ones after a time it does not document, so the pin
+   must also move when a build reports it gone. The CIs cache the pinned layer, which gives a grace
+   period.
+2. Edit the digest and the date in `deploy/scanner/NOTICE.md` by hand. The sources test
+   (`tools/deploy/sources.test.ts`) fails until then.
+3. Compare the `data-source` entries of the new database with `KEEP` in
+   `tools/analyzers/go-tools/trivy-db-filter/main.go`. The filter drops every source that `KEEP`
+   does not list, so a renamed or new library source needs its entry there and a row in the NOTICE.
+   `tools/analyzers/trivy-db-filter.test.ts` fails when a kept ID has no entry left.
+4. Build and release as below.
 
 The scanner keeps what it downloads from the server in `QUALOR_TRIVY_CACHE_DIR`, and the
 integrations persist it between jobs: the GitLab component caches `.qualor/trivy/`, and the GitHub

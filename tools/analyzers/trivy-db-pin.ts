@@ -10,6 +10,11 @@ import { fileURLToPath } from 'node:url';
  * 6 hours and deletes old ones after a time it does not document, so the pin must move before an image build when the pinned
  * layer is gone; the scanner image is then rebuilt to ship it. It reads two public registry
  * answers and writes two files; it downloads no database.
+ *
+ * The images ship the snapshot filtered (filter-trivy-db.sh), and deploy/scanner/NOTICE.md names
+ * its digest and date. After a pin, edit both in the NOTICE by hand (tools/deploy/sources.test.ts
+ * fails until then), and compare the new database's `data-source` entries with `KEEP` of
+ * go-tools/trivy-db-filter/main.go: the filter drops a renamed or new source (deploy/README.md).
  */
 export const REPOSITORY = 'aquasecurity/trivy-db';
 export const TAG = '2';

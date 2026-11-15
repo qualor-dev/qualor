@@ -1,12 +1,13 @@
 # qualor/scanner: third-party notices
 
 The `qualor/scanner` image bundles the Qualor CLI (MIT, `/opt/qualor/licenses/qualor/LICENSE`)
-with third-party programs, each under its own licence. They are unmodified upstream releases,
-installed by `tools/analyzers/install.sh` (pinned versions, SHA-256 checked; Trivy's
-vulnerability database pinned by digest, then filtered: see below), compiled into the
-`qualor` binary from the pinned lockfile, or copied from the pinned base images named in
-`deploy/scanner/Dockerfile`. The licence texts are in `/opt/qualor/licenses/` of the image
-(`deploy/scanner/licenses/` in the repository) unless the table names another place.
+with third-party programs, each under its own licence. The programs are unmodified upstream
+releases, installed by `tools/analyzers/install.sh` (pinned versions, SHA-256 checked), compiled
+into the `qualor` binary from the pinned lockfile, or copied from the pinned base images named in
+`deploy/scanner/Dockerfile`. Trivy's vulnerability database is the exception: `install.sh` pins
+the snapshot by digest, and Qualor filtered it (see below). The licence texts are in
+`/opt/qualor/licenses/` of the image (`deploy/scanner/licenses/` in the repository) unless the
+table names another place.
 
 | Component                                                                             | Version                                        | Licence                                                                                                                                                                                        | Source                                                                                                |
 | ------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
