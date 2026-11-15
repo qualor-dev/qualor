@@ -1,3 +1,4 @@
+import { performance } from 'node:perf_hooks';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../../db/client';
 import type { Limits } from '../../limits';
@@ -20,13 +21,19 @@ export interface AlertDeps extends NotifyDeps {
 export function alertHandlers(deps: AlertDeps): JobHandlers {
   return {
     [ALERTS_QUEUE]: async () => {
+      // Every pass logs its line, with nothing sent too: it is how a pass is timed.
+      const started = performance.now();
       const { mails, posts, items } = await sendExploitedAlerts(deps);
-      if (mails + posts > 0) {
-        deps.logger?.info(
-          { component: 'vulnerabilities', mails, posts, items },
-          'exploited vulnerability emails and posts queued',
-        );
-      }
+      deps.logger?.info(
+        {
+          component: 'vulnerabilities',
+          mails,
+          posts,
+          items,
+          durationMs: Math.round(performance.now() - started),
+        },
+        'vulnerability alerts pass done',
+      );
     },
     [DIGEST_QUEUE]: async () => {
       try {
