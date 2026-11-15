@@ -566,7 +566,7 @@ export function createComplianceService(deps: {
           data: gzipSync(result.canonical),
           sha256,
           sizeBytes: result.canonical.length,
-          sbom: sbom === null ? null : gzipSync(Buffer.from(sbom.json, 'utf8')),
+          sbom: sbom === null ? null : gzipSync(sbom.json),
           sbomSha256: sbom === null ? null : sbom.sha256,
           summary: result.summary,
           // The refs the build used: after a rolling upgrade they can differ from the

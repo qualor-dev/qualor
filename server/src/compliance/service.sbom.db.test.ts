@@ -146,6 +146,27 @@ describe('ctx.compliance and the attached SBOM (0.15 plan 5, V13)', () => {
     });
   });
 
+  it('stores and serves a non-ASCII SBOM byte for byte', async () => {
+    const id = await newReport();
+    const sbom = '{"bomFormat":"CycloneDX","components":[{"name":"é漢"}]}';
+    const sbomSha = createHash('sha256').update(sbom).digest('hex');
+    const canonical = JSON.stringify({ a: 1, sbom: { sha256: sbomSha } });
+    await expect(
+      compliance.complete(id, {
+        canonical: Buffer.from(canonical),
+        sha256: createHash('sha256').update(canonical).digest('hex'),
+        summary: { s: 1 },
+        sbom: { json: sbom, sha256: sbomSha },
+      }),
+    ).resolves.toBe(true);
+    const [row] = await ctx.db
+      .select({ sbom: complianceReports.sbom })
+      .from(complianceReports)
+      .where(eq(complianceReports.id, id));
+    expect(gunzipSync(row!.sbom!).toString('utf8')).toBe(sbom);
+    expect((await get(`${id}/sbom`)).json()).toEqual({ sha256: sbomSha, text: sbom });
+  });
+
   it('refuses an SBOM whose hash does not match, and fails the row', async () => {
     const id = await newReport();
     await expect(
