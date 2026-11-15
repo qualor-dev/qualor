@@ -105,8 +105,8 @@ Prediction Scoring System (EPSS). Without the feature the tab shows none of it.
 | Where | What it shows |
 |---|---|
 | **Exploited** column of **By version** | the open vulnerabilities of the target that are in KEV. A count leaves out decided and ignored ones, like the other counts. It shows 0 when there are none |
-| **Exploited (KEV)** badge on a row | the vulnerability is in KEV. The tooltip gives the date CISA added it, and says "Known to be used in ransomware" when KEV marks it so |
-| **EPSS** on a row | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The tooltip adds the percentile |
+| **Exploited (KEV)** badge on a row | the vulnerability is in KEV. The row also says "In CISA KEV since" the date CISA added it, and "Used in ransomware" when KEV marks it so. The tooltip repeats both |
+| **EPSS** on a row | the probability that the vulnerability is exploited in the next 30 days, such as "EPSS 42.0%". Below 0.1% it reads "<0.1%". The row adds "EPSS percentile" with the percentile, such as 97 |
 | **Exploited only** filter | lists only the rows with the badge. It is kept in the URL as `exploited=true` |
 | order of the rows | open rows first, then the others. Within each group, exploited rows come first, and both parts run by severity |
 
