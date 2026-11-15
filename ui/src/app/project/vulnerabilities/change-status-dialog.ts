@@ -17,6 +17,7 @@ import { LabelPipe } from '../../i18n/label.pipe';
 import { closeModal, openAfterRender } from '../../shared/dialog';
 import { inputValue } from '../../shared/forms';
 import { RetryOffer } from '../../shared/retry';
+import { type Reason, VEX_REASONS } from './vex-reasons';
 
 export type VulnerabilityItem = ResponseBody<
   '/api/v0/projects/{id}/vulnerabilities',
@@ -24,7 +25,6 @@ export type VulnerabilityItem = ResponseBody<
 >['items'][number];
 type Decision = RequestBody<'/api/v0/projects/{id}/vulnerability-decisions', 'put'>;
 export type DecisionStatus = Decision['status'];
-export type Reason = NonNullable<Decision['reason']>;
 
 /** The one target a view is about (`kind:id` in the URL), named for the "Only <target>" choice. */
 export interface DialogTarget {
@@ -33,13 +33,6 @@ export interface DialogTarget {
   name: string;
 }
 
-export const VEX_REASONS: Reason[] = [
-  'component_not_present',
-  'vulnerable_code_not_present',
-  'vulnerable_code_not_in_execute_path',
-  'vulnerable_code_cannot_be_controlled_by_adversary',
-  'inline_mitigations_already_exist',
-];
 const STATUSES: DecisionStatus[] = ['open', 'false_positive', 'wont_fix'];
 
 /**

@@ -23,7 +23,7 @@ import { can } from '../auth/permissions';
 import { branchView, findBranch, notFound } from '../project/branches';
 import { codeFileLink } from '../project/code-links';
 import { CurrentProject } from '../project/current-project';
-import { type Reason, VEX_REASONS } from '../project/vulnerabilities/change-status-dialog';
+import { type Reason, VEX_REASONS } from '../project/vulnerabilities/vex-reasons';
 import { DateTimePipe, formatDateTime } from '../shared/date-time.pipe';
 import { inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';

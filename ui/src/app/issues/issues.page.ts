@@ -24,9 +24,9 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { label, type LabelKind } from '../i18n/labels';
 import { branchTitle, branchView, findBranch, mainBranchView } from '../project/branches';
 import { CurrentProject } from '../project/current-project';
+import { type Reason, VEX_REASONS } from '../project/vulnerabilities/vex-reasons';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { inputValue, isChecked } from '../shared/forms';
-import { type Reason, VEX_REASONS } from '../project/vulnerabilities/change-status-dialog';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { RetryOffer } from '../shared/retry';
@@ -75,7 +75,12 @@ const GROUP_TITLES: Record<ListFilter, () => string> = {
   kind: () => $localize`:@@issues.facet.kind:Type`,
 };
 
-/** "2 issues changed. 1 issue cannot change to this status; it stays selected." */
+/**
+ * "2 issues changed. 1 issue cannot change to this status; it stays selected."
+ *
+ * $localize has no ICU plural; ICU works only in template i18n, so each plural here is two ids
+ * (`…One` and the plain one).
+ */
 function bulkSummary(result: BulkResult): string {
   const changed = result.succeeded.length;
   const invalid = result.failed.filter((f) => f.code === 'INVALID_TRANSITION').length;

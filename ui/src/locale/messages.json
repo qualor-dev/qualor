@@ -1102,8 +1102,6 @@
     "vulns.dialog.applies": "Applies to",
     "vulns.dialog.appliesProject": "All branches and versions of this project",
     "vulns.dialog.appliesTarget": "Only {$INTERPOLATION}",
-    "vulns.dialog.applies2": "Applies to",
-    "vulns.dialog.appliesProject2": "All branches and versions of this project",
     "vulns.dialog.note": " Goes into VEX and compliance reports with your name and the date. ",
     "vulns.dialog.save": " Save ",
     "vulns.dialog.status.falsePositive": "Not affected (false positive)",
