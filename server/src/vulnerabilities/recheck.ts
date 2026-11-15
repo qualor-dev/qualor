@@ -671,6 +671,9 @@ function freshRows(
  *
  * One transaction; the projects, then the targets, are held FOR KEY SHARE until it commits, so a
  * deletion waits for it, and a target deleted before it gets no rows.
+ *
+ * Every writer of `target_vulnerabilities` must move the target's check row ({@link writeChecks})
+ * in the same transaction: the alerts observe pass reads only targets whose check row moved (D18).
  */
 async function writeTargets(
   db: Db,

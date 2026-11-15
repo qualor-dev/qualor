@@ -751,6 +751,26 @@ describe('vulnerability re-checks', () => {
       expect(await markedPurls()).toEqual([PD]);
     });
 
+    it('a full re-check with nothing stale deletes nothing', async () => {
+      await db().delete(projects);
+      const p = await project({ versionRule: 'lines', versionLines: 1 });
+      await tagScan(p, '1.0.0', { dependencies: [A] });
+      await tagScan(p, '2.0.0', { dependencies: [D] });
+      const matchRows = async () =>
+        db()
+          .select({ purl: vulnerabilityMatches.purl, id: vulnerabilityMatches.vulnerabilityId })
+          .from(vulnerabilityMatches)
+          .orderBy(asc(vulnerabilityMatches.purl), asc(vulnerabilityMatches.vulnerabilityId));
+      // The first run prunes what other tests left; the second finds every match in its run.
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
+      const matches = await matchRows();
+      expect(matches.map((m) => m.purl)).toContain(PD);
+      expect(await markedPurls()).toEqual([PD]);
+      expect(await recheck({ all: true })).toMatchObject({ kind: 'done' });
+      expect(await matchRows()).toEqual(matches);
+      expect(await markedPurls()).toEqual([PD]);
+    });
+
     it('a re-check of some projects deletes nothing', async () => {
       const p = await setup();
       expect(await recheck({ projectIds: [p.id] })).toMatchObject({ kind: 'done' });
