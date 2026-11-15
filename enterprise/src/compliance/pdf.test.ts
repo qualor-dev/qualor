@@ -89,6 +89,12 @@ describe('renderPdf (4E-1 §2.5)', () => {
     expect(await textOf(await renderPdf(sampleReport()))).toContain('All findings');
   });
 
+  it('lists no Findings section in a version report', async () => {
+    const heading = 'open findings, by severity';
+    expect(await textOf(await renderPdf(versionReport()))).not.toContain(heading);
+    expect(await textOf(await renderPdf(sampleReport()))).toContain(heading);
+  });
+
   it('lists the dataset dates on the cover', async () => {
     const text = await textOf(await renderPdf(dependencyReport()));
     expect(text).toContain('Vulnerability database built');
@@ -136,6 +142,46 @@ describe('renderPdf (4E-1 §2.5)', () => {
     report.scope.project = null;
     report.scope.branch = null;
     expect(await textOf(await renderPdf(report))).toMatch(/Project\s+Rule\s+Name/);
+  });
+
+  const organisationWithPriority = (): ReturnType<typeof dependencyReport> => {
+    const report = dependencyReport();
+    report.scope.kind = 'organization';
+    report.scope.project = null;
+    report.scope.branch = null;
+    return report;
+  };
+
+  it('gives the package room for two lines in an organisation report with priority', async () => {
+    const report = organisationWithPriority();
+    const name = 'org.example.logging:log4j-core-extras-12';
+    expect(name).toHaveLength(40);
+    const finding = report.findings.find((f) => f.id === 'd1')!;
+    finding.rule = 'CVE-2021-44228';
+    finding.vulnerability!.packageName = name;
+    finding.vulnerability!.kev = { dateAdded: '2021-12-10' };
+    const text = await textOf(await renderPdf(report));
+    const spaced = new RegExp(
+      Array.from(name)
+        .map((c) => c.replace(/[.*+?^${}()|[\]\\-]/g, (m) => `\\${m}`))
+        .join('\\s*'),
+    );
+    const found = text.match(spaced)?.[0];
+    expect(found).toBeDefined();
+    expect(found!.match(/\s+/g)?.length ?? 0).toBeLessThanOrEqual(1);
+    expect(text).toContain('CVE-2021-44228');
+    expect(text).toContain('2021-12-10');
+    const headers = ['Project', 'Rule', 'Name', 'Package', 'Severity', 'Fixed in', 'KEV', 'EPSS'];
+    for (const header of [...headers, 'First seen']) expect(text).toContain(header);
+  });
+
+  it('cuts a 200-character package name', async () => {
+    const report = organisationWithPriority();
+    const name = Array.from({ length: 200 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+    report.findings.find((f) => f.id === 'd1')!.vulnerability!.packageName = name;
+    const text = (await textOf(await renderPdf(report))).replace(/\s+/g, '');
+    expect(text).toContain(`${name.slice(0, 119)}…`);
+    expect(text).not.toContain(name.slice(0, 120));
   });
 
   it('prints a tiny EPSS score as below 0.1%', async () => {

@@ -366,23 +366,36 @@ async function dependencyFindings(layout: Layout, report: ReportJson): Promise<v
   const priority = hasPriority(report);
   const withProject = report.scope.kind === 'organization';
   const total = report.summary.dependencies.open;
-  const fixed = 70 + 70 + 42 + 70 + 54 + (withProject ? 45 : 0) + (priority ? 48 + 40 : 0);
+  // An organisation report with priority has nine columns: the fixed ones shrink so that the
+  // package (about 110 pt) wraps onto two lines instead of being squeezed to about 56 pt.
+  const narrow = withProject && priority;
+  const w = narrow
+    ? { project: 45, rule: 64, name: 52, severity: 40, fixedIn: 56, kev: 48, epss: 32, seen: 52 }
+    : { project: 45, rule: 70, name: 70, severity: 42, fixedIn: 70, kev: 48, epss: 40, seen: 54 };
+  const fixed =
+    w.rule +
+    w.name +
+    w.severity +
+    w.fixedIn +
+    w.seen +
+    (withProject ? w.project : 0) +
+    (priority ? w.kev + w.epss : 0);
   if (shown.length < total) layout.text(`The first ${shown.length} of ${total} are listed.`);
   await layout.table(
     [
-      ...(withProject ? [{ header: 'Project', width: 45 }] : []),
-      { header: 'Rule', width: 70 },
-      { header: 'Name', width: 70 },
+      ...(withProject ? [{ header: 'Project', width: w.project }] : []),
+      { header: 'Rule', width: w.rule },
+      { header: 'Name', width: w.name },
       { header: 'Package', width: layout.width - fixed },
-      { header: 'Severity', width: 42 },
-      { header: 'Fixed in', width: 70 },
+      { header: 'Severity', width: w.severity },
+      { header: 'Fixed in', width: w.fixedIn },
       ...(priority
         ? [
-            { header: 'KEV', width: 48, align: 'right' as const },
-            { header: 'EPSS', width: 40, align: 'right' as const },
+            { header: 'KEV', width: w.kev, align: 'right' as const },
+            { header: 'EPSS', width: w.epss, align: 'right' as const },
           ]
         : []),
-      { header: 'First seen', width: 54, align: 'right' as const },
+      { header: 'First seen', width: w.seen, align: 'right' as const },
     ],
     (function* () {
       for (const f of shown) {
@@ -548,7 +561,8 @@ export async function renderPdf(
   await standards(layout, report);
   await secretsAndDependencies(layout, report);
   await triage(layout, report);
-  await findings(layout, report);
+  // A version report lists dependencies only, and the table above already holds them.
+  if (!report.scope.version) await findings(layout, report);
   layout.frame(scopeLine(report), report.id);
   doc.end();
   return done;
