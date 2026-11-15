@@ -82,23 +82,23 @@ The `qualor` CLI (entrypoint `qualor`, default command `scan`) is a single binar
 Bun. It runs as the user `node` (uid 1000) in `/src`. The image is about 4.1 GB, and every base
 image is pinned by digest.
 
-| Tool                       | Version                                               | For                                                  |
-| -------------------------- | ----------------------------------------------------- | ---------------------------------------------------- |
-| PMD                        | 7.27.0                                                | Java                                                 |
-| SpotBugs with FindSecBugs  | 4.10.4, 1.14.0                                        | Java bytecode, security rules                        |
-| detekt                     | 1.23.8                                                | Kotlin                                               |
-| SwiftLint                  | 0.65.1 (static Linux build)                           | Swift                                                |
-| Ruff                       | 0.16.9                                                | Python                                               |
-| PHPStan                    | 2.2.16, on Debian's PHP 8.2                           | PHP                                                  |
-| RuboCop                    | RuboCop 1.91.0 on Ruby 4.0.7                          | Ruby                                                 |
-| staticcheck, go vet, gosec | 2026.2.1, Go 1.27.1, 2.29.0                           | Go, offline                                          |
-| cppcheck                   | 2.22.0 (built from source)                            | C, C++                                               |
-| eslint-plugin-sonarjs      | 2.0.4, on Qualor's own ESLint 9                       | SonarQube-compatible JavaScript and TypeScript rules |
-| stylelint, HTMLHint        | 17.15, 1.9.2                                          | CSS, SCSS, HTML                                      |
-| OpenGrep                   | 1.30.0                                                | Qualor's security rules and your own rule files      |
-| Gitleaks                   | 8.30.1                                                | secrets                                              |
-| Trivy                      | 0.74.0, with a snapshot of its vulnerability database | dependencies                                         |
-| qualor-rules               | 2026.10.6                                             | Qualor's security rules                              |
+| Tool                       | Version                                                                             | For                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| PMD                        | 7.27.0                                                                              | Java                                                 |
+| SpotBugs with FindSecBugs  | 4.10.4, 1.14.0                                                                      | Java bytecode, security rules                        |
+| detekt                     | 1.23.8                                                                              | Kotlin                                               |
+| SwiftLint                  | 0.65.1 (static Linux build)                                                         | Swift                                                |
+| Ruff                       | 0.16.9                                                                              | Python                                               |
+| PHPStan                    | 2.2.16, on Debian's PHP 8.2                                                         | PHP                                                  |
+| RuboCop                    | RuboCop 1.91.0 on Ruby 4.0.7                                                        | Ruby                                                 |
+| staticcheck, go vet, gosec | 2026.2.1, Go 1.27.1, 2.29.0                                                         | Go, offline                                          |
+| cppcheck                   | 2.22.0 (built from source)                                                          | C, C++                                               |
+| eslint-plugin-sonarjs      | 2.0.4, on Qualor's own ESLint 9                                                     | SonarQube-compatible JavaScript and TypeScript rules |
+| stylelint, HTMLHint        | 17.15, 1.9.2                                                                        | CSS, SCSS, HTML                                      |
+| OpenGrep                   | 1.30.0                                                                              | Qualor's security rules and your own rule files      |
+| Gitleaks                   | 8.30.1                                                                              | secrets                                              |
+| Trivy                      | 0.74.0, with a snapshot of its vulnerability database, filtered to library packages | dependencies                                         |
+| qualor-rules               | 2026.10.6                                                                           | Qualor's security rules                              |
 
 The project's own ESLint runs on the bundled Node.js 22.23.4 (with npm and corepack). PMD, SpotBugs
 and detekt run on the Eclipse Temurin JRE 17.0.20+8. git is configured with `safe.directory '*'`,

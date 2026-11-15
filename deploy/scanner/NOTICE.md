@@ -3,7 +3,7 @@
 The `qualor/scanner` image bundles the Qualor CLI (MIT, `/opt/qualor/licenses/qualor/LICENSE`)
 with third-party programs, each under its own licence. They are unmodified upstream releases,
 installed by `tools/analyzers/install.sh` (pinned versions, SHA-256 checked; Trivy's
-vulnerability database pinned by digest), compiled into the
+vulnerability database pinned by digest, then filtered: see below), compiled into the
 `qualor` binary from the pinned lockfile, or copied from the pinned base images named in
 `deploy/scanner/Dockerfile`. The licence texts are in `/opt/qualor/licenses/` of the image
 (`deploy/scanner/licenses/` in the repository) unless the table names another place.
@@ -27,7 +27,7 @@ vulnerability database pinned by digest), compiled into the
 | PMD                                                                                   | 7.27.0                                         | BSD-style, with Apache-2.0 parts (`PMD-LICENSE.txt`); its bundled libraries: see below                                                                                                         | https://github.com/pmd/pmd/tree/pmd_releases/7.27.0                                                   |
 | Gitleaks                                                                              | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                                | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                                 | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                        | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
-| Trivy vulnerability database (a snapshot)                                             | see `/opt/qualor/share/trivy/db/metadata.json` | the advisories' own terms: see below                                                                                                                                                           | https://github.com/aquasecurity/trivy-db                                                              |
+| Trivy vulnerability database (a filtered snapshot: library packages only)             | see `/opt/qualor/share/trivy/db/metadata.json` | each source's own terms: see below                                                                                                                                                             | https://github.com/aquasecurity/trivy-db                                                              |
 | eslint-plugin-sonarjs (Qualor's own `sonarjs` pass)                                   | 2.0.4                                          | LGPL-3.0 (`ESLINT-PLUGIN-SONARJS-LICENSE.txt`); its npm dependency tree, axe-core (MPL-2.0) included: see below (`SONARJS-DEPENDENCIES.txt`)                                                   | https://github.com/SonarSource/SonarJS/tree/273825f98b35b29b409fbf4f89efce075c651d96                  |
 | Ruff (the ruff engine)                                                                | 0.16.9                                         | MIT (`RUFF-LICENSE.txt`, which also carries the licences of the projects Ruff derives from); the Rust crates it compiles in: see below (`RUFF-DEPENDENCIES.txt`)                               | https://github.com/astral-sh/ruff/tree/0.16.9                                                         |
 | stylelint and HTMLHint (Qualor's HTML and CSS linters, `/opt/qualor/weblint`)         | 17.15.0 and 1.9.2                              | MIT; their npm dependency tree (MIT, ISC, BSD, MIT-0, BlueOak-1.0.0, CC0-1.0, Python-2.0): see below (`WEBLINT-DEPENDENCIES.txt`)                                                              | https://github.com/stylelint/stylelint/tree/17.15.0, https://github.com/htmlhint/HTMLHint/tree/v1.9.2 |
@@ -116,23 +116,58 @@ their source in `qualor/scanner-sources`: hashicorp's `aws-sdk-go-base/v2` v2.0.
 `spdx/tools-golang` is Apache-2.0 or GPL-2.0-or-later at the recipient's choice, taken as
 Apache-2.0; the rest is Apache-2.0, MIT, BSD or ISC.
 
-Trivy's vulnerability database (`/opt/qualor/share/trivy/db/`) is a snapshot of
-`ghcr.io/aquasecurity/trivy-db:2`, built by Aqua Security from public advisories (the `trivy-db`
-code is Apache-2.0; its repository states no licence for the database content). Qualor ships the
-database unmodified. Its sources keep their own terms. Where a source states them: the
-GitHub Advisory Database (CC-BY-4.0, https://github.com/github/advisory-database), the NVD (public
-domain, with NIST's terms of use, https://nvd.nist.gov/), Red Hat security data (CC-BY-4.0,
-https://access.redhat.com/security/data) and the Go vulnerability database (CC-BY-4.0, per
-https://github.com/google/osv.dev/blob/master/docs/data.md). Canonical's Ubuntu security data
-(the Ubuntu CVE Tracker) is possibly CC-BY-SA-4.0: OSV lists its Ubuntu data under that licence
-(https://github.com/google/osv.dev/blob/master/docs/data.md), after Launchpad bug 1962128
-("Clarify data license", https://bugs.launchpad.net/bugs/1962128). Other sources, stated here
-without a licence: the Debian Security Tracker (https://security-tracker.debian.org/), OSV, the
-Ruby Advisory Database, the PHP Security Advisories Database, the Node.js security working group
-and the GitLab Advisory Database community edition. Aqua Security lists the database's sources
-(not their licences) at https://trivy.dev/docs/latest/guide/scanner/vulnerability/. Whether any
-of these terms binds the distribution of the snapshot is an open legal question. When it was
-built:
+Trivy's vulnerability database (`/opt/qualor/share/trivy/db/`) is a filtered snapshot of
+`ghcr.io/aquasecurity/trivy-db:2`: the layer
+`sha256:7d0ae3ee84ece1ecae274d9ac146c7241ae483c981f68aeb3f4953f6c2fbc6b0` of
+2026-09-25T06:43:29Z (`TRIVY_DB_DIGEST` and `TRIVY_DB_CREATED` in `tools/analyzers/install.sh`).
+Aqua Security builds the database from public advisories. Qualor modified the snapshot when it
+built this image (`tools/analyzers/filter-trivy-db.sh`):
+
+- it removed every operating-system and vendor source, so only the library packages the scanner
+  checks remain (it runs `trivy fs --pkg-types library`);
+- it removed the vulnerability details that only those sources referenced;
+- in the details it kept, it removed those sources' severities and CVSS scores.
+
+The snapshot keeps these sources:
+
+| Source                                                                                                | Copyright holder                       | Licence                                                 | Link                                                                    |
+| ----------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------- |
+| trivy-db, the database build                                                                          | Aqua Security Software Ltd.            | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-DB-NOTICE.txt`) | https://github.com/aquasecurity/trivy-db                                |
+| GitHub Advisory Database: Composer, Erlang, Go, Maven, npm, NuGet, pip, Pub, RubyGems, Rust and Swift | GitHub, Inc.                           | CC-BY-4.0                                               | https://github.com/advisories                                           |
+| Go Vulnerability Database                                                                             | The Go Authors                         | CC-BY-4.0                                               | https://go.dev/security/vuln                                            |
+| Official Kubernetes CVE Feed                                                                          | The Kubernetes Authors                 | CC-BY-4.0                                               | https://kubernetes.io/docs/reference/issues-security/official-cve-feed/ |
+| Julia Ecosystem Security Advisories                                                                   | the SecurityAdvisories.jl contributors | CC-BY-4.0                                               | https://github.com/JuliaLang/SecurityAdvisories.jl                      |
+| GitLab Advisory Database Community: Conan                                                             | GitLab B.V.                            | MIT (`GITLAB-ADVISORIES-COMMUNITY-LICENSE.txt`)         | https://gitlab.com/gitlab-org/advisories-community                      |
+| Node.js Ecosystem Security Working Group                                                              | Node.js Foundation                     | MIT (`NODEJS-SECURITY-WG-LICENSE.txt`)                  | https://github.com/nodejs/security-wg                                   |
+| Bitnami Vulnerability Database                                                                        | Broadcom Inc.                          | Apache-2.0 (the text: `TRIVY-LICENSE.txt`)              | https://github.com/bitnami/vulndb                                       |
+| The Aqua Security Vulnerability Database: pip                                                         | Aqua Security Software Ltd.            | Apache-2.0 (the text: `TRIVY-LICENSE.txt`)              | https://github.com/aquasecurity/vuln-list-aqua                          |
+| PHP Security Advisories Database                                                                      | FriendsOfPHP                           | Unlicense (public domain)                               | https://github.com/FriendsOfPHP/security-advisories                     |
+| Ruby Advisory Database                                                                                | RubySec                                | public-domain dedication                                | https://github.com/rubysec/ruby-advisory-db                             |
+| NVD, in the vulnerability details                                                                     | NIST (a U.S. Government work)          | public domain, under the NVD's terms of use             | https://nvd.nist.gov/                                                   |
+| CVE records, in the vulnerability details                                                             | The MITRE Corporation                  | the CVE Terms of Use (below)                            | https://www.cve.org/Legal/TermsOfUse                                    |
+| Red Hat security data, in the vulnerability details                                                   | Red Hat, Inc.                          | CC-BY-4.0                                               | https://access.redhat.com/security/data                                 |
+
+A vulnerability detail (title, description, references, severity) is trivy-db's merge of its
+sources, the NVD first. Where the NVD has none, the text comes from Red Hat or from another source
+of trivy-db, operating-system sources included (Aqua Security lists them at
+https://trivy.dev/docs/latest/guide/scanner/vulnerability/). Each text keeps its source's terms.
+
+The GitHub Advisory Database (CC-BY-4.0) takes a link as its attribution:
+https://github.com/advisories. The CC-BY-4.0 licence is at
+https://creativecommons.org/licenses/by/4.0/legalcode; its licensors offer the material as is,
+without warranties (its section 5).
+
+This product uses the NVD API but is not endorsed or certified by the NVD.
+
+The CVE Terms of Use: "MITRE hereby grants you a perpetual, worldwide, non-exclusive, no-charge,
+royalty-free, irrevocable copyright license to reproduce, prepare derivative works of, publicly
+display, publicly perform, sublicense, and distribute Common Vulnerabilities and Exposures (CVE™).
+Any copy you make for such purposes is authorized provided that you reproduce MITRE's copyright
+designation and this license in any such copy." Copyright © 1999-2026, The MITRE Corporation. CVE
+is a trademark and the CVE logo is a registered trademark of The MITRE Corporation.
+
+Qualor's licence (MIT) does not cover this data, and Qualor adds no terms to it: each source's
+terms apply to what it publishes. When the snapshot was built:
 `/opt/qualor/share/trivy/db/metadata.json` (`UpdatedAt`), also recorded in every report
 (`engines[].database`).
 

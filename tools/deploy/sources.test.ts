@@ -456,17 +456,61 @@ describe('the notices (rulings L1 and L2)', () => {
     }
     expect(notice).toMatch(/GitHub Advisory\s+Database \(CC-BY-4\.0/);
     expect(notice).toMatch(/the NVD/);
-    // Fix round 1: Canonical's Ubuntu data is possibly ShareAlike, and nothing claims a licence
-    // list Aqua Security does not publish.
-    expect(notice).toMatch(
-      /Ubuntu security data\s+\(the Ubuntu CVE Tracker\) is possibly CC-BY-SA-4\.0/,
-    );
-    expect(notice).toContain('https://bugs.launchpad.net/bugs/1962128');
+    // Fix round 1: nothing claims a licence list Aqua Security does not publish.
     expect(notice).not.toMatch(/sources and their licences are listed/);
     expect(notice).toContain('/opt/qualor/share/trivy/db/metadata.json');
     // The written offer stays, as a courtesy only.
     expect(notice).toMatch(/any third party/);
     expect(notice).toMatch(/courtesy/);
+  });
+
+  it('lists the sources of the filtered Trivy database snapshot (D31)', () => {
+    const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8');
+    const from = notice.indexOf("Trivy's vulnerability database (`/opt/qualor/share/trivy/db/`)");
+    const section = notice.slice(from, notice.indexOf('The OpenGrep release binary', from));
+    expect(from).toBeGreaterThan(0);
+    const flat = section.replace(/\s+/g, ' ');
+    // The pinned upstream layer (pnpm trivy-db:pin moves it: update the NOTICE, and review the
+    // sources of the new snapshot), and that Qualor filtered it.
+    for (const pin of ['TRIVY_DB_DIGEST', 'TRIVY_DB_CREATED']) {
+      const value = new RegExp(`^${pin}=(\\S+)$`, 'm').exec(installSh)?.[1] ?? pin;
+      expect(flat, `${pin} of install.sh`).toContain(value);
+    }
+    expect(flat).toMatch(/filtered snapshot of `ghcr\.io\/aquasecurity\/trivy-db:2`/);
+    expect(flat).toContain('removed every operating-system and vendor source');
+    expect(flat).toContain(
+      'This product uses the NVD API but is not endorsed or certified by the NVD.',
+    );
+    expect(flat).toContain(
+      "Any copy you make for such purposes is authorized provided that you reproduce MITRE's copyright designation and this license in any such copy.",
+    );
+    expect(flat).toMatch(/Qualor's licence \(MIT\) does not cover this data/);
+    // The data-source names of the kept sources (tools/analyzers/trivy-db-filter.test.ts keeps
+    // their IDs), with the licence texts they ask for.
+    for (const source of [
+      'GitHub Advisory Database',
+      'Go Vulnerability Database',
+      'Official Kubernetes CVE Feed',
+      'Julia Ecosystem Security Advisories',
+      'GitLab Advisory Database Community',
+      'Node.js Ecosystem Security Working Group',
+      'Bitnami Vulnerability Database',
+      'The Aqua Security Vulnerability Database',
+      'PHP Security Advisories Database',
+      'Ruby Advisory Database',
+    ])
+      expect(flat, source).toContain(source);
+    for (const [file, holder] of [
+      ['TRIVY-DB-NOTICE.txt', 'Trivy-db\nCopyright 2019-2020 Aqua Security Software Ltd.'],
+      ['GITLAB-ADVISORIES-COMMUNITY-LICENSE.txt', 'Copyright (c) 2020 GitLab B.V.'],
+      ['NODEJS-SECURITY-WG-LICENSE.txt', 'Copyright (c) Node.js Foundation'],
+    ] as const) {
+      expect(section, file).toContain(`\`${file}\``);
+      expect(readFileSync(`deploy/scanner/licenses/${file}`, 'utf8'), file).toContain(holder);
+    }
+    // No dropped source is named, and the snapshot is no longer "unmodified" (ruling B2-h).
+    for (const word of ['Chainguard', 'Wolfi', 'MinimOS']) expect(notice, word).not.toContain(word);
+    for (const word of ['Microsoft', 'unmodified']) expect(section, word).not.toContain(word);
   });
 
   it('gives the server image a NOTICE with its Debian and Node.js parts', () => {
