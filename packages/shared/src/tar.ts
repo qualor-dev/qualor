@@ -4,6 +4,13 @@ import { createGunzip } from 'node:zlib';
 const BLOCK = 512;
 /** A `keep` entry is read into memory: at most this big (metadata.json is a few hundred bytes). */
 export const KEEP_MAX_BYTES = 1024 * 1024;
+/**
+ * A Trivy database archive may unpack to this many bytes (`trivy.db` alone is 1.56 GiB; the
+ * server's volume is 6Gi). The server and the scanner pass it as {@link TarLimits} `maxBytes`.
+ */
+export const VULNDB_MAX_INFLATED_BYTES = 6 * 1024 ** 3;
+/** Unpacking a Trivy database archive (validating or extracting it) may take this long. */
+export const VULNDB_INFLATE_DEADLINE_MS = 10 * 60_000;
 
 /** Which of {@link TarLimits} an archive went past. */
 export type TarLimit = 'bytes' | 'deadline';

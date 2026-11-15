@@ -8,7 +8,15 @@ import { LOCKS } from '../db/locks';
 import { vulndbChunks, vulndbDatasets, type VulndbDatasetRow } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbStateLocked, type VulndbState } from './state';
-import { readTarGz, TarError } from '@qualor/shared/tar';
+import {
+  readTarGz,
+  TarError,
+  VULNDB_INFLATE_DEADLINE_MS,
+  VULNDB_MAX_INFLATED_BYTES,
+} from '@qualor/shared/tar';
+
+// The inflate caps live next to the reader: the scanner passes them too (`local.ts` imports them here).
+export { VULNDB_INFLATE_DEADLINE_MS, VULNDB_MAX_INFLATED_BYTES };
 
 /** A `vulndb_datasets` row. */
 export type DatasetRow = VulndbDatasetRow;
@@ -17,10 +25,6 @@ export type DatasetRow = VulndbDatasetRow;
 export const CHUNK_BYTES = 8 * 1024 * 1024;
 /** An `incomplete` dataset older than this is a store that died: pruneDatasets removes it. */
 export const INCOMPLETE_MAX_AGE_MS = 60 * 60 * 1000;
-/** A dataset archive may unpack to this many bytes (`trivy.db` alone is 1.56 GiB; the volume is 6Gi). */
-export const VULNDB_MAX_INFLATED_BYTES = 6 * 1024 ** 3;
-/** Unpacking an archive (validating or extracting it) may take this long. */
-export const VULNDB_INFLATE_DEADLINE_MS = 10 * 60_000;
 /** The digest an `incomplete` dataset carries until its bytes are all in. */
 const PENDING_DIGEST = `sha256:${'0'.repeat(64)}`;
 

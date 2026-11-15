@@ -222,6 +222,7 @@ describe('readTarGz', () => {
     const error = await rejection(readAll(whole.subarray(0, whole.length - 2_000)));
     expect(error).toBeInstanceOf(TarError);
     expect((error as Error).message).toMatch(/ends early/);
+    expect((error as TarError).limit).toBeNull();
   });
 
   it('rejects a tar that ends inside an entry', async () => {
