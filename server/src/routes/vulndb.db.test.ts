@@ -13,6 +13,7 @@ import {
   type TestContext,
 } from '../../test/app';
 import { uuidv7 } from '../db/ids';
+import { whileAuditFails } from '../../test/audit-log';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
 import {
   metadataJson,
@@ -65,22 +66,6 @@ vi.mock('../vulndb/update', async (importOriginal) => {
     },
   };
 });
-
-/** Runs `action` while every insert into audit_events fails, as a recorder that throws. */
-async function whileAuditFails<T>(ctx: TestContext, action: () => Promise<T>): Promise<T> {
-  await ctx.db.execute(sql`
-    CREATE FUNCTION refuse_audit() RETURNS trigger LANGUAGE plpgsql
-      AS $$ BEGIN RAISE EXCEPTION 'audit refused'; END $$`);
-  await ctx.db.execute(sql`
-    CREATE TRIGGER refuse_audit BEFORE INSERT ON audit_events
-      FOR EACH ROW EXECUTE FUNCTION refuse_audit()`);
-  try {
-    return await action();
-  } finally {
-    await ctx.db.execute(sql`DROP TRIGGER refuse_audit ON audit_events`);
-    await ctx.db.execute(sql`DROP FUNCTION refuse_audit()`);
-  }
-}
 
 describe('/system/vulnerability-db (API)', () => {
   let ctx: TestContext;

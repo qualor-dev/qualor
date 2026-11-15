@@ -355,8 +355,9 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         });
       }
       chargeChanges(principal.user.id, 1);
-      // From here a failure rolls the decision back or never starts one, so the request's own
-      // token goes back.
+      // From here a failure rolls the decision back or never starts one, so everything charged
+      // goes back: the request's own token, and the issues' once they were taken.
+      let charged = 1;
       try {
         if (scope.kind !== 'project') {
           await requireTarget(deps.db, project.id, scope, 'body.scope');
@@ -389,13 +390,17 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
           );
           // The request paid for one change; each issue the decision changed costs one more, and a
           // refusal rolls the decision back.
-          if (appliedIssueIds.length > 0) chargeChanges(principal.user.id, appliedIssueIds.length);
+          if (appliedIssueIds.length > 0) {
+            chargeChanges(principal.user.id, appliedIssueIds.length);
+            charged += appliedIssueIds.length;
+          }
           const dto = (await decisionsOf(tx, [decision.id])).get(decision.id);
           if (!dto) throw new Error('The decision just written is missing');
           return { decision: dto, appliedIssues: appliedIssueIds.length };
         });
       } catch (err) {
-        chargeChanges.refund(principal.user.id, 1);
+        // Also a failure after the issues' charge (decisionsOf, the COMMIT): nothing was changed.
+        chargeChanges.refund(principal.user.id, charged);
         throw err;
       }
     },
