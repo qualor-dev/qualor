@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import { eq, inArray, sql } from 'drizzle-orm';
@@ -694,6 +695,31 @@ describe('/system/vulnerability-db (API)', () => {
       expect(res.statusCode, res.body).toBe(500);
       expect((await readVulndbState(ctx.db)).currentDatasetId).toBeNull();
       expect(await ctx.db.select().from(jobs).where(eq(jobs.queue, RECHECK_QUEUE))).toEqual([]);
+    });
+
+    it('keeps no dataset of an upload whose audit fails, and nothing to serve from it', async () => {
+      const ok = await upload(trivyArchive());
+      expect(ok.statusCode, ok.body).toBe(200);
+      const current: string = ok.json().current.digest;
+      const other = trivyArchive({ metadata: metadataJson(2, '2026-11-01T00:00:00Z') });
+      const digest = `sha256:${createHash('sha256').update(other).digest('hex')}`;
+      const res = await whileAuditFails(ctx, () => upload(other));
+      expect(res.statusCode, res.body).toBe(500);
+      expect(
+        await ctx.db
+          .select({ id: vulndbDatasets.id })
+          .from(vulndbDatasets)
+          .where(eq(vulndbDatasets.digest, digest)),
+      ).toEqual([]);
+      expect((await get()).json().current.digest).toBe(current);
+      const offer = await ctx.app.inject({
+        method: 'GET',
+        url: '/api/v0/scanner/vulnerability-db',
+        headers: admin.headers,
+      });
+      expect(offer.statusCode, offer.body).toBe(200);
+      expect(offer.json().accepted).not.toContain(digest);
+      expect(offer.json()).toMatchObject({ serve: true, accepted: [current] });
     });
 
     it('answers 422 for an invalid archive and keeps the current dataset', async () => {

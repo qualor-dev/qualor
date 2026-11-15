@@ -9,7 +9,7 @@ import { actorOf } from '../audit/recorder';
 import { requireInstanceAdmin } from '../auth/access';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Executor, Tx } from '../db/client';
-import { jobs } from '../db/schema';
+import { jobs, vulndbDatasets } from '../db/schema';
 import { sendContinue } from '../http/expect-continue';
 import { closeAfterRefusal } from '../http/lingering-close';
 import { ProblemError } from '../http/problem';
@@ -545,22 +545,37 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
       const { dataset } = stored;
       // One transaction, so a failed audit leaves the dataset not current and queues no re-check:
       // LOCKS.vulndbState, then LOCKS.vulnerabilityRecheck (enqueueRecheck, last).
-      await deps.db.transaction(async (tx) => {
-        if (!(await makeDatasetCurrent(tx, dataset.id))) {
-          throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
-            detail:
-              'The upload expired before it was stored, because it took too long. Upload the file again',
+      try {
+        await deps.db.transaction(async (tx) => {
+          if (!(await makeDatasetCurrent(tx, dataset.id))) {
+            throw new ProblemError(422, 'INVALID_DATABASE', 'The file is not a usable database', {
+              detail:
+                'The upload expired before it was stored, because it took too long. Upload the file again',
+            });
+          }
+          await deps.audit.record(tx, actorOf(request), [
+            {
+              action: 'vulndb.file_uploaded',
+              target: { type: 'vulndb_settings', id: 'vulndb' },
+              details: { sizeBytes: dataset.sizeBytes, builtAt: isoOrNull(dataset.builtAt) },
+            },
+          ]);
+          await enqueueRecheck(tx, { all: true });
+        });
+      } catch (err) {
+        // Not made current, so it goes now, as storeDataset's own cleanup does: left `ready`, a
+        // prune would keep it as the newest fallback and scanners would be offered it.
+        await deps.db
+          .delete(vulndbDatasets)
+          .where(eq(vulndbDatasets.id, dataset.id))
+          .catch((deleteErr: unknown) => {
+            request.log.warn(
+              { component: 'vulndb', errorClass: errorClass(deleteErr) },
+              'a vulnerability dataset that was not kept could not be deleted',
+            );
           });
-        }
-        await deps.audit.record(tx, actorOf(request), [
-          {
-            action: 'vulndb.file_uploaded',
-            target: { type: 'vulndb_settings', id: 'vulndb' },
-            details: { sizeBytes: dataset.sizeBytes, builtAt: isoOrNull(dataset.builtAt) },
-          },
-        ]);
-        await enqueueRecheck(tx, { all: true });
-      });
+        throw err;
+      }
       // After the re-check is queued, and never a 500: an old dataset left now goes with the next.
       try {
         await pruneDatasets(deps.db);
