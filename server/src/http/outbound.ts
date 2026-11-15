@@ -397,8 +397,15 @@ export async function outboundRequest(
       const chunks: Buffer[] = [];
       let size = 0;
       const finish = (how: 'end' | 'deadline' | 'closed'): void => {
-        if (options.overflow === 'fail' && how === 'deadline') settle(timedOut);
-        else if (options.overflow === 'fail' && how === 'closed') {
+        if (options.overflow === 'fail' && how === 'deadline') {
+          settle(
+            fail(
+              `The answer did not finish within ${durationText(options.timeoutMs)}`,
+              'timeout',
+              true,
+            ),
+          );
+        } else if (options.overflow === 'fail' && how === 'closed') {
           settle(connectionFailedOf(target));
         } else {
           const body = Buffer.concat(chunks);

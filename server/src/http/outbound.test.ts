@@ -177,6 +177,53 @@ function fakeTimers(): void {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
 }
 
+describe('outboundRequest with a buffered body', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const buffered = {
+    allowInternalHosts: true,
+    timeoutMs: 30_000,
+    maxResponseBytes: 1_024,
+    overflow: 'fail' as const,
+    names: NAMES,
+  };
+
+  it('says the answer did not finish when a buffered body outlasts the timeout', async () => {
+    await withStreamServer(async (server) => {
+      fakeTimers();
+      const pending = outboundRequest(get(server.url), buffered);
+      const answer = await server.next();
+      answer.head(200, { 'content-type': 'text/plain' });
+      await answer.write('0123456789');
+      await reading();
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = await pending;
+      expect(result).toMatchObject({ kind: 'failed', cause: 'timeout' });
+      const reason = (result as { reason: string }).reason;
+      expect(reason).toContain('did not finish within 30 s');
+      expect(reason).not.toContain('No response');
+      await answer.closed;
+    });
+  });
+
+  it('says there was no response when no status line arrives in time', async () => {
+    await withStreamServer(async (server) => {
+      fakeTimers();
+      const pending = outboundRequest(get(server.url), buffered);
+      const answer = await server.next();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await pending).toMatchObject({
+        kind: 'failed',
+        cause: 'timeout',
+        reason: 'No response within 30 s',
+      });
+      await answer.closed;
+    });
+  });
+});
+
 describe('outboundStream', () => {
   afterEach(() => {
     vi.useRealTimers();

@@ -148,18 +148,31 @@ function withHost(reason: string, host: string): string {
   return reason.includes(host) ? reason : `${reason} (${host})`;
 }
 
-/** What an exchange without an answer is. */
-function problemOf(failed: OutboundFailed, url: URL): OciProblem {
+/**
+ * What an exchange without an answer is. An answer over its cap is TOO_LARGE, or, with `tooLarge`
+ * (the manifest and the token: no cap there is a contract), BAD_ANSWER with that text. A hop on
+ * another origin than the session's names itself as a redirect.
+ */
+function problemOf(
+  failed: OutboundFailed,
+  url: URL,
+  session: Pick<Reach, 'origin' | 'noun'>,
+  tooLarge?: string,
+): OciProblem {
   switch (failed.cause) {
-    case 'not_public':
-      return problem(
-        'BLOCKED',
-        `${url.host} resolves to a private, loopback or other non-public address; list it in ${INTERNAL_HOSTS_VARIABLE} to allow it`,
-      );
+    case 'not_public': {
+      const hop =
+        url.origin === session.origin
+          ? `${url.host} resolves to a private, loopback or other non-public address; list it in`
+          : `The ${session.noun} redirected to ${url.host}, which resolves to a private, loopback or other non-public address; list ${url.host} in`;
+      return problem('BLOCKED', `${hop} ${INTERNAL_HOSTS_VARIABLE} to allow it`);
+    }
     case 'refused_address':
       return problem('BLOCKED', `${url.host} resolves to a link-local or cloud metadata address`);
     case 'too_large':
-      return problem('TOO_LARGE', failed.reason);
+      return tooLarge === undefined
+        ? problem('TOO_LARGE', failed.reason)
+        : problem('BAD_ANSWER', tooLarge);
     case 'invalid_url':
     case 'request':
       return problem('BAD_ANSWER', withHost(failed.reason, url.host));
@@ -419,7 +432,9 @@ async function authorize(session: Session, header: HeaderValue): Promise<OciProb
   if (isOciProblem(url)) return url;
   const got = await follow(session, url, basic, 'application/json', 'buffer', TOKEN_MAX_BYTES, {});
   if (isOciProblem(got)) return got;
-  if (got.kind === 'failed') return problemOf(got.failed, got.url);
+  if (got.kind === 'failed') {
+    return problemOf(got.failed, got.url, session, 'The token service answered more than 1 MiB');
+  }
   if (got.kind !== 'response') {
     return problem('BAD_ANSWER', 'The token service streamed its answer');
   }
@@ -545,7 +560,10 @@ export async function fetchLayerDescriptor(
     MANIFEST_MAX_BYTES,
   );
   if (isOciProblem(got)) return got;
-  if (got.kind === 'failed') return problemOf(got.failed, got.url);
+  if (got.kind === 'failed') {
+    const tooLarge = 'The registry answered more than 4 MiB for the manifest';
+    return problemOf(got.failed, got.url, session, tooLarge);
+  }
   if (got.kind !== 'response') return problem('BAD_ANSWER', 'The manifest was streamed');
   if (got.status < 200 || got.status > 299) {
     return statusProblem(got, `The registry has no ${repository}:${reference}`);
@@ -577,7 +595,7 @@ export async function openBlob(
     ERROR_BODY_BYTES,
   );
   if (isOciProblem(got)) return got;
-  if (got.kind === 'failed') return problemOf(got.failed, got.url);
+  if (got.kind === 'failed') return problemOf(got.failed, got.url, session);
   if (got.kind === 'stream') return got.chunks;
   return statusProblem(got, `The registry has no blob ${digest}`);
 }
@@ -629,7 +647,7 @@ export async function fetchHttpsFile(
   if (options.lastModified) validators['if-modified-since'] = options.lastModified;
   const got = await follow(session, start, null, null, 'buffer', options.maxBytes, validators);
   if (isOciProblem(got)) return got;
-  if (got.kind === 'failed') return problemOf(got.failed, got.url);
+  if (got.kind === 'failed') return problemOf(got.failed, got.url, session);
   if (got.kind !== 'response') return problem('BAD_ANSWER', 'The file was streamed');
   if (got.status === 304) return { kind: 'not_modified' };
   if (got.status < 200 || got.status > 299) return statusProblem(got, 'The file was not found');

@@ -67,6 +67,8 @@ interface Behaviour {
   blobStatus: number;
   /** Where the blob redirects to; null serves it from the registry. */
   blobLocation: string | null;
+  /** Sent in place of the token JSON; null sends the token. */
+  tokenBody: string | null;
 }
 
 interface Host {
@@ -166,7 +168,7 @@ describe('the OCI client', () => {
     }
     res
       .writeHead(200, { 'content-type': 'application/json' })
-      .end(JSON.stringify({ token: tokenFor(behaviour) }));
+      .end(behaviour.tokenBody ?? JSON.stringify({ token: tokenFor(behaviour) }));
   }
 
   beforeAll(async () => {
@@ -252,6 +254,7 @@ describe('the OCI client', () => {
       manifestType: OCI_MANIFEST_TYPE,
       blobStatus: 200,
       blobLocation: `https://${cdn.host}/cdn/blob?sig=signed`,
+      tokenBody: null,
     };
     opts = {
       internalHosts: parseInternalHosts(`${registry.host},${cdn.host},${plain.host}`),
@@ -422,6 +425,23 @@ describe('the OCI client', () => {
         { mediaType: TRIVY_LAYER_MEDIA_TYPE, digest: LAYER_DIGEST, size: 2 * 1024 ** 3 + 1 },
       ]);
       expect(await fetchLayerDescriptor(ref, {}, opts)).toMatchObject({ code: 'TOO_LARGE' });
+    });
+
+    it('answers BAD_ANSWER for a manifest over 4 MiB', async () => {
+      behaviour.manifestStatus = 200;
+      behaviour.manifest = 'x'.repeat(4 * 1024 * 1024 + 1);
+      expect(await fetchLayerDescriptor(ref, {}, opts)).toEqual({
+        code: 'BAD_ANSWER',
+        message: 'The registry answered more than 4 MiB for the manifest',
+      });
+    });
+
+    it('answers BAD_ANSWER for a token answer over 1 MiB', async () => {
+      behaviour.tokenBody = 'x'.repeat(1024 * 1024 + 1);
+      expect(await fetchLayerDescriptor(ref, {}, opts)).toEqual({
+        code: 'BAD_ANSWER',
+        message: 'The token service answered more than 1 MiB',
+      });
     });
 
     it('checks the manifest of a digest reference against the digest', async () => {
@@ -710,6 +730,7 @@ describe('fetchHttpsFile', () => {
   it('refuses a redirect to a host on a private address unless that host is listed', async () => {
     const got = await fetchHttpsFile(`http://${files.host}/to-localhost`, options());
     expect(got).toMatchObject({ code: 'BLOCKED' });
+    expect((got as OciProblem).message).toMatch(/^The download redirected to localhost:/);
     expect((got as OciProblem).message).toMatch(/QUALOR_VULNDB_INTERNAL_HOSTS/);
     expect(lookups).toEqual(['localhost']);
     expect(tls.seen).toEqual([]);
