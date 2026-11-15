@@ -7,8 +7,9 @@ import { BUSINESS_URL, DEPENDENCIES, PAYMENTS, PAYMENTS_REPORT_FILE, SIEM_URL } 
 
 /**
  * Plan 5D (rbac-audit.md §14.4, §17; sso-scim.md §4.4, §18): the enterprise server's database
- * served under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`, `vuln.priority`, `vuln.alerts`, `sbom`; `server/scripts/e2e/serve.ts`),
- * after the enterprise tests. The stream enterprise.spec.ts configured is kept and paused: its
+ * served under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`,
+ * `vuln.priority`, `vuln.alerts`, `sbom`; `server/scripts/e2e/serve.ts`), after the enterprise
+ * tests. The stream enterprise.spec.ts configured is kept and paused: its
  * fields and buttons are disabled with the reason, Save sends retention alone, and Remove under
  * Stream status deletes it (the guide's steps, docs/guide/roles-and-audit.md).
  */
@@ -139,8 +140,8 @@ test('the Business plan has no portfolio', async ({ page }) => {
 // 4E-3a §2, §4: automatic fix suggestions are Enterprise only (`llm.auto-fix`). The organisation's
 // switch-on and the project's opt-out that enterprise.spec.ts saved are kept but not offered: the
 // organisation's AI page has no section for them, and its status says they are Enterprise; the
-// instance page names no fix suggestions among what the organisation's admins switched on, and
-// the project's AI panel has no Fixes line.
+// instance page names no fix suggestions among what the organisation's admins switched on, and the
+// project's AI panel has no Fixes line.
 test('the Business plan shows no fix suggestions section, and the status says they are Enterprise', async ({
   page,
 }) => {

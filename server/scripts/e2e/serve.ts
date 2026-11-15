@@ -67,17 +67,20 @@ import { sweepE2eDatabases } from './sweep';
  * loopback (the `webhooks` instance setting), and a SIEM receiver on 127.0.0.1 that answers 204
  * (QUALOR_E2E_SIEM_PORT) for the audit stream. It starts before the community server, so it is
  * up when Playwright's readiness check passes. Plan 5D: a third server on QUALOR_E2E_BUSINESS_PORT
- * serves the same database under a Business key (`sso`, `audit-log`, `support-bundle`, `license-policy`, `vuln.priority`, `vuln.alerts`, `sbom`), as a
- * replica would after a move to the Business plan. It starts on the first connection to its port
- * (see {@link lazyServer}). Mail E2: a reader on QUALOR_E2E_MAIL_PORT hands the tests the body of a
- * pending account email.
+ * serves the same database under a Business key (`sso`, `audit-log`, `support-bundle`,
+ * `license-policy`, `vuln.priority`, `vuln.alerts`, `sbom`), as a replica would after a move to
+ * the Business plan. It starts on the first connection to its port (see {@link lazyServer}).
+ * Mail E2: a reader on QUALOR_E2E_MAIL_PORT hands the tests the body of a pending account email.
  */
 const MAIN = fileURLToPath(new URL('../../.tmp/e2e-main.js', import.meta.url));
 
 /** The fake GitLab project Payments API is mapped to, and its merge request !42 (seed.ts). */
 const GITLAB_PROJECT = { id: 4711, path: 'acme/payments-api' };
 const MERGE_REQUEST_IID = 42;
-/** The issue of the main branch the fake LLM answers as a hostile model would (ui/e2e/ai.spec.ts). */
+/**
+ * The issue of the main branch the fake LLM answers as a hostile model would
+ * (ui/e2e/ai.spec.ts).
+ */
 const HOSTILE_ISSUE_MESSAGE = "Assignment to function parameter 'amount'.";
 
 /** The data object of a request, as the fake reads it (fake-llm.ts): its task and message. */
@@ -405,7 +408,10 @@ async function main(): Promise<void> {
   const url = await waitForListening(server);
   process.stdout.write(`qualor e2e server ready at ${url}\n`);
 
-  /** Stops the container, or drops the e2e databases of a shared server (QUALOR_TEST_DATABASE_URL). */
+  /**
+   * Stops the container, or drops the e2e databases of a shared server
+   * (QUALOR_TEST_DATABASE_URL).
+   */
   const serverUrl = adminUrl;
   const cleanUp = async (): Promise<void> => {
     if (container) return void (await container.stop());
