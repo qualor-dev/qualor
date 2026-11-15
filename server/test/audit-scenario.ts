@@ -40,7 +40,7 @@ import { mainBranchId, seedIssue, seedRule } from './issues';
 import { closedPort } from './mail';
 import { signTest, testPayload, testSigner, verifyWith, type TestSigner } from './license';
 import { RBAC_FIXTURE } from './rbac';
-import { trivyArchive } from '../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { engine, file, finding, gzipJson, reportWith, uploadReport } from './reports';
 import { mergeRequestReport, silentLogger } from './scm';
 

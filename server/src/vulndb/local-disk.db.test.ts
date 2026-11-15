@@ -6,7 +6,7 @@ import { join, relative } from 'node:path';
 import { Writable } from 'node:stream';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
-import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { vulndbDatasets } from '../db/schema';
 import { withLocalDatabase } from './local';
 import { storeDataset } from './store';

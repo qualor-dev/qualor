@@ -15,7 +15,7 @@ import {
   type Session,
   type TestContext,
 } from '../../test/app';
-import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { instanceSettings, vulndbDatasets } from '../db/schema';
 import { updateVulndbState } from '../vulndb/state';
 import type * as Store from '../vulndb/store';

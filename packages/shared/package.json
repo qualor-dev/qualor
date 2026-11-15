@@ -6,7 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tar": "./src/tar.ts"
+    "./tar": "./src/tar.ts",
+    "./test/trivy-archive": "./test/trivy-archive.ts"
   },
   "scripts": {
     "schemas": "tsx scripts/export-schemas.ts"

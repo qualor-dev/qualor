@@ -15,11 +15,7 @@ import {
 import { uuidv7 } from '../db/ids';
 import { whileAuditFails } from '../../test/audit-log';
 import { adminHeaders, auditRows, ssoContext } from '../../test/sso';
-import {
-  metadataJson,
-  trivyArchive,
-  UPDATED_AT,
-} from '../../../packages/shared/test/trivy-archive';
+import { metadataJson, trivyArchive, UPDATED_AT } from '@qualor/shared/test/trivy-archive';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import {
   instanceSettings,

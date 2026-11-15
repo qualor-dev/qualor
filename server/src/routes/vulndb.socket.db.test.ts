@@ -14,7 +14,7 @@ import {
 import { rawExchange } from '../../test/raw-socket';
 import { rbacContext } from '../../test/rbac';
 import { auditRows } from '../../test/sso';
-import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { instanceSettings, vulndbDatasets, vulnerabilityKev } from '../db/schema';
 
 const MiB = 1024 * 1024;

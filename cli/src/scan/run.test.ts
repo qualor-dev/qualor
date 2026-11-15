@@ -19,7 +19,7 @@ import {
   type Report,
 } from '@qualor/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { FIXTURES_DIR, loadFixture } from '../../test/fixtures';
 import {
   codeQualityValidator,

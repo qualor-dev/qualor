@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { waitForLockWaiters } from '../../test/db';
 import { reportWith, type ReportParts } from '../../test/reports';
-import { trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { uuidv7 } from '../db/ids';
 import {
   analyses,

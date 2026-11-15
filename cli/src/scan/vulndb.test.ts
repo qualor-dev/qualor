@@ -19,7 +19,7 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Tar from '@qualor/shared/tar';
 import { readTarGz } from '@qualor/shared/tar';
-import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { metadataJson, trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { json, problem, useTestServers } from '../../test/http';
 import { useTempDirs } from '../../test/tmp';
 import type * as Runner from '../analyzers/runner';

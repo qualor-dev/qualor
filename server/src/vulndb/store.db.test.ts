@@ -3,12 +3,7 @@ import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import type { Db } from '../db/client';
-import {
-  metadataJson,
-  tarGz,
-  trivyArchive,
-  UPDATED_AT,
-} from '../../../packages/shared/test/trivy-archive';
+import { metadataJson, tarGz, trivyArchive, UPDATED_AT } from '@qualor/shared/test/trivy-archive';
 import { vulndbChunks, vulndbDatasets } from '../db/schema';
 import { OutboundStreamError } from '../http/outbound';
 import { readVulndbState, updateVulndbState } from './state';

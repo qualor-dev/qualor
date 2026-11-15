@@ -18,7 +18,7 @@ import {
   type SnapshotOmittedLine,
 } from '@qualor/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { metadataJson, trivyArchive } from '../../../packages/shared/test/trivy-archive';
+import { metadataJson, trivyArchive } from '@qualor/shared/test/trivy-archive';
 import { describeWithTools } from '../../test/analyzers';
 import { commitAll, gitSync, initRepo, SCAN_TEST_ENV } from '../../test/git';
 import { json, problem, useTestServers } from '../../test/http';
