@@ -158,7 +158,12 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
     const res = await get(`/projects/${s.projectId}/vulnerabilities/targets`);
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({ monitoring: 'on', versionCount: 2, checkedAt: T0.toISOString() });
+    expect(body).toMatchObject({
+      monitoring: 'on',
+      offBy: null,
+      versionCount: 2,
+      checkedAt: T0.toISOString(),
+    });
     expect(body.targets.map((x: { name: string }) => x.name)).toEqual([
       'main',
       'release/1.x',
@@ -483,6 +488,7 @@ describe('the Vulnerabilities tab read API (0.15)', () => {
     const summary = (await get(`/projects/${s.projectId}/vulnerabilities/targets`)).json();
     expect(summary).toMatchObject({
       monitoring: 'off',
+      offBy: 'project',
       targets: [],
       untracked: [],
       versionCount: 2,

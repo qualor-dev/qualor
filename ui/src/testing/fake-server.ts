@@ -1086,6 +1086,7 @@ export class FakeVulnerabilities {
       priority: false,
       sbom: false,
       monitoring: 'on',
+      offBy: null,
       data: { builtAt: '2026-10-29T03:00:00.000Z' },
       checkedAt: '2026-10-30T09:00:00.000Z',
       versionCount: 1,

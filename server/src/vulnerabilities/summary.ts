@@ -54,6 +54,8 @@ export interface TargetsAnswer {
   /** Whether the `sbom` feature (SBOM and VEX export) is licensed. */
   sbom: boolean;
   monitoring: 'on' | 'off';
+  /** Which switch turned monitoring off; the instance wins when both are off. Null while on. */
+  offBy: 'instance' | 'project' | null;
   data: { builtAt: string | null } | null;
   checkedAt: string | null;
   versionCount: number;
@@ -207,7 +209,14 @@ export async function readTargetSummary(
     versionCount: versions.length,
   };
   if (!instance.enabled || !settings.enabled) {
-    return { monitoring: 'off', checkedAt: null, targets: [], untracked: [], ...base };
+    return {
+      monitoring: 'off',
+      offBy: instance.enabled ? 'project' : 'instance',
+      checkedAt: null,
+      targets: [],
+      untracked: [],
+      ...base,
+    };
   }
 
   const tracked = (await projectTargets(db, [projectId])).get(projectId) ?? [];
@@ -288,6 +297,7 @@ export async function readTargetSummary(
   }));
   return {
     monitoring: 'on',
+    offBy: null,
     checkedAt: newest?.toISOString() ?? null,
     targets,
     untracked,

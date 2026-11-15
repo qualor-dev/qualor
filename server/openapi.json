@@ -11712,6 +11712,21 @@
                         "off"
                       ]
                     },
+                    "offBy": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "instance",
+                            "project"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Which switch turned monitoring off: instance (the server-wide switch, also when both are off), project, or null while monitoring is on."
+                    },
                     "data": {
                       "anyOf": [
                         {
@@ -12001,6 +12016,7 @@
                     "priority",
                     "sbom",
                     "monitoring",
+                    "offBy",
                     "data",
                     "checkedAt",
                     "versionCount",

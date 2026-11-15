@@ -5,16 +5,31 @@
   @if (a.monitoring === 'off') {
     <div class="empty-state">
       <img src="art/empty.webp" alt="" width="900" height="675" />
-      <p i18n="@@vuln.off">Vulnerability monitoring is off for this project.</p>
-      @if (canPin()) {
-        <p>
-          <a
-            [routerLink]="['/projects', projectId(), 'settings']"
-            fragment="vulnerabilities"
-            i18n="@@vuln.off.settings"
-            >Project settings</a
-          >
-        </p>
+      @if (a.offBy === 'instance') {
+        <p i18n="@@vuln.off.instance">Vulnerability monitoring is turned off for this server.</p>
+        @if (isInstanceAdmin()) {
+          <p>
+            <a routerLink="/settings/vulnerability-db" i18n="@@vuln.empty.adminLink"
+              >Settings → Vulnerability database</a
+            >
+          </p>
+        } @else {
+          <p i18n="@@vuln.off.instanceMember">
+            Ask an instance admin to turn it on in Settings → Vulnerability database.
+          </p>
+        }
+      } @else {
+        <p i18n="@@vuln.off">Vulnerability monitoring is off for this project.</p>
+        @if (canPin()) {
+          <p>
+            <a
+              [routerLink]="['/projects', projectId(), 'settings']"
+              fragment="vulnerabilities"
+              i18n="@@vuln.off.settings"
+              >Project settings</a
+            >
+          </p>
+        }
       }
     </div>
   } @else if (a.data; as data) {

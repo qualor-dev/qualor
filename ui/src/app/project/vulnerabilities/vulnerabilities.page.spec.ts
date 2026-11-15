@@ -708,6 +708,7 @@ describe('VulnerabilitiesPage', () => {
     it('says monitoring is off, with the settings link for project.settings (final review F2)', async () => {
       const off: Partial<VulnerabilityTargets> = {
         monitoring: 'off',
+        offBy: 'project',
         checkedAt: null,
         targets: [],
       };
@@ -732,6 +733,37 @@ describe('VulnerabilitiesPage', () => {
         'Vulnerability monitoring is off for this project.',
       );
       expect(viewer.querySelector('.empty-state a')).toBeNull();
+    });
+
+    it('says the server switch turned monitoring off, and who can turn it on (D25-1)', async () => {
+      const off: Partial<VulnerabilityTargets> = {
+        monitoring: 'off',
+        offBy: 'instance',
+        checkedAt: null,
+        targets: [],
+      };
+      const sentence = 'Vulnerability monitoring is turned off for this server.';
+      const admin = await render(off, { admin: true, permissions: SETTINGS });
+      expect(text(admin.querySelector('.empty-state'))).toContain(sentence);
+      expect(text(admin.querySelector('.empty-state'))).not.toContain('for this project');
+      const links = admin.querySelectorAll('.empty-state a');
+      expect(links.length).toBe(1);
+      expect(text(links[0])).toBe('Settings → Vulnerability database');
+      expect(links[0]?.getAttribute('href')).toBe('/settings/vulnerability-db');
+
+      TestBed.resetTestingModule();
+      server = new FakeServer();
+      TestBed.configureTestingModule({
+        imports: [VulnerabilitiesPage],
+        providers: [provideRouter([]), provideFakeServer(server)],
+      });
+      const projectAdmin = await render(off, { permissions: SETTINGS });
+      const empty = text(projectAdmin.querySelector('.empty-state'));
+      expect(empty).toContain(sentence);
+      expect(empty).toContain(
+        'Ask an instance admin to turn it on in Settings → Vulnerability database.',
+      );
+      expect(projectAdmin.querySelector('.empty-state a')).toBeNull();
     });
 
     it('says not checked yet instead of the all-clear before the first check (final review F2)', async () => {

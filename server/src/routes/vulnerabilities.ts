@@ -85,6 +85,13 @@ const targetsAnswerSchema = z.object({
   sbom: z.boolean(),
   /** Off while the instance or the project switch is off; the lists are then empty. */
   monitoring: z.enum(['on', 'off']),
+  /** Which switch is off: the instance's (Settings → Vulnerability database) or the project's. Null while on. */
+  offBy: z
+    .enum(['instance', 'project'])
+    .nullable()
+    .describe(
+      'Which switch turned monitoring off: instance (the server-wide switch, also when both are off), project, or null while monitoring is on.',
+    ),
   /** The vulnerability database in use; null when there is none. */
   data: z.object({ builtAt: z.iso.datetime().nullable() }).nullable(),
   /** The latest check over the tracked targets. */

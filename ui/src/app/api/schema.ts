@@ -5878,6 +5878,8 @@ export interface paths {
                             sbom: boolean;
                             /** @enum {string} */
                             monitoring: "on" | "off";
+                            /** @description Which switch turned monitoring off: instance (the server-wide switch, also when both are off), project, or null while monitoring is on. */
+                            offBy: ("instance" | "project") | null;
                             data: {
                                 builtAt: string | null;
                             } | null;
