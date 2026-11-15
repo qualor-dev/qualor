@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import {
   FakeServer,
   FakeVulnerabilities,
+  problem,
   MEMBER_PROJECT_PERMISSIONS,
   me,
   ORG_ID,
@@ -77,7 +78,11 @@ describe('VulnerabilitiesPage', () => {
 
   async function render(
     answer: Partial<VulnerabilityTargets>,
-    options: { permissions?: readonly string[]; admin?: boolean } = {},
+    options: {
+      permissions?: readonly string[];
+      admin?: boolean;
+      summary?: { status: number; body: unknown };
+    } = {},
   ): Promise<HTMLElement> {
     TestBed.inject(SessionStore).set(me({ admin: options.admin ?? false }));
     server.on('GET', `/api/v0/projects/${PROJECT}`, {
@@ -91,6 +96,9 @@ describe('VulnerabilitiesPage', () => {
       },
     });
     FakeVulnerabilities.install(server, PROJECT, answer);
+    if (options.summary) {
+      server.on('GET', `/api/v0/projects/${PROJECT}/vulnerabilities/targets`, options.summary);
+    }
     TestBed.inject(CurrentProject).use(PROJECT);
     const fixture = TestBed.createComponent(VulnerabilitiesPage);
     fixture.componentRef.setInput('projectId', PROJECT);
@@ -766,6 +774,14 @@ describe('VulnerabilitiesPage', () => {
       expect(projectAdmin.querySelector('.empty-state a')).toBeNull();
     });
 
+    it('shows the alert when the summary fails', async () => {
+      const root = await render({}, { summary: { status: 500, body: problem(500, 'INTERNAL') } });
+      expect(text(root.querySelector('p.alert.alert-error[role=alert]'))).toBe(
+        'The request failed (HTTP 500, INTERNAL).',
+      );
+      expect(root.querySelector('table')).toBeNull();
+    });
+
     it('says not checked yet instead of the all-clear before the first check (final review F2)', async () => {
       const root = await render({
         checkedAt: null,
@@ -853,7 +869,7 @@ describe('VulnerabilitiesPage views', () => {
     expect(root.querySelector('table')).toBeNull();
     expect(text(root.querySelector('.target-heading'))).toBe('main');
     expect(text(root.querySelector('.target-head .back'))).toBe('← By version');
-    expect(root.querySelector('.target-head .back')?.getAttribute('href')).not.toContain('target');
+    expect(root.querySelector('.target-head .back')?.getAttribute('href')).toBe('/');
     expect(root.querySelectorAll('.vuln-row')).toHaveLength(1);
   });
 });

@@ -8,6 +8,9 @@ export interface NewIn {
 /**
  * The badge text for the targets with new vulnerabilities ("New vulnerabilities in main and 2
  * versions"), or null when nothing is new. The parts are joined with "and", main first.
+ *
+ * $localize has no ICU plural; ICU works only in template i18n, so each plural here is two ids
+ * (.one and .many).
  */
 export function newMarkerText(newIn: NewIn): string | null {
   const parts: string[] = [];
