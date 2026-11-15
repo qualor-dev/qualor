@@ -4,20 +4,25 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * `pnpm site:screens`: the qualor.dev site's product screens (overview, issues, issue-ai, gate, and
- * the Vulnerabilities tab by version and by vulnerability), captured from the seeded e2e server
- * (ui/e2e/site-screens.shot.ts). The issue-ai screen asks the real model, so the key is required
- * before anything starts: no build, no server, no browser. The key is only passed on in the
- * environment, never printed.
+ * `pnpm site:screens`: the qualor.dev site's product screens (overview, issues, issue-ai, gate),
+ * captured from the seeded e2e server (ui/e2e/site-screens.shot.ts). The site's Vulnerabilities
+ * screens come from the demo: `SITE_SCREENS_VULNERABILITIES=1` captures them from the e2e seed
+ * instead. The issue-ai screen asks the real model, so the key is required before anything
+ * starts: no build, no server, no browser. The key is only passed on in the environment, never
+ * printed.
  */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 /** The place the screens go: `SITE_SCREENS_OUT`, else the site's assets next to the repository. */
 const DEFAULT_OUTS = ['../qualor.dev/src/assets/screens', '../../qualor.dev/src/assets/screens'];
 
-export type SiteScreensPlan = { ok: true; out: string } | { ok: false; message: string };
+export type SiteScreensPlan =
+  { ok: true; out: string; vulnerabilities: boolean } | { ok: false; message: string };
 
-/** Whether the capture may start, and where it writes. Pure: `exists` stands in for the disk. */
+/**
+ * Whether the capture may start, where it writes, and whether it also writes the Vulnerabilities
+ * screens (only with `SITE_SCREENS_VULNERABILITIES=1`). Pure: `exists` stands in for the disk.
+ */
 export function planSiteScreens(
   env: Record<string, string | undefined>,
   exists: (dir: string) => boolean,
@@ -31,8 +36,11 @@ export function planSiteScreens(
         'the environment. Nothing was started.',
     };
   }
+  const vulnerabilities = env['SITE_SCREENS_VULNERABILITIES'] === '1';
   const given = env['SITE_SCREENS_OUT'];
-  if (given !== undefined && given !== '') return { ok: true, out: path.resolve(base, given) };
+  if (given !== undefined && given !== '') {
+    return { ok: true, out: path.resolve(base, given), vulnerabilities };
+  }
   const found = DEFAULT_OUTS.map((dir) => path.resolve(base, dir)).find(exists);
   if (found === undefined) {
     return {
@@ -42,7 +50,7 @@ export function planSiteScreens(
         'directory the PNGs go to. Nothing was started.',
     };
   }
-  return { ok: true, out: found };
+  return { ok: true, out: found, vulnerabilities };
 }
 
 if (
@@ -61,7 +69,12 @@ if (
       cwd: root,
       stdio: 'inherit',
       shell: process.platform === 'win32',
-      env: { ...process.env, QUALOR_TELEMETRY: 'false', SITE_SCREENS_OUT: plan.out },
+      env: {
+        ...process.env,
+        QUALOR_TELEMETRY: 'false',
+        SITE_SCREENS_OUT: plan.out,
+        SITE_SCREENS_VULNERABILITIES: plan.vulnerabilities ? '1' : '',
+      },
     },
   );
   process.exit(run.status ?? 1);

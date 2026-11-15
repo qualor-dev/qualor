@@ -22,12 +22,30 @@ describe('planSiteScreens', () => {
 
   it('writes to SITE_SCREENS_OUT when it is set', () => {
     const plan = planSiteScreens({ ...key, SITE_SCREENS_OUT: 'shots' }, () => false, base);
-    expect(plan).toEqual({ ok: true, out: path.resolve(base, 'shots') });
+    expect(plan).toEqual({ ok: true, out: path.resolve(base, 'shots'), vulnerabilities: false });
   });
 
   it('defaults to the site next to the repository, or next to the worktrees folder', () => {
     const site = path.resolve(base, '../../qualor.dev/src/assets/screens');
-    expect(planSiteScreens(key, (dir) => dir === site, base)).toEqual({ ok: true, out: site });
+    expect(planSiteScreens(key, (dir) => dir === site, base)).toEqual({
+      ok: true,
+      out: site,
+      vulnerabilities: false,
+    });
+  });
+
+  // The site's Vulnerabilities screens come from the demo: the seed's sparse ones replace them
+  // only on request.
+  it('leaves the Vulnerabilities screens out unless SITE_SCREENS_VULNERABILITIES is 1', () => {
+    const plan = (value: string | undefined) =>
+      planSiteScreens(
+        { ...key, SITE_SCREENS_OUT: 'shots', SITE_SCREENS_VULNERABILITIES: value },
+        () => false,
+        base,
+      );
+    expect(plan(undefined)).toMatchObject({ ok: true, vulnerabilities: false });
+    expect(plan('1')).toMatchObject({ ok: true, vulnerabilities: true });
+    expect(plan('true')).toMatchObject({ ok: true, vulnerabilities: false });
   });
 
   it('refuses when there is no site directory and no SITE_SCREENS_OUT', () => {

@@ -6,12 +6,15 @@ import { expect, test } from './fixtures';
 import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
 
 /**
- * The qualor.dev site's product screens with the seeded data: overview, issues, issue-ai, gate and
- * the Vulnerabilities tab (vulnerabilities-by-version, vulnerabilities-by-vulnerability), as
+ * The qualor.dev site's product screens (overview, issues, issue-ai, gate) with the seeded data, as
  * viewport captures in the dark theme at the site's sizes, 1440 wide at DPR 2 (the height of the
  * screen) and 390×844 at DPR 3. Opt-in, never part of `pnpm ui:e2e`: `pnpm site:screens` runs it
  * (tools/ui/site-screens.ts), which refuses to start without LIVE_OPENAI_API_KEY and writes to
  * SITE_SCREENS_OUT.
+ *
+ * The site's Vulnerabilities screens come from the demo: `SITE_SCREENS_VULNERABILITIES=1` captures
+ * them from the e2e seed instead (vulnerabilities-by-version, vulnerabilities-by-vulnerability, the
+ * Vulnerabilities tab of Payments API), into SITE_SCREENS_OUT.
  *
  * issue-ai asks the real model: the assistant is set to api.openai.com (gpt-6.1-terra, the
  * Responses API) for that screen alone, and the fake provider is put back afterwards, also when the
@@ -22,11 +25,14 @@ import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
  * script): SITE_SCREENS_FAKE=1 without the key keeps the fake provider and expects its answer.
  *
  * The test `vulnerability screens` asks no model: run it alone with `-g "vulnerability screens"`.
- * With README_SCREENS_OUT it also writes the README's copies (docs/screenshots/: 1440×900, DPR 1).
+ * With README_SCREENS_OUT it writes the README's copies (docs/screenshots/: 1440×900, DPR 1); with
+ * neither that nor SITE_SCREENS_VULNERABILITIES=1 it is skipped.
  */
 const KEY = process.env['LIVE_OPENAI_API_KEY'] ?? '';
 const FAKE = KEY === '' && process.env['SITE_SCREENS_FAKE'] === '1';
 const OUT = process.env['SITE_SCREENS_OUT'] ?? '';
+/** Where the site's Vulnerabilities screens go: nowhere unless asked for (they come from the demo). */
+const VULN_OUT = process.env['SITE_SCREENS_VULNERABILITIES'] === '1' ? OUT : '';
 const README_OUT = process.env['README_SCREENS_OUT'] ?? '';
 /** The fake LLM's key (server/test/fake-llm.ts), which the restore stores again. */
 const FAKE_KEY = ['fake', 'llm', 'key', '0123456789'].join('-');
@@ -207,13 +213,15 @@ test('site screens', async ({ browser, baseURL }) => {
 /**
  * 0.15: the Vulnerabilities tab of Payments API on the community server, with the seed's rows
  * (seedVulnerabilities: a new Critical and a High on main). By version, then By vulnerability.
+ * The site's copies only with SITE_SCREENS_VULNERABILITIES=1: the site shows the demo's.
  */
 test('vulnerability screens', async ({ browser, baseURL }) => {
+  test.skip(
+    VULN_OUT === '' && README_OUT === '',
+    'The site keeps the demo screens: set SITE_SCREENS_VULNERABILITIES=1 or README_SCREENS_OUT.',
+  );
   test.setTimeout(300_000);
-  if (OUT === '' && README_OUT === '') {
-    throw new Error('The vulnerability screens need SITE_SCREENS_OUT or README_SCREENS_OUT.');
-  }
-  for (const dir of [OUT, README_OUT]) if (dir !== '') mkdirSync(dir, { recursive: true });
+  for (const dir of [VULN_OUT, README_OUT]) if (dir !== '') mkdirSync(dir, { recursive: true });
 
   const byVersion = async (page: Page): Promise<void> => {
     await page.goto('/projects');
@@ -238,7 +246,9 @@ test('vulnerability screens', async ({ browser, baseURL }) => {
     ['vulnerabilities-by-version', byVersion],
     ['vulnerabilities-by-vulnerability', byVulnerability],
   ] as const) {
-    if (OUT !== '') await inEachView(browser, baseURL, name, open);
+    if (VULN_OUT !== '') {
+      await inEachView(browser, baseURL, name, open, 900, undefined, VIEWS, VULN_OUT);
+    }
     if (README_OUT !== '') {
       await inEachView(browser, baseURL, name, open, 900, undefined, README_VIEWS, README_OUT);
     }
