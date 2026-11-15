@@ -156,7 +156,11 @@ function cachedTail(updatedAt: string): string {
 /** A failure reason as the warning shows it: printable and short. */
 const shownReason = (reason: string) => clean(reason).slice(0, 120) || 'unexpected response';
 
-function regularFile(file: string, max: number): boolean {
+/**
+ * `file` is a regular file of at most `max` bytes as `lstat` sees it: a link is never followed
+ * (`analyzers/trivy.ts`'s `regularFile` follows one).
+ */
+function regularFileNoFollow(file: string, max: number): boolean {
   try {
     const s = lstatSync(file);
     return s.isFile() && s.size <= max;
@@ -176,7 +180,7 @@ function removeQuietly(target: string, log: Logger): void {
 /** The digest an extracted `db/` came from, or null. */
 function markerOf(db: string): string | null {
   const file = path.join(db, MARKER);
-  if (!regularFile(file, 128)) return null;
+  if (!regularFileNoFollow(file, 128)) return null;
   try {
     const text = readFileSync(file, 'utf8').trim();
     return DIGEST.test(text) ? text : null;
@@ -192,7 +196,7 @@ function markerOf(db: string): string | null {
 function unpackedDate(cache: string, digest: string): string | null {
   const live = path.join(cache, 'db');
   if (markerOf(live) !== digest) return null;
-  if (!regularFile(path.join(live, 'trivy.db'), Number.POSITIVE_INFINITY)) return null;
+  if (!regularFileNoFollow(path.join(live, 'trivy.db'), Number.POSITIVE_INFINITY)) return null;
   return readDatabaseDate(cache);
 }
 
@@ -205,7 +209,7 @@ interface Hint {
 /** `server.json`: which archive the cache holds and when it was fetched. A hint only. */
 function readHint(cache: string): Hint | null {
   const file = path.join(cache, HINT);
-  if (!regularFile(file, MAX_HINT_BYTES)) return null;
+  if (!regularFileNoFollow(file, MAX_HINT_BYTES)) return null;
   try {
     const value = JSON.parse(readFileSync(file, 'utf8')) as {
       digest?: unknown;
@@ -523,7 +527,7 @@ class Choice {
     let fh: FileHandle | undefined;
     try {
       // A regular file only: never a link, a FIFO (which would block) or a directory.
-      if (file === null || !regularFile(file, MAX_ARCHIVE_BYTES)) {
+      if (file === null || !regularFileNoFollow(file, MAX_ARCHIVE_BYTES)) {
         return { ok: false, digest: null };
       }
       // Swapped in after the check, a FIFO cannot block the scan (O_NONBLOCK) and a link is not

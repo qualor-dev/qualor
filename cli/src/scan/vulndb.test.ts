@@ -930,24 +930,28 @@ describe('resolveVulnerabilityDb: the cache directory', () => {
     await b.cleanup();
     expect(databaseIn(cache)).toEqual(holds(NEW));
     expect(readFileSync(path.join(cache, 'db.tar.gz')).equals(NEW.archive)).toBe(true);
-    expect(readdirSync(cache).filter((n) => n.endsWith('.partial') || n.endsWith('.tmp'))).toEqual(
-      [],
-    );
+    // No partial, incoming, staging or moved-aside copy of either scan is left.
+    expect(readdirSync(cache).sort()).toEqual(['db', 'db.tar.gz', 'server.json']);
   });
 
-  it('removes partial downloads older than an hour before downloading, and keeps fresh ones', async () => {
+  it('removes partial and unverified downloads older than an hour before downloading, and keeps fresh ones', async () => {
     const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
     const cache = path.join(tmp(), 'cache');
     mkdirSync(cache);
-    const stale = path.join(cache, 'db.0123456789ab.tar.gz.0123456789ab.partial');
-    const fresh = path.join(cache, 'db.ba9876543210.tar.gz.ba9876543210.partial');
-    writeFileSync(stale, 'half');
-    writeFileSync(fresh, 'half');
+    const stale = [
+      path.join(cache, 'db.0123456789ab.tar.gz.0123456789ab.partial'),
+      path.join(cache, 'db.0123456789ab.tar.gz'),
+    ];
+    const fresh = [
+      path.join(cache, 'db.ba9876543210.tar.gz.ba9876543210.partial'),
+      path.join(cache, 'db.ba9876543210.tar.gz'),
+    ];
     const twoHoursAgo = new Date(Date.now() - 2 * HOUR);
-    utimesSync(stale, twoHoursAgo, twoHoursAgo);
+    for (const file of [...stale, ...fresh]) writeFileSync(file, 'half');
+    for (const file of stale) utimesSync(file, twoHoursAgo, twoHoursAgo);
     const got = await choose({ endpoint: server.endpoint, cache });
-    expect(existsSync(stale)).toBe(false);
-    expect(existsSync(fresh)).toBe(true);
+    for (const file of stale) expect(existsSync(file), file).toBe(false);
+    for (const file of fresh) expect(existsSync(file), file).toBe(true);
     expect(databaseIn(got.dir)).toEqual(holds(NEW));
     await got.cleanup();
   });
@@ -965,6 +969,47 @@ describe('resolveVulnerabilityDb: the cache directory', () => {
     expect(got.warnings).toEqual([]);
     expect(databaseIn(got.dir)).toEqual(holds(NEW));
     expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
+    await got.cleanup();
+    expect(readdirSync(tempRoot)).toEqual([]);
+  });
+});
+
+describe('resolveVulnerabilityDb: links in the cache (D13-7, D13-8)', () => {
+  it.runIf(posix)('downloads the database when the cached archive is a link', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const target = path.join(tmp(), 'db.tar.gz');
+    writeFileSync(target, NEW.archive);
+    const before = statSync(target).mtimeMs;
+    const cache = path.join(tmp(), 'cache');
+    mkdirSync(cache);
+    symlinkSync(target, path.join(cache, 'db.tar.gz'));
+    const got = await choose({ endpoint: server.endpoint, cache });
+    // Never read through the link, even to the current archive.
+    expect(downloads(server.paths)).toHaveLength(1);
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    // The download replaced the link; it did not write through it.
+    expect(statSync(target).mtimeMs).toBe(before);
+    expect(readFileSync(target).equals(NEW.archive)).toBe(true);
+    expect(lstatSync(path.join(cache, 'db.tar.gz')).isSymbolicLink()).toBe(false);
+    await got.cleanup();
+  });
+
+  it.runIf(posix)('treats a cache link into the checkout as inside it', async () => {
+    const server = await fakeServer({ meta: meta(NEW), archives: [NEW.archive] });
+    const root = tmp();
+    const tempRoot = tmp();
+    const target = path.join(root, '.qualor', 'trivy');
+    mkdirSync(target, { recursive: true });
+    const link = path.join(tmp(), 'link');
+    symlinkSync(target, link, 'dir');
+    const got = await choose({ endpoint: server.endpoint, cache: link, root, tempRoot });
+    expect(got.warnings).toEqual([]);
+    expect(got.repositoryCacheDir).toBe('.qualor/trivy');
+    // Extracted privately, never in place: the download lands in the checkout through the link.
+    expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
+    expect(databaseIn(got.dir)).toEqual(holds(NEW));
+    expect(existsSync(path.join(target, 'db'))).toBe(false);
+    expect(readFileSync(path.join(target, 'db.tar.gz')).equals(NEW.archive)).toBe(true);
     await got.cleanup();
     expect(readdirSync(tempRoot)).toEqual([]);
   });
