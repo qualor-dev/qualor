@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM, trustTestCa } from '../../test/tls';
 import type { Resolver } from '../http/outbound';
 import { VERSION } from '../index';
@@ -69,6 +69,10 @@ interface Behaviour {
   blobLocation: string | null;
   /** Sent in place of the token JSON; null sends the token. */
   tokenBody: string | null;
+  /** Runs when the token service is asked, before it answers. */
+  onToken: (() => void) | null;
+  /** Takes over the manifest request: nothing is answered. */
+  onManifest: (() => void) | null;
 }
 
 interface Host {
@@ -162,6 +166,7 @@ describe('the OCI client', () => {
 
   /** A token realm: Basic credentials checked when the behaviour demands them. */
   function answerToken(res: ServerResponse, authorization: string | undefined): void {
+    behaviour.onToken?.();
     if (behaviour.credentials && authorization !== BASIC) {
       res.writeHead(401, { 'content-type': 'application/json' }).end('{"errors":[]}');
       return;
@@ -200,6 +205,10 @@ describe('the OCI client', () => {
         return;
       }
       if (url.pathname.startsWith('/v2/mirror/trivy-db/manifests/')) {
+        if (behaviour.onManifest) {
+          behaviour.onManifest();
+          return;
+        }
         res
           .writeHead(behaviour.manifestStatus, { 'content-type': behaviour.manifestType })
           .end(behaviour.manifestStatus === 200 ? behaviour.manifest : '{"errors":[]}');
@@ -220,6 +229,10 @@ describe('the OCI client', () => {
       else if (path.startsWith('/cut/')) {
         res.writeHead(200, { 'content-length': String(BLOB.length) });
         res.write(BLOB.subarray(0, BLOB.length / 2), () => res.destroy());
+      } else if (path.startsWith('/slow/')) {
+        // The first half, then silence until the client hangs up.
+        res.writeHead(200, { 'content-length': String(BLOB.length) });
+        res.write(BLOB.subarray(0, BLOB.length / 2));
       } else if (path.startsWith('/token')) answerToken(res, req.headers.authorization);
       else if (path === '/deny') {
         res.writeHead(401, { 'www-authenticate': `Bearer realm="https://${host}/token"` }).end();
@@ -255,12 +268,18 @@ describe('the OCI client', () => {
       blobStatus: 200,
       blobLocation: `https://${cdn.host}/cdn/blob?sig=signed`,
       tokenBody: null,
+      onToken: null,
+      onManifest: null,
     };
     opts = {
       internalHosts: parseInternalHosts(`${registry.host},${cdn.host},${plain.host}`),
       scheme: 'http',
     };
     ref = `${registry.host}/mirror/trivy-db:2`;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const tokenRequests = () => registry.seen.filter((s) => s.path.startsWith('/token'));
@@ -444,6 +463,28 @@ describe('the OCI client', () => {
       });
     });
 
+    it('answers UNREACHABLE when the 15-minute deadline passes during the handshake', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      behaviour.onToken = () => vi.setSystemTime(Date.now() + 16 * 60_000);
+      const got = await fetchLayerDescriptor(ref, {}, opts);
+      expect(got).toMatchObject({ code: 'UNREACHABLE' });
+      expect((got as OciProblem).message).toMatch(/15 min/);
+    });
+
+    it('answers UNREACHABLE when the caller gives up during the manifest request', async () => {
+      const ac = new AbortController();
+      behaviour.onManifest = () => ac.abort();
+      const got = await fetchLayerDescriptor(ref, {}, { ...opts, signal: ac.signal });
+      expect(got).toMatchObject({ code: 'UNREACHABLE' });
+      expect((got as OciProblem).message).toMatch(/given up/);
+    });
+
+    it('sends nothing for a signal given up before the call', async () => {
+      const got = await fetchLayerDescriptor(ref, {}, { ...opts, signal: AbortSignal.abort() });
+      expect(got).toMatchObject({ code: 'UNREACHABLE' });
+      expect(registry.seen).toEqual([]);
+    });
+
     it('checks the manifest of a digest reference against the digest', async () => {
       const pinned = `${registry.host}/mirror/trivy-db@${sha256(behaviour.manifest)}`;
       expect(await fetchLayerDescriptor(pinned, {}, opts)).toMatchObject({
@@ -527,6 +568,20 @@ describe('the OCI client', () => {
       await expect(bytesOf(blob)).rejects.toMatchObject({
         name: 'OutboundStreamError',
         cause: 'connection',
+      });
+    });
+
+    it('cuts a blob when the caller gives up mid-stream', async () => {
+      behaviour.blobLocation = `https://${cdn.host}/slow/blob`;
+      const ac = new AbortController();
+      const blob = await openBlob(ref, LAYER_DIGEST, {}, { ...opts, signal: ac.signal });
+      if (!(Symbol.asyncIterator in blob)) throw new Error('a problem');
+      const read = async (): Promise<void> => {
+        for await (const part of blob) if (part.length > 0) ac.abort();
+      };
+      await expect(read()).rejects.toMatchObject({
+        name: 'OutboundStreamError',
+        cause: 'aborted',
       });
     });
 
