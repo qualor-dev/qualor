@@ -79,10 +79,16 @@ describe('projects: the new-vulnerability marker', () => {
       .from(jobs)
       .where(eq(jobs.queue, RECHECK_QUEUE));
 
-  /** A project whose main branch has `fresh` new rows (none: a checked main with nothing new). */
-  const seeded = async (fresh = 1) => {
+  /**
+   * A project whose main branch has `fresh` new rows (none: a checked main with nothing new); its
+   * key starts with `prefix`.
+   */
+  const seeded = async (fresh = 1, prefix = 'vm') => {
     n += 1;
-    const project = await createProject(ctx, admin, { organizationId: org, key: `vm${n}/api` });
+    const project = await createProject(ctx, admin, {
+      organizationId: org,
+      key: `${prefix}${n}/api`,
+    });
     const main = first(
       await ctx.db.select().from(branches).where(eq(branches.projectId, project.id)),
     ).id;
@@ -114,15 +120,14 @@ describe('projects: the new-vulnerability marker', () => {
     await instance(true);
   });
 
-  // First: the page must hold only these projects, and the list is ordered by id.
   it('fills a page of 50 projects with one call of each count, quickly', async () => {
     const ids = new Set<string>();
-    for (let i = 0; i < 50; i += 1) ids.add(await seeded(3));
+    for (let i = 0; i < 50; i += 1) ids.add(await seeded(3, 'vmpage'));
     markers.calls = 0;
     facts.portfolio = 0;
     facts.main = 0;
     const started = performance.now();
-    const res = await get('/projects?limit=50');
+    const res = await get('/projects?limit=50&q=vmpage');
     const elapsed = performance.now() - started;
     expect(res.statusCode, res.body).toBe(200);
     const items = res.json().items as {

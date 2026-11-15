@@ -527,6 +527,33 @@ describe('the Vulnerabilities tab: target summary', () => {
       expect(item?.exploited).toBeNull();
     });
 
+    it('counts the exploited rows of an untracked version', async () => {
+      await seed(); // the KEV entries
+      const { projectId, branch, version } = await setup({ versionRule: 'lines', versionLines: 1 });
+      await branch('main', true);
+      await version('2.0.0', 2);
+      const old = await version('1.0.0', 1);
+      const row = (vulnerabilityId: string, ignored = false) =>
+        seedTargetRow(t.db, {
+          projectId,
+          versionId: old,
+          packageName: 'lodash',
+          vulnerabilityId,
+          ignored,
+        });
+      await row('CVE-2024-0001');
+      await row('CVE-2024-0003', true);
+      await seedCheck(t.db, { projectId, versionId: old, baselineAt: T0, checkedAt: BEFORE });
+      const withPriority = await readTargetSummary(t.db, projectId, {
+        priority: true,
+        sbom: false,
+      });
+      expect(withPriority.untracked.map((x) => x.name)).toEqual(['1.0.0']);
+      expect(withPriority.untracked[0]?.exploited).toBe(1);
+      const without = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
+      expect(without.untracked[0]?.exploited).toBeNull();
+    });
+
     it('filters by exploited before paging and counting', async () => {
       const { projectId } = await seed();
       const ids = async (q: Parameters<typeof listVulnerabilities>[2]) => {
