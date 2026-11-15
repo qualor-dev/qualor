@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { renderLicenseExpiry } from './license-expiry';
-import { sampleMails } from './samples';
+import { sampleMails, SAMPLE_NOW } from './samples';
+import { formatDay } from './text';
 import { renderWebhookFailed } from './webhook-failed';
 
 const DIR = new URL('./', import.meta.url);
@@ -70,6 +71,13 @@ describe('the E1 messages (E1 spec, Templates)', () => {
     expect(licence?.text.replace(/\n/g, ' ')).toContain(
       'You get this because you are an instance administrator of this Qualor server.',
     );
+  });
+
+  it('shows the data date and the last error in the vulndb.stale text', () => {
+    const mail = sampleMails(null).find((s) => s.name === 'vulndb.stale')?.mail;
+    const text = mail?.text.replace(/\n/g, ' ');
+    expect(text).toContain(formatDay(new Date(SAMPLE_NOW.getTime() - 4 * 86_400_000)));
+    expect(text).toContain('UNREACHABLE: The registry did not answer');
   });
 
   it('says what stops when the grace period ends, and names no AI fix limit (6I D10)', () => {

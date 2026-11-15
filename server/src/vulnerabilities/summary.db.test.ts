@@ -481,7 +481,11 @@ describe('the Vulnerabilities tab: target summary', () => {
         )
         .onConflictDoUpdate({
           target: vulnerabilityKev.vulnerabilityId,
-          set: { delistedAt: null },
+          set: {
+            delistedAt: null,
+            dateAdded: sql`excluded.date_added`,
+            ransomware: sql`excluded.ransomware`,
+          },
         });
       await t.db
         .insert(vulnerabilityEpss)

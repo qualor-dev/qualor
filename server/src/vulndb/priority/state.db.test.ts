@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { createTestDatabase, type TestDatabase } from '../../../test/db';
+import { createTestDatabase, type TestDatabase, waitForLockWaiters } from '../../../test/db';
+import { LOCKS } from '../../db/locks';
 import { instanceSettings } from '../../db/schema';
 import {
   isPriorityStale,
@@ -68,6 +69,35 @@ describe('priority state', () => {
     const s = await readPriorityState(t.db);
     expect(s.kev.count).toBe(5);
     expect(s.epss.count).toBe(9);
+  });
+});
+
+describe('priority state lock', () => {
+  it('serialises two updates under its lock', async () => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let holding!: () => void;
+    const held = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    // A third transaction holds the lock while both updates start.
+    const holder = t.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.vulndbPriorityState})`);
+      holding();
+      await released;
+    });
+    await held;
+    const both = Promise.all([
+      updatePriorityState(t.db, 'kev', (s) => ({ ...s, count: 5 })),
+      updatePriorityState(t.db, 'kev', (s) => ({ ...s, digest: 'd' })),
+    ]);
+    await waitForLockWaiters(t.db, 2);
+    release();
+    await holder;
+    await both;
+    expect((await readPriorityState(t.db)).kev).toMatchObject({ count: 5, digest: 'd' });
   });
 });
 
