@@ -367,6 +367,10 @@ DATABASE_URL=postgres://qualor:<password>@db.example.com:5432/qualor?sslmode=req
 The user must own the database, or be allowed to create the extensions `citext` and `pg_trgm` in
 it. The server's volume then stays empty.
 
+While a scan stores its findings, the server holds up to 1 024 advisory locks for that
+project in one transaction. With many scans at once on a database whose
+`max_locks_per_transaction` is low (PostgreSQL's default is 64), raise it.
+
 To run PostgreSQL next to the server with Compose, add it as a second service:
 
 ```yaml

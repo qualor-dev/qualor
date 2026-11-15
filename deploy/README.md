@@ -300,8 +300,7 @@ keeps the snapshot fresh enough. To refresh it:
 The scanner keeps what it downloads from the server in `QUALOR_TRIVY_CACHE_DIR`, and the
 integrations persist it between jobs: the GitLab component caches `.qualor/trivy/`, and the GitHub
 templates and the scan-action restore and save it with `actions/cache`. A cache inside the
-checkout is safe, because the scanner uses an archive only after its sha256 matches a digest the
-server lists. Nobody needs to copy a database out of the checkout before the scan. Users' docs:
+checkout is safe. Users' docs:
 [docs/guide/languages-and-analyzers.md](../docs/guide/languages-and-analyzers.md#the-vulnerability-database).
 
 Third-party licences are in `/opt/qualor/NOTICE.md` and `/opt/qualor/licenses/` inside the

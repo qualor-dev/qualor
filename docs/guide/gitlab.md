@@ -165,8 +165,7 @@ qualor:
     when: always
 ```
 
-The directory is inside the checkout, which is safe: the scanner uses an archive only after the
-server confirms its checksum.
+The directory is inside the checkout; [how the scanner checks it](./languages-and-analyzers.md#the-vulnerability-database).
 
 ## 3. Merge request comments and commit status
 

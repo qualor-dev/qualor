@@ -651,8 +651,8 @@ class Choice {
  *
  * | Situation | Result |
  * |---|---|
- * | No endpoint, `--dry-run`, Trivy disabled, or a missing route | `dir: null`, no warning |
- * | `serve: false` | `dir: null`, no warning |
+ * | Trivy disabled | `dir: null`, no warning |
+ * | No endpoint, `--dry-run`, a missing route or `serve: false`, and no database of the user's in the cache (last row) | `dir: null`, no warning |
  * | Cache archive whose sha256 equals the current digest | extract and use it; no download |
  * | `daily`, the cache `fetchedAt` < 24 h, and its sha256 in `accepted` | extract and use it; no download |
  * | Otherwise | download the current archive into the cache, then extract and use it |

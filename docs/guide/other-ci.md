@@ -86,8 +86,8 @@ cache and point the variable at it:
 export QUALOR_TRIVY_CACHE_DIR="$WORKSPACE/.qualor/trivy"   # any directory the cache keeps
 ```
 
-The directory may be inside the checkout: the scanner uses an archive only after the server
-confirms its checksum. Without a cache, the scan still works and downloads the database.
+The directory is inside the checkout; [how the scanner checks it](./languages-and-analyzers.md#the-vulnerability-database).
+Without a cache, the scan still works and downloads the database.
 
 ## C and C++
 
