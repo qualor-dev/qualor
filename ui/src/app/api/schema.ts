@@ -12477,11 +12477,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */
@@ -12636,11 +12640,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */
@@ -12793,11 +12801,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */
@@ -12945,11 +12957,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */
@@ -13125,11 +13141,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */
@@ -13305,11 +13325,15 @@ export interface paths {
                             status: "off" | "no_data" | "updating" | "up_to_date" | "stale" | "failed";
                             current: {
                                 builtAt: string | null;
+                                /** @description When the server stored this dataset */
+                                storedAt: string;
                                 sizeBytes: number;
                                 /** @enum {string} */
                                 source: "official" | "mirror" | "upload";
                                 digest: string;
                             } | null;
+                            /** @description The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES) */
+                            uploadMaxBytes: number;
                             lastCheckAt: string | null;
                             nextCheckAt: string | null;
                             /** @description The update's last problem: a download, a store or the source */

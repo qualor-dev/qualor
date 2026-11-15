@@ -27174,6 +27174,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -27193,6 +27197,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -27203,6 +27208,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -27556,6 +27567,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
@@ -27905,6 +27917,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -27924,6 +27940,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -27934,6 +27951,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -28287,6 +28310,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
@@ -28484,6 +28508,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -28503,6 +28531,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -28513,6 +28542,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -28866,6 +28901,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
@@ -29053,6 +29089,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -29072,6 +29112,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -29082,6 +29123,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -29435,6 +29482,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
@@ -29670,6 +29718,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -29689,6 +29741,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -29699,6 +29752,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -30052,6 +30111,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",
@@ -30287,6 +30347,10 @@
                                 "null"
                               ]
                             },
+                            "storedAt": {
+                              "type": "string",
+                              "description": "When the server stored this dataset"
+                            },
                             "sizeBytes": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -30306,6 +30370,7 @@
                           },
                           "required": [
                             "builtAt",
+                            "storedAt",
                             "sizeBytes",
                             "source",
                             "digest"
@@ -30316,6 +30381,12 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "uploadMaxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991,
+                      "description": "The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)"
                     },
                     "lastCheckAt": {
                       "type": [
@@ -30669,6 +30740,7 @@
                     "officialRepository",
                     "status",
                     "current",
+                    "uploadMaxBytes",
                     "lastCheckAt",
                     "nextCheckAt",
                     "lastError",

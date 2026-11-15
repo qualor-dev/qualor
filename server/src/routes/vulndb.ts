@@ -130,11 +130,16 @@ const settingsDto = z.object({
   current: z
     .object({
       builtAt: z.string().nullable(),
+      storedAt: z.string().meta({ description: 'When the server stored this dataset' }),
       sizeBytes: z.number().int(),
       source: z.enum(['official', 'mirror', 'upload']),
       digest: z.string(),
     })
     .nullable(),
+  uploadMaxBytes: z.number().int().meta({
+    description:
+      'The largest Trivy database file the server accepts (QUALOR_VULNDB_UPLOAD_MAX_BYTES)',
+  }),
   lastCheckAt: z.string().nullable(),
   nextCheckAt: z.string().nullable(),
   lastError: z
@@ -313,10 +318,12 @@ function vulndbDto(deps: RouteDeps): () => Promise<SettingsDto> {
           ? null
           : {
               builtAt: isoOrNull(current.builtAt),
+              storedAt: current.createdAt.toISOString(),
               sizeBytes: current.sizeBytes,
               source: current.source,
               digest: current.digest,
             },
+      uploadMaxBytes: deps.config.vulndb.uploadMaxBytes,
       lastCheckAt: state.lastCheckAt,
       nextCheckAt: state.nextCheckAt,
       lastError: state.lastError,

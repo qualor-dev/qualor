@@ -111,6 +111,7 @@ describe('/system/vulnerability-db (API)', () => {
       officialRepository: expect.stringMatching(/^ghcr\.io\//),
       status: 'no_data',
       current: null,
+      uploadMaxBytes: 1024 ** 3,
       lastCheckAt: null,
       nextCheckAt: null,
       lastError: null,
@@ -269,7 +270,13 @@ describe('/system/vulnerability-db (API)', () => {
     const res = await get();
     expect(res.json()).toMatchObject({
       status: 'up_to_date',
-      current: { builtAt: builtAt.toISOString(), sizeBytes: 123, source: 'official', digest },
+      current: {
+        builtAt: builtAt.toISOString(),
+        storedAt: expect.any(String),
+        sizeBytes: 123,
+        source: 'official',
+        digest,
+      },
       lastCheckAt: '2026-11-01T00:00:00.000Z',
     });
     await ctx.db.insert(jobs).values({
@@ -280,6 +287,30 @@ describe('/system/vulnerability-db (API)', () => {
       concurrencyKey: 'vulndb.update',
     });
     expect((await get()).json().status).toBe('updating');
+  });
+
+  it('names when the database in use was stored, and the upload cap', async () => {
+    expect((await get()).json()).toMatchObject({ current: null, uploadMaxBytes: 1024 ** 3 });
+    const id = uuidv7();
+    const createdAt = new Date(Date.now() - 86_400_000);
+    await ctx.db.insert(vulndbDatasets).values({
+      id,
+      kind: 'trivy',
+      digest: `sha256:${'c'.repeat(64)}`,
+      sizeBytes: 5,
+      builtAt: new Date(Date.now() - 5 * 86_400_000),
+      source: 'official',
+      status: 'ready',
+      chunkCount: 1,
+      createdAt,
+    });
+    await ctx.db.insert(instanceSettings).values({
+      key: 'vulndb_state',
+      value: { currentDatasetId: id },
+    });
+    const body = (await get()).json();
+    expect(body.current.storedAt).toBe(createdAt.toISOString());
+    expect(body.uploadMaxBytes).toBe(1024 ** 3);
   });
 
   describe('Update now and its triggers (R5)', () => {
