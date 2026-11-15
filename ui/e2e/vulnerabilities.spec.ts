@@ -1,5 +1,5 @@
 import type { APIRequestContext } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, rowOf, test } from './fixtures';
 import { LEGACY, PAYMENTS, VULNERABILITIES } from './seed-data';
 
 /**
@@ -59,7 +59,7 @@ test('the tab lists the tracked targets and opens a target as cards', async ({ p
   await expect(page).toHaveTitle('Vulnerabilities · Qualor');
   await expect(page.locator('.vuln-header')).toContainText(/Vulnerability data from .* checked /);
 
-  const main = page.getByRole('row', { name: /^main/ });
+  const main = rowOf(page, 'main');
   await expect(main.getByRole('cell').nth(0)).toHaveText('1');
   await expect(main.getByRole('cell').nth(1)).toHaveText('1');
   await expect(main.getByText('1 new')).toBeVisible();
@@ -81,7 +81,7 @@ test('Not affected needs a reason, dims the card and reaches the Trivy issue', a
     .getByRole('navigation', { name: 'Project' })
     .getByRole('link', { name: 'Vulnerabilities' })
     .click();
-  await page.getByRole('row', { name: /^main/ }).getByRole('link', { name: 'main' }).click();
+  await rowOf(page, 'main').getByRole('link', { name: 'main', exact: true }).click();
   const critical = page.getByRole('listitem').filter({ hasText: VULNERABILITIES.critical.id });
   await critical.getByRole('button', { name: /^Change status/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Change status' });
@@ -108,10 +108,12 @@ test('an admin pins a version from the fold', async ({ page }) => {
     .getByRole('navigation', { name: 'Project' })
     .getByRole('link', { name: 'Vulnerabilities' })
     .click();
+  // The tracked version has a row first seen after its baseline (seed.ts): it is new on the tab too.
+  await expect(rowOf(page, '1.0.0').getByText('1 new')).toBeVisible();
   await expect(page.getByText(/0\.9\.0 — not tracked/)).toBeVisible();
   const fold = page.locator('p.untracked');
   await fold.getByRole('button', { name: 'Show' }).click();
-  const row = page.getByRole('row', { name: /0\.9\.0/ });
+  const row = rowOf(page, '0.9.0');
   await expect(row.getByText('Not tracked')).toBeVisible();
   await row.getByRole('button', { name: /Change tracking of 0\.9\.0/ }).click();
   await page.getByRole('button', { name: 'Pin', exact: true }).click();

@@ -4,6 +4,7 @@ import {
   type ConsoleMessage,
   type Dialog,
   expect,
+  type Locator,
   type Page,
   test as base,
 } from '@playwright/test';
@@ -162,4 +163,14 @@ export async function expectAccessible(page: Page): Promise<void> {
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
   expect(blocking).toEqual([]);
+}
+
+/**
+ * The table row whose row header links to `label`, exactly: a row's accessible name also holds
+ * its badges and counts, so a name prefix can match another row ("main" and "main-2").
+ */
+export function rowOf(page: Page, label: string): Locator {
+  return page
+    .getByRole('row')
+    .filter({ has: page.getByRole('rowheader').getByRole('link', { name: label, exact: true }) });
 }

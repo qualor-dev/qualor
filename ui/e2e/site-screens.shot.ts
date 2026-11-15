@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { type Browser, type Page, request } from '@playwright/test';
 import { setProvider } from './ai-provider';
-import { expect, test } from './fixtures';
+import { expect, rowOf, test } from './fixtures';
 import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
 
 /**
@@ -230,7 +230,7 @@ test('vulnerability screens', async ({ browser, baseURL }) => {
       .getByRole('navigation', { name: 'Project' })
       .getByRole('link', { name: 'Vulnerabilities' })
       .click();
-    await expect(page.getByRole('row', { name: /^main/ }).getByText('1 new')).toBeVisible();
+    await expect(rowOf(page, 'main').getByText('1 new')).toBeVisible();
   };
   const byVulnerability = async (page: Page): Promise<void> => {
     await byVersion(page);
