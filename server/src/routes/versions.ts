@@ -75,6 +75,8 @@ const versionRuleSchema = z.discriminatedUnion('kind', [
 
 const monitoringSchema = z.object({
   enabled: z.boolean(),
+  /** The instance-wide vulnerability switch (Settings → Vulnerability database); off, nothing is tracked. */
+  instanceEnabled: z.boolean(),
   /** Globs of the branch names tracked besides the main branch. */
   branchPatterns: z.array(z.string()),
   versionRule: versionRuleSchema,
@@ -182,7 +184,10 @@ async function monitoringDto(
   db: Executor,
   project: { id: string; mainBranchName: string },
 ): Promise<z.infer<typeof monitoringSchema>> {
-  const settings = await vulnerabilitySettings(db, project.id);
+  const [settings, instance] = await Promise.all([
+    vulnerabilitySettings(db, project.id),
+    readVulndbSettings(db),
+  ]);
   const [tracks, branchRows] = await Promise.all([
     trackVersions(db, project.id, settings),
     settings.branchPatterns.length === 0
@@ -206,6 +211,7 @@ async function monitoringDto(
     .slice(0, LIST_LIMIT);
   return {
     ...settings,
+    instanceEnabled: instance.enabled,
     mainBranchName: project.mainBranchName,
     matchingBranches: matching,
     trackedVersions: tracks

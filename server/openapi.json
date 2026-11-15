@@ -11043,6 +11043,9 @@
                     "enabled": {
                       "type": "boolean"
                     },
+                    "instanceEnabled": {
+                      "type": "boolean"
+                    },
                     "branchPatterns": {
                       "type": "array",
                       "items": {
@@ -11130,6 +11133,7 @@
                   },
                   "required": [
                     "enabled",
+                    "instanceEnabled",
                     "branchPatterns",
                     "versionRule",
                     "labelVersions",
@@ -11302,6 +11306,9 @@
                     "enabled": {
                       "type": "boolean"
                     },
+                    "instanceEnabled": {
+                      "type": "boolean"
+                    },
                     "branchPatterns": {
                       "type": "array",
                       "items": {
@@ -11389,6 +11396,7 @@
                   },
                   "required": [
                     "enabled",
+                    "instanceEnabled",
                     "branchPatterns",
                     "versionRule",
                     "labelVersions",

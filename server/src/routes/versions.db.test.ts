@@ -4,6 +4,7 @@ import { addMember, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
 import { auditEvents, branches, jobs, projectVersions } from '../db/schema';
+import { writeVulndbSettings } from '../vulndb/settings';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 
 const BASE = Date.UTC(2026, 9, 1);
@@ -79,6 +80,7 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     const res = await call('GET', `/projects/${p.id}/vulnerability-monitoring`);
     expect(res.json()).toEqual({
       enabled: true,
+      instanceEnabled: true,
       branchPatterns: [],
       versionRule: { kind: 'lines', lines: 5 },
       labelVersions: false,
@@ -87,6 +89,23 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
       trackedVersions: [],
       versionCount: 0,
     });
+  });
+
+  it('tells whether the instance switch is on, on GET and PUT', async () => {
+    const p = await project();
+    const url = `/projects/${p.id}/vulnerability-monitoring`;
+    try {
+      await writeVulndbSettings(h.ctx.db, { enabled: false }, 'k');
+      expect((await call('GET', url)).json()).toMatchObject({
+        enabled: true,
+        instanceEnabled: false,
+      });
+      const put = await call('PUT', url, h.orgAdmin, SETTINGS);
+      expect(put.json()).toMatchObject({ instanceEnabled: false });
+    } finally {
+      await writeVulndbSettings(h.ctx.db, { enabled: true }, 'k');
+    }
+    expect((await call('GET', url)).json()).toMatchObject({ instanceEnabled: true });
   });
 
   it('rejects 11 patterns, lines 0, an empty pattern and a pattern that cannot compile', async () => {
@@ -133,6 +152,7 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     expect(put.statusCode, put.body).toBe(200);
     const expected = {
       enabled: true,
+      instanceEnabled: true,
       branchPatterns: ['release/*'],
       versionRule: { kind: 'lines', lines: 2 },
       labelVersions: true,

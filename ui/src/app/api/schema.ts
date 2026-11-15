@@ -5521,6 +5521,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             enabled: boolean;
+                            instanceEnabled: boolean;
                             branchPatterns: string[];
                             versionRule: {
                                 /** @enum {string} */
@@ -5618,6 +5619,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             enabled: boolean;
+                            instanceEnabled: boolean;
                             branchPatterns: string[];
                             versionRule: {
                                 /** @enum {string} */
