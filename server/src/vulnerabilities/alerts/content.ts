@@ -55,9 +55,13 @@ export function watcherSections(
     else known.projectIds.push(projectId);
   }
   return [...byUser.values()].flatMap(({ watcher, projectIds }) => {
-    // A triage committed since the pick can have emptied a project: it gets no section.
+    // A triage committed since the pick can have emptied a project, and a project without a name
+    // cannot be shown: neither gets a section.
     const sections = projectIds
-      .map((id) => ({ id, name: names.get(id) ?? '', rows: rowsOf.get(id) ?? [], more: 0 }))
+      .flatMap((id) => {
+        const name = names.get(id);
+        return name === undefined ? [] : [{ id, name, rows: rowsOf.get(id) ?? [], more: 0 }];
+      })
       .filter((project) => project.rows.length > 0)
       .sort((a, b) => compare(a.name, b.name) || compare(a.id, b.id));
     return sections.length === 0 ? [] : [{ watcher, sections }];

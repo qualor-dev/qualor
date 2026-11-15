@@ -15,6 +15,7 @@ import {
   type DigestGate,
   type DigestRow,
 } from './chat/messages';
+import { clipUtf16 } from './chat/text';
 import { digestDue, digestWindow } from './chat/week';
 import { createDeliveries } from './deliveries';
 
@@ -91,7 +92,7 @@ export async function buildDigest(
     for (const s of SEVERITIES) bySeverity[s] = Number(r[`new_${s}`] ?? 0);
     return {
       projectId: String(r.id),
-      name: String(r.name),
+      name: clipUtf16(String(r.name), NAME_MAX),
       gate: String(r.gate) as DigestGate,
       newSecurity: SEVERITIES.reduce((n, s) => n + bySeverity[s], 0),
       newBySeverity: bySeverity,
@@ -157,7 +158,10 @@ export async function buildDigest(
     until: window.until.toISOString(),
     timezone: window.timezone,
     scope: {
-      organization: { id: scope.organizationId, name: organization?.name ?? '' },
+      organization: {
+        id: scope.organizationId,
+        name: clipUtf16(organization?.name ?? '', NAME_MAX),
+      },
       project: project === null ? null : { id: project.projectId, name: project.name },
     },
     totals,
@@ -167,11 +171,11 @@ export async function buildDigest(
     top: top.rows.map((i) => ({
       id: i.id,
       projectId: i.project_id,
-      projectName: i.project_name,
+      projectName: clipUtf16(i.project_name, NAME_MAX),
       severity: i.severity,
-      ruleName: i.rule_name,
-      message: i.message,
-      path: i.path,
+      ruleName: clipUtf16(i.rule_name, NAME_MAX),
+      message: clipUtf16(i.message, 4000),
+      path: i.path === null ? null : clipUtf16(i.path, 4000),
       line: i.start_line,
     })),
     ...(vulnerabilities !== null && { vulnerabilities }),

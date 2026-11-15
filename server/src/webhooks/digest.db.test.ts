@@ -754,6 +754,13 @@ describe('the vulnerability section of the weekly digest (0.15 plan 6 C6)', () =
     // Without the licence the section is not news: a quiet week.
     expect(await send()).toEqual({ sent: 0, quiet: 1, failed: 0 });
     expect(await digestsOf(id)).toHaveLength(0);
+    const message = await buildDigest(
+      t.db,
+      { organizationId: org, projectId: null },
+      { since: SINCE, until: UNTIL, week: '2026-W43', timezone: 'Europe/Berlin' },
+      { vulnerabilities: { alerts: false, priority: true } },
+    );
+    expect('vulnerabilities' in message).toBe(false);
   });
 
   it('omits the key, not null, when no row qualifies', async () => {
@@ -832,5 +839,17 @@ describe('the vulnerability section of the weekly digest (0.15 plan 6 C6)', () =
     // 5 targets is the cap.
     const [stored] = await digestsOf(id);
     expect(parseChatMessage('digest.weekly', stored)).toEqual(stored);
+  });
+
+  it('keeps a project name of 300 emoji inside the chat schema', async () => {
+    const p = await project('😀'.repeat(300));
+    await found(p, 'CVE-2026-2001');
+    const id = await hook();
+    await send();
+    const [stored] = await digestsOf(id);
+    expect(parseChatMessage('digest.weekly', stored)).not.toBeNull();
+    const name = (await sectionOf(id))!.projects[0]!.name;
+    expect(name.length).toBeLessThanOrEqual(500);
+    expect(() => encodeURIComponent(name)).not.toThrow();
   });
 });

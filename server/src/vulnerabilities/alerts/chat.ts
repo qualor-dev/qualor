@@ -130,7 +130,8 @@ const compare = (a: string, b: string): number => {
  * the items found in `[since, until)` on the scope's tracked targets (the organisation's projects,
  * or the one project), that are not baseline, still open and not ignored. Counts are rows;
  * `exploited` is null without `options.priority`. Null when no row qualifies. It only reads: the
- * alert lock is not taken (C7), one statement sees one snapshot and a `found_at` lies in one window.
+ * alert lock is not taken (C7), one statement sees one snapshot and a `found_at` lies in one
+ * window.
  */
 export async function digestVulnerabilities(
   tx: Executor,
@@ -181,7 +182,12 @@ export async function digestVulnerabilities(
         .where(inArray(projects.id, uuidList(perProject.map((p) => p.projectId))))
     ).map((p) => [p.id, p.name]),
   );
-  const named = perProject.map((p) => ({ ...p, name: names.get(p.projectId) ?? '' }));
+  // A project whose name was not read is dropped here, before the totals.
+  const named = perProject.flatMap((p) => {
+    const name = names.get(p.projectId);
+    return name === undefined ? [] : [{ ...p, name: clipUtf16(name, 500) }];
+  });
+  if (named.length === 0) return null;
   named.sort(
     (a, b) =>
       b.exploited - a.exploited ||
