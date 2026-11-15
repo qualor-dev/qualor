@@ -1063,6 +1063,7 @@
     "projectTokens.revoked": "Token {$name} revoked.",
     "webhooks.newOpen": "New webhook",
     "projectWebhooks.intro": " Qualor posts to these only for this project. Webhooks for every project are in {$START_LINK}Settings → Webhooks{$CLOSE_LINK}. ",
+    "vulnerabilities.retry": " Try again ",
     "vulnerabilities.loading": "Loading…",
     "vulnerabilities.enabled": "Track vulnerabilities in this project",
     "vuln.off.instance": "Vulnerability monitoring is turned off for this server.",
