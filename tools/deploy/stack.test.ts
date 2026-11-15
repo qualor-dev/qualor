@@ -144,9 +144,11 @@ describe('deploy/docker-compose.yml (plan 1G)', () => {
         environment: Record<string, string>;
         read_only?: boolean;
         networks: string[];
+        volumes?: string[];
       }
     >;
     networks: Record<string, { internal?: boolean }>;
+    volumes: Record<string, unknown>;
   };
 
   it('never starts without the three secrets and never publishes PostgreSQL', () => {
@@ -161,6 +163,27 @@ describe('deploy/docker-compose.yml (plan 1G)', () => {
     expect(compose.networks['internal']?.internal).toBe(true);
     expect(server?.ports).toEqual(['${QUALOR_BIND_ADDRESS:-127.0.0.1}:${QUALOR_PORT:-8080}:8080']);
     expect(server?.read_only).toBe(true);
+  });
+
+  it('keeps the vulnerability database copy on a named volume', () => {
+    expect(compose.services['server']?.volumes).toContain('vulndb-cache:/var/cache/qualor/vulndb');
+    expect(Object.keys(compose.volumes)).toContain('vulndb-cache');
+  });
+
+  it("gives the guide's compose file the same vulnerability database volume", () => {
+    // The guide's file runs the embedded database (a `data` volume) and has no postgres service,
+    // so only the vulnerability database copy has to agree.
+    const guide = readFileSync('docs/guide/install-server.md', 'utf8');
+    const block = /^```yaml\n([\s\S]*?)^```/m.exec(guide)?.[1];
+    expect(block).toBeDefined();
+    const copy = parse(block ?? '') as typeof compose;
+    const mount = (volumes: string[] | undefined): string[] =>
+      (volumes ?? []).filter((v) => v.startsWith('vulndb-cache:'));
+    expect(mount(copy.services['server']?.volumes)).toEqual(
+      mount(compose.services['server']?.volumes),
+    );
+    expect(Object.keys(copy.volumes)).toContain('vulndb-cache');
+    expect(Object.keys(compose.volumes)).toContain('vulndb-cache');
   });
 
   it('keeps PostgreSQL from gaining privileges too', () => {

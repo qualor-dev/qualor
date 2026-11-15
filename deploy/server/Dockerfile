@@ -65,6 +65,7 @@ ARG TARGETARCH
 COPY tools/analyzers/install.sh /tmp/install.sh
 RUN set -eu; \
   eval "$(grep -E '^TRIVY_(VERSION|SHA256_X64|SHA256_ARM64)=' /tmp/install.sh)"; \
+  : "${TRIVY_VERSION:?install.sh no longer pins TRIVY_VERSION}" "${TRIVY_SHA256_X64:?install.sh no longer pins TRIVY_SHA256_X64}" "${TRIVY_SHA256_ARM64:?install.sh no longer pins TRIVY_SHA256_ARM64}"; \
   case "${TARGETARCH:-amd64}" in \
     amd64) TV_ARCH=64bit; TV_SHA=$TRIVY_SHA256_X64 ;; \
     arm64) TV_ARCH=ARM64; TV_SHA=$TRIVY_SHA256_ARM64 ;; \

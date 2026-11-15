@@ -43,6 +43,13 @@ describe('image definitions (plan 1G)', () => {
     expect(text.indexOf('./enterprise')).toBeGreaterThan(text.indexOf('\nUSER 0:0'));
     expect(text.lastIndexOf('./enterprise')).toBeLessThan(lastUser);
     expect(text).not.toMatch(/--chown=[^\n]*enterprise/);
+    // The Trivy pins come from install.sh by eval: a renamed variable stops the build with a
+    // message that names the pin.
+    expect(text).toContain(': "${TRIVY_VERSION:?');
+    expect(text).toContain('"${TRIVY_SHA256_X64:?');
+    expect(text).toContain('"${TRIVY_SHA256_ARM64:?');
+    // The vulnerability database copy outlives the container (docker-compose.yml names the volume).
+    expect(text).toMatch(/^VOLUME \["\/var\/lib\/qualor", "\/var\/cache\/qualor\/vulndb"\]$/m);
     // A licence signing key never enters the build context (final review A M-3).
     expect(readFileSync('.dockerignore', 'utf8').split(/\r?\n/)).toContain('**/*.private.pem');
   });

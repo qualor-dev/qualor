@@ -636,6 +636,9 @@ describe('vulnerability database cache (plan 2a)', () => {
   it('the bundled PostgreSQL pod and the test pod do not get the cache', () => {
     const pg = find(render(['ci/bundled-values.yaml']), 'StatefulSet', 'qualor-postgres');
     expect(pg.spec?.template?.spec.volumes?.map((v) => v.name)).not.toContain('vulndb');
+    const probe = find(render(['ci/bundled-values.yaml']), 'Pod', 'qualor-test-ready');
+    const probeVolumes = (probe.spec?.volumes ?? []) as { name: string }[];
+    expect(probeVolumes.map((v) => v.name)).not.toContain('vulndb');
   });
 });
 
