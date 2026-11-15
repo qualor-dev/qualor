@@ -3,7 +3,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
-import { auditEvents, branches, projectVersions } from '../db/schema';
+import { auditEvents, branches, jobs, projectVersions } from '../db/schema';
+import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 
 const BASE = Date.UTC(2026, 9, 1);
 
@@ -326,5 +327,69 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     } finally {
       await audited.close();
     }
+  });
+
+  it('records one event for two PATCHes to the same tracking', async () => {
+    const audited = await createIngestHarness({
+      pluginsFor: rbacPlugins({ now: () => new Date('2026-10-30T00:00:00Z') }),
+    });
+    try {
+      const p = await audited.project('acme/audited-twice');
+      await audited.ctx.db.insert(projectVersions).values({
+        projectId: p.id,
+        label: '1.0.0',
+        source: 'tag',
+        tag: '1.0.0',
+        analyzedAt: new Date(BASE),
+      });
+      const [v] = await audited.ctx.db
+        .select()
+        .from(projectVersions)
+        .where(eq(projectVersions.projectId, p.id));
+      for (let i = 0; i < 2; i++) {
+        const patch = await audited.ctx.app.inject({
+          method: 'PATCH',
+          url: `/api/v0/projects/${p.id}/versions/${v!.id}`,
+          headers: audited.orgAdmin.headers,
+          payload: { tracking: 'unsupported' },
+        });
+        expect(patch.statusCode, patch.body).toBe(200);
+        expect(patch.json()).toMatchObject({ tracking: 'unsupported', tracked: false });
+      }
+      const events = await audited.ctx.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.projectId, p.id))
+        .orderBy(desc(auditEvents.seq));
+      expect(events.filter((e) => e.action === 'project_version.updated')).toHaveLength(1);
+    } finally {
+      await audited.close();
+    }
+  });
+
+  it('queues no re-check for a PATCH that changes nothing', async () => {
+    const p = await project();
+    await addVersions(p.id, ['1.0.0']);
+    const [v] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, p.id));
+    const rechecks = () => h.ctx.db.select().from(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+    await h.ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+    const url = `/projects/${p.id}/versions/${v!.id}`;
+
+    const same = await call('PATCH', url, h.orgAdmin, { tracking: 'auto' });
+    expect(same.statusCode, same.body).toBe(200);
+    expect(same.json()).toMatchObject({ id: v!.id, tracking: 'auto', tracked: true });
+    expect(await rechecks()).toHaveLength(0);
+    const [unchanged] = await h.ctx.db
+      .select({ updatedAt: projectVersions.updatedAt })
+      .from(projectVersions)
+      .where(eq(projectVersions.id, v!.id));
+    expect(unchanged?.updatedAt).toEqual(v!.updatedAt);
+
+    const pinned = await call('PATCH', url, h.orgAdmin, { tracking: 'pinned' });
+    expect(pinned.statusCode, pinned.body).toBe(200);
+    expect(await rechecks()).toHaveLength(1);
   });
 });

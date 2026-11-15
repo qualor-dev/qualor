@@ -289,22 +289,38 @@ export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         request.params.id,
         'project.settings',
       );
+      const { tracking } = request.body;
       return deps.db.transaction(async (tx) => {
         const [version] = await tx
-          .update(projectVersions)
-          .set({ tracking: request.body.tracking, updatedAt: sql`now()` })
+          .select({
+            id: projectVersions.id,
+            label: projectVersions.label,
+            tracking: projectVersions.tracking,
+          })
+          .from(projectVersions)
           .where(
             and(
               eq(projectVersions.id, request.params.versionId),
               eq(projectVersions.projectId, project.id),
             ),
           )
-          .returning({ id: projectVersions.id, label: projectVersions.label });
+          .for('no key update');
         if (!version) throw notFound('Version');
+        // The tracking it has already: no write, no audit entry, no re-check.
+        const changed = version.tracking !== tracking;
+        if (changed) {
+          await tx
+            .update(projectVersions)
+            .set({ tracking, updatedAt: sql`now()` })
+            .where(eq(projectVersions.id, version.id));
+        }
         const settings = await vulnerabilitySettings(tx, project.id);
         const tracks = await trackVersions(tx, project.id, settings);
         const track = tracks.find((t) => t.row.id === version.id);
         if (!track) throw notFound('Version');
+        const counts = await packageCounts(tx, [version.id]);
+        const dto = versionDto(track, counts.get(version.id) ?? 0);
+        if (!changed) return dto;
         if (deps.audit.active()) {
           const refs = await projectRefs(tx, project.id);
           await deps.audit.record(tx, actorOf(request), [
@@ -313,13 +329,12 @@ export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
               organization: refs.organization,
               project: refs.project,
               target: { type: 'project', id: project.id, label: project.name },
-              details: { label: version.label, tracking: request.body.tracking },
+              details: { label: version.label, tracking },
             },
           ]);
         }
-        const counts = await packageCounts(tx, [version.id]);
         await recheckProject(tx, project.id);
-        return versionDto(track, counts.get(version.id) ?? 0);
+        return dto;
       });
     },
   );

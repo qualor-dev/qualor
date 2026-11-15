@@ -213,6 +213,7 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
   - `tracked` and `trackingReason`, below;
   - `prerelease`, and `packages`, the number of packages.
 - `PATCH /projects/{id}/versions/{versionId}` takes `{"tracking": …}` and answers the version.
+  Setting the tracking a version already has changes nothing: no audit entry, no re-check.
 - `GET /projects/{id}/vulnerability-monitoring` answers the four settings, plus `mainBranchName`,
   `matchingBranches` (up to 50), `trackedVersions` and `versionCount`. `trackedVersions` holds up
   to 50 labels, the most recently scanned first.

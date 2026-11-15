@@ -3,6 +3,8 @@ import type { Report } from '@qualor/shared';
 import type { Db } from '../db/client';
 import { analyses } from '../db/schema';
 import { analysisFields, capWarnings, markFailed, type ProcessLogger } from '../ingest/fields';
+import { notifyAnalysisFailed } from '../notifications/analysis';
+import type { NotifyDeps } from '../notifications/deps';
 import type { ProjectRow } from '../projects/access';
 import { enqueueRecheck } from '../vulnerabilities/recheck';
 import { readVulndbSettings } from '../vulndb/settings';
@@ -14,6 +16,8 @@ type AnalysisRow = typeof analyses.$inferSelect;
 /** What a tag scan's ingestion needs of the job's dependencies (`ProcessDeps` has it). */
 export interface VersionIngestDeps {
   db: Db;
+  /** Mails the watchers of a failed analysis (mail E3); none without it. */
+  notify?: NotifyDeps | undefined;
 }
 
 /** The longest version label (`project_versions_label_check`). */
@@ -29,7 +33,8 @@ export function versionLabelOf(report: Report): string | null {
 /**
  * A tag scan is a project version, not a branch analysis: the version row and its inventory are
  * written, the analysis is released as succeeded with no gate, and no ingestion stage runs (no
- * rules, issues, measures, gate, decoration or notifications).
+ * rules, issues, measures, gate, decoration or notifications). An invalid label fails it and mails
+ * its watchers, as the job's other early failures do.
  */
 export async function ingestVersion(
   deps: VersionIngestDeps,
@@ -45,7 +50,7 @@ export async function ingestVersion(
     warnings: capWarnings(report.warnings),
   };
   if (label === null || label.length > MAX_LABEL_CHARS) {
-    await markFailed(
+    const failed = await markFailed(
       deps.db,
       analysisId,
       {
@@ -54,6 +59,10 @@ export async function ingestVersion(
       },
       fields,
     );
+    // A tag scan has no branch: every watcher's scope matches.
+    if (failed && deps.notify) {
+      await notifyAnalysisFailed(deps.db, deps.notify, { analysisId, branchHint: null }, logger);
+    }
     return;
   }
   await deps.db.transaction(async (tx) => {

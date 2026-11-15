@@ -133,6 +133,27 @@ describe('analysis failure notifications (mail E3 N2, N7)', () => {
     }
   });
 
+  it('mails every watcher once for an invalid version label (VERSION_LABEL_INVALID)', async () => {
+    const p = await project();
+    await upload(
+      p,
+      reportWith({
+        projectKey: p.key,
+        analysisDate: at(),
+        branch: null,
+        tag: `v${'1'.repeat(100)}`,
+        version: '',
+        findings: [],
+        files: [],
+      }),
+    );
+    await run();
+    const rows = await failures(p);
+    expect(rows.map((m) => m.toAddress)).toEqual(['alex@example.com', 'mira@example.com']);
+    expect(rows[0]!.dedupeKey).toBe(analysisFailedKey(p.id, null));
+    expect(text(rows[0]!)).toContain('VERSION_LABEL_INVALID');
+  });
+
   it('names the branch the report gave, and applies the scope to it', async () => {
     const elsewhere = await project();
     await upload(
