@@ -18,7 +18,7 @@ import { conflict, notFound, ProblemError, type FieldError } from '../http/probl
 import { idParams } from '../http/schemas';
 import {
   readGzipUpload,
-  UploadSlots,
+  TransferSlots,
   type UploadedReport,
   type UploadProblems,
 } from '../ingest/upload';
@@ -319,13 +319,13 @@ function organizationReview(
 export const reviewRoutes: FastifyPluginAsyncZod<{
   deps: RouteDeps;
   /** S11: the app's upload slots, shared with the report upload (routes/index.ts). */
-  uploadSlots?: UploadSlots;
+  uploadSlots?: TransferSlots;
 }> = async (app, { deps, uploadSlots }) => {
   // The snapshot upload: the raw request stream goes to the handler, readGzipUpload bounds it.
   app.addContentTypeParser(REVIEW_SNAPSHOT_CONTENT_TYPE, (_request, payload, done) => {
     done(null, payload);
   });
-  const slots = uploadSlots ?? new UploadSlots(deps.config.maxConcurrentUploads);
+  const slots = uploadSlots ?? new TransferSlots(deps.config.maxConcurrentUploads);
 
   app.get(
     '/organizations/:id/ai/review',

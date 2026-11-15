@@ -185,6 +185,25 @@ describe('/scanner/vulnerability-db (API)', () => {
     expect(digestOf(download.rawPayload)).toBe(digest);
   });
 
+  it('serves a large archive through inject without a stall cut', async () => {
+    // Under inject the socket's bytesWritten stays undefined: progress is what the stream yields.
+    const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
+    const digest = await store(big, true);
+    const before = downloadTimeouts.stallMs;
+    downloadTimeouts.stallMs = 300;
+    try {
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: `${meta}/${digest.slice(7)}`,
+        headers: asProject(),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(digestOf(res.rawPayload)).toBe(digest);
+    } finally {
+      downloadTimeouts.stallMs = before;
+    }
+  }, 60_000);
+
   it('needs a token', async () => {
     expect((await ctx.app.inject({ method: 'GET', url: meta })).statusCode).toBe(401);
     expect(
@@ -235,6 +254,32 @@ describe('/scanner/vulnerability-db (API)', () => {
         status = next.res.statusCode ?? 0;
         next.abort();
         await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(status).toBe(200);
+    }, 60_000);
+
+    it('ends a download whose dataset is deleted mid-stream, and frees the slot', async () => {
+      const big = trivyArchive({ db: randomBytes(48 * 1024 * 1024) });
+      const hex = (await store(big, true)).slice(7);
+      const first = await open(hex);
+      expect(first.res.statusCode).toBe(200);
+      first.res.pause();
+      // pruneDatasets refuses the current dataset, so delete directly; the chunks cascade.
+      await ctx.db.delete(vulndbDatasets);
+      const closed = new Promise<boolean>((resolve) => {
+        first.res.on('error', () => undefined);
+        first.res.on('close', () => resolve(first.res.complete));
+      });
+      first.res.resume();
+      expect(await closed).toBe(false);
+
+      const next = (await store(trivyArchive(), true)).slice(7);
+      let status = 0;
+      for (let i = 0; i < 50 && status !== 200; i++) {
+        const again = await open(next);
+        status = again.res.statusCode ?? 0;
+        again.abort();
+        await new Promise((r) => setTimeout(r, 100));
       }
       expect(status).toBe(200);
     }, 60_000);

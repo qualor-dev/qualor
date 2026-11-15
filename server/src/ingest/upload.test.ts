@@ -4,7 +4,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGunzip, createGzip, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { ProblemError } from '../http/problem';
-import { readGzipUpload, UploadSlots, type UploadProblems } from './upload';
+import { readGzipUpload, TransferSlots, type UploadProblems } from './upload';
 
 const MiB = 1024 * 1024;
 const DEFAULT_LIMITS = { maxCompressedBytes: 50 * MiB, maxDecompressedBytes: 500 * MiB };
@@ -136,7 +136,7 @@ describe('readGzipUpload (report-format.md §2)', () => {
   });
 });
 
-describe('UploadSlots (S11, 6I-2)', () => {
+describe('TransferSlots (S11, 6I-2)', () => {
   /** What a take answers: null when it got a slot, else the problem it was refused with. */
   const refusal = (take: () => void): unknown => {
     try {
@@ -149,7 +149,7 @@ describe('UploadSlots (S11, 6I-2)', () => {
   const BUSY = { status: 503, code: 'UPLOADS_BUSY', headers: { 'retry-after': '1' } };
 
   it('refuses a take when every slot is taken, with 503 UPLOADS_BUSY and Retry-After, until one is released', () => {
-    const slots = new UploadSlots(2);
+    const slots = new TransferSlots(2);
     expect(refusal(() => slots.take())).toBeNull();
     expect(refusal(() => slots.take())).toBeNull();
     expect(refusal(() => slots.take())).toMatchObject(BUSY);
@@ -158,7 +158,7 @@ describe('UploadSlots (S11, 6I-2)', () => {
   });
 
   it('keeps `reserve` slots free for the takes that reserve none', () => {
-    const slots = new UploadSlots(2);
+    const slots = new TransferSlots(2);
     // With a reserve of one, a take is allowed while a slot besides it stays free ...
     expect(refusal(() => slots.take({ reserve: 1 }))).toBeNull();
     // ... so a second one is refused, though a slot is free: it is the one kept ...
@@ -174,7 +174,7 @@ describe('UploadSlots (S11, 6I-2)', () => {
   });
 
   it('exposes how many slots there are, which tells whether one can be kept back', () => {
-    expect(new UploadSlots(1).max).toBe(1);
-    expect(new UploadSlots(4).max).toBe(4);
+    expect(new TransferSlots(1).max).toBe(1);
+    expect(new TransferSlots(4).max).toBe(4);
   });
 });

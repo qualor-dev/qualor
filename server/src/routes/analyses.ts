@@ -6,7 +6,12 @@ import type { RouteDeps } from '../app';
 import { accessOf, requirePrincipal, requireUser } from '../auth/access';
 import { analyses, branches } from '../db/schema';
 import { createQueuedAnalysis } from '../ingest/service';
-import { readGzipUpload, reportTooLarge, UploadSlots, type UploadedReport } from '../ingest/upload';
+import {
+  readGzipUpload,
+  reportTooLarge,
+  TransferSlots,
+  type UploadedReport,
+} from '../ingest/upload';
 import { continueUnlessUpload, sendContinue } from '../http/expect-continue';
 import { closeAfterRefusal } from '../http/lingering-close';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
@@ -21,7 +26,7 @@ export const REPORT_CONTENT_TYPE = 'application/vnd.qualor.report+json';
 export const analysisRoutes: FastifyPluginAsyncZod<{
   deps: RouteDeps;
   /** S11: the app's upload slots, shared with the review snapshot upload (routes/index.ts). */
-  uploadSlots?: UploadSlots;
+  uploadSlots?: TransferSlots;
 }> = async (app, { deps, uploadSlots }) => {
   // Hand the raw request stream to the handler; readGzipUpload enforces the limits.
   app.addContentTypeParser(REPORT_CONTENT_TYPE, (_request, payload, done) => {
@@ -29,7 +34,7 @@ export const analysisRoutes: FastifyPluginAsyncZod<{
   });
 
   // S11: per app instance (this function runs once per buildApp() call), not global state.
-  const slots = uploadSlots ?? new UploadSlots(deps.config.maxConcurrentUploads);
+  const slots = uploadSlots ?? new TransferSlots(deps.config.maxConcurrentUploads);
 
   app.post(
     '/analyses',

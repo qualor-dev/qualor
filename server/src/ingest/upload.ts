@@ -27,11 +27,13 @@ export interface UploadProblems {
 export const REPORT_UPLOAD_PROBLEMS: UploadProblems = { tooLarge: reportTooLarge, invalidGzip };
 
 /**
- * S11: the uploads that hold a buffered compressed body at once, from just before it is read to
- * just after its rows and job are stored; at most QUALOR_MAX_CONCURRENT_UPLOADS. One per app,
- * shared by every upload route (the report, and 6I-2's review snapshot): the variable bounds all.
+ * S11: the transfers that hold a slot at once: the report and snapshot uploads, and, with its own
+ * refusal, the scanner database downloads. An upload holds a buffered compressed body from just
+ * before it is read to just after its rows and job are stored; at most QUALOR_MAX_CONCURRENT_UPLOADS.
+ * One per app, shared by every upload route (the report, and 6I-2's review snapshot): the variable
+ * bounds all.
  */
-export class UploadSlots {
+export class TransferSlots {
   private taken = 0;
 
   /**
@@ -48,7 +50,8 @@ export class UploadSlots {
   ) {}
 
   /**
-   * Takes a slot, or refuses with 503 UPLOADS_BUSY when none is free; {@link release} frees it.
+   * Takes a slot, or refuses with 503 and the gate's code (UPLOADS_BUSY by default) when none is
+   * free; {@link release} frees it.
    * With a `reserve`, a slot is free only while that many others stay free besides it: an upload
    * that can wait leaves the last slots to those that cannot. A reserve of `max` or more refuses
    * every take, so a caller with one slot takes without a reserve.

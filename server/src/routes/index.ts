@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../app';
-import { UploadSlots } from '../ingest/upload';
+import { TransferSlots } from '../ingest/upload';
 import { issueChangeCharge } from '../issues/rate-limit';
 import { aiRoutes } from './ai';
 import { analysisRoutes } from './analyses';
@@ -48,7 +48,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   const chargeIssueChanges = issueChangeCharge();
   // S11, 6I-2: one bound per app on the uploads read at once, the reports and the review
   // snapshots together (QUALOR_MAX_CONCURRENT_UPLOADS).
-  const uploadSlots = new UploadSlots(deps.config.maxConcurrentUploads);
+  const uploadSlots = new TransferSlots(deps.config.maxConcurrentUploads);
   await app.register(systemRoutes, { deps });
   await app.register(authRoutes, { prefix: '/api/v0', deps });
   await app.register(accountRoutes, { prefix: '/api/v0', deps });

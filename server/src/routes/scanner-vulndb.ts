@@ -7,7 +7,7 @@ import { requirePrincipal } from '../auth/access';
 import { isDemoUser } from '../auth/demo';
 import type { Principal } from '../auth/principal';
 import { vulndbDatasets } from '../db/schema';
-import { UploadSlots } from '../ingest/upload';
+import { TransferSlots } from '../ingest/upload';
 import { notFound, ProblemError } from '../http/problem';
 import { isoOrNull } from '../http/schemas';
 import { readVulndbSettings, VULNDB_SCANNER_POLICIES } from '../vulndb/settings';
@@ -35,7 +35,7 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
   { deps },
 ) => {
   // P7: one gate per app on the archives sent at once (QUALOR_VULNDB_MAX_DOWNLOADS).
-  const slots = new UploadSlots(deps.config.vulndb.maxDownloads, {
+  const slots = new TransferSlots(deps.config.vulndb.maxDownloads, {
     code: 'DOWNLOADS_BUSY',
     title: 'Too many concurrent database downloads; retry shortly',
     retryAfter: RETRY_AFTER_SECONDS,
@@ -164,23 +164,27 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         clearInterval(watch);
         slots.release();
       };
+      let yielded = 0;
       async function* sliced(): AsyncGenerator<Buffer, void, undefined> {
         for await (const chunk of readDatasetChunks(deps.db, datasetId)) {
           for (let at = 0; at < chunk.length; at += SLICE_BYTES) {
-            yield chunk.subarray(at, at + SLICE_BYTES);
+            const slice = chunk.subarray(at, at + SLICE_BYTES);
+            yielded += slice.length;
+            yield slice;
           }
         }
       }
       const stream = Readable.from(sliced());
-      // A reader that takes no bytes for stallMs is cut off, and its slot freed. Progress is what
-      // the socket sent: the stream reads chunks from the database well ahead of it.
-      const socket = reply.raw.socket;
+      // A reader that takes no bytes for stallMs is cut off, and its slot freed. Progress is the
+      // bytes sliced() has yielded: Readable.from buffers at most 16 slices (4 MiB) ahead, so a
+      // reader that takes nothing stops the yields. (The socket's byte count is not used: under
+      // inject it is undefined.)
       const { stallMs } = downloadTimeouts;
-      let sent = socket?.bytesWritten ?? 0;
+      let sent = yielded;
       let movedAt = Date.now();
       const watch = setInterval(
         () => {
-          const now = socket?.bytesWritten ?? 0;
+          const now = yielded;
           if (now !== sent) {
             sent = now;
             movedAt = Date.now();
@@ -199,6 +203,7 @@ export const scannerVulndbRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         release();
       });
       request.log.info({ digest, principal: principal.kind }, 'vulndb archive download');
+      // The 200 schema is a string for the OpenAPI document, so the type provider refuses a Readable.
       return reply
         .header('content-type', 'application/gzip')
         .header('content-length', String(dataset.sizeBytes))
