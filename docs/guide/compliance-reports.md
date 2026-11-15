@@ -225,7 +225,7 @@ bottom. The sections:
    the KEV date and the EPSS score. An organisation report adds the project. A version report has
    no secrets;
 5. the triage decisions: the **2 000** newest, with their **Reason**;
-6. the findings: the first **2 000**, by severity.
+6. the findings: the first **2 000**, by severity. A version report has none.
 
 A list cut at 2 000 points to the CSV and JSON exports for the rest. In a report cut at 50 000
 findings or triage decisions, the "first n of m" and "newest n of m" lines give the exact totals,
