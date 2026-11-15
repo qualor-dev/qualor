@@ -75,8 +75,11 @@ const versionRuleSchema = z.discriminatedUnion('kind', [
 
 const monitoringSchema = z.object({
   enabled: z.boolean(),
-  /** The instance-wide vulnerability switch (Settings → Vulnerability database); off, nothing is tracked. */
-  instanceEnabled: z.boolean(),
+  instanceEnabled: z
+    .boolean()
+    .describe(
+      'The instance-wide vulnerability monitoring switch (Settings → Vulnerability database). While it is off, nothing is tracked, whatever `enabled` says.',
+    ),
   /** Globs of the branch names tracked besides the main branch. */
   branchPatterns: z.array(z.string()),
   versionRule: versionRuleSchema,

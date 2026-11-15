@@ -11044,7 +11044,8 @@
                       "type": "boolean"
                     },
                     "instanceEnabled": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The instance-wide vulnerability monitoring switch (Settings → Vulnerability database). While it is off, nothing is tracked, whatever `enabled` says."
                     },
                     "branchPatterns": {
                       "type": "array",
@@ -11307,7 +11308,8 @@
                       "type": "boolean"
                     },
                     "instanceEnabled": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "The instance-wide vulnerability monitoring switch (Settings → Vulnerability database). While it is off, nothing is tracked, whatever `enabled` says."
                     },
                     "branchPatterns": {
                       "type": "array",

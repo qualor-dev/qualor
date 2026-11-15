@@ -5521,6 +5521,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             enabled: boolean;
+                            /** @description The instance-wide vulnerability monitoring switch (Settings → Vulnerability database). While it is off, nothing is tracked, whatever `enabled` says. */
                             instanceEnabled: boolean;
                             branchPatterns: string[];
                             versionRule: {
@@ -5619,6 +5620,7 @@ export interface paths {
                     content: {
                         "application/json": {
                             enabled: boolean;
+                            /** @description The instance-wide vulnerability monitoring switch (Settings → Vulnerability database). While it is off, nothing is tracked, whatever `enabled` says. */
                             instanceEnabled: boolean;
                             branchPatterns: string[];
                             versionRule: {
