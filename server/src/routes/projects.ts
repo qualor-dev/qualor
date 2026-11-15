@@ -64,7 +64,7 @@ import { forgetForeignMergeRequestUrls } from '../scm/connections';
 import { projectAutoFixSchema } from './auto-fix';
 import { vulnerabilitySettingsOf } from '../versions/settings';
 import { mainOpenCounts, portfolioVulnerabilityFacts } from '../vulnerabilities/portfolio';
-import { newVulnerabilityMarkers, type NewMarker } from '../vulnerabilities/summary';
+import { newVulnerabilityMarkers } from '../vulnerabilities/summary';
 import { enqueueRecheck } from '../vulnerabilities/recheck';
 import { readVulndbSettings } from '../vulndb/settings';
 import { projectAiReviewSchema } from './review';
@@ -257,6 +257,7 @@ export async function projectDtos(
     : null;
   return rows.map((p) => {
     const main = byProject.get(p.id);
+    const marker = markers?.get(p.id);
     return {
       id: p.id,
       organizationId: p.organizationId,
@@ -297,9 +298,9 @@ export async function projectDtos(
       },
       aiReview: projectAiReview(llmSettings, p),
       vulnerabilities:
-        monitored?.get(p.id)?.enabled === true && markers?.has(p.id)
+        monitored?.get(p.id)?.enabled === true && marker !== undefined
           ? {
-              newIn: markers.get(p.id) as NewMarker,
+              newIn: marker,
               main: mainCounts?.get(p.id) ?? null,
               exploited: facts?.get(p.id)?.exploited ?? null,
               vulnerableReleases: facts?.get(p.id)?.vulnerableReleases ?? null,
