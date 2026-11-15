@@ -220,7 +220,7 @@ export async function readTargetSummary(
     return decision;
   };
   const untrackedVersions = versions
-    .filter((v) => decisions.get(v.id)?.tracked !== true)
+    .filter((v) => !decided(v.id).tracked)
     .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime() || compare(b.id, a.id));
   const trackedVersionIds = tracked.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
   const allVersionIds = [...trackedVersionIds, ...untrackedVersions.map((v) => v.id)];

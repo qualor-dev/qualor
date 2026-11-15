@@ -25,15 +25,13 @@ import {
   type IngestedFinding,
   type ResolvedRule,
 } from '../ingest/state';
+import { LICENSE_ENGINE_ID } from '../dependencies/inventory';
 import { mergeDependencyEntries, type DependencyRowInput } from '../measures/store';
 import { LICENSE_ENGINE } from '../rules/server-engines';
 import { storedPolicyFor } from './settings';
 
 export const FORBIDDEN_RULE_KEY = `${LICENSE_ENGINE}:forbidden`;
 export const UNKNOWN_RULE_KEY = `${LICENSE_ENGINE}:unknown`;
-
-/** The CLI's engine entry for its licence pass (cli/src/analyzers/trivy-licenses.ts). */
-const LICENSE_PASS_ENGINE = 'trivy-licenses';
 
 /** The analysis warning for inventory entries whose lockfile path is not a repository path. */
 export const DEPENDENCY_PATHS_INVALID = 'DEPENDENCY_PATHS_INVALID';
@@ -302,7 +300,7 @@ export const licensePolicyStage: IngestionStage = {
     const findings = requireState(ctx.state, 'findings');
     const entries = ctx.report.dependencies;
     if (!ctx.limits.licenses.policy || entries === undefined) return;
-    const pass = ctx.report.engines.filter((e) => e.id === LICENSE_PASS_ENGINE);
+    const pass = ctx.report.engines.filter((e) => e.id === LICENSE_ENGINE_ID);
     if (pass.some((e) => e.status !== 'ok')) return;
 
     const stored = await storedPolicyFor(ctx.tx, ctx.project.organizationId);
