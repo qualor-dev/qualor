@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { engine, file, reportWith, type ReportParts } from '../../test/reports';
-import { branches, instanceSettings, projectVersions } from '../db/schema';
+import { analyses, branches, instanceSettings, projectVersions } from '../db/schema';
 import { fixedEdition } from '../license/edition';
 import { LICENSE_POLICY_SETTINGS_KEY, writeLicensePolicy } from '../licenses/settings';
 
@@ -279,6 +279,35 @@ describe('GET /projects/{id}/dependencies (6M)', () => {
     expect((await get(`/projects/${p.id}/dependencies?version=${version!.id}`)).statusCode).toBe(
       404,
     );
+  });
+
+  it('keeps the inventory of a version whose analysis was deleted', async () => {
+    const q = await h.project('deps/version-analysis-gone');
+    const analysisId = await q.ingestOk(
+      report(q, {
+        branch: null,
+        tag: 'v2.0.0',
+        version: '2.0.0',
+        findings: [],
+        files: [],
+        engines: [...report(q, {}).engines, engine('trivy-licenses')],
+        dependencies: [],
+      }),
+    );
+    const [version] = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, q.id));
+    const versionUrl = `/projects/${q.id}/dependencies?version=${version!.id}`;
+    expect((await get(versionUrl)).json()).toMatchObject({ total: 0, inventory: true });
+
+    await h.ctx.db.delete(analyses).where(eq(analyses.id, analysisId));
+    const [after] = await h.ctx.db
+      .select({ analysisId: projectVersions.analysisId })
+      .from(projectVersions)
+      .where(eq(projectVersions.id, version!.id));
+    expect(after?.analysisId).toBeNull();
+    expect((await get(versionUrl)).json()).toMatchObject({ total: 0, inventory: true });
   });
 });
 

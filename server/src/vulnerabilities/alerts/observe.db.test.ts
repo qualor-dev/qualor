@@ -2,7 +2,12 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../../test/db';
 import { afterEachStatement } from '../../../test/vulnerability-alerts';
-import { seedCheck, seedInventory, seedTargetRow } from '../../../test/vulnerabilities';
+import {
+  seedCheck,
+  seedEmptyInventory,
+  seedInventory,
+  seedTargetRow,
+} from '../../../test/vulnerabilities';
 import type { Executor } from '../../db/client';
 import { uuidv7 } from '../../db/ids';
 import { LOCKS } from '../../db/locks';
@@ -533,6 +538,26 @@ describe('vulnerability alerts: the scope and the observe step', () => {
       item('CVE-1', true, T5),
       item('CVE-2', true, T5),
     ]);
+  });
+
+  it('records a branch with an empty inventory, so its later pairs are new', async () => {
+    const r = await newProject();
+    const main = await r.branch('main', true);
+    await checked(r.projectId, { branchId: main }, 'analysis-1', false);
+    // The licence pass ran and found no dependencies: an inventory, with no rows.
+    await seedEmptyInventory(t.db, { projectId: r.projectId, branchId: main });
+    expect(await pass(T1)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [r.projectId] }));
+    expect(await targetRow({ branchId: main })).toEqual({
+      dayOne: true,
+      observedAt: recordedAt(T1),
+      seededAt: null,
+    });
+    await rechecked({ branchId: main });
+    expect(await pass(T2)).toEqual(counts({ targetsSeeded: 1 }));
+    // A package added later, with its match: new, not a baseline.
+    await r.vulnerable({ branchId: main }, 'CVE-1');
+    expect(await pass(T3)).toEqual(counts({ itemsAdded: 1 }));
+    expect(await itemsOf({ branchId: main })).toEqual([item('CVE-1', false, T3)]);
   });
 
   it('does not record a version without an inventory', async () => {

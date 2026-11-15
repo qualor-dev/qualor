@@ -108,6 +108,35 @@ export async function seedCheck(
 }
 
 /**
+ * The branch has an empty dependency inventory: a `succeeded` analysis whose `trivy-licenses`
+ * engine is `ok` (the licence pass ran and found nothing), and no `branch_dependencies` row.
+ */
+export async function seedEmptyInventory(
+  db: Executor,
+  target: { projectId: string; branchId: string },
+): Promise<void> {
+  await db.insert(analyses).values({
+    projectId: target.projectId,
+    branchId: target.branchId,
+    status: 'succeeded',
+    revision: 'a'.repeat(40),
+    analysisDate: new Date(),
+    baselineStatus: 'first_analysis',
+    scannerVersion: '0.0.0-test',
+    engines: [
+      {
+        id: 'trivy-licenses',
+        kind: 'builtin',
+        version: null,
+        status: 'ok',
+        reason: null,
+        durationMs: 1,
+      },
+    ],
+  });
+}
+
+/**
  * The target has a dependency inventory: a branch gets an analysis and one `branch_dependencies`
  * row, a version gets `has_inventory`. A second call changes nothing.
  */

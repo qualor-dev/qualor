@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
+import { branchHasInventory } from '../dependencies/inventory';
 import { readVulndbSettings } from '../vulndb/settings';
 import { scopedRows } from './summary';
 import { projectTargets } from './targets';
@@ -94,9 +95,10 @@ export type MainOpenCounts = { critical: number; high: number } | null;
 
 /**
  * The open (effective-open, not ignored) Critical and High rows of each main branch, by project,
- * for the projects list (brief §A). A main branch whose latest analysis carried no dependency
- * inventory has no counts yet: null. One grouped query over the {@link scopedRows} of the given
- * branches; the switches are the caller's to check.
+ * for the projects list (brief §A). A main branch without a dependency inventory
+ * ({@link branchHasInventory}; an empty one counts, as 0 and 0) has no counts yet: null. One
+ * grouped query over the {@link scopedRows} of the given branches; the switches are the caller's
+ * to check.
  */
 export async function mainOpenCounts(
   tx: Executor,
@@ -113,7 +115,7 @@ export async function mainOpenCounts(
   }>(sql`
     WITH r AS (${scopedRows(sql`tv.branch_id IN ${ids}`)})
     SELECT b.project_id,
-           EXISTS (SELECT 1 FROM branch_dependencies bd WHERE bd.branch_id = b.id) AS has_inventory,
+           ${branchHasInventory(sql`b.id`)} AS has_inventory,
            count(r.row_id) FILTER (
              WHERE r.severity = 'critical' AND r.eff_status = 'open' AND NOT r.ignored)::int AS critical,
            count(r.row_id) FILTER (

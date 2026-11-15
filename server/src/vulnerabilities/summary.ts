@@ -2,6 +2,7 @@ import { eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { branches, projectVersions, vulnerabilityTargetChecks } from '../db/schema';
+import { branchHasInventory } from '../dependencies/inventory';
 import {
   isTrackedBranch,
   vulnerabilitySettings,
@@ -294,13 +295,13 @@ export async function readTargetSummary(
   };
 }
 
-/** The branches of `ids` whose latest analysis carried a dependency inventory. */
+/** The branches of `ids` that have a dependency inventory, an empty one included. */
 async function branchesWithInventory(db: Executor, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const rows = await db.execute<{ id: string }>(sql`
     SELECT b.id FROM branches b
      WHERE b.id IN ${uuidList(ids)}
-       AND EXISTS (SELECT 1 FROM branch_dependencies bd WHERE bd.branch_id = b.id)`);
+       AND ${branchHasInventory(sql`b.id`)}`);
   return new Set(rows.rows.map((r) => r.id));
 }
 

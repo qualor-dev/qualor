@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../../db/client';
 import { uuidv7 } from '../../db/ids';
+import { branchHasInventory } from '../../dependencies/inventory';
 import type { Target } from '../targets';
 
 /** Item rows written by one statement. */
@@ -25,10 +26,11 @@ export interface ObservedAlerts {
  * 2. Records each target in scope without a row, unseeded, without items. `observed_at` is the
  *    database's `now()`, the clock the re-check stamps `checked_at` with (A12), so a job clock
  *    ahead of the database's never holds back step 3. It needs a re-check row with a basis (R3)
- *    and a dependency inventory (a `branch_dependencies` row, or `has_inventory` for a version;
- *    without one, its first inventory would count as all new, spec §8.5), and must still exist
- *    (R4). The row is `day_one` when its project had no row left after step 1: the project's
- *    first observation, or its return.
+ *    and a dependency inventory (for a branch {@link branchHasInventory}, for a version
+ *    `has_inventory`; without one, its first inventory would count as all new, spec §8.5). An
+ *    empty inventory is one: the packages added to it later are new. It must still exist (R4).
+ *    The row is `day_one` when its project had no row left after step 1: the project's first
+ *    observation, or its return.
  * 3. Seeds, at `now`, each unseeded target re-checked since it was recorded
  *    (`checked_at >= observed_at`). Every pair it holds now becomes a baseline item. Rows written
  *    before the target entered the scope (R17 keeps them) are never taken for its baseline (R6).
@@ -95,7 +97,7 @@ export async function observeAlerts(
                   ${sql.param(branchIds)}::uuid[], ${sql.param(versionIds)}::uuid[])
            AS s(id, project_id, branch_id, version_id)
      WHERE (EXISTS (SELECT 1 FROM branches b WHERE b.id = s.branch_id)
-            AND EXISTS (SELECT 1 FROM branch_dependencies d WHERE d.branch_id = s.branch_id)
+            AND ${branchHasInventory(sql`s.branch_id`)}
             AND EXISTS (SELECT 1 FROM vulnerability_target_checks c
                          WHERE c.branch_id = s.branch_id AND c.basis <> ''))
         OR (EXISTS (SELECT 1 FROM project_versions v

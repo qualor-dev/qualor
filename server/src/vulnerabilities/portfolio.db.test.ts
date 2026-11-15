@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
-import { seedTargetRow } from '../../test/vulnerabilities';
+import { seedEmptyInventory, seedTargetRow } from '../../test/vulnerabilities';
 import { first } from '../db/rows';
 import {
   branches,
@@ -12,7 +12,7 @@ import {
   vulnerabilityKev,
 } from '../db/schema';
 import { writeVulndbSettings } from '../vulndb/settings';
-import { portfolioVulnerabilityFacts } from './portfolio';
+import { mainOpenCounts, portfolioVulnerabilityFacts } from './portfolio';
 
 describe('portfolioVulnerabilityFacts (plan 5, V1)', () => {
   let t: TestDatabase;
@@ -223,5 +223,20 @@ describe('portfolioVulnerabilityFacts (plan 5, V1)', () => {
 
   it('answers an empty list with an empty map', async () => {
     expect((await portfolioVulnerabilityFacts(t.db, [], { priority: true })).size).toBe(0);
+  });
+
+  it('counts a main whose inventory is empty', async () => {
+    const empty = await setup();
+    const emptyMain = await empty.branch('main', true);
+    await seedEmptyInventory(t.db, { projectId: empty.projectId, branchId: emptyMain });
+    const none = await setup();
+    const noneMain = await none.branch('main', true);
+    const counts = await mainOpenCounts(t.db, [
+      { projectId: empty.projectId, branchId: emptyMain },
+      { projectId: none.projectId, branchId: noneMain },
+    ]);
+    expect(counts.get(empty.projectId)).toEqual({ critical: 0, high: 0 });
+    // No analysis has reported an inventory yet: no counts.
+    expect(counts.get(none.projectId)).toBeNull();
   });
 });

@@ -1,10 +1,11 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
-import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
+import { seedCheck, seedEmptyInventory, seedTargetRow } from '../../test/vulnerabilities';
 import { first } from '../db/rows';
 import { uuidv7 } from '../db/ids';
 import {
+  analyses,
   branches,
   instanceSettings,
   organizations,
@@ -299,6 +300,40 @@ describe('the Vulnerabilities tab: target summary', () => {
     expect(summary.targets.map((x) => [x.name, x.hasInventory])).toEqual([
       ['main', false],
       ['1.0.0', true],
+    ]);
+  });
+
+  it('reports hasInventory for a branch whose inventory is empty', async () => {
+    const { projectId, branch } = await setup();
+    const main = await branch('main', true);
+    const failed = await branch('release/1.x');
+    await branch('release/2.x');
+    await seedEmptyInventory(t.db, { projectId, branchId: main });
+    // The licence pass failed: the report carried no inventory.
+    await t.db.insert(analyses).values({
+      projectId,
+      branchId: failed,
+      status: 'succeeded',
+      revision: 'b'.repeat(40),
+      analysisDate: T0,
+      baselineStatus: 'first_analysis',
+      scannerVersion: '0.0.0-test',
+      engines: [
+        {
+          id: 'trivy-licenses',
+          kind: 'builtin',
+          version: null,
+          status: 'failed',
+          reason: 'trivy exited 1',
+          durationMs: 1,
+        },
+      ],
+    });
+    const summary = await readTargetSummary(t.db, projectId, { priority: false, sbom: false });
+    expect(summary.targets.map((x) => [x.name, x.hasInventory])).toEqual([
+      ['main', true],
+      ['release/1.x', false],
+      ['release/2.x', false],
     ]);
   });
 

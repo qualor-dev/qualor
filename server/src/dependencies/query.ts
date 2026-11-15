@@ -1,8 +1,9 @@
 import { LICENSE_GROUPS, type LicenseGroupId } from '@qualor/shared';
 import { and, asc, eq, ilike, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
-import { analyses, branchDependencies, projectVersions, versionDependencies } from '../db/schema';
+import { branchDependencies, projectVersions, versionDependencies } from '../db/schema';
 import { containsPattern } from '../issues/query';
+import { branchHasInventory } from './inventory';
 
 /** The filters of the inventory list (6M §8). Every filter narrows; none means the whole list. */
 export interface DependencyFilter {
@@ -47,9 +48,6 @@ export interface DependencySummary {
 }
 
 export const SUMMARY_LICENSES = 20;
-
-/** The CLI's engine entry for its licence pass (cli/src/analyzers/trivy-licenses.ts). */
-const LICENSE_ENGINE_ID = 'trivy-licenses';
 
 /** Whose inventory: a branch's latest snapshot, or a released version's. */
 export type DependencyTarget =
@@ -174,10 +172,10 @@ export async function dependencySummary(
 }
 
 /**
- * Whether the target has an inventory snapshot. Rows prove it; without rows, the latest snapshot
- * may still be an empty one: a succeeded analysis (the branch's, or the one the version holds)
- * whose licence pass completed (its `trivy-licenses` engine is `ok`, which is when the report
- * carries `dependencies`).
+ * Whether the target has an inventory snapshot. Rows prove it (`rowCount`, the target's entries);
+ * without rows it may still be an empty one. A branch: {@link branchHasInventory}, a succeeded
+ * analysis of the branch whose licence pass completed. A version: its `has_inventory`, set by
+ * every inventory write, so it holds after its analysis is deleted.
  */
 export async function hasInventory(
   db: Executor,
@@ -185,22 +183,15 @@ export async function hasInventory(
   rowCount: number,
 ): Promise<boolean> {
   if (rowCount > 0) return true;
-  const licensePassDone = and(
-    eq(analyses.status, 'succeeded'),
-    sql`${analyses.engines} @> ${JSON.stringify([{ id: LICENSE_ENGINE_ID, status: 'ok' }])}::jsonb`,
+  if (target.kind === 'version') {
+    const [row] = await db
+      .select({ hasInventory: projectVersions.hasInventory })
+      .from(projectVersions)
+      .where(eq(projectVersions.id, target.versionId));
+    return row?.hasInventory ?? false;
+  }
+  const result = await db.execute<{ has: boolean }>(
+    sql`SELECT ${branchHasInventory(sql`${target.branchId}::uuid`)} AS has`,
   );
-  const [row] =
-    target.kind === 'branch'
-      ? await db
-          .select({ id: analyses.id })
-          .from(analyses)
-          .where(and(eq(analyses.branchId, target.branchId), licensePassDone))
-          .limit(1)
-      : await db
-          .select({ id: analyses.id })
-          .from(analyses)
-          .innerJoin(projectVersions, eq(projectVersions.analysisId, analyses.id))
-          .where(and(eq(projectVersions.id, target.versionId), licensePassDone))
-          .limit(1);
-  return row !== undefined;
+  return result.rows[0]?.has === true;
 }
