@@ -1462,7 +1462,7 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
       return Promise.resolve({ skip: 'no database here' });
     },
   });
-  const noDb = { dir: null, warnings: [], repositoryCacheDir: null };
+  const noDb = { dir: null, warnings: [] };
   const dryFlags = (extra: string[] = []) =>
     scanFlags(['--dry-run', '--output', 'out/r.json.gz', '--project-key', 'k', ...extra]);
   /** The trivy binary found, as in the scanner image (this machine may have none). */
@@ -1573,7 +1573,6 @@ describe('qualor scan: the vulnerability database for the scan (vuln plan 3)', (
         return Promise.resolve({
           dir: chosen,
           warnings: [{ code: 'VULNERABILITY_DB_FETCH_FAILED', message: 'from the step' }],
-          repositoryCacheDir: null,
           cleanup: () => {
             events.push('cleanup');
             return Promise.resolve();

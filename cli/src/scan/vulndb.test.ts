@@ -27,7 +27,7 @@ import { releaseWorkDir, removeActiveWorkDirs, trackWorkDir } from '../analyzers
 import { readDatabaseDate } from '../analyzers/trivy';
 import { createLogger, silentLogger, type Logger } from '../log';
 import type { ServerEndpoint } from '../server/http';
-import { resolveVulnerabilityDb, vulnerabilityCacheDir } from './vulndb';
+import { repositoryCacheDirOf, resolveVulnerabilityDb, vulnerabilityCacheDir } from './vulndb';
 
 // The real signal-cleanup registry, watched: which paths a Ctrl+C would remove, and when.
 vi.mock('../analyzers/runner', async (importOriginal) => {
@@ -258,7 +258,7 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     const got = await choose({ endpoint: server.endpoint, cache });
     // Outside the checkout it is extracted into <cache>/db, for the next runs too (P4).
     expect(got.dir).toBe(cache);
-    expect(got.repositoryCacheDir).toBeNull();
+    expect(repositoryCacheDirOf(tmp(), { QUALOR_TRIVY_CACHE_DIR: cache })).toBeNull();
     expect(databaseIn(got.dir)).toEqual(holds(NEW));
     expect(got.warnings).toEqual([]);
     expect(server.paths).toEqual([META_PATH]);
@@ -449,9 +449,9 @@ describe('resolveVulnerabilityDb: the decision table', () => {
         const got = await choose({ endpoint, cache, root });
         expect(got.dir, name).toBeNull();
         expect(got.warnings, name).toEqual([]);
-        expect(got.repositoryCacheDir, name).toBe('ci/trivy');
         await got.cleanup();
       }
+      expect(repositoryCacheDirOf(root, { QUALOR_TRIVY_CACHE_DIR: cache })).toBe('ci/trivy');
       expect(existsSync(cache) ? readdirSync(cache).sort() : null).toEqual(before);
     },
   );
@@ -480,7 +480,7 @@ describe('resolveVulnerabilityDb: the decision table', () => {
     const got = await choose({ endpoint: server.endpoint, cache, root, tempRoot });
     expect(downloads(server.paths)).toEqual([]);
     expect(got.warnings).toEqual([]);
-    expect(got.repositoryCacheDir).toBe('.qualor/trivy');
+    expect(repositoryCacheDirOf(root, { QUALOR_TRIVY_CACHE_DIR: cache })).toBe('.qualor/trivy');
     expect(got.dir).not.toBeNull();
     const dir = got.dir ?? '';
     expect(path.relative(tempRoot, dir).startsWith('..')).toBe(false);
@@ -613,13 +613,13 @@ describe('resolveVulnerabilityDb: no home directory (R7)', () => {
     const tempRoot = tmp();
     const got = await choose({ endpoint: server.endpoint, tempRoot });
     expect(got.warnings).toEqual([]);
-    expect(got.repositoryCacheDir).toBeNull();
+    expect(repositoryCacheDirOf(tmp(), {})).toBeNull();
     expect(databaseIn(got.dir)).toEqual(holds(NEW));
     expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
     await got.cleanup();
     expect(readdirSync(tempRoot)).toEqual([]);
     const none = await choose({ endpoint: null });
-    expect(none).toMatchObject({ dir: null, warnings: [], repositoryCacheDir: null });
+    expect(none).toMatchObject({ dir: null, warnings: [] });
     const down = await fakeServer({ meta: 500 });
     const failedMeta = await choose({ endpoint: down.endpoint });
     expect(failedMeta).toMatchObject({
@@ -1083,7 +1083,7 @@ describe('resolveVulnerabilityDb: links in the cache (D13-7, D13-8)', () => {
     symlinkSync(target, link, 'dir');
     const got = await choose({ endpoint: server.endpoint, cache: link, root, tempRoot });
     expect(got.warnings).toEqual([]);
-    expect(got.repositoryCacheDir).toBe('.qualor/trivy');
+    expect(repositoryCacheDirOf(root, { QUALOR_TRIVY_CACHE_DIR: link })).toBe('.qualor/trivy');
     // Extracted privately, never in place: the download lands in the checkout through the link.
     expect(path.relative(tempRoot, got.dir ?? '').startsWith('..')).toBe(false);
     expect(databaseIn(got.dir)).toEqual(holds(NEW));

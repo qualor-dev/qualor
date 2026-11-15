@@ -53,11 +53,6 @@ export interface VulnerabilityDbChoice {
   dir: string | null;
   /** Report warnings, each code at most once. */
   warnings: { code: string; message: string }[];
-  /**
-   * The cache directory as a `/`-separated path inside the checkout, or null: it is left out of
-   * the report's files and of Trivy's scan (`--skip-dirs`).
-   */
-  repositoryCacheDir: string | null;
   /** Removes the private copy; never throws. Called after the analyzers. */
   cleanup: () => Promise<void>;
 }
@@ -423,8 +418,6 @@ class Choice {
   readonly inside: boolean;
   /** P5: `QUALOR_TRIVY_CACHE_DIR` names a directory inside the checkout. */
   readonly namedInside: boolean;
-  /** The cache directory inside the checkout, `/`-separated, for the report and `--skip-dirs`. */
-  readonly repositoryCacheDir: string | null;
   private work: string | null = null;
   private writable: boolean | undefined;
   private readonly leftovers: string[] = [];
@@ -441,7 +434,6 @@ class Choice {
     this.cache = cache;
     this.archive = cache === null ? null : path.join(cache, ARCHIVE);
     this.inside = cache !== null && cacheInRepository(input.root, cache);
-    this.repositoryCacheDir = repositoryCacheDirOf(input.root, input.env);
     const named = input.env['QUALOR_TRIVY_CACHE_DIR'];
     this.namedInside = named !== undefined && named !== '' && path.isAbsolute(named) && this.inside;
   }
@@ -454,7 +446,6 @@ class Choice {
     return {
       dir,
       warnings,
-      repositoryCacheDir: this.repositoryCacheDir,
       cleanup: () => this.cleanup(),
     };
   }
@@ -679,7 +670,6 @@ export async function resolveVulnerabilityDb(
       return {
         dir: null,
         warnings: [],
-        repositoryCacheDir: null,
         cleanup: () => Promise.resolve(),
       };
     }
