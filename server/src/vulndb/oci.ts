@@ -248,7 +248,8 @@ async function exchange(
  * A request to `start` and the redirects it answers with, by hand, at most {@link MAX_REDIRECTS}.
  * Every hop is checked again ({@link exchange}): a redirect to http is BLOCKED. `authorization`
  * goes only to `start`'s origin (the registry, or the token realm), so credentials never reach the
- * host a blob redirects to (ruling R9). `extra` goes to every hop.
+ * host a blob redirects to (ruling R9). `extra` goes to the hops on the start URL's origin, never to
+ * another one.
  */
 async function follow(
   session: Reach,
@@ -261,7 +262,10 @@ async function follow(
 ): Promise<Got | OciProblem> {
   let url = start;
   for (let redirects = 0; ; redirects++) {
-    const headers: Record<string, string> = { ...extra, 'user-agent': `Qualor/${VERSION}` };
+    const headers: Record<string, string> = {
+      ...(url.origin === start.origin ? extra : {}),
+      'user-agent': `Qualor/${VERSION}`,
+    };
     if (accept !== null) headers.accept = accept;
     if (authorization !== null && url.origin === start.origin) {
       headers.authorization = authorization;
@@ -302,18 +306,53 @@ interface Challenge {
   params: Record<string, string>;
 }
 
-/** The first Bearer or Basic challenge of a `www-authenticate` header. */
+/** The parts of a header value between the commas that are outside quoted strings. */
+function topLevelParts(value: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quoted = false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (quoted && c === '\\') i++;
+    else if (c === '"') quoted = !quoted;
+    else if (c === ',' && !quoted) {
+      parts.push(value.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(value.slice(start));
+  return parts;
+}
+
+/**
+ * The challenges of a `www-authenticate` header: a challenge starts at the start of the header or
+ * after a comma, at a word that is not followed by `=` (a word followed by `=` is a parameter; a
+ * token68 after a space belongs to its scheme). Each has its own parameters only.
+ */
+function challengesOf(value: string): { scheme: string; text: string }[] {
+  const found: { scheme: string; text: string[] }[] = [];
+  for (const part of topLevelParts(value)) {
+    const isParameter = /^\s*[^\s=,"]+\s*=/.test(part);
+    const start = isParameter ? null : /^\s*([^\s=,"]+)(?:\s+(.*))?$/s.exec(part);
+    if (start) found.push({ scheme: start[1] ?? '', text: [start[2] ?? ''] });
+    else found.at(-1)?.text.push(part);
+  }
+  return found.map((c) => ({ scheme: c.scheme, text: c.text.join(',') }));
+}
+
+/** The first Bearer or Basic challenge of a `www-authenticate` header, with its own parameters. */
 function parseChallenge(header: HeaderValue): Challenge | null {
   for (const value of headerValues(header)) {
-    const match = /^\s*(bearer|basic)(?:\s+(.*))?$/i.exec(value);
-    if (!match) continue;
-    const params: Record<string, string> = {};
-    const pairs = /([a-z][a-z0-9_-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,]*))/gi;
-    for (const [, key = '', quoted, bare = ''] of (match[2] ?? '').matchAll(pairs)) {
-      params[key.toLowerCase()] = quoted === undefined ? bare : quoted.replace(/\\(.)/g, '$1');
+    for (const { scheme, text } of challengesOf(value)) {
+      const lower = scheme.toLowerCase();
+      if (lower !== 'bearer' && lower !== 'basic') continue;
+      const params: Record<string, string> = {};
+      const pairs = /([a-z][a-z0-9_-]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,]*))/gi;
+      for (const [, key = '', quoted, bare = ''] of text.matchAll(pairs)) {
+        params[key.toLowerCase()] = quoted === undefined ? bare : quoted.replace(/\\(.)/g, '$1');
+      }
+      return { scheme: lower, params };
     }
-    const scheme = (match[1] ?? '').toLowerCase() === 'basic' ? 'basic' : 'bearer';
-    return { scheme, params };
   }
   return null;
 }

@@ -344,6 +344,30 @@ describe('the OCI client', () => {
       expect(tokenRequests()).toEqual([]);
     });
 
+    it('reads only the Bearer challenge when a Basic challenge follows it', async () => {
+      behaviour.challenge = `Bearer realm="http://${registry.host}/token",service="fake-registry", Basic realm="other"`;
+      expect(await fetchLayerDescriptor(ref, {}, opts)).toEqual({
+        digest: LAYER_DIGEST,
+        size: BLOB.length,
+      });
+      const [token] = tokenRequests();
+      expect(new URL(token?.path ?? '', 'http://x').searchParams.get('service')).toBe(
+        'fake-registry',
+      );
+    });
+
+    it('finds the Bearer challenge after another scheme', async () => {
+      behaviour.challenge = `Negotiate, Bearer realm="http://${registry.host}/token",service="fake-registry"`;
+      expect(await fetchLayerDescriptor(ref, {}, opts)).toEqual({
+        digest: LAYER_DIGEST,
+        size: BLOB.length,
+      });
+      const [token] = tokenRequests();
+      expect(new URL(token?.path ?? '', 'http://x').searchParams.get('service')).toBe(
+        'fake-registry',
+      );
+    });
+
     it('sends basic credentials to a registry that asks for them', async () => {
       behaviour.challenge = 'Basic realm="fake-registry"';
       behaviour.basicAtRegistry = true;
@@ -570,7 +594,8 @@ describe('fetchHttpsFile', () => {
           res.writeHead(302, { location: 'epss_scores-2026-10-31.csv.gz' }).end();
           return;
         case '/epss/epss_scores-2026-10-31.csv.gz':
-          res.writeHead(200).end(GZ);
+          if (req.headers['if-none-match'] === ETAG) res.writeHead(304, { etag: ETAG }).end();
+          else res.writeHead(200).end(GZ);
           return;
         case '/to-plain':
           res.writeHead(302, { location: `http://${elsewhere.host}/file` }).end();
@@ -639,6 +664,40 @@ describe('fetchHttpsFile', () => {
       '/epss/epss_scores-current.csv.gz',
       '/epss/epss_scores-2026-10-31.csv.gz',
     ]);
+  });
+
+  it("sends the validators to each hop on the stored URL's origin", async () => {
+    await fetchHttpsFile(
+      `http://${files.host}/epss/epss_scores-current.csv.gz`,
+      options({ etag: ETAG, lastModified: LAST_MODIFIED }),
+    );
+    expect(requests).toHaveLength(2);
+    for (const headers of requests) {
+      expect(headers['if-none-match']).toBe(ETAG);
+      expect(headers['if-modified-since']).toBe(LAST_MODIFIED);
+    }
+  });
+
+  it('sends no validators to a hop on another origin', async () => {
+    const listed = parseInternalHosts(`${files.host},localhost:${portOf(tls)}`);
+    const got = await fetchHttpsFile(
+      `http://${files.host}/to-localhost`,
+      options({ internalHosts: listed, etag: ETAG, lastModified: LAST_MODIFIED }),
+    );
+    expect(got).toMatchObject({ kind: 'file' });
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.['if-none-match']).toBe(ETAG);
+    expect(requests[0]?.['if-modified-since']).toBe(LAST_MODIFIED);
+    expect(requests[1]?.['if-none-match']).toBeUndefined();
+    expect(requests[1]?.['if-modified-since']).toBeUndefined();
+  });
+
+  it('answers not_modified when the redirected hop answers 304', async () => {
+    const got = await fetchHttpsFile(
+      `http://${files.host}/epss/epss_scores-current.csv.gz`,
+      options({ etag: ETAG }),
+    );
+    expect(got).toEqual({ kind: 'not_modified' });
   });
 
   it('answers BLOCKED for a redirect to plain http on another origin', async () => {
