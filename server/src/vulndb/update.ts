@@ -346,10 +346,13 @@ async function checkPriorityLogged(
   try {
     await checkPriorityDatasets({ ...deps, now }, settings);
   } catch (err) {
-    deps.logger?.warn(
-      { component: 'vulndb', errorClass: errorClass(err) },
-      'priority data update failed',
-    );
+    // A stop of the server cuts the downloads, so what they ran into says nothing: no warning.
+    if (!stopping()) {
+      deps.logger?.warn(
+        { component: 'vulndb', errorClass: errorClass(err) },
+        'priority data update failed',
+      );
+    }
   }
 }
 

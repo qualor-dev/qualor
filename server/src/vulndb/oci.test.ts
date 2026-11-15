@@ -324,6 +324,16 @@ describe('the OCI client', () => {
       expect(manifests.map((s) => s.authorization)).toEqual([undefined, 'Bearer user-token']);
     });
 
+    it('names a token realm on a private address the token service, not a redirect', async () => {
+      const host = `localhost:${cdn.host.split(':')[1] ?? ''}`;
+      behaviour.challenge = `Bearer realm="https://${host}/token",service="fake-registry"`;
+      expect(await fetchLayerDescriptor(ref, {}, opts)).toEqual({
+        code: 'BLOCKED',
+        message: `${host} (the token service) resolves to a private, loopback or other non-public address; list it in QUALOR_VULNDB_INTERNAL_HOSTS to allow it`,
+      });
+      expect(cdn.seen).toEqual([]);
+    });
+
     it('refuses a token realm over plain http before sending anything to it', async () => {
       behaviour.credentials = USER;
       behaviour.challenge = `Bearer realm="http://${plain.host}/token",service="fake-registry"`;
@@ -678,6 +688,9 @@ describe('fetchHttpsFile', () => {
         case '/to-localhost':
           res.writeHead(302, { location: `https://localhost:${portOf(tls)}/file` }).end();
           return;
+        case '/out-and-back':
+          res.writeHead(302, { location: `https://localhost:${portOf(tls)}/back` }).end();
+          return;
         case '/forbidden':
           res.writeHead(403).end();
           return;
@@ -687,7 +700,9 @@ describe('fetchHttpsFile', () => {
     });
     tls = await serve((req, res) => {
       requests.push(req.headers);
-      res.writeHead(200).end(FILE);
+      if (req.url === '/back') {
+        res.writeHead(302, { location: `http://${files.host}/kev.json` }).end();
+      } else res.writeHead(200).end(FILE);
     }, 'https');
     elsewhere = await serve((_req, res) => {
       res.writeHead(200).end('plain');
@@ -765,6 +780,20 @@ describe('fetchHttpsFile', () => {
     expect(requests[0]?.['if-modified-since']).toBe(LAST_MODIFIED);
     expect(requests[1]?.['if-none-match']).toBeUndefined();
     expect(requests[1]?.['if-modified-since']).toBeUndefined();
+  });
+
+  it("sends the validators again on a hop back to the stored URL's origin", async () => {
+    const listed = parseInternalHosts(`${files.host},localhost:${portOf(tls)}`);
+    const got = await fetchHttpsFile(
+      `http://${files.host}/out-and-back`,
+      options({ internalHosts: listed, etag: ETAG, lastModified: LAST_MODIFIED }),
+    );
+    expect(got).toEqual({ kind: 'not_modified' });
+    expect(requests.map((h) => [h['if-none-match'], h['if-modified-since']])).toEqual([
+      [ETAG, LAST_MODIFIED],
+      [undefined, undefined],
+      [ETAG, LAST_MODIFIED],
+    ]);
   });
 
   it('answers not_modified when the redirected hop answers 304', async () => {

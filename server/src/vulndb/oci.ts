@@ -153,22 +153,25 @@ function withHost(reason: string, host: string): string {
 }
 
 /**
+ * Whom a chain of hops started at: its origin and how texts name it. With `named`, a hop on that
+ * origin names it too ("<host> (the token service) …"): the token realm, which the registry only
+ * named, so it is no redirect and not the registry either.
+ */
+type Start = Pick<Reach, 'origin' | 'noun'> & { named?: true };
+
+/**
  * What an exchange without an answer is. An answer over its cap is TOO_LARGE, or, with `tooLarge`
  * (the manifest and the token: no cap there is a contract), BAD_ANSWER with that text. A hop on
- * another origin than the session's names itself as a redirect.
+ * another origin than the start's names itself as a redirect.
  */
-function problemOf(
-  failed: OutboundFailed,
-  url: URL,
-  session: Pick<Reach, 'origin' | 'noun'>,
-  tooLarge?: string,
-): OciProblem {
+function problemOf(failed: OutboundFailed, url: URL, start: Start, tooLarge?: string): OciProblem {
   switch (failed.cause) {
     case 'not_public': {
+      const own = start.named === true ? `${url.host} (the ${start.noun})` : url.host;
       const hop =
-        url.origin === session.origin
-          ? `${url.host} resolves to a private, loopback or other non-public address; list it in`
-          : `The ${session.noun} redirected to ${url.host}, which resolves to a private, loopback or other non-public address; list ${url.host} in`;
+        url.origin === start.origin
+          ? `${own} resolves to a private, loopback or other non-public address; list it in`
+          : `The ${start.noun} redirected to ${url.host}, which resolves to a private, loopback or other non-public address; list ${url.host} in`;
       return problem('BLOCKED', `${hop} ${INTERNAL_HOSTS_VARIABLE} to allow it`);
     }
     case 'refused_address':
@@ -437,7 +440,8 @@ async function authorize(session: Session, header: HeaderValue): Promise<OciProb
   const got = await follow(session, url, basic, 'application/json', 'buffer', TOKEN_MAX_BYTES, {});
   if (isOciProblem(got)) return got;
   if (got.kind === 'failed') {
-    return problemOf(got.failed, got.url, session, 'The token service answered more than 1 MiB');
+    const realm = { origin: url.origin, noun: 'token service', named: true } as const;
+    return problemOf(got.failed, got.url, realm, 'The token service answered more than 1 MiB');
   }
   if (got.kind !== 'response') {
     return problem('BAD_ANSWER', 'The token service streamed its answer');
