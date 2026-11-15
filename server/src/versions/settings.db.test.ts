@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { organizations, projects, projectVulnerabilitySettings } from '../db/schema';
-import { DEFAULT_VULNERABILITY_SETTINGS, vulnerabilitySettings } from './settings';
+import {
+  DEFAULT_VULNERABILITY_SETTINGS,
+  vulnerabilitySettings,
+  vulnerabilitySettingsOf,
+} from './settings';
 
 describe('vulnerabilitySettings', () => {
   let t: TestDatabase;
@@ -25,6 +30,17 @@ describe('vulnerabilitySettings', () => {
       .returning();
     return p!.id;
   }
+
+  it('reads the settings of 70 000 projects in one statement', async () => {
+    const id = await newProject('acme/many');
+    await t.db
+      .insert(projectVulnerabilitySettings)
+      .values({ projectId: id, branchPatterns: ['x/*'] });
+    const ids = [id, ...Array.from({ length: 69_999 }, () => randomUUID())];
+    const got = await vulnerabilitySettingsOf(t.db, ids);
+    expect(got.size).toBe(70_000);
+    expect(got.get(id)?.branchPatterns).toEqual(['x/*']);
+  });
 
   it('returns the defaults when the project has no row', async () => {
     const id = await newProject('acme/none');

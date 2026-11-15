@@ -212,6 +212,12 @@ export async function readTargetSummary(
   const tracked = (await projectTargets(db, [projectId])).get(projectId) ?? [];
   const branchIds = tracked.flatMap((t) => (t.kind === 'branch' ? [t.branchId] : []));
   const decisions = computeTracking(versions, settings.versionRule);
+  const decided = (id: string) => {
+    const decision = decisions.get(id);
+    if (decision === undefined)
+      throw new Error(`computeTracking decided nothing for version ${id}`);
+    return decision;
+  };
   const untrackedVersions = versions
     .filter((v) => decisions.get(v.id)?.tracked !== true)
     .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime() || compare(b.id, a.id));
@@ -275,7 +281,7 @@ export async function readTargetSummary(
     id: v.id,
     name: v.label,
     tracking: v.tracking,
-    trackingReason: decisions.get(v.id)?.reason ?? 'older',
+    trackingReason: decided(v.id).reason,
     hasInventory: v.hasInventory,
     ...factsOf(keyOf('version', v.id)),
   }));

@@ -1,4 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
+import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { branches, projectVersions } from '../db/schema';
 import {
@@ -70,7 +71,7 @@ async function addTargets(
         kind: branches.kind,
       })
       .from(branches)
-      .where(and(inArray(branches.projectId, on), eq(branches.kind, 'branch'))),
+      .where(and(inArray(branches.projectId, uuidList(on)), eq(branches.kind, 'branch'))),
     db
       .select({
         id: projectVersions.id,
@@ -80,7 +81,7 @@ async function addTargets(
         tracking: projectVersions.tracking,
       })
       .from(projectVersions)
-      .where(inArray(projectVersions.projectId, on)),
+      .where(inArray(projectVersions.projectId, uuidList(on))),
   ]);
   branchRows.sort((a, b) => Number(b.isMain) - Number(a.isMain) || compare(a.name, b.name));
   for (const row of branchRows) {

@@ -1,4 +1,5 @@
 import { eq, inArray } from 'drizzle-orm';
+import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { projectVulnerabilitySettings } from '../db/schema';
 import { branchMatches } from './branches';
@@ -42,7 +43,7 @@ export async function vulnerabilitySettingsOf(
       : await db
           .select()
           .from(projectVulnerabilitySettings)
-          .where(inArray(projectVulnerabilitySettings.projectId, [...projectIds]));
+          .where(inArray(projectVulnerabilitySettings.projectId, uuidList([...projectIds])));
   const byProject = new Map(rows.map((row) => [row.projectId, row]));
   return new Map(projectIds.map((id) => [id, settingsOf(byProject.get(id))]));
 }

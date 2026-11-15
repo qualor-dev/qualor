@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
@@ -9,7 +10,7 @@ import {
   projectVulnerabilitySettings,
 } from '../db/schema';
 import { writeVulndbSettings } from '../vulndb/settings';
-import { trackedTargets, type Target } from './targets';
+import { projectTargets, trackedTargets, type Target } from './targets';
 
 const BASE = Date.UTC(2026, 9, 1);
 
@@ -140,5 +141,14 @@ describe('tracked targets (vulnerability re-checks)', () => {
     const got = sorted(await trackedTargets(h.ctx.db, p.id));
     expect(got).toHaveLength(6);
     expect(got).not.toContain(`version:${versions.get('1.0.0')!}`);
+  });
+
+  it('lists the targets of 70 000 projects in one statement per table', async () => {
+    const p = await project();
+    await branch(p, 'main');
+    const ids = [p.id, ...Array.from({ length: 69_999 }, () => randomUUID())];
+    const got = await projectTargets(h.ctx.db, ids);
+    expect(got.size).toBe(70_000);
+    expect(got.get(p.id)).toEqual([{ kind: 'branch', branchId: await branchId(p, 'main') }]);
   });
 });

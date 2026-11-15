@@ -207,7 +207,9 @@ const targetKey = (t: Target): string =>
 async function projectsOf(db: Db, scope: RecheckScope): Promise<string[]> {
   if (!('all' in scope) && scope.projectIds.length === 0) return [];
   const query = db.select({ id: projects.id }).from(projects).orderBy(asc(projects.id));
-  const rows = await ('all' in scope ? query : query.where(inArray(projects.id, scope.projectIds)));
+  const rows = await ('all' in scope
+    ? query
+    : query.where(inArray(projects.id, uuidList(scope.projectIds))));
   return rows.map((r) => r.id);
 }
 

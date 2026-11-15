@@ -144,7 +144,10 @@ async function trackVersions(
     .sort((a, b) => b.analyzedAt.getTime() - a.analyzedAt.getTime() || compare(b.id, a.id))
     .map((row) => {
       const decision = decisions.get(row.id);
-      return { row, tracked: decision?.tracked ?? false, reason: decision?.reason ?? 'older' };
+      if (decision === undefined) {
+        throw new Error(`computeTracking decided nothing for version ${row.id}`);
+      }
+      return { row, tracked: decision.tracked, reason: decision.reason };
     });
 }
 
