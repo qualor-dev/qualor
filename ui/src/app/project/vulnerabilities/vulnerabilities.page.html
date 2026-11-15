@@ -124,6 +124,7 @@
       } @else {
         <section class="card panel">
           <div
+            #panelScroll
             class="panel-scroll"
             tabindex="0"
             (scroll)="closeMenus()"
@@ -131,7 +132,7 @@
             aria-label="Branches and versions"
             i18n-aria-label="@@vuln.table.label"
           >
-            <table class="targets-table" [attr.aria-busy]="summary.isLoading()">
+            <table #table class="targets-table" [attr.aria-busy]="summary.isLoading()">
               <thead>
                 <tr>
                   <th scope="col" i18n="@@vuln.col.target">Branch or version</th>
@@ -149,9 +150,9 @@
                   }
                 </tr>
               </thead>
-              <tbody id="vuln-untracked">
+              <tbody>
                 @for (t of targets(); track t.kind + t.id) {
-                  <tr class="target-row">
+                  <tr class="target-row" [attr.data-key]="t.kind + ':' + t.id">
                     <th scope="row" class="target">
                       <a
                         class="row-link mono"
@@ -205,9 +206,11 @@
                     }
                   </tr>
                 }
+              </tbody>
+              <tbody id="vuln-untracked">
                 @if (expanded()) {
                   @for (v of untracked(); track v.id) {
-                    <tr class="target-row untracked-row">
+                    <tr class="target-row untracked-row" [attr.data-key]="'version:' + v.id">
                       <th scope="row" class="target">
                         <a
                           class="row-link mono"
@@ -250,9 +253,10 @@
             >
           }
           <button
+            #foldButton
             type="button"
             class="btn-quiet"
-            aria-controls="vuln-untracked"
+            [attr.aria-controls]="table() ? 'vuln-untracked' : null"
             [attr.aria-expanded]="expanded()"
             (click)="expanded.set(!expanded())"
           >

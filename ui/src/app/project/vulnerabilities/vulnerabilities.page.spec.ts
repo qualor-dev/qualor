@@ -249,6 +249,30 @@ describe('VulnerabilitiesPage', () => {
       expect(button(root, 'Hide')?.getAttribute('aria-expanded')).toBe('true');
     });
 
+    it('points the fold button at the fold rows only', async () => {
+      const root = await render({ targets: TARGETS, untracked: untracked(3) });
+      const show = button(root, 'Show');
+      const body = () => root.querySelector('#' + show?.getAttribute('aria-controls'));
+      expect(show?.getAttribute('aria-controls')).toBe('vuln-untracked');
+      expect(body()?.children).toHaveLength(0);
+      show?.click();
+      await settle();
+      const fold = [...(body()?.children ?? [])];
+      expect(fold).toHaveLength(3);
+      expect(fold.every((r) => r.classList.contains('untracked-row'))).toBe(true);
+      expect(body()?.querySelector('.target-row:not(.untracked-row)')).toBeNull();
+      expect(rows(root)).toHaveLength(6);
+    });
+
+    it('gives the fold button nothing to control while no table is rendered', async () => {
+      const root = await render({
+        targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true })],
+        untracked: untracked(1),
+      });
+      expect(root.querySelector('table')).toBeNull();
+      expect(button(root, 'Show')?.hasAttribute('aria-controls')).toBe(false);
+    });
+
     it('shows just the labels for two untracked versions', async () => {
       const root = await render({ targets: TARGETS, untracked: untracked(2) });
       expect(text(root.querySelector('.untracked'))).toContain('1.0.0 · 1.1.0 — not tracked');
@@ -507,18 +531,111 @@ describe('VulnerabilitiesPage', () => {
       expect(items(fold[1])).toEqual(['Track automatically', 'Pin']);
     });
 
-    it('let an admin pin one, which sends pinned and reads the summary again', async () => {
-      const root = await expand(SETTINGS);
-      const pin = foldRow(root).querySelector('.row-menu-panel button') as HTMLButtonElement;
-      expect(text(pin)).toBe('Pin');
-      pin.click();
-      await settle();
-      expect(
-        server
-          .requestsTo('PATCH', `/api/v0/projects/${PROJECT}/versions/${UNTRACKED}`)
-          .map((p) => p.body),
-      ).toEqual([{ tracking: 'pinned' }]);
-      expect(server.requestsTo('GET', TARGETS_URL)).toHaveLength(2);
+    describe('focus after a change', () => {
+      /**
+       * The fake's PATCH only flips `tracking`, so the summary is answered again by hand: `after`
+       * once a PATCH ran, the version having moved between the table and the fold.
+       */
+      async function renderMoving(
+        before: Partial<VulnerabilityTargets>,
+        after: Partial<VulnerabilityTargets>,
+      ): Promise<HTMLElement> {
+        const root = await render(before, { permissions: SETTINGS });
+        document.body.append(root);
+        const answers = (given: Partial<VulnerabilityTargets>) =>
+          FakeVulnerabilities.install(new FakeServer(), PROJECT, given).answer;
+        let patched = false;
+        server.on('PATCH', /^\/api\/v0\/projects\/[^/]+\/versions\/[^/]+$/, () => {
+          patched = true;
+          return { body: {} };
+        });
+        server.on('GET', TARGETS_URL, () => ({ body: answers(patched ? after : before) }));
+        return root;
+      }
+      const focusItem = (row: Element | undefined, label: string) => {
+        const item = [...(row?.querySelectorAll<HTMLElement>('.row-menu-panel button') ?? [])].find(
+          (b) => text(b) === label,
+        ) as HTMLElement;
+        item.focus();
+        return item;
+      };
+      const link = (root: HTMLElement, name: string) =>
+        [...root.querySelectorAll<HTMLElement>('tbody a.row-link')].find((a) => text(a) === name);
+      const moved = (id: string, name: string) =>
+        vulnerabilityTarget({ kind: 'version', id, name, tracking: 'pinned' });
+      let attached: HTMLElement | undefined;
+      afterEach(() => attached?.remove());
+
+      it('let an admin pin one, which sends pinned, reads the summary again and focuses the moved row', async () => {
+        const UNTRACKED = '0190a6c2-0000-7000-8000-00000000f000';
+        const root = (attached = await renderMoving(
+          { targets: TARGETS, untracked: untracked(3) },
+          { targets: [...TARGETS, moved(UNTRACKED, '1.0.0')], untracked: untracked(3).slice(1) },
+        ));
+        button(root, 'Show')?.click();
+        await settle();
+        const fold = rows(root).find((r) => text(r)?.includes('Not tracked'));
+        focusItem(fold, 'Pin').click();
+        await settle();
+        expect(
+          server
+            .requestsTo('PATCH', '/api/v0/projects/' + PROJECT + '/versions/' + UNTRACKED)
+            .map((p) => p.body),
+        ).toEqual([{ tracking: 'pinned' }]);
+        expect(server.requestsTo('GET', TARGETS_URL)).toHaveLength(2);
+        const target = link(root, '1.0.0');
+        expect(target?.closest('tr')?.classList.contains('untracked-row')).toBe(false);
+        expect(document.activeElement).toBe(target);
+      });
+
+      it('focuses the fold button when the changed row leaves the table', async () => {
+        const root = (attached = await renderMoving(
+          { targets: TARGETS, untracked: untracked(1) },
+          {
+            targets: TARGETS.filter((t) => t.id !== V21),
+            untracked: [untrackedVersion({ id: V21, name: '2.1.0' }), ...untracked(1)],
+          },
+        ));
+        focusItem(rows(root)[1], 'Unpin').click();
+        await settle();
+        expect(rows(root).some((r) => text(r)?.includes('2.1.0'))).toBe(false);
+        expect(document.activeElement).toBe(button(root, 'Show'));
+      });
+
+      it('finds the moved row among hundreds', async () => {
+        const all = untracked(300);
+        const root = (attached = await renderMoving(
+          { targets: TARGETS, untracked: all },
+          {
+            targets: [...TARGETS, moved(all[249]?.id ?? '', '1.249.0')],
+            untracked: all.filter((_, i) => i !== 249),
+          },
+        ));
+        button(root, 'Show')?.click();
+        await settle();
+        const fold = rows(root).filter((r) => r.classList.contains('untracked-row'));
+        expect(fold).toHaveLength(300);
+        focusItem(fold[249], 'Pin').click();
+        await settle();
+        expect(document.activeElement).toBe(link(root, '1.249.0'));
+      });
+
+      it('keeps focus on the trigger of a row that stays', async () => {
+        const root = (attached = await renderMoving(
+          { targets: TARGETS },
+          {
+            targets: TARGETS.map((t) => (t.id === V20 ? { ...t, tracking: 'pinned' as const } : t)),
+          },
+        ));
+        const trigger = rows(root)[2]?.querySelector<HTMLElement>('.menu-trigger');
+        trigger?.focus();
+        const pin = [...(rows(root)[2]?.querySelectorAll('.row-menu-panel button') ?? [])].find(
+          (b) => text(b) === 'Pin',
+        ) as HTMLElement;
+        pin.click();
+        await settle();
+        expect(document.activeElement).toBe(trigger);
+      });
     });
 
     it('show the table again when every tracked target is clean', async () => {

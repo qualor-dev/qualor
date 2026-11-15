@@ -5,7 +5,7 @@
 export function closePopover(element: HTMLElement): void {
   const popover = element as Partial<Pick<HTMLElement, 'hidePopover'>>;
   if (!popover.hidePopover) return;
-  let open = false;
+  let open: boolean;
   try {
     open = element.matches(':popover-open');
   } catch {

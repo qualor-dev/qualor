@@ -1,4 +1,15 @@
-import { Component, computed, ElementRef, inject, input, resource, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  ElementRef,
+  inject,
+  Injector,
+  input,
+  resource,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, type Params, RouterLink } from '@angular/router';
@@ -6,6 +17,7 @@ import { Api, ok } from '../../api/api';
 import { problemMessage } from '../../api/errors';
 import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
+import { keepFocus, rowByKey } from '../../shared/focus';
 import { inputValue } from '../../shared/forms';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
@@ -63,6 +75,7 @@ function one(params: Params, key: string): string {
 export class VulnerabilitiesPage {
   private readonly api = inject(Api);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   private readonly route = inject(ActivatedRoute);
   private readonly project = inject(CurrentProject);
   private readonly session = inject(SessionStore);
@@ -161,6 +174,11 @@ export class VulnerabilitiesPage {
   private readonly picked = signal<Record<ExportKind, string | null>>({ sbom: null, vex: null });
 
   protected readonly busy = signal(false);
+  /** The `data-key` of the row a change was made on, until the summary is read again. */
+  private readonly pendingFocus = signal<string | null>(null);
+  protected readonly table = viewChild<ElementRef<HTMLElement>>('table');
+  private readonly foldButton = viewChild<ElementRef<HTMLElement>>('foldButton');
+  private readonly panelScroll = viewChild<ElementRef<HTMLElement>>('panelScroll');
   protected readonly error = signal<string | null>(null);
 
   protected readonly gitlabSnippet = '- if: $CI_COMMIT_TAG';
@@ -182,6 +200,24 @@ export class VulnerabilitiesPage {
         .filter(offered)
         .map((t) => toOption('version', t)),
     ];
+  }
+
+  constructor() {
+    // A change moves a version between the table and the fold, and the row it was made on is gone
+    // or kept: once the summary is read again, focus goes to the row's link, else the fold's button,
+    // else the table's scroll box. A row that stays keeps focus on its trigger.
+    effect(() => {
+      const key = this.pendingFocus();
+      if (key === null || this.summary.status() !== 'resolved') return;
+      this.pendingFocus.set(null);
+      keepFocus(
+        this.injector,
+        document,
+        () => rowByKey(this.table()?.nativeElement, key)?.querySelector<HTMLElement>('a.row-link'),
+        () => this.foldButton()?.nativeElement,
+        () => this.panelScroll()?.nativeElement,
+      );
+    });
   }
 
   /** The kinds of export the tab offers: none without the feature or without a target to export. */
@@ -321,6 +357,7 @@ export class VulnerabilitiesPage {
           body: { tracking },
         }),
       );
+      this.pendingFocus.set(`version:${versionId}`);
       this.summary.reload();
     } catch (err) {
       this.error.set(problemMessage(err));
