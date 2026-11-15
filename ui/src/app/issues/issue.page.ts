@@ -7,6 +7,7 @@ import {
   effect,
   inject,
   input,
+  LOCALE_ID,
   resource,
   signal,
   untracked,
@@ -23,7 +24,7 @@ import { branchView, findBranch, notFound } from '../project/branches';
 import { codeFileLink } from '../project/code-links';
 import { CurrentProject } from '../project/current-project';
 import { type Reason, VEX_REASONS } from '../project/vulnerabilities/change-status-dialog';
-import { DateTimePipe } from '../shared/date-time.pipe';
+import { DateTimePipe, formatDateTime } from '../shared/date-time.pipe';
 import { inputValue } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { isUuid } from '../shared/ids';
@@ -42,6 +43,7 @@ import {
 
 export type IssueDetail = ResponseBody<'/api/v0/issues/{id}', 'get'>;
 type ChangelogEntry = ResponseBody<'/api/v0/issues/{id}/changelog', 'get'>['items'][number];
+type Decision = NonNullable<NonNullable<IssueDetail['vulnerability']>['decision']>;
 type Severity = IssueDetail['severity'];
 
 interface Snippet {
@@ -88,6 +90,7 @@ export class IssuePage {
   private readonly api = inject(Api);
   private readonly document = inject(DOCUMENT);
   private readonly project = inject(CurrentProject);
+  private readonly locale = inject(LOCALE_ID);
   readonly projectId = input.required<string>();
   readonly issueId = input.required<string>();
 
@@ -284,6 +287,28 @@ export class IssuePage {
     return scope === 'branch'
       ? $localize`:@@issue.decision.branch:Branch decision`
       : $localize`:@@issue.decision.project:Project decision`;
+  }
+
+  /**
+   * The decision under the Reason field as one sentence, so a translation can order its parts:
+   * the scope and status, for Not affected the reason, then who decided and when.
+   */
+  protected decisionLine(d: Decision): string {
+    const scope = this.scopeWord(d.scope);
+    const status = label('decisionStatus', d.status);
+    const date = formatDateTime(d.decidedAt, this.locale);
+    const name = d.decidedBy?.name;
+    if (d.status === 'false_positive') {
+      const reason = d.reason
+        ? label('vexReason', d.reason)
+        : $localize`:@@issue.decision.noReason:Reason not given`;
+      return name === undefined
+        ? $localize`:@@issue.decision.line.reason:${scope}:scope:: ${status}:status: · ${reason}:reason: · ${date}:date:`
+        : $localize`:@@issue.decision.line.reasonBy:${scope}:scope:: ${status}:status: · ${reason}:reason: · ${name}:name:, ${date}:date:`;
+    }
+    return name === undefined
+      ? $localize`:@@issue.decision.line:${scope}:scope:: ${status}:status: · ${date}:date:`
+      : $localize`:@@issue.decision.line.by:${scope}:scope:: ${status}:status: · ${name}:name:, ${date}:date:`;
   }
 
   protected setReason(event: Event): void {
