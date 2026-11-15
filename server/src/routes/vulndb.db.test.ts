@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,7 +28,7 @@ import {
   vulnerabilityKev,
 } from '../db/schema';
 import { rbacContext } from '../../test/rbac';
-import { OFFICIAL_EPSS_URL, OFFICIAL_KEV_URL } from '../vulndb/settings';
+import { OFFICIAL_EPSS_URL, OFFICIAL_KEV_URL, writeVulndbSettings } from '../vulndb/settings';
 import { PRIORITY_FILE_MAX_BYTES } from '../vulndb/priority/parse';
 import { VULNDB_UPDATE_QUEUE } from '../vulndb/state';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
@@ -54,13 +55,14 @@ describe('/system/vulnerability-db (API)', () => {
   const put = (payload: object, session = admin) =>
     ctx.app.inject({ method: 'PUT', url, headers: session.headers, payload });
   const get = (session = admin) => ctx.app.inject({ method: 'GET', url, headers: session.headers });
-  const lastChanged = (): unknown => {
-    const line = ctx.logs.filter((l) => l.includes('"vulndb settings changed"')).at(-1);
-    return line === undefined ? undefined : (JSON.parse(line) as { fields: unknown }).fields;
-  };
+  /** The fields of the last `vulndb.settings_updated` audit event. */
+  const lastChanged = async (): Promise<unknown> =>
+    (await auditRows(ctx)).filter((e) => e.action === 'vulndb.settings_updated').at(-1)?.details
+      .changed;
 
   beforeAll(async () => {
-    ctx = await createTestContext();
+    // Licensed with audit-log: the events lastChanged reads, and the audit failures below.
+    ctx = await ssoContext();
     admin = await login(ctx, 'admin', ADMIN_PASSWORD);
     const u = await createUser(ctx, { username: 'vulndb-org-admin' });
     await addMember(ctx, await organizationId(ctx, 'default'), u.id, 'admin');
@@ -122,7 +124,7 @@ describe('/system/vulnerability-db (API)', () => {
     expect(res.body).not.toContain('sekret-pw');
     expect((await get()).body).not.toContain('sekret-pw');
     expect(ctx.logs.join('\n')).not.toContain('sekret-pw');
-    expect(lastChanged()).toEqual([
+    expect(await lastChanged()).toEqual([
       'intervalHours',
       'source.kind',
       'source.repository',
@@ -131,15 +133,35 @@ describe('/system/vulnerability-db (API)', () => {
     ]);
     const kept = await put({ source: { kind: 'mirror', repository, username: 'u' } });
     expect(kept.json().source.passwordSet).toBe(true);
-    expect(lastChanged()).toEqual([]);
+    expect(await lastChanged()).toEqual([]);
     const removed = await put({ source: { kind: 'mirror', repository, password: null } });
     expect(removed.json().source.passwordSet).toBe(false);
-    expect(lastChanged()).toEqual(['source.password']);
+    expect(await lastChanged()).toEqual(['source.password']);
     expect((await put({ source: { kind: 'upload' } })).json().source).toEqual({ kind: 'upload' });
     expect((await put({ source: { kind: 'official' }, enabled: false })).json()).toMatchObject({
       source: { kind: 'official' },
       status: 'off',
     });
+  });
+
+  it('says when the stored mirror password cannot be read', async () => {
+    // Encrypted under another key: what is stored after QUALOR_SECRET_KEY changed.
+    await ctx.db.transaction((tx) =>
+      writeVulndbSettings(
+        tx,
+        {
+          source: {
+            kind: 'mirror',
+            repository: 'registry.corp:5000/mirror/trivy-db:2',
+            password: 'pw',
+          },
+        },
+        'another-secret-key-of-32-characters!!',
+      ),
+    );
+    const res = await get();
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().source).toMatchObject({ passwordSet: true, passwordReadable: false });
   });
 
   it('changes the scanner setting by key, audits it and queues no update or re-check', async () => {
@@ -152,10 +174,10 @@ describe('/system/vulnerability-db (API)', () => {
       enabled: true,
       scanners: { enabled: true, policy: 'every' },
     });
-    expect(lastChanged()).toEqual(['scanners.policy']);
+    expect(await lastChanged()).toEqual(['scanners.policy']);
     const off = await put({ scanners: { enabled: false } });
     expect(off.json().scanners).toEqual({ enabled: false, policy: 'every' });
-    expect(lastChanged()).toEqual(['scanners.enabled']);
+    expect(await lastChanged()).toEqual(['scanners.enabled']);
     expect(await ctx.db.select().from(jobs).where(inArray(jobs.queue, queues))).toEqual([]);
   });
 
@@ -172,10 +194,10 @@ describe('/system/vulnerability-db (API)', () => {
       source: { kind: 'mirror', repository: 'REGISTRY.corp:5000/other/path:3'.toLowerCase() },
     });
     expect(sameHost.json().source).toMatchObject({ passwordSet: true, username: 'u' });
-    expect(lastChanged()).toEqual(['source.repository']);
+    expect(await lastChanged()).toEqual(['source.repository']);
     const moved = await put({ source: { kind: 'mirror', repository: 'evil.example/m/t:2' } });
     expect(moved.json().source).toMatchObject({ passwordSet: false, username: 'u' });
-    expect(lastChanged()).toEqual(['source.repository', 'source.password']);
+    expect(await lastChanged()).toEqual(['source.repository', 'source.password']);
     await put({ source: { kind: 'mirror', repository: a, password: 'pw2' } });
     const withPassword = await put({
       source: { kind: 'mirror', repository: 'other.host/m/t:2', password: 'pw3' },
@@ -591,6 +613,7 @@ describe('/system/vulnerability-db (API)', () => {
       expect(await ctx.db.select().from(vulndbDatasets)).toHaveLength(1);
     });
 
+    // Sent chunked, with no length: vulndb.socket.db.test.ts (inject fails that case, see there).
     it('answers 413 TOO_LARGE for a file over the limit', async () => {
       const small = await createTestContext({
         config: {
@@ -823,6 +846,28 @@ describe('KEV and EPSS on /system/vulnerability-db (API)', () => {
         code: 'TOO_LARGE',
         detail: `The file is larger than ${PRIORITY_FILE_MAX_BYTES} bytes`,
       });
+    });
+
+    it('answers 413 to a streamed KEV file past 32 MiB', async () => {
+      const MiB = 1024 * 1024;
+      const chunks = [
+        ...Array.from({ length: 32 }, () => Buffer.alloc(MiB, 0x20)),
+        Buffer.from('x'),
+      ];
+      const res = await licensed.app.inject({
+        method: 'PUT',
+        url: `${url}/file/kev`,
+        headers: { ...admin.headers, 'content-type': 'application/octet-stream' },
+        payload: Readable.from(chunks),
+      });
+      // No length to refuse up front: the route counted the bytes as they came.
+      expect(res.raw.req.headers['content-length']).toBeUndefined();
+      expect(res.statusCode, res.body).toBe(413);
+      expect(res.json()).toMatchObject({
+        code: 'TOO_LARGE',
+        detail: 'The file is larger than 33554432 bytes',
+      });
+      expect(await licensed.db.select().from(vulnerabilityKev)).toHaveLength(0);
     });
 
     it.each([

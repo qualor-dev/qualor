@@ -13,6 +13,7 @@ import {
   organizationId,
   type TestContext,
 } from '../../test/app';
+import { rawExchange } from '../../test/raw-socket';
 import { gzipJson, REPORT_CONTENT_TYPE, sampleReport } from '../../test/reports';
 import { LINGER_EXTRA_BYTES_MARGIN, LINGER_TOTAL_MS } from '../http/lingering-close';
 
@@ -23,39 +24,6 @@ const DEFAULT_MAX_COMPRESSED_BYTES = 50 * MiB; // testConfig()'s default upload.
 function serverSocketClosed(socket: net.Socket): Promise<void> {
   if (socket.closed) return Promise.resolve();
   return new Promise((resolve) => socket.once('close', () => resolve()));
-}
-
-/**
- * Sends `head` over a raw socket and collects the server's bytes. `onData` may write more (e.g. a
- * body after `100 Continue`); the exchange ends when the server closes the connection, or when
- * `done(text)` returns true (the client then closes its side).
- */
-function rawExchange(
-  port: number,
-  head: string,
-  options: {
-    onData?: (text: string, socket: net.Socket) => void;
-    done?: (text: string) => boolean;
-  } = {},
-): Promise<string> {
-  return new Promise((resolve) => {
-    let text = '';
-    let finished = false;
-    const socket = net.createConnection({ host: '127.0.0.1', port }, () => socket.write(head));
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
-      socket.destroy();
-      resolve(text);
-    };
-    socket.on('data', (d: Buffer) => {
-      text += d.toString('utf8');
-      options.onData?.(text, socket);
-      if (options.done?.(text)) finish();
-    });
-    socket.on('error', () => {});
-    socket.on('close', finish);
-  });
 }
 
 /**
