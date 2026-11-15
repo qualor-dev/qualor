@@ -4,7 +4,7 @@ import { DEPENDENCIES, MERGE_REQUEST, PAYMENTS, VERSION } from './seed-data';
 /**
  * 6M §8: the Dependencies tab on the community server. The seed's last analyses of Payments API
  * (main and merge request !42) report a dependency inventory; with no licence policy there are no
- * verdicts, so neither a Policy column nor a Forbidden filter.
+ * verdicts, so neither a Policy column nor a Forbidden filter, and without `sbom` no Export SBOM.
  */
 test('the Dependencies tab lists the inventory, filters it and opens a lockfile', async ({
   page,
@@ -30,6 +30,8 @@ test('the Dependencies tab lists the inventory, filters it and opens a lockfile'
   await expect(table.getByRole('row')).toHaveCount(DEPENDENCIES.total + 1);
   await expect(table.getByRole('columnheader', { name: 'Policy' })).toHaveCount(0);
   await expect(page.getByLabel('Forbidden only')).toHaveCount(0);
+  // D26-1: the SBOM export is a Business feature (`sbom`).
+  await expect(page.getByRole('button', { name: 'Export SBOM' })).toHaveCount(0);
   const gpl = table.getByRole('row', { name: new RegExp(DEPENDENCIES.strongCopyleft.name) });
   await expect(gpl).toContainText(DEPENDENCIES.strongCopyleft.license);
   await expect(gpl).toContainText('Transitive');

@@ -1,5 +1,5 @@
 import type { APIRequestContext } from '@playwright/test';
-import { expect, rowOf, test } from './fixtures';
+import { expect, expectAccessible, rowOf, test } from './fixtures';
 import { LEGACY, PAYMENTS, VULNERABILITIES } from './seed-data';
 
 /**
@@ -101,6 +101,40 @@ test('Not affected needs a reason, dims the card and reaches the Trivy issue', a
   await expect(page.getByRole('link', { name: VULNERABILITIES.issueMessage })).toBeVisible();
 });
 
+// D24: the tracking menu is a menu for the keyboard too. It changes nothing, so the pin test after
+// it finds the fold as seeded.
+test('the row menu works from the keyboard', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: LEGACY.name }).click();
+  await page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name: 'Vulnerabilities' })
+    .click();
+  await page.locator('p.untracked').getByRole('button', { name: 'Show' }).click();
+  const trigger = rowOf(page, '0.9.0').getByRole('button', {
+    name: 'Change tracking of 0.9.0',
+    exact: true,
+  });
+  const menu = page.getByRole('menu', { name: 'Tracking of 0.9.0', exact: true });
+  const automatic = menu.getByRole('menuitem', { name: 'Track automatically', exact: true });
+  const pin = menu.getByRole('menuitem', { name: 'Pin', exact: true });
+
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem')).toHaveText(['Track automatically', 'Pin']);
+  await expect(automatic).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(pin).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(automatic).toBeFocused();
+  await expectAccessible(page);
+
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test('an admin pins a version from the fold', async ({ page }) => {
   await page.goto('/projects');
   await page.getByRole('link', { name: LEGACY.name }).click();
@@ -116,8 +150,12 @@ test('an admin pins a version from the fold', async ({ page }) => {
   const row = rowOf(page, '0.9.0');
   await expect(row.getByText('Not tracked')).toBeVisible();
   await row.getByRole('button', { name: /Change tracking of 0\.9\.0/ }).click();
-  await page.getByRole('button', { name: 'Pin', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Pin', exact: true }).click();
   await expect(row.getByText('Pinned')).toBeVisible();
+  // The row moved from the fold to the table: focus follows it to its link.
+  await expect(
+    rowOf(page, '0.9.0').getByRole('link', { name: '0.9.0', exact: true }),
+  ).toBeFocused();
   await expect(page.getByText('Not tracked')).toHaveCount(0);
 });
 

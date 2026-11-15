@@ -14,6 +14,9 @@ import { BUSINESS_URL, DEPENDENCIES, PAYMENTS, PAYMENTS_REPORT_FILE, SIEM_URL } 
  * (the guide's steps, docs/guide/roles-and-audit.md).
  */
 
+/** D26-2: the branch the empty-inventory test analyses (no other test knows it). */
+const EMPTY_BRANCH = 'e2e-no-deps';
+
 test('a Business admin sees the kept stream paused and saves retention without it', async ({
   page,
 }) => {
@@ -192,31 +195,45 @@ test('a Business admin downloads the support bundle', async ({ page }) => {
   await expectAccessible(page);
 });
 
-/**
- * 6M: the seed's last report of Payments API's main branch, ingested again as a new analysis (a
- * new revision, today's date) with a project analysis token, as the CLI would upload it; resolves
- * once the server has analysed it.
- */
-async function ingestAgain(page: Page, request: APIRequestContext): Promise<void> {
-  const me = (await (await page.request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
+/** The parts of a report the tests change; the rest goes back to the server as it was. */
+interface Report {
+  analysisDate: string;
+  scm: { revision: string; branch: string | null };
+  dependencies?: unknown[];
+}
+
+/** 6M: the seed's last report of Payments API's main branch (serve.ts writes it). */
+function paymentsReport(): Report {
+  return JSON.parse(readFileSync(PAYMENTS_REPORT_FILE, 'utf8')) as Report;
+}
+
+async function paymentsId(page: Page): Promise<string> {
   const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
     items: { id: string; key: string }[];
   };
   const payments = projects.items.find((p) => p.key === PAYMENTS.key);
   expect(payments).toBeDefined();
-  const created = await page.request.post(`/api/v0/projects/${payments!.id}/tokens`, {
+  return payments!.id;
+}
+
+/**
+ * 6M: a report of Payments API ingested as a new analysis (a new revision, today's date) with a
+ * project analysis token, as the CLI would upload it; resolves once the server has analysed it.
+ */
+async function ingestAgain(page: Page, request: APIRequestContext, report: Report): Promise<void> {
+  const me = (await (await page.request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
+  const created = await page.request.post(`/api/v0/projects/${await paymentsId(page)}/tokens`, {
     headers: { 'x-qualor-csrf': me.csrfToken },
-    data: { name: 'licence policy e2e' },
+    data: { name: 'business e2e' },
   });
   expect(created.status()).toBe(201);
   const { token } = (await created.json()) as { token: string };
 
-  const report = JSON.parse(readFileSync(PAYMENTS_REPORT_FILE, 'utf8')) as {
-    analysisDate: string;
-    scm: { revision: string };
+  const fresh: Report = {
+    ...report,
+    analysisDate: new Date().toISOString(),
+    scm: { ...report.scm, revision: randomBytes(20).toString('hex') },
   };
-  report.analysisDate = new Date().toISOString();
-  report.scm.revision = randomBytes(20).toString('hex');
   const upload = await request.post(
     `/api/v0/analyses?projectKey=${encodeURIComponent(PAYMENTS.key)}`,
     {
@@ -225,7 +242,7 @@ async function ingestAgain(page: Page, request: APIRequestContext): Promise<void
         'content-type': 'application/vnd.qualor.report+json',
         'content-encoding': 'gzip',
       },
-      data: gzipSync(Buffer.from(JSON.stringify(report), 'utf8')),
+      data: gzipSync(Buffer.from(JSON.stringify(fresh), 'utf8')),
     },
   );
   expect(upload.status()).toBe(202);
@@ -287,7 +304,7 @@ test('a Business admin forbids strong copyleft, and the next analysis reports it
 
   const request = await playwright.request.newContext({ baseURL: BUSINESS_URL });
   try {
-    await ingestAgain(page, request);
+    await ingestAgain(page, request, paymentsReport());
   } finally {
     await request.dispose();
   }
@@ -311,17 +328,93 @@ test('a Business admin forbids strong copyleft, and the next analysis reports it
   await expect(details.getByRole('link', { name: 'package-lock.json:40' })).toBeVisible();
 });
 
+// D25-1: the seed turned the server's monitoring switch off (seedVulndbOff), and nothing here turns
+// it on: the tab says it is the server's switch, and shows an instance admin where it is.
 test('a Business server answers the Vulnerabilities tab with priority on', async ({ page }) => {
-  const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
-    items: { id: string; key: string }[];
-  };
-  const payments = projects.items.find((p) => p.key === PAYMENTS.key);
-  expect(payments).toBeDefined();
-  const targets = await page.request.get(
-    `/api/v0/projects/${payments!.id}/vulnerabilities/targets`,
-  );
+  const payments = await paymentsId(page);
+  const targets = await page.request.get(`/api/v0/projects/${payments}/vulnerabilities/targets`);
   expect(targets.status()).toBe(200);
-  expect(((await targets.json()) as { priority: boolean }).priority).toBe(true);
+  const summary = (await targets.json()) as { priority: boolean; offBy: string | null };
+  expect(summary.priority).toBe(true);
+  expect(summary.offBy).toBe('instance');
+
+  await page.goto(`/projects/${payments}/vulnerabilities`);
+  await expect(
+    page.getByText('Vulnerability monitoring is turned off for this server.', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Settings → Vulnerability database', exact: true }),
+  ).toHaveAttribute('href', '/settings/vulnerability-db');
+  await expectAccessible(page);
+});
+
+// D27-1: the project's Vulnerability monitoring panel says the same, and offers no way to the tab.
+test("a Business project's settings say the server's monitoring is off", async ({ page }) => {
+  await page.goto(`/projects/${await paymentsId(page)}/settings`);
+  const panel = page.locator('section#vulnerabilities');
+  await expect(
+    panel.getByRole('heading', { name: 'Vulnerability monitoring', exact: true }),
+  ).toBeVisible();
+  await expect(
+    panel.getByText('Vulnerability monitoring is turned off for this server.', { exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Manage in Vulnerabilities' })).toHaveCount(0);
+});
+
+// D26-1: Export SBOM on the Dependencies tab downloads the branch shown.
+test('a Business admin downloads the SBOM from the Dependencies tab', async ({ page }) => {
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  await page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name: 'Dependencies' })
+    .click();
+  await expect(page.locator('.deps-summary')).toBeVisible();
+  await page.getByRole('button', { name: 'Export SBOM', exact: true }).click();
+  const menu = page.getByRole('group', { name: 'Export SBOM', exact: true });
+  const cyclonedx = menu.getByRole('link', { name: 'CycloneDX 1.6 (JSON)', exact: true });
+  await expect(cyclonedx).toHaveAttribute('href', /[?&]branch=main&format=cyclonedx$/);
+  await expectAccessible(page);
+  const [download] = await Promise.all([page.waitForEvent('download'), cyclonedx.click()]);
+  const bom = JSON.parse(readFileSync((await download.path())!, 'utf8')) as { bomFormat: string };
+  expect(bom.bomFormat).toBe('CycloneDX');
+});
+
+// D26-2 (C-v): a branch whose analysis found no package, made here rather than in the shared seed
+// (a seeded branch would move the branch lists and counts other tests pin). An empty list is an
+// inventory: the tab says it is empty and still exports it.
+test('a branch with an empty inventory says it has no packages and exports its SBOM', async ({
+  page,
+  playwright,
+}) => {
+  const report = paymentsReport();
+  const request = await playwright.request.newContext({ baseURL: BUSINESS_URL });
+  try {
+    await ingestAgain(page, request, {
+      ...report,
+      scm: { ...report.scm, branch: EMPTY_BRANCH },
+      dependencies: [],
+    });
+  } finally {
+    await request.dispose();
+  }
+
+  await page.goto('/projects');
+  await page.getByRole('link', { name: PAYMENTS.name }).click();
+  await page
+    .getByRole('navigation', { name: 'Project' })
+    .getByRole('link', { name: 'Dependencies' })
+    .click();
+  await expect(page.locator('.deps-summary')).toBeVisible();
+  await page.getByLabel('Branch').selectOption({ label: EMPTY_BRANCH });
+  await expect(page.getByText('This branch or version has no packages.')).toBeVisible();
+  await page.getByRole('button', { name: 'Export SBOM', exact: true }).click();
+  await expect(
+    page
+      .getByRole('group', { name: 'Export SBOM', exact: true })
+      .getByRole('link', { name: 'CycloneDX 1.6 (JSON)', exact: true }),
+  ).toHaveAttribute('href', new RegExp(`[?&]branch=${EMPTY_BRANCH}&format=cyclonedx$`));
+  await expectAccessible(page);
 });
 
 test('a Business server exports the SBOM of a project with an inventory', async ({ page }) => {
