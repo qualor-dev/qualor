@@ -147,6 +147,14 @@ describe('OpenAPI document (api.md §6.1)', () => {
       );
     });
 
+    it('describes the target parameter of the vulnerability list', () => {
+      const list = op('/api/v0/projects/{id}/vulnerabilities', 'get');
+      const target = list.parameters?.find((p) => p.in === 'query' && p.name === 'target') as
+        { description?: string } | undefined;
+      expect(target?.description).toContain('A merge request is not a target');
+      expect(list.responses['404']?.description).toContain('a merge request is not a target');
+    });
+
     it('describes the review snapshot upload: gzip body, its content type, and every rejection (6I-2)', () => {
       const upload = op('/api/v0/analyses/{id}/review-snapshot', 'post');
       expect(statuses(upload)).toEqual([

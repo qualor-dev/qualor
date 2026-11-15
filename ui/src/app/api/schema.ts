@@ -5981,6 +5981,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    /** @description branch:<id> or version:<id>, tracked or not; without it, every tracked target. A merge request is not a target (404) */
                     target?: string;
                     status?: "all" | "open" | "false_positive" | "wont_fix";
                     severity?: "critical" | "high" | "medium" | "low" | "unknown";
@@ -6083,7 +6084,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description Not found, or not visible to the caller */
+                /** @description The project is not found, or target names no branch or version of it; a merge request is not a target (NOT_FOUND) */
                 404: {
                     headers: {
                         [name: string]: unknown;

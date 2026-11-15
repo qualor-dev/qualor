@@ -142,8 +142,13 @@ const TARGET_PATTERN =
   /^(branch|version):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const listQuerySchema = z.strictObject({
-  /** `branch:<id>` or `version:<id>`, tracked or not; without it, every tracked target. */
-  target: z.string().regex(TARGET_PATTERN).optional(),
+  target: z
+    .string()
+    .regex(TARGET_PATTERN)
+    .describe(
+      'branch:<id> or version:<id>, tracked or not; without it, every tracked target. A merge request is not a target (404)',
+    )
+    .optional(),
   status: z.enum(['all', ...DECISION_STATUSES]).default('all'),
   severity: severitySchema.optional(),
   /** Only the exploited (KEV) rows; 403 FEATURE_NOT_LICENSED without vuln.priority when true. */
@@ -253,6 +258,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         openapi: {
           problems: [404],
           problemDescriptions: {
+            404: 'The project is not found, or target names no branch or version of it; a merge request is not a target (NOT_FOUND)',
             403: `FEATURE_NOT_LICENSED (\`exploited=true\` needs the enterprise feature ${PRIORITY_FEATURE}), FORBIDDEN or INSUFFICIENT_SCOPE`,
           },
         },
