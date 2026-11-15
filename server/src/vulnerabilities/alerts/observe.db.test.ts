@@ -544,6 +544,54 @@ describe('vulnerability alerts: the scope and the observe step', () => {
     expect(await projectRows()).toEqual([{ projectId: p.projectId, dayOneAt: T0 }]);
   });
 
+  /** The target rows a 0.15 replica records during a rolling upgrade: no project row (D17). */
+  const recordedBy015 = async (projectId: string, ...keys: TargetKey[]): Promise<Date> => {
+    const observedAt = await clockOf(t.db);
+    for (const key of keys) {
+      await t.db
+        .insert(vulnerabilityAlertTargets)
+        .values({ projectId, ...key, dayOne: true, observedAt });
+    }
+    return observedAt;
+  };
+
+  it('writes the project row of targets a 0.15 replica recorded, at the next pass', async () => {
+    const p = await projectP();
+    const observedAt = await recordedBy015(
+      p.projectId,
+      { branchId: p.main },
+      { versionId: p.v234 },
+    );
+    expect(await projectRows()).toEqual([]);
+    expect(await pass(T1)).toEqual(counts());
+    expect(await projectRows()).toEqual([{ projectId: p.projectId, dayOneAt: observedAt }]);
+    // A target added later is no day one.
+    const v240 = await p.version('2.4.0', 1);
+    await checked(p.projectId, { versionId: v240 });
+    expect(await pass(T2)).toEqual(counts({ targetsAdded: 1, recheckProjectIds: [p.projectId] }));
+    expect(await targetRow({ versionId: v240 })).toMatchObject({ dayOne: false });
+  });
+
+  it('keeps the day one of a 0.15 target that leaves the scope in the same pass', async () => {
+    const r = await newProject();
+    const main = await r.branch('main', true);
+    await checked(r.projectId, { branchId: main });
+    const observedAt = await recordedBy015(r.projectId, { branchId: main });
+    // The main branch is replaced before any 0.16 pass: step 1 deletes the 0.15 target.
+    await t.db.update(branches).set({ isMain: false }).where(eq(branches.id, main));
+    const trunk = await r.branch('trunk', true);
+    await checked(r.projectId, { branchId: trunk });
+    expect(await pass(T1)).toEqual(
+      counts({ targetsAdded: 1, targetsRemoved: 1, recheckProjectIds: [r.projectId] }),
+    );
+    expect(await targetRow({ branchId: trunk })).toEqual({
+      dayOne: false,
+      observedAt: recordedAt(T1),
+      seededAt: null,
+    });
+    expect(await projectRows()).toEqual([{ projectId: r.projectId, dayOneAt: observedAt }]);
+  });
+
   it('keeps one item per vulnerability of a target, however many packages carry it', async () => {
     const p = await projectP();
     await p.vulnerable({ branchId: p.main }, 'CVE-1', 'lodash-es');

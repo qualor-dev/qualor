@@ -22,6 +22,9 @@ export interface ObservedAlerts {
  * Brings the alert memory in line with `scope` (`alertScope`) as of `now` (4b A1–A3, R3, R4, R6).
  * The caller holds LOCKS.vulnerabilityAlerts in `tx`, and queues a re-check of
  * `recheckProjectIds`; this function enqueues nothing.
+ * 0. Writes the missing project row of each project with a target row, dated by its earliest
+ *    target, as migration 0029 did: a 0.15 replica of a rolling upgrade records targets without
+ *    one. A project with targets is past its day one.
  * 1. Deletes the target rows out of scope; their items go with them. The project rows stay.
  * 2. Records each target in scope without a row, unseeded, without items. `observed_at` is the
  *    database's `now()`, the clock the re-check stamps `checked_at` with (A12), so a job clock
@@ -70,6 +73,17 @@ export async function observeAlerts(
     }
   }
   const at = sql`${now.toISOString()}::timestamptz`;
+
+  // Step 0: 0029's backfill again, for the targets a 0.15 replica recorded after it ran (a rolling
+  // upgrade). Before step 1, so a target that leaves the scope now still marks its day one.
+  await tx.execute(sql`
+    INSERT INTO vulnerability_alert_projects (project_id, day_one_at)
+    SELECT a.project_id, min(a.observed_at)
+      FROM vulnerability_alert_targets a
+     WHERE NOT EXISTS (SELECT 1 FROM vulnerability_alert_projects p
+                        WHERE p.project_id = a.project_id)
+     GROUP BY a.project_id
+    ON CONFLICT DO NOTHING`);
 
   const removed = await tx.execute(sql`
     DELETE FROM vulnerability_alert_targets a
