@@ -315,6 +315,25 @@ export async function withPrivateReportFile<T>(
   use: (f: { file: string; size: number }) => Promise<T>,
   o: { tempRoot?: string } = {},
 ): Promise<T> {
+  return withPrivateGzipFile(
+    'report.json.gz',
+    (file) => writeReport(report, file, { mode: 0o600 }),
+    use,
+    o,
+  );
+}
+
+/**
+ * The same private file for any gzipped upload (an SBOM, 0.16): `write` writes the gzip file
+ * (mode 0600) it is given the path of and returns its size; `what` names the upload in the
+ * temporary-directory error. Everything else is `withPrivateReportFile`'s contract above.
+ */
+export async function withPrivateGzipFile<T>(
+  name: string,
+  write: (file: string) => Promise<number>,
+  use: (f: { file: string; size: number }) => Promise<T>,
+  o: { tempRoot?: string; what?: string } = {},
+): Promise<T> {
   const handlers = CLEANUP_SIGNALS.map((signal) => {
     const handler = () => onSignal(signal);
     process.on(signal, handler);
@@ -328,12 +347,12 @@ export async function withPrivateReportFile<T>(
       const code = (err as NodeJS.ErrnoException).code ?? 'unknown error';
       throw new CliError(
         EXIT.SERVER,
-        `cannot create a temporary directory for the report: ${code}`,
+        `cannot create a temporary directory for the ${o.what ?? 'report'}: ${code}`,
       );
     }
     privateDirs.add(dir);
-    const file = path.join(dir, 'report.json.gz');
-    const size = await writeReport(report, file, { mode: 0o600 });
+    const file = path.join(dir, name);
+    const size = await write(file);
     return await use({ file, size });
   } finally {
     if (dir !== undefined) {

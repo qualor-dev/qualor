@@ -43,15 +43,23 @@ const accepted = z.looseObject({
  * Ruling E5, for every upload (the report, the AI review's snapshot): how long to wait before the
  * next attempt when the answer `res` to attempt `attempt` (from 1) is 503 `UPLOADS_BUSY` and the
  * retries are not used up: `Retry-After`, clamped to 1–30 s (2 s without one), within what is
- * left of `MAX_UPLOAD_RETRY_WAIT_MS` after `waited`. Null for any other answer, or when no
+ * left of `limits.waitMs` (`MAX_UPLOAD_RETRY_WAIT_MS` by default) after `waited`. Null for any other answer, or when no
  * attempt or wait is left.
  */
-export function busyRetryDelay(res: HttpResponse, attempt: number, waited: number): number | null {
-  if (res.status !== 503 || attempt >= MAX_UPLOAD_ATTEMPTS) return null;
+export function busyRetryDelay(
+  res: HttpResponse,
+  attempt: number,
+  waited: number,
+  limits: { attempts: number; waitMs: number } = {
+    attempts: MAX_UPLOAD_ATTEMPTS,
+    waitMs: MAX_UPLOAD_RETRY_WAIT_MS,
+  },
+): number | null {
+  if (res.status !== 503 || attempt >= limits.attempts) return null;
   if (parseProblem(res.body)?.code !== 'UPLOADS_BUSY') return null;
   const delay = Math.min(
     retryAfterMs(res.headers, MIN_RETRY_MS, MAX_RETRY_MS) ?? DEFAULT_RETRY_MS,
-    MAX_UPLOAD_RETRY_WAIT_MS - waited,
+    limits.waitMs - waited,
   );
   return delay > 0 ? delay : null;
 }

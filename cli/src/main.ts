@@ -1,5 +1,6 @@
 import { parseCommandLine, USAGE } from './args';
 import { runImportSonarqube } from './commands/import-sonarqube';
+import { runUploadSbom } from './commands/upload-sbom';
 import { runValidate } from './commands/validate';
 import { runVersion } from './commands/version';
 import { runDotnetAbort } from './dotnet/abort';
@@ -24,6 +25,8 @@ async function dispatch(argv: readonly string[], io: CliIO, log: Logger): Promis
       return await runScan(command.flags, io, log);
     case 'import-sonarqube':
       return await runImportSonarqube(command.flags, io, log);
+    case 'upload-sbom':
+      return await runUploadSbom(command.flags, io, log);
     case 'dotnet-begin':
       return runDotnetBegin(
         command.config === undefined ? {} : { config: command.config },

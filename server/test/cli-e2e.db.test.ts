@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import net, { type AddressInfo } from 'node:net';
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { count, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { analyses, organizations } from '../src/db/schema';
+import { analyses, organizations, projectVersions } from '../src/db/schema';
 import { jobHandlers } from '../src/ingest/handlers';
 import { startWorker, type Worker } from '../src/queue/worker';
 import { createIngestHarness, type IngestHarness, type IngestProject } from './ingest';
@@ -89,14 +89,17 @@ function runCli(
   cwd: string,
   args: string[],
   env: Record<string, string> = {},
-): Promise<{ code: number | null; stderr: string; ms: number }> {
+  command = 'scan',
+): Promise<{ code: number | null; stdout: string; stderr: string; ms: number }> {
   const started = Date.now();
   return new Promise((resolve) => {
-    const child = spawn(cliCommand[0], [...cliCommand[1], 'scan', ...args], {
+    const child = spawn(cliCommand[0], [...cliCommand[1], command, ...args], {
       cwd,
       env: { ...baseEnv, QUALOR_URL: url, QUALOR_TOKEN: project.token, ...env },
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
+    let stdout = '';
+    child.stdout.on('data', (d: Buffer) => (stdout += d.toString('utf8')));
     let stderr = '';
     const killer = setTimeout(() => {
       stderr += `\n[killed after ${CLI_KILL_MS} ms]`;
@@ -105,7 +108,7 @@ function runCli(
     child.stderr.on('data', (d: Buffer) => (stderr += d.toString('utf8')));
     child.on('close', (code) => {
       clearTimeout(killer);
-      resolve({ code, stderr, ms: Date.now() - started });
+      resolve({ code, stdout, stderr, ms: Date.now() - started });
     });
   });
 }
@@ -366,5 +369,38 @@ describe('qualor scan against a real server', () => {
       hanging.closeAllConnections();
       await new Promise<void>((resolve) => hanging.close(() => resolve()));
     }
+  }, 120_000);
+});
+
+describe('qualor upload-sbom against a real server', () => {
+  it('uploads an image SBOM as a version, and a second run replaces it', async () => {
+    const root = newRepo('sbom');
+    const bom = path.join(root, 'trivy-debian.cdx.json');
+    writeFileSync(
+      bom,
+      readFileSync(
+        path.join(repoRoot, 'packages', 'shared', 'test', 'sbom-samples', 'trivy-debian.cdx.json'),
+      ),
+    );
+    const args = ['trivy-debian.cdx.json', '--project-key', 'acme/e2e', '--version', 'image-1'];
+    const first = await runCli(root, args, {}, 'upload-sbom');
+    expect(first.code, first.stderr).toBe(0);
+    expect(first.stdout).toContain('created version image-1');
+    expect(first.stdout).toContain('debian');
+    const rows = await harness.ctx.db
+      .select({ label: projectVersions.label, source: projectVersions.source })
+      .from(projectVersions)
+      .where(eq(projectVersions.label, 'image-1'));
+    expect(rows).toEqual([{ label: 'image-1', source: 'sbom' }]);
+    const second = await runCli(root, args, {}, 'upload-sbom');
+    expect(second.code, second.stderr).toBe(0);
+    expect(second.stdout).toContain('replaced version image-1');
+    const refused = await runCli(
+      root,
+      ['trivy-debian.cdx.json', '--project-key', 'acme/nope'],
+      {},
+      'upload-sbom',
+    );
+    expect(refused.code).toBe(4);
   }, 120_000);
 });

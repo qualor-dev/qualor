@@ -354,3 +354,59 @@ describe('scan --tag', () => {
     expect(usageError(['scan', '--tag', 'x'.repeat(256)]).exitCode).toBe(2);
   });
 });
+
+describe('parseCommandLine upload-sbom', () => {
+  it('parses the file and its flags', () => {
+    expect(
+      parseCommandLine([
+        'upload-sbom',
+        'bom.json',
+        '--version',
+        '1.4.0',
+        '--project-key',
+        'acme/shop',
+      ]),
+    ).toEqual({
+      name: 'upload-sbom',
+      flags: { file: 'bom.json', version: '1.4.0', projectKey: 'acme/shop' },
+    });
+    expect(
+      parseCommandLine([
+        'upload-sbom',
+        '--config',
+        'q.yml',
+        '--token-file',
+        't',
+        '--server-url',
+        'https://q.example',
+        '--ca-file',
+        'ca.pem',
+        'bom.json',
+      ]),
+    ).toEqual({
+      name: 'upload-sbom',
+      flags: {
+        file: 'bom.json',
+        config: 'q.yml',
+        tokenFile: 't',
+        serverUrl: 'https://q.example',
+        caFile: 'ca.pem',
+      },
+    });
+  });
+
+  it('is a usage error without a file, with two files, an empty --version or an unknown flag', () => {
+    for (const argv of [
+      ['upload-sbom'],
+      ['upload-sbom', 'a.json', 'b.json'],
+      ['upload-sbom', 'a.json', '--version', ''],
+      ['upload-sbom', 'a.json', '--bogus'],
+    ]) {
+      expect(usageError(argv).exitCode).toBe(EXIT.USAGE);
+    }
+  });
+
+  it('shows help for --help', () => {
+    expect(parseCommandLine(['upload-sbom', '--help'])).toEqual({ name: 'help' });
+  });
+});

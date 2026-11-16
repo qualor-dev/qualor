@@ -20,7 +20,7 @@ import tls from 'node:tls';
  */
 export interface RawRequest {
   url: URL;
-  method: 'POST';
+  method: 'POST' | 'PUT';
   /** Lower-case names; `host`, `connection` and framing headers are added here. */
   headers: Readonly<Record<string, string>>;
   body: { stream: () => Readable; contentLength: number };

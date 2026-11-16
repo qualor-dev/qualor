@@ -25,6 +25,17 @@ export interface ScanFlags {
   gitlabDependencyScanning?: string;
 }
 
+/** `qualor upload-sbom` (0.16 SBOM, spec §6.10). */
+export interface UploadSbomFlags {
+  file: string;
+  version?: string;
+  projectKey?: string;
+  config?: string;
+  tokenFile?: string;
+  serverUrl?: string;
+  caFile?: string;
+}
+
 /** import-sonarqube.md §3: the steps of `--only`, in the order they run. */
 export const IMPORT_STEPS = ['profiles', 'gates', 'projects', 'issues'] as const;
 export type ImportStep = (typeof IMPORT_STEPS)[number];
@@ -62,6 +73,7 @@ export type Command =
   | { name: 'validate'; config?: string }
   | { name: 'scan'; flags: ScanFlags }
   | { name: 'import-sonarqube'; flags: ImportFlags }
+  | { name: 'upload-sbom'; flags: UploadSbomFlags }
   | { name: 'dotnet-begin'; config?: string }
   | { name: 'dotnet-end'; flags: ScanFlags }
   | { name: 'dotnet-abort' };
@@ -79,6 +91,7 @@ export const USAGE = `Usage:
               [--dry-run] [--output FILE] [--server-url URL] [--qualor-token-file PATH]
               [--ca-file PATH] [--sonar-ca-file PATH] [--sonar-auth auto|bearer|basic]
               [--timeout SECONDS] [--max-issues N] [--allow-insecure-http]
+  qualor upload-sbom FILE [--version LABEL] [--project-key KEY] [--config PATH] [--token-file PATH] [--server-url URL] [--ca-file PATH]
   qualor dotnet begin [--config PATH]
   qualor dotnet end [qualor scan options]
   qualor dotnet abort [--config PATH]
@@ -359,6 +372,42 @@ function parseImport(args: string[]): Command {
   return { name: 'import-sonarqube', flags };
 }
 
+function parseUploadSbom(args: string[]): Command {
+  const { values: v, positionals } = strict(() =>
+    parseArgs({
+      args,
+      strict: true,
+      allowPositionals: true,
+      options: {
+        version: { type: 'string' },
+        'project-key': { type: 'string' },
+        config: { type: 'string' },
+        'token-file': { type: 'string' },
+        'server-url': { type: 'string' },
+        'ca-file': { type: 'string' },
+      },
+    }),
+  );
+  const [file, ...more] = positionals;
+  if (file === undefined || more.length > 0) {
+    throw usageError('upload-sbom takes exactly one FILE');
+  }
+  if (file.trim() === '') throw usageError('the SBOM file name is empty');
+  const flags: UploadSbomFlags = { file };
+  const optional = {
+    version: value('version', v.version),
+    projectKey: value('project-key', v['project-key']),
+    config: value('config', v.config),
+    tokenFile: value('token-file', v['token-file']),
+    serverUrl: value('server-url', v['server-url']),
+    caFile: value('ca-file', v['ca-file']),
+  };
+  for (const [key, val] of Object.entries(optional)) {
+    if (val !== undefined) Object.assign(flags, { [key]: val });
+  }
+  return { name: 'upload-sbom', flags };
+}
+
 const isHelp = (arg: string) => arg === '--help' || arg === '-h';
 
 export function parseCommandLine(argv: readonly string[]): Command {
@@ -375,6 +424,7 @@ export function parseCommandLine(argv: readonly string[]): Command {
   }
   if (name === 'scan') return parseScan(rest);
   if (name === 'import') return parseImport(rest);
+  if (name === 'upload-sbom') return parseUploadSbom(rest);
   if (name === 'dotnet') return parseDotnet(rest);
   throw usageError(`unknown command ${JSON.stringify(name)}`);
 }

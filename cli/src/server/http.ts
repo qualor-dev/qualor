@@ -267,7 +267,7 @@ function uploadRequest(
 ): RawRequest {
   return {
     url,
-    method: 'POST',
+    method: o.method === 'PUT' ? 'PUT' : 'POST',
     headers,
     body,
     ca: url.protocol === 'https:' && ep.ca !== undefined ? caBundle(ep.ca) : undefined,
@@ -334,7 +334,8 @@ export function request(ep: ServerEndpoint, o: RequestOptions): Promise<HttpResp
     headers['content-length'] = String(payload.length);
   }
   if (o.body !== undefined) {
-    if (o.method !== 'POST') return refuse('a request body needs POST');
+    if (o.method !== 'POST' && o.method !== 'PUT')
+      return refuse('a request body needs POST or PUT');
     return rawRequestWithBody(uploadRequest(ep, o, o.body, url, headers)).then(
       (res) => ({
         status: res.status,
