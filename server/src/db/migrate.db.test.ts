@@ -69,8 +69,10 @@ describe('runMigrations / pendingMigrations', () => {
     // 0028_vulnerability_vendor_ids (0.16, Trivy's vendor ids on a match; every package matched
     // again, approved 2026-11-14), 0029_vulnerability_alert_projects (0.16, the day one of each
     // project's vulnerability alerts, approved 2026-11-15), 0030_vulnerability_alert_items_checked
-    // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(31);
+    // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15),
+    // 0031_sbom_versions (0.16, SBOM versions, source packages and the package search, approved
+    // 2026-11-16).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(32);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);

@@ -10700,7 +10700,8 @@
                             "type": "string",
                             "enum": [
                               "tag",
-                              "label"
+                              "label",
+                              "sbom"
                             ]
                           },
                           "tag": {
@@ -10895,7 +10896,8 @@
                       "type": "string",
                       "enum": [
                         "tag",
-                        "label"
+                        "label",
+                        "sbom"
                       ]
                     },
                     "tag": {

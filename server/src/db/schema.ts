@@ -36,7 +36,7 @@ export type AnalysisStatus = 'queued' | 'processing' | 'succeeded' | 'failed';
 export type GateStatus = 'passed' | 'failed' | 'error' | 'none';
 export type BaselineStatus = 'ok' | 'unavailable' | 'first_analysis';
 export type BranchKind = 'branch' | 'merge_request';
-export type VersionSource = 'tag' | 'label';
+export type VersionSource = 'tag' | 'label' | 'sbom';
 /** How a project version is tracked: by the project's rule (`auto`) or by hand. */
 export type VersionTracking = 'auto' | 'pinned' | 'unsupported';
 export type VulnerabilityVersionRule = 'lines' | 'all' | 'none';
@@ -570,6 +570,11 @@ export const projectVersions = pgTable(
     dependencyIgnores: jsonb('dependency_ignores').$type<DependencyIgnore[]>(),
     // True once an inventory was written, even an empty one: tells no packages from never scanned.
     hasInventory: boolean('has_inventory').notNull().default(false),
+    // The distribution and the origin of an uploaded SBOM (0.16); NULL on a scanned version.
+    osFamily: text('os_family'),
+    osVersion: text('os_version'),
+    sbomFormat: text('sbom_format'),
+    sbomSubject: text('sbom_subject'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -581,7 +586,15 @@ export const projectVersions = pgTable(
       .on(t.analysisId)
       .where(sql`analysis_id IS NOT NULL`),
     check('project_versions_label_check', sql`char_length(label) BETWEEN 1 AND 100`),
-    check('project_versions_source_check', sql`source IN ('tag','label')`),
+    check('project_versions_source_check', sql`source IN ('tag','label','sbom')`),
+    check(
+      'project_versions_os_check',
+      sql`(os_family IS NULL) = (os_version IS NULL) AND (os_family IS NULL OR (char_length(os_family) <= 64 AND char_length(os_version) <= 64))`,
+    ),
+    check(
+      'project_versions_sbom_check',
+      sql`(sbom_format IS NULL OR char_length(sbom_format) <= 32) AND (sbom_subject IS NULL OR char_length(sbom_subject) <= 512)`,
+    ),
     check('project_versions_tracking_check', sql`tracking IN ('auto','pinned','unsupported')`),
   ],
 );
@@ -664,6 +677,7 @@ export const branchDependencies = pgTable(
   (t) => [
     primaryKey({ columns: [t.branchId, t.path, t.ecosystem, t.name, t.version] }),
     index('branch_dependencies_licenses').using('gin', t.licenses),
+    index('branch_dependencies_name_trgm_idx').using('gin', sql`name gin_trgm_ops`),
     // Supporting index for the analyses foreign key (cascades).
     index('branch_dependencies_analysis_idx').on(t.analysisId),
   ],
@@ -688,10 +702,18 @@ export const versionDependencies = pgTable(
     direct: boolean('direct'),
     line: integer('line'),
     analysisId: uuid('analysis_id').references(() => analyses.id, { onDelete: 'set null' }),
+    // The source package of a binary one, from an uploaded SBOM (0.16).
+    sourceName: text('source_name'),
+    sourceVersion: text('source_version'),
   },
   (t) => [
     primaryKey({ columns: [t.versionId, t.path, t.ecosystem, t.name, t.version] }),
     index('version_dependencies_licenses').using('gin', t.licenses),
+    index('version_dependencies_name_trgm_idx').using('gin', sql`name gin_trgm_ops`),
+    check(
+      'version_dependencies_source_check',
+      sql`(source_name IS NULL OR char_length(source_name) <= 512) AND (source_version IS NULL OR char_length(source_version) <= 256)`,
+    ),
     // Supporting index for the analyses foreign key (set null).
     index('version_dependencies_analysis_idx').on(t.analysisId),
   ],

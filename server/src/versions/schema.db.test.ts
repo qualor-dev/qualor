@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDatabase, type TestDatabase } from '../../test/db';
+import { createTestDatabase, sqlStateOf, type TestDatabase } from '../../test/db';
+import { PG_CHECK_VIOLATION } from '../db/errors';
 import {
   analyses,
   organizations,
@@ -240,5 +241,76 @@ describe('migration 0020_versions', () => {
                  (SELECT count(*) FROM project_vulnerability_settings WHERE project_id = ${projectId})::int AS s`,
     );
     expect(left.rows[0]).toEqual({ v: 0, d: 0, s: 0 });
+  });
+
+  it('accepts an SBOM version with its distribution', async () => {
+    const projectId = await newProject('acme/sbom');
+    const [row] = await t.db
+      .insert(projectVersions)
+      .values({
+        projectId,
+        label: 'sbom-1',
+        source: 'sbom',
+        analysisId: null,
+        osFamily: 'debian',
+        osVersion: '12.15',
+        sbomFormat: 'CycloneDX 1.6',
+        sbomSubject: 'registry.example/app:1',
+        analyzedAt: new Date(),
+      })
+      .returning();
+    expect(row).toMatchObject({ source: 'sbom', analysisId: null, osFamily: 'debian' });
+    await t.db.insert(versionDependencies).values({
+      versionId: row!.id,
+      path: 'sbom',
+      ecosystem: 'deb',
+      name: 'libssl3',
+      version: '3.0.0',
+      licenses: [],
+      sourceName: 'openssl',
+      sourceVersion: '3.0.0-1',
+    });
+  });
+
+  it('refuses half a distribution and overlong columns', async () => {
+    const projectId = await newProject('acme/sbom-checks');
+    const base = { projectId, source: 'sbom', analyzedAt: new Date() } as const;
+    let n = 0;
+    const version = (extra: Partial<typeof projectVersions.$inferInsert>) =>
+      t.db.insert(projectVersions).values({ ...base, label: `c${++n}`, ...extra });
+    expect(await sqlStateOf(version({ osFamily: 'debian' }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(version({ osVersion: '12' }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(version({ osFamily: 'd'.repeat(65), osVersion: '1' }))).toBe(
+      PG_CHECK_VIOLATION,
+    );
+    expect(await sqlStateOf(version({ sbomFormat: 'f'.repeat(33) }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(version({ sbomSubject: 's'.repeat(513) }))).toBe(PG_CHECK_VIOLATION);
+    const ok = await newVersion(projectId, '9.0.0');
+    const dep = (extra: Partial<typeof versionDependencies.$inferInsert>) =>
+      t.db.insert(versionDependencies).values({
+        versionId: ok.id,
+        path: 'sbom',
+        ecosystem: 'deb',
+        name: 'x',
+        version: '1',
+        licenses: [],
+        ...extra,
+      });
+    expect(await sqlStateOf(dep({ sourceName: 's'.repeat(513) }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(dep({ sourceVersion: 'v'.repeat(257) }))).toBe(PG_CHECK_VIOLATION);
+  });
+
+  it("still refuses source 'other'", async () => {
+    const projectId = await newProject('acme/sbom-other');
+    expect(
+      await sqlStateOf(
+        t.db.insert(projectVersions).values({
+          projectId,
+          label: 'o',
+          source: 'other' as 'tag',
+          analyzedAt: new Date(),
+        }),
+      ),
+    ).toBe(PG_CHECK_VIOLATION);
   });
 });

@@ -52,7 +52,7 @@ const versionSchema = z.object({
   /** `project.version`, else the tag. */
   label: z.string(),
   /** `tag`: a tag scan; `label`: taken from a branch analysis that carries `project.version`. */
-  source: z.enum(['tag', 'label']),
+  source: z.enum(['tag', 'label', 'sbom']),
   tag: z.string().nullable(),
   analyzedAt: z.iso.datetime(),
   /** The user's override. */

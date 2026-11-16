@@ -5325,7 +5325,7 @@ export interface paths {
                                 id: string;
                                 label: string;
                                 /** @enum {string} */
-                                source: "tag" | "label";
+                                source: "tag" | "label" | "sbom";
                                 tag: string | null;
                                 /** Format: date-time */
                                 analyzedAt: string;
@@ -5431,7 +5431,7 @@ export interface paths {
                             id: string;
                             label: string;
                             /** @enum {string} */
-                            source: "tag" | "label";
+                            source: "tag" | "label" | "sbom";
                             tag: string | null;
                             /** Format: date-time */
                             analyzedAt: string;
