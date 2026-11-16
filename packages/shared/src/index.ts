@@ -41,3 +41,4 @@ export * from './llm/from-issue';
 export * from './llm/fix';
 export * from './licenses';
 export * from './review/snapshot';
+export * from './sbom';
