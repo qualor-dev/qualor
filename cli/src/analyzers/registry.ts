@@ -17,6 +17,7 @@ import { spotbugsAnalyzer } from './spotbugs';
 import { stylelintAnalyzer } from './stylelint';
 import { swiftlintAnalyzer } from './swiftlint';
 import { trivyAnalyzer } from './trivy';
+import { trivyIacAnalyzer } from './trivy-iac';
 import type { Analyzer } from './types';
 
 /** The built-in analyzers of CLI steps 8–12, in the order of config.md §3. */
@@ -33,6 +34,7 @@ export function builtinAnalyzers(): Analyzer[] {
     qualorAnalyzer,
     gitleaksAnalyzer,
     trivyAnalyzer,
+    trivyIacAnalyzer,
     roslynAnalyzer,
     stylelintAnalyzer,
     htmlhintAnalyzer,

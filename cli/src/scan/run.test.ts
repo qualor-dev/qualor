@@ -528,12 +528,13 @@ describe('qualor scan --dry-run', () => {
           '  key: acme/app\n' +
           '  version: "$${QUALOR_TOKEN}{QUALOR_TOKEN}"\n' +
           '  name: "x-${INDIRECT}"\n' +
-          // No analyzer runs (Gitleaks is required by default and may not be installed here), so
+          // No analyzer runs (Gitleaks is required by default and may not be installed here, and
+          // trivy-iac is unavailable without the Trivy binary: both leave the scan incomplete), so
           // the scan is complete and both GitLab files are always written (ruling G6). sonarjs is
           // left on auto: without /opt/qualor/sonarjs it is skipped, not unavailable (fix round 1,
           // controller ruling 12), so it does not need disabling here either.
           'analyzers:\n' +
-          ['eslint', 'pmd', 'spotbugs', 'semgrep', 'gitleaks']
+          ['eslint', 'pmd', 'spotbugs', 'semgrep', 'gitleaks', 'trivy-iac']
             .map((id) => `  ${id}:\n    enabled: false\n`)
             .join(''),
         'src/a.ts': 'export const a = 1;\n',

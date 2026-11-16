@@ -504,6 +504,31 @@
           },
           "additionalProperties": false
         },
+        "trivy-iac": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": "auto",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "auto"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "timeoutSeconds": {
+              "default": 600,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 86400
+            }
+          },
+          "additionalProperties": false
+        },
         "roslyn": {
           "default": {},
           "type": "object",

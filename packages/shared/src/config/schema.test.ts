@@ -41,6 +41,16 @@ describe('parseConfig', () => {
     expect(c.server.timeoutSeconds).toBe(30);
   });
 
+  it('has analyzers.trivy-iac with enabled and timeoutSeconds only (0.16)', () => {
+    expect(parseConfig({ version: 1 }).analyzers['trivy-iac']).toEqual({
+      enabled: 'auto',
+      timeoutSeconds: 600,
+    });
+    expect(errorPaths({ version: 1, analyzers: { 'trivy-iac': { severity: 'HIGH' } } })).toContain(
+      'analyzers.trivy-iac',
+    );
+  });
+
   it('has analyzers.sonarjs and roslyn.sonarAnalyzer with their defaults', () => {
     const c = parseConfig({ version: 1 });
     expect(c.analyzers.sonarjs).toEqual({

@@ -267,6 +267,9 @@ const analyzers = z
         licenseTimeoutSeconds: timeout(300),
       })
       .prefault({}),
+    // Infrastructure as code (0.16): a second Trivy pass with the misconfiguration scanner, on
+    // Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles and ARM templates. No other keys.
+    'trivy-iac': z.strictObject({ enabled, timeoutSeconds: timeout(600) }).prefault({}),
     // C# (plan 2D): the Roslyn analyzers run inside the project's own build between
     // `qualor dotnet begin` and `end` (config.md §6.1). The CLI runs nothing, so no timeout.
     roslyn: z

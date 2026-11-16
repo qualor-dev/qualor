@@ -54,7 +54,7 @@ function cacheDir(root: string, env: Env, defaultDir: string): string {
   return named;
 }
 
-const regularFile = (file: string, max: number): boolean => {
+export const regularFile = (file: string, max: number): boolean => {
   try {
     const s = statSync(file);
     return s.isFile() && s.size <= max;
@@ -63,7 +63,7 @@ const regularFile = (file: string, max: number): boolean => {
   }
 };
 
-const exists = (file: string): boolean => {
+export const exists = (file: string): boolean => {
   try {
     lstatSync(file);
     return true;
