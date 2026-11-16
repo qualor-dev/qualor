@@ -185,8 +185,15 @@ const trivy: EngineMapping = {
 };
 
 /**
+ * A root `type.name` or `data.type.name` address. In a module's files Trivy names the module call
+ * (`module.local`), which several resources share, so those (and instance keys, file spans) have
+ * no identity.
+ */
+const ROOT_TERRAFORM_ADDRESS = /^(?!module\.)(?:data\.)?[a-z][a-z0-9_]*\.[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/**
  * Trivy's misconfiguration scanner (0.16 IaC). Severities are Trivy's, like the dependency pass.
- * Only a Terraform resource address identifies a finding: the other types carry a file span
+ * Only a root Terraform resource address identifies a finding: the other types carry a file span
  * (`cfn/t.yaml:3-6`) there, which moves with the lines.
  */
 const trivyIac: EngineMapping = {
@@ -196,8 +203,7 @@ const trivyIac: EngineMapping = {
     const { iacType, iacResource } = result.properties ?? {};
     return iacType === 'terraform' &&
       typeof iacResource === 'string' &&
-      iacResource !== '' &&
-      !/:\d+-\d+$/.test(iacResource)
+      ROOT_TERRAFORM_ADDRESS.test(iacResource)
       ? iacResource
       : undefined;
   },

@@ -227,6 +227,20 @@ describe('trivy-iac (0.16 IaC)', () => {
     expect(identity({ iacType: 'cloudformation', iacResource: 'cfn/t.yaml:3-6' })).toBeUndefined();
     expect(identity({ iacType: 'terraform', iacResource: 'main.tf:1-4' })).toBeUndefined();
     expect(identity({ iacType: 'kubernetes' })).toBeUndefined();
+    expect(identity({ iacType: 'terraform', iacResource: 'data.aws_iam_policy_document.p' })).toBe(
+      'data.aws_iam_policy_document.p',
+    );
+  });
+  it('gives no identity to module calls, instance keys and nested addresses', () => {
+    const identity = (r: string) => m.identity!(result({ iacType: 'terraform', iacResource: r }));
+    for (const r of [
+      'module.local',
+      'aws_s3_bucket.b["x"]',
+      'aws_s3_bucket.b[0]',
+      'module.m.aws_s3_bucket.b',
+    ]) {
+      expect(identity(r), r).toBeUndefined();
+    }
   });
 });
 
