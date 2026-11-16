@@ -14,6 +14,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   acquireLease,
+  clearStalePostmaster,
   EmbeddedPostgresError,
   liveLease,
   prepareCluster,
@@ -310,6 +311,88 @@ describe('acquireLease', () => {
       }),
     ).rejects.toThrow(/exited before it was ready/);
     expect(() => statSync(leaseFile())).toThrow();
+  });
+});
+
+describe('clearStalePostmaster (R27)', () => {
+  const PID = '4242';
+  let cluster: string;
+  let run: string;
+  let proc: string;
+
+  beforeEach(() => {
+    cluster = path.join(dataDir, 'postgres');
+    run = path.join(dataDir, 'run');
+    proc = path.join(root, 'proc');
+    mkdirSync(cluster, { recursive: true });
+    mkdirSync(run, { recursive: true });
+    mkdirSync(proc, { recursive: true });
+    // What an OOM-killed PostgreSQL leaves: its pid file and its socket's lock file.
+    writeFileSync(path.join(cluster, 'postmaster.pid'), `${PID}\n${cluster}\n1763300000\n5432\n`);
+    writeFileSync(path.join(run, '.s.PGSQL.5432.lock'), `${PID}\n${cluster}\n`);
+    writeFileSync(path.join(run, '.s.PGSQL.5432'), '');
+  });
+
+  /** A process in the fake /proc, with its NUL-separated command line. */
+  const processWith = (pid: string, argv: string[]) => {
+    mkdirSync(path.join(proc, pid), { recursive: true });
+    writeFileSync(path.join(proc, pid, 'cmdline'), `${argv.join('\0')}\0`);
+  };
+  const left = () => ({
+    pid: existsSync(path.join(cluster, 'postmaster.pid')),
+    lock: existsSync(path.join(run, '.s.PGSQL.5432.lock')),
+    socket: existsSync(path.join(run, '.s.PGSQL.5432')),
+  });
+
+  it('removes the pid file and the socket lock of a PostgreSQL that no longer runs', async () => {
+    await clearStalePostmaster(cluster, run, logger, proc);
+    expect(left()).toEqual({ pid: false, lock: false, socket: true });
+    expect(lines.some((l) => l.includes(PID))).toBe(true);
+  });
+
+  it('removes them when the PID now belongs to another process (the server itself)', async () => {
+    processWith(PID, ['node', '/app/server/dist/main.js']);
+    await clearStalePostmaster(cluster, run, logger, proc);
+    expect(left()).toEqual({ pid: false, lock: false, socket: true });
+  });
+
+  it('leaves them while the PID is a live PostgreSQL', async () => {
+    processWith(PID, ['/opt/postgres/bin/postgres', '-D', cluster]);
+    await clearStalePostmaster(cluster, run, logger, proc);
+    expect(left()).toEqual({ pid: true, lock: true, socket: true });
+    expect(lines).toEqual([]);
+  });
+
+  it('leaves them where there is no /proc (not Linux)', async () => {
+    await clearStalePostmaster(cluster, run, logger, path.join(root, 'no-proc'));
+    expect(left()).toEqual({ pid: true, lock: true, socket: true });
+  });
+
+  it('does nothing without a pid file', async () => {
+    rmSync(path.join(cluster, 'postmaster.pid'));
+    await clearStalePostmaster(cluster, run, logger, proc);
+    expect(left()).toEqual({ pid: false, lock: true, socket: true });
+    expect(lines).toEqual([]);
+  });
+
+  it('runs on start, before PostgreSQL is spawned', async () => {
+    mkdirSync(path.join(cluster, 'base'), { recursive: true });
+    writeFileSync(path.join(cluster, 'PG_VERSION'), '18\n');
+    let atSpawn: ReturnType<typeof left> | undefined;
+    const embedded = await startEmbeddedPostgres({
+      dataDir,
+      postgresDir,
+      logger,
+      lease: { settleMs: 0 },
+      procDir: proc,
+      spawnPostgres: () => {
+        atSpawn = left();
+        return fakePostgres('setInterval(() => {}, 1000)')();
+      },
+      probe: async () => undefined,
+    });
+    await embedded.stop();
+    expect(atSpawn).toEqual({ pid: false, lock: false, socket: true });
   });
 });
 

@@ -74,6 +74,8 @@ export interface EmbeddedOptions extends EmbeddedPostgresDirs {
   probe?: (url: string) => Promise<void>;
   readyTimeoutMs?: number;
   stopTimeoutMs?: number;
+  /** Where the processes are listed ({@link clearStalePostmaster}): `/proc`; tests use their own. */
+  procDir?: string;
 }
 
 const exists = async (p: string): Promise<boolean> =>
@@ -232,6 +234,61 @@ export async function prepareCluster(dirs: EmbeddedPostgresDirs): Promise<string
   return cluster;
 }
 
+/** A PID as PostgreSQL writes it on the first line of `postmaster.pid`. */
+const PID = /^[1-9]\d{0,9}$/;
+
+/**
+ * Whether `pid` is a live PostgreSQL in `procDir`: its `/proc/<pid>` exists and its command line
+ * holds `postgres`. A process that cannot be read is taken for a live one.
+ */
+async function livePostgres(procDir: string, pid: string): Promise<boolean> {
+  if (!PID.test(pid) || !(await exists(path.join(procDir, pid)))) return false;
+  try {
+    const argv = await readFile(path.join(procDir, pid, 'cmdline'), 'utf8');
+    return argv.includes('postgres');
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * R27: removes the `postmaster.pid` of a PostgreSQL that no longer runs, with the socket lock files
+ * (`<run>/.s.PGSQL.*.lock`). An OOM kill of the container leaves both, and in the new container
+ * the PID they name may belong to another process, often the server itself; PostgreSQL then
+ * refuses to start, and `restart: unless-stopped` becomes a loop that needs a person. Called with
+ * the lease held, so no other server uses the cluster: a PID that is not a live process whose
+ * command line holds `postgres` is stale (a first line that is no PID names no process). A live
+ * PostgreSQL, or no `procDir` (not Linux), leaves the files for PostgreSQL to judge.
+ */
+export async function clearStalePostmaster(
+  cluster: string,
+  run: string,
+  logger: EmbeddedLogger,
+  procDir = '/proc',
+): Promise<void> {
+  const pidFile = path.join(cluster, 'postmaster.pid');
+  let text: string;
+  try {
+    text = await readFile(pidFile, 'utf8');
+  } catch {
+    return;
+  }
+  if (!(await exists(procDir))) return;
+  const pid = (text.split('\n', 1)[0] ?? '').trim();
+  if (await livePostgres(procDir, pid)) return;
+  logger.warn(
+    { component: 'postgres', pid: pid.slice(0, 20) },
+    `removing the postmaster.pid of PostgreSQL process ${pid.slice(0, 20)}, which no longer runs, and its socket lock files`,
+  );
+  await rm(pidFile, { force: true });
+  const entries = await readdir(run).catch(() => [] as string[]);
+  for (const name of entries) {
+    if (name.startsWith('.s.PGSQL.') && name.endsWith('.lock')) {
+      await rm(path.join(run, name), { force: true });
+    }
+  }
+}
+
 async function connectOnce(url: string): Promise<void> {
   const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 2_000 });
   try {
@@ -273,6 +330,8 @@ async function startCluster(
 ): Promise<EmbeddedPostgres> {
   const cluster = await prepareCluster(options);
   const run = path.join(options.dataDir, 'run');
+  // The lease is held: a pid file of a PostgreSQL that no longer runs is stale (R27).
+  await clearStalePostmaster(cluster, run, options.logger, options.procDir);
   const bin = path.join(options.postgresDir, 'bin', 'postgres');
   const args = [
     '-D',

@@ -159,7 +159,8 @@ docker compose ps       # wait until "server" is healthy (15–30 s)
 - **Database.** Without `DATABASE_URL`, the server runs the PostgreSQL 18 of its image on the volume
   at `/var/lib/qualor`. It listens only on a Unix socket inside the container and stops cleanly
   with the server. **One server per volume:** a second container on the same volume refuses to
-  start.
+  start. After a crash, such as the container killed for memory, the server removes the lock files
+  PostgreSQL left and starts.
 - **First sign-in.** The first start creates the `default` organisation and the instance admin
   `admin` (`QUALOR_BOOTSTRAP_ADMIN_USERNAME`). Sign in with the bootstrap password, then change it:
   open the menu under your name at the top right and choose **Change password**. Once a user
