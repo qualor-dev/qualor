@@ -247,6 +247,66 @@ describe('no distribution', () => {
       { name: 'd', version: '1.0-1.el8' },
     ]);
   });
+
+  /** The sources of these OS purls under one distribution, in order. */
+  const sources = (system: ReturnType<typeof os>, purls: string[]) =>
+    inventory(bom([system, ...purls.map((p) => lib(p))])).entries.map((e) => e.source);
+
+  it('reads `upstream=<name>@<version>` for deb, each part percent-decoded (Qualor’s key, Syft)', () => {
+    expect(
+      sources(os('debian', '12.15'), [
+        // Qualor's match key: a literal @, the parts encoded on their own.
+        'pkg:deb/debian/login@1%3A4.13%2Bdfsg1-1?distro=debian-12.15&upstream=shadow@1%3A4.13%2Bdfsg1-1',
+        // Syft: the @ itself encoded.
+        'pkg:deb/debian/bash@5.2.15-2%2Bb13?distro=debian-12.15&upstream=bash%405.2.15-2',
+        // Syft without a version: the binary's.
+        'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl',
+      ]),
+    ).toEqual([
+      { name: 'shadow', version: '1:4.13+dfsg1-1' },
+      { name: 'bash', version: '5.2.15-2' },
+      { name: 'openssl', version: '3.0.22-1~deb12u2' },
+    ]);
+  });
+
+  it('reads `upstream=<name>@<version>` for rpm, and still Syft’s `.src.rpm` form', () => {
+    expect(
+      sources(os('redhat', '8.10'), [
+        'pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?epoch=1&distro=redhat-8.10&upstream=openssl@1%3A1.1.1k-18.el8_6',
+        'pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?distro=redhat-8.10&upstream=gcc@8.5.0-31.el8_10',
+        'pkg:rpm/redhat/gmp@6.1.2-11.el8?epoch=1&distro=rhel-8.10&upstream=gmp-6.1.2-11.el8.src.rpm',
+      ]),
+    ).toEqual([
+      { name: 'openssl', version: '1:1.1.1k-18.el8_6' },
+      { name: 'gcc', version: '8.5.0-31.el8_10' },
+      { name: 'gmp', version: '1:6.1.2-11.el8' },
+    ]);
+  });
+
+  it('reads `upstream=<name>@<version>` for apk, and still Syft’s bare origin', () => {
+    expect(
+      sources(os('alpine', '3.20.3'), [
+        'pkg:apk/alpine/libcrypto3@3.3.2-r0?distro=3.20.3&upstream=openssl@3.3.2-r0',
+        'pkg:apk/alpine/busybox-binsh@1.36.1-r29?arch=x86_64&upstream=busybox',
+      ]),
+    ).toEqual([
+      { name: 'openssl', version: '3.3.2-r0' },
+      { name: 'busybox', version: '1.36.1-r29' },
+    ]);
+  });
+
+  it('falls back to the binary for an `upstream` with nothing before the @', () => {
+    expect(sources(os('alpine', '3.20.3'), ['pkg:apk/alpine/a@1-r0?upstream=@2-r0'])).toEqual([
+      { name: 'a', version: '1-r0' },
+    ]);
+  });
+
+  it('reads a long hostile `upstream` in linear time', () => {
+    const at = '%40'.repeat(30_000);
+    const started = performance.now();
+    sources(os('redhat', '8.10'), [`pkg:rpm/redhat/a@1-1?upstream=x${at}-1-1.src.rpm`]);
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
 });
 
 describe('strings', () => {

@@ -196,30 +196,42 @@ class Distributions {
   }
 }
 
-/** The source package a purl's `upstream` qualifier names (spec §6.4), or null. */
+/**
+ * The source package a purl's `upstream` qualifier names (spec §6.4), or null. Two forms:
+ * - `<name>@<version>` for deb, rpm and apk: Qualor's own OS match key (each part percent-encoded,
+ *   joined by a literal `@`) and Syft's deb `<src>@<srcversion>` (the `@` itself encoded). The
+ *   qualifier comes decoded, so both split at the first `@`: no deb, rpm or apk package name holds
+ *   one. An empty version takes the binary's; nothing before the `@` names no source.
+ * - Syft's own: rpm `<name>-<version>-<release>.src.rpm`, deb `<src>`, apk `<origin>`.
+ * String operations only (`indexOf`, `lastIndexOf`, `endsWith`), so a long value costs linear time.
+ */
 function upstreamSource(purl: Purl, version: string): SbomEntry['source'] {
   const upstream = purl.qualifiers.upstream;
   if (upstream === undefined) return null;
-  if (purl.type === 'rpm') {
-    // <name>-<version>-<release>.src.rpm, split at the last two dashes, with the binary's epoch
-    // (the version is at most 256 characters, so the epoch pattern runs on a bounded string).
-    if (!upstream.endsWith(SRC_RPM)) return null;
-    const base = upstream.slice(0, -SRC_RPM.length);
-    const releaseAt = base.lastIndexOf('-');
-    const versionAt = releaseAt > 0 ? base.lastIndexOf('-', releaseAt - 1) : -1;
-    if (versionAt < 1 || releaseAt - versionAt < 2 || releaseAt === base.length - 1) return null;
-    const epoch = /^(\d+):/.exec(version)?.[1];
-    const prefix = epoch === undefined ? '' : `${epoch}:`;
-    return {
-      name: base.slice(0, versionAt),
-      version: `${prefix}${base.slice(versionAt + 1, releaseAt)}-${base.slice(releaseAt + 1)}`,
-    };
-  }
-  if (purl.type === 'deb') {
-    const at = upstream.indexOf('@');
-    if (at > 0) return { name: upstream.slice(0, at), version: upstream.slice(at + 1) || version };
-  }
-  return { name: upstream, version };
+  if (purl.type === 'rpm' && upstream.endsWith(SRC_RPM)) return srcRpmSource(upstream, version);
+  const at = upstream.indexOf('@');
+  if (at === 0) return null;
+  if (at > 0) return { name: upstream.slice(0, at), version: upstream.slice(at + 1) || version };
+  // rpm names its source only as a `.src.rpm` file; anything else is no source.
+  return purl.type === 'rpm' ? null : { name: upstream, version };
+}
+
+/**
+ * Syft's rpm `upstream`: `<name>-<version>-<release>.src.rpm`, split at the last two dashes, with
+ * the binary's epoch (the version is at most 256 characters, so the epoch pattern runs on a
+ * bounded string). Null when it does not split.
+ */
+function srcRpmSource(upstream: string, version: string): SbomEntry['source'] {
+  const base = upstream.slice(0, -SRC_RPM.length);
+  const releaseAt = base.lastIndexOf('-');
+  const versionAt = releaseAt > 0 ? base.lastIndexOf('-', releaseAt - 1) : -1;
+  if (versionAt < 1 || releaseAt - versionAt < 2 || releaseAt === base.length - 1) return null;
+  const epoch = /^(\d+):/.exec(version)?.[1];
+  const prefix = epoch === undefined ? '' : `${epoch}:`;
+  return {
+    name: base.slice(0, versionAt),
+    version: `${prefix}${base.slice(versionAt + 1, releaseAt)}-${base.slice(releaseAt + 1)}`,
+  };
 }
 
 function fits(source: SbomEntry['source']): source is NonNullable<SbomEntry['source']> {
