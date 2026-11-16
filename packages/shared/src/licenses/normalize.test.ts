@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeLicense } from './normalize';
 
+describe('normalizeLicense on hostile input', () => {
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'returns %s as a string, not an Object.prototype member',
+    (raw) => {
+      expect(normalizeLicense(raw)).toBe(raw);
+    },
+  );
+
+  it('returns a text too long to parse as written, without throwing', () => {
+    const chain = `${'MIT AND '.repeat(5_000)}MIT`;
+    expect(normalizeLicense(chain)).toBe(chain);
+    const nested = `${'('.repeat(10_000)}MIT${')'.repeat(10_000)}`;
+    expect(normalizeLicense(nested)).toBe(nested);
+  });
+});
+
 describe('normalizeLicense', () => {
   it.each([
     ['GPLv2', 'GPL-2.0-only'],

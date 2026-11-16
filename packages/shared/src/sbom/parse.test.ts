@@ -144,6 +144,43 @@ describe('multiple OS', () => {
     expect(r.message).toContain('(debian 0, debian 1)');
   });
 
+  it('ignores a 1 MB distro qualifier, in linear time', () => {
+    const distro = encodeURIComponent(`x${'-1'.repeat(500_000)}\n`);
+    const text = bom([lib(`pkg:deb/debian/a@1?distro=${distro}`)]);
+    const started = performance.now();
+    const inv = inventory(text);
+    expect(performance.now() - started).toBeLessThan(budgetMs(500));
+    // Only the namespace is left: a family without a version.
+    expect(inv.distribution).toBeNull();
+    expect(inv.warnings.map((w) => w.code)).toEqual(['SBOM_OS_PACKAGES_UNCHECKED']);
+  });
+
+  it('reads 20 000 packages with 2 KB distros in linear time', () => {
+    const distro = encodeURIComponent(`x${'-1'.repeat(1_000)}\n`);
+    const text = bom(
+      Array.from({ length: 20_000 }, (_, n) => lib(`pkg:deb/debian/p${n}@1?distro=${distro}`)),
+    );
+    const started = performance.now();
+    expect(inventory(text).osPackages).toBe(20_000);
+    expect(performance.now() - started).toBeLessThan(budgetMs(2_000));
+  });
+
+  it('splits a distro at the first dash before a digit, else at the last dash', () => {
+    const of = (purl: string) => inventory(bom([lib(purl)])).distribution;
+    expect(of('pkg:rpm/opensuse/a@1-1?distro=opensuse-leap-15.5')).toEqual({
+      family: 'opensuse-leap',
+      version: '15.5',
+    });
+    expect(of('pkg:deb/debian/a@1?distro=debian-bookworm')).toEqual({
+      family: 'debian',
+      version: 'bookworm',
+    });
+    expect(of('pkg:apk/alpine/a@1-r0?distro=3.20.3')).toEqual({
+      family: 'alpine',
+      version: '3.20.3',
+    });
+  });
+
   it('refuses 50 000 OS components of distinct versions in linear time', () => {
     const text = bom(Array.from({ length: 50_000 }, (_, n) => os('debian', String(n))));
     const started = performance.now();
@@ -222,6 +259,22 @@ describe('no distribution', () => {
   it('uses the binary as its own source when the SBOM names none', () => {
     const inv = inventory(bom([os('debian', '12'), lib('pkg:deb/debian/a@1.0-1')]));
     expect(inv.entries[0]!.source).toEqual({ name: 'a', version: '1.0-1' });
+  });
+
+  it('reads an rpm upstream with the epoch, and falls back when it does not parse', () => {
+    const inv = inventory(
+      bom([
+        os('redhat', '8.10'),
+        lib('pkg:rpm/redhat/b@2.0-1.el8?epoch=2&upstream=b-src-2.0-1.el8.src.rpm'),
+        lib('pkg:rpm/redhat/c@1.0-1.el8?upstream=c.src.rpm'),
+        lib('pkg:rpm/redhat/d@1.0-1.el8?upstream=d-1.0-1.el8.rpm'),
+      ]),
+    );
+    expect(inv.entries.map((e) => e.source)).toEqual([
+      { name: 'b-src', version: '2:2.0-1.el8' },
+      { name: 'c', version: '1.0-1.el8' },
+      { name: 'd', version: '1.0-1.el8' },
+    ]);
   });
 });
 

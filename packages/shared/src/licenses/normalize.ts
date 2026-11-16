@@ -41,7 +41,9 @@ export const ALIASES: Readonly<Record<string, string>> = {
 
 export function normalizeLicense(raw: string): string {
   const trimmed = raw.trim();
-  const alias = ALIASES[trimmed.toLowerCase().replace(/\s+/g, ' ')];
+  // Own keys only: `constructor` or `__proto__` must not find an Object.prototype member.
+  const key = trimmed.toLowerCase().replace(/\s+/g, ' ');
+  const alias = Object.hasOwn(ALIASES, key) ? ALIASES[key] : undefined;
   if (alias !== undefined) return alias;
   const expr = parseLicenseExpression(trimmed);
   if (expr === null) return trimmed;

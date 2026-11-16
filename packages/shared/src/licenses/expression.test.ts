@@ -8,6 +8,15 @@ describe('parseLicenseExpression', () => {
     expect(parseLicenseExpression('MIT')).toEqual(id('MIT'));
   });
 
+  it('refuses a text over 1 024 characters instead of recursing through it', () => {
+    expect(parseLicenseExpression(`${'MIT AND '.repeat(5_000)}MIT`)).toBeNull();
+    expect(parseLicenseExpression(`${'('.repeat(10_000)}MIT${')'.repeat(10_000)}`)).toBeNull();
+    const longest = `${'MIT AND '.repeat(127)}ISC-1234`;
+    expect(longest).toHaveLength(1_024);
+    expect(parseLicenseExpression(longest)).not.toBeNull();
+    expect(parseLicenseExpression(`${longest}5`)).toBeNull();
+  });
+
   it('parses OR', () => {
     expect(parseLicenseExpression('MIT OR Apache-2.0')).toEqual({
       kind: 'or',

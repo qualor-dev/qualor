@@ -32,12 +32,15 @@ export function cutText(text: string, max: number): string {
 /**
  * Licence strings as an entry keeps them: cleaned, normalised, unique and sorted, at most 16. A
  * string over 256 characters is dropped, never cut (a shortened expression could change its
- * meaning), as the CLI's licence pass does.
+ * meaning), as the CLI's licence pass does. It is dropped before normalising too, so no hostile
+ * expression reaches the parser.
  */
 export function licenseList(raw: Iterable<string>): string[] {
   const kept = new Set<string>();
   for (const text of raw) {
-    const licence = normalizeLicense(cleanText(text));
+    const cleaned = cleanText(text).trim();
+    if (cleaned === '' || cleaned.length > SBOM_BOUNDS.licence) continue;
+    const licence = normalizeLicense(cleaned);
     if (licence !== '' && licence.length <= SBOM_BOUNDS.licence) kept.add(licence);
   }
   return [...kept].sort().slice(0, SBOM_BOUNDS.licences);

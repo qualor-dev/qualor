@@ -17,8 +17,19 @@ function resolveException(token: string): string {
   return canonicalException(token) ?? token;
 }
 
-/** Null when the text is malformed (empty, dangling operator, unbalanced parentheses, stray words). */
+/**
+ * Longer texts are not parsed. The parser and the tree walks recurse once per parenthesis or
+ * operator, so a hostile manifest or SBOM could overflow the stack; at this length the depth stays
+ * far below that, and a stored licence is at most 256 characters anyway.
+ */
+export const LICENSE_EXPRESSION_MAX_CHARS = 1_024;
+
+/**
+ * Null when the text is malformed (empty, dangling operator, unbalanced parentheses, stray words)
+ * or longer than {@link LICENSE_EXPRESSION_MAX_CHARS}.
+ */
 export function parseLicenseExpression(text: string): LicenseExpr | null {
+  if (text.length > LICENSE_EXPRESSION_MAX_CHARS) return null;
   const tokens = text.match(/[()]|[^\s()]+/g) ?? [];
   let pos = 0;
   const peek = (): string | undefined => tokens[pos];

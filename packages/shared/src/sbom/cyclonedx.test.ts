@@ -420,6 +420,25 @@ describe('licences', () => {
       licensesOf([{ license: { name: 'x'.repeat(257) } }, { license: { id: 'MIT' } }]),
     ).toEqual(['MIT']);
   });
+
+  it('drops a long or deeply nested expression without parsing it', () => {
+    expect(
+      licensesOf([
+        { expression: `${'MIT AND '.repeat(5_000)}MIT` },
+        { expression: `${'('.repeat(10_000)}MIT${')'.repeat(10_000)}` },
+        { expression: '('.repeat(100_000) },
+        { license: { id: 'MIT' } },
+      ]),
+    ).toEqual(['MIT']);
+  });
+
+  it('keeps licences named like Object.prototype members as strings', () => {
+    expect(
+      licensesOf(
+        ['constructor', '__proto__', 'toString', 'MIT'].map((name) => ({ license: { name } })),
+      ),
+    ).toEqual(['MIT', '__proto__', 'constructor', 'toString']);
+  });
 });
 
 describe('direct', () => {

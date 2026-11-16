@@ -34,6 +34,9 @@ const ECOSYSTEM = /^[a-z0-9-]{1,32}$/;
 const HEAD_CHARS = 4_096;
 /** The database's bound on `os_family` and `os_version`. */
 const OS_FIELD_CHARS = 64;
+/** A longer `distro` qualifier (more than `<family>-<version>` can hold) is ignored. */
+const DISTRO_CHARS = 2 * OS_FIELD_CHARS + 1;
+const SRC_RPM = '.src.rpm';
 
 const EXPORT_HINT = 'Export the SBOM as CycloneDX JSON or SPDX 2.3 JSON';
 
@@ -106,10 +109,18 @@ function readDocument(doc: Record<string, unknown>): SbomDocument | SbomRefusal 
   };
 }
 
-/** `distro=debian-12` → debian, 12; `rhel-8.10` → rhel, 8.10; apk's bare `3.20.3` → no id. */
+/**
+ * `distro=debian-12` → debian, 12; `opensuse-leap-15.5` → opensuse-leap, 15.5 (the first dash
+ * before a digit); `debian-bookworm` → debian, bookworm (else the last dash); apk's bare `3.20.3`
+ * → no id. Plain string scans, no regular expression: one pass, whatever the value holds.
+ */
 function splitDistro(value: string): { id: string | null; version: string } {
-  const [, id, version] = /^(.+?)-(\d.*)$/.exec(value) ?? [];
-  if (id !== undefined && version !== undefined) return { id, version };
+  for (let at = value.indexOf('-', 1); at >= 0; at = value.indexOf('-', at + 1)) {
+    const next = value.charCodeAt(at + 1);
+    if (next >= 0x30 && next <= 0x39) {
+      return { id: value.slice(0, at), version: value.slice(at + 1) };
+    }
+  }
   const dash = value.lastIndexOf('-');
   if (dash > 0 && dash < value.length - 1) {
     return { id: value.slice(0, dash), version: value.slice(dash + 1) };
@@ -166,7 +177,7 @@ class Distributions {
   addPackage(purl: Purl): void {
     this.types.add(purl.type);
     const distro = purl.qualifiers.distro;
-    if (distro !== undefined) {
+    if (distro !== undefined && distro.length <= DISTRO_CHARS) {
       const { id, version } = splitDistro(distro);
       const family = id ?? purl.namespace;
       if (family !== null) this.add(family, version, false);
@@ -194,12 +205,19 @@ function upstreamSource(purl: Purl, version: string): SbomEntry['source'] {
   const upstream = purl.qualifiers.upstream;
   if (upstream === undefined) return null;
   if (purl.type === 'rpm') {
-    // <name>-<version>-<release>.src.rpm, with the binary's epoch.
-    const [, name, srcVersion, release] = /^(.+)-([^-]+)-([^-]+)\.src\.rpm$/.exec(upstream) ?? [];
-    if (name === undefined || srcVersion === undefined || release === undefined) return null;
+    // <name>-<version>-<release>.src.rpm, split at the last two dashes, with the binary's epoch
+    // (the version is at most 256 characters, so the epoch pattern runs on a bounded string).
+    if (!upstream.endsWith(SRC_RPM)) return null;
+    const base = upstream.slice(0, -SRC_RPM.length);
+    const releaseAt = base.lastIndexOf('-');
+    const versionAt = releaseAt > 0 ? base.lastIndexOf('-', releaseAt - 1) : -1;
+    if (versionAt < 1 || releaseAt - versionAt < 2 || releaseAt === base.length - 1) return null;
     const epoch = /^(\d+):/.exec(version)?.[1];
     const prefix = epoch === undefined ? '' : `${epoch}:`;
-    return { name, version: `${prefix}${srcVersion}-${release}` };
+    return {
+      name: base.slice(0, versionAt),
+      version: `${prefix}${base.slice(versionAt + 1, releaseAt)}-${base.slice(releaseAt + 1)}`,
+    };
   }
   if (purl.type === 'deb') {
     const at = upstream.indexOf('@');
