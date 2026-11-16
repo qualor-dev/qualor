@@ -1,0 +1,1675 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:34168b48-e0ca-4857-b5ce-b39aaa76f49d",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-16T14:09:15Z",
+    "tools": {
+      "components": [
+        {
+          "type": "application",
+          "author": "anchore",
+          "name": "syft",
+          "version": "1.57.1"
+        }
+      ]
+    },
+    "component": {
+      "bom-ref": "3d50ea399facbcbd",
+      "type": "container",
+      "name": "registry.access.redhat.com/ubi8/ubi-minimal",
+      "version": "8.10"
+    },
+    "properties": [
+      {
+        "name": "syft:image:labels:architecture",
+        "value": "x86_64"
+      },
+      {
+        "name": "syft:image:labels:build-date",
+        "value": "2026-11-12T00:23:39Z"
+      },
+      {
+        "name": "syft:image:labels:com.redhat.component",
+        "value": "ubi8-minimal-container"
+      },
+      {
+        "name": "syft:image:labels:com.redhat.license_terms",
+        "value": "https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI"
+      },
+      {
+        "name": "syft:image:labels:cpe",
+        "value": "cpe:/a:redhat:enterprise_linux:8::appstream"
+      },
+      {
+        "name": "syft:image:labels:description",
+        "value": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly."
+      },
+      {
+        "name": "syft:image:labels:distribution-scope",
+        "value": "public"
+      },
+      {
+        "name": "syft:image:labels:io.buildah.version",
+        "value": "1.45.0"
+      },
+      {
+        "name": "syft:image:labels:io.k8s.description",
+        "value": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly."
+      },
+      {
+        "name": "syft:image:labels:io.k8s.display-name",
+        "value": "Red Hat Universal Base Image 8 Minimal"
+      },
+      {
+        "name": "syft:image:labels:io.openshift.tags",
+        "value": "minimal rhel8"
+      },
+      {
+        "name": "syft:image:labels:maintainer",
+        "value": "Red Hat, Inc."
+      },
+      {
+        "name": "syft:image:labels:name",
+        "value": "ubi8/ubi-minimal"
+      },
+      {
+        "name": "syft:image:labels:org.opencontainers.image.created",
+        "value": "2026-11-12T00:23:39Z"
+      },
+      {
+        "name": "syft:image:labels:org.opencontainers.image.revision",
+        "value": "182c12f5e763b6d5f5ee6c0070b56d7ffb7cafcb"
+      },
+      {
+        "name": "syft:image:labels:release",
+        "value": "1794442960"
+      },
+      {
+        "name": "syft:image:labels:summary",
+        "value": "Provides the latest release of the minimal Red Hat Universal Base Image 8."
+      },
+      {
+        "name": "syft:image:labels:url",
+        "value": "https://catalog.redhat.com/en/search?searchType=containers"
+      },
+      {
+        "name": "syft:image:labels:vcs-ref",
+        "value": "182c12f5e763b6d5f5ee6c0070b56d7ffb7cafcb"
+      },
+      {
+        "name": "syft:image:labels:vcs-type",
+        "value": "git"
+      },
+      {
+        "name": "syft:image:labels:vendor",
+        "value": "Red Hat, Inc."
+      },
+      {
+        "name": "syft:image:labels:version",
+        "value": "8.10"
+      }
+    ]
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "bash",
+      "version": "4.4.20-6.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv3+"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:bash:4.4.20-6.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&upstream=bash-4.4.20-6.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:bash:bash:4.4.20-6.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "6.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "6865564"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "bash-4.4.20-6.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/ca-certificates@2026.2.92_v9.0.319-81.3.el8_10?arch=noarch&distro=rhel-8.10&package-id=2df4e29836c06c4b&upstream=ca-certificates-2026.2.92_v9.0.319-81.3.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "ca-certificates",
+      "version": "2026.2.92_v9.0.319-81.3.el8_10",
+      "licenses": [
+        {
+          "expression": "MIT AND GPL-2.0-or-later"
+        }
+      ],
+      "cpe": "cpe:2.3:a:ca-certificates:ca-certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/ca-certificates@2026.2.92_v9.0.319-81.3.el8_10?arch=noarch&distro=rhel-8.10&upstream=ca-certificates-2026.2.92_v9.0.319-81.3.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ca-certificates:ca_certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ca_certificates:ca-certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ca_certificates:ca_certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:ca-certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:ca_certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ca:ca-certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ca:ca_certificates:2026.2.92_v9.0.319-81.3.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "81.3.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "2602435"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "ca-certificates-2026.2.92_v9.0.319-81.3.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/curl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=c75327309ad2ca02&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "curl",
+      "version": "7.61.1-34.el8_10.18",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:curl:7.61.1-34.el8_10.18:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/curl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:curl:curl:7.61.1-34.el8_10.18:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "34.el8_10.18"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "701120"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "curl-7.61.1-34.el8_10.18.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "glibc",
+      "version": "2.28-251.el8_10.53",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPLv2+ and LGPLv2+ with exceptions and GPLv2+ and GPLv2+ with exceptions and BSD and Inner-Net and ISC and Public Domain and GFDL"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:glibc:2.28-251.el8_10.53:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc:glibc:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "251.el8_10.53"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "7020992"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "glibc-2.28-251.el8_10.53.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/glibc-common@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=33ec673f6f619706&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "glibc-common",
+      "version": "2.28-251.el8_10.53",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPLv2+ and LGPLv2+ with exceptions and GPLv2+ and GPLv2+ with exceptions and BSD and Inner-Net and ISC and Public Domain and GFDL"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:glibc-common:glibc-common:2.28-251.el8_10.53:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/glibc-common@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc-common:glibc_common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc_common:glibc-common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc_common:glibc_common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:glibc-common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:glibc_common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc:glibc-common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:glibc:glibc_common:2.28-251.el8_10.53:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "251.el8_10.53"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "7984268"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "glibc-2.28-251.el8_10.53.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/gmp@6.1.2-11.el8?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=b0459a24a538a2cb&upstream=gmp-6.1.2-11.el8.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "gmp",
+      "version": "1:6.1.2-11.el8",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPLv3+ or GPLv2+"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:gmp:1\\:6.1.2-11.el8:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/gmp@6.1.2-11.el8?arch=x86_64&distro=rhel-8.10&epoch=1&upstream=gmp-6.1.2-11.el8.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:gmp:gmp:1\\:6.1.2-11.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:epoch",
+          "value": "1"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "11.el8"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "766316"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "gmp-6.1.2-11.el8.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/krb5-libs@1.18.2-34.el8_10?arch=x86_64&distro=rhel-8.10&package-id=af4525477ddde7ef&upstream=krb5-1.18.2-34.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "krb5-libs",
+      "version": "1.18.2-34.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:krb5-libs:krb5-libs:1.18.2-34.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/krb5-libs@1.18.2-34.el8_10?arch=x86_64&distro=rhel-8.10&upstream=krb5-1.18.2-34.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:krb5-libs:krb5_libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:krb5_libs:krb5-libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:krb5_libs:krb5_libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:krb5-libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:krb5_libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:krb5:krb5-libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:krb5:krb5_libs:1.18.2-34.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "34.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "2242658"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "krb5-1.18.2-34.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/libcurl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=aa155fe3f43819c0&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "libcurl",
+      "version": "7.61.1-34.el8_10.18",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:libcurl:libcurl:7.61.1-34.el8_10.18:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/libcurl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:libcurl:7.61.1-34.el8_10.18:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "34.el8_10.18"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "605912"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "curl-7.61.1-34.el8_10.18.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/libgcc@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&package-id=fff60d2f9da96466&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "libgcc",
+      "version": "8.5.0-31.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:libgcc:libgcc:8.5.0-31.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/libgcc@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:libgcc:8.5.0-31.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "31.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "190224"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "gcc-8.5.0-31.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&package-id=e6b6c223dcf8c19a&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "libstdc++",
+      "version": "8.5.0-31.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv3+ and GPLv3+ with exceptions and GPLv2+ with exceptions and LGPLv2+ and BSD"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:libstdc\\+\\+:libstdc\\+\\+:8.5.0-31.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:libstdc\\+\\+:8.5.0-31.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "31.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "1941030"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "gcc-8.5.0-31.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/libxml2@2.9.7-21.el8_10.10?arch=x86_64&distro=rhel-8.10&package-id=02e4c823a7cd3eab&upstream=libxml2-2.9.7-21.el8_10.10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "libxml2",
+      "version": "2.9.7-21.el8_10.10",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:libxml2:libxml2:2.9.7-21.el8_10.10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/libxml2@2.9.7-21.el8_10.10?arch=x86_64&distro=rhel-8.10&upstream=libxml2-2.9.7-21.el8_10.10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:libxml2:2.9.7-21.el8_10.10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "21.el8_10.10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "1755602"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "libxml2-2.9.7-21.el8_10.10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/ncurses-libs@6.1-10.20180224.el8?arch=x86_64&distro=rhel-8.10&package-id=740497c732ce2972&upstream=ncurses-6.1-10.20180224.el8.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "ncurses-libs",
+      "version": "6.1-10.20180224.el8",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:ncurses-libs:ncurses-libs:6.1-10.20180224.el8:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/ncurses-libs@6.1-10.20180224.el8?arch=x86_64&distro=rhel-8.10&upstream=ncurses-6.1-10.20180224.el8.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ncurses-libs:ncurses_libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ncurses_libs:ncurses-libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ncurses_libs:ncurses_libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ncurses:ncurses-libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:ncurses:ncurses_libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:ncurses-libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:ncurses_libs:6.1-10.20180224.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "10.20180224.el8"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "955832"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "ncurses-6.1-10.20180224.el8.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "openssl-libs",
+      "version": "1:1.1.1k-18.el8_6",
+      "licenses": [
+        {
+          "license": {
+            "name": "OpenSSL and ASL 2.0"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:openssl-libs:openssl-libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:openssl-libs:openssl_libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:openssl_libs:openssl-libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:openssl_libs:openssl_libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:openssl:openssl-libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:openssl:openssl_libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:openssl-libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:openssl_libs:1\\:1.1.1k-18.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:epoch",
+          "value": "1"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "18.el8_6"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "3778402"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "openssl-1.1.1k-18.el8_6.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/redhat-release@8.10-0.3.el8?arch=x86_64&distro=rhel-8.10&package-id=5c9c8c50e82be47b&upstream=redhat-release-8.10-0.3.el8.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "redhat-release",
+      "version": "8.10-0.3.el8",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv2"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat-release:redhat-release:8.10-0.3.el8:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/redhat-release@8.10-0.3.el8?arch=x86_64&distro=rhel-8.10&upstream=redhat-release-8.10-0.3.el8.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat-release:redhat_release:8.10-0.3.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat_release:redhat-release:8.10-0.3.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat_release:redhat_release:8.10-0.3.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:redhat-release:8.10-0.3.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:redhat_release:8.10-0.3.el8:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "0.3.el8"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "56652"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "redhat-release-8.10-0.3.el8.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/rpm@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=6bc666a9176652aa&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "rpm",
+      "version": "4.14.3-32.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv2+"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:rpm:4.14.3-32.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/rpm@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm:rpm:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "32.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "2087838"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "rpm-4.14.3-32.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/rpm-libs@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=9c24e9e6f2be9987&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "rpm-libs",
+      "version": "4.14.3-32.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv2+ and LGPLv2+ with exceptions"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:rpm-libs:rpm-libs:4.14.3-32.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/rpm-libs@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm-libs:rpm_libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm_libs:rpm-libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm_libs:rpm_libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:rpm-libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:rpm_libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm:rpm-libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:rpm:rpm_libs:4.14.3-32.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "32.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "743680"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "rpm-4.14.3-32.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&package-id=254f3c73586a7ad8&upstream=sed-4.5-5.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "sed",
+      "version": "4.5-5.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPLv3+"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:sed:4.5-5.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&upstream=sed-4.5-5.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sed:sed:4.5-5.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "5.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "765046"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "sed-4.5-5.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/sqlite-libs@3.26.0-21.el8_10?arch=x86_64&distro=rhel-8.10&package-id=bcecf49dfefd132c&upstream=sqlite-3.26.0-21.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "sqlite-libs",
+      "version": "3.26.0-21.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "Public Domain"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:sqlite-libs:sqlite-libs:3.26.0-21.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/sqlite-libs@3.26.0-21.el8_10?arch=x86_64&distro=rhel-8.10&upstream=sqlite-3.26.0-21.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sqlite-libs:sqlite_libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sqlite_libs:sqlite-libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sqlite_libs:sqlite_libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:sqlite-libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:sqlite_libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sqlite:sqlite-libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:sqlite:sqlite_libs:3.26.0-21.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "21.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "1166537"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "sqlite-3.26.0-21.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/systemd-libs@239-82.el8_10.19?arch=x86_64&distro=rhel-8.10&package-id=7450a4efde9a814b&upstream=systemd-239-82.el8_10.19.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "systemd-libs",
+      "version": "239-82.el8_10.19",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPLv2+ and MIT"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:systemd-libs:systemd-libs:239-82.el8_10.19:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/systemd-libs@239-82.el8_10.19?arch=x86_64&distro=rhel-8.10&upstream=systemd-239-82.el8_10.19.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:systemd-libs:systemd_libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:systemd_libs:systemd-libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:systemd_libs:systemd_libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:systemd:systemd-libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:systemd:systemd_libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:systemd-libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:systemd_libs:239-82.el8_10.19:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "82.el8_10.19"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "4698670"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "systemd-239-82.el8_10.19.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/tzdata@2026f-1.el8_10?arch=noarch&distro=rhel-8.10&package-id=cda23a90f5e08912&upstream=tzdata-2026f-1.el8_10.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "tzdata",
+      "version": "2026f-1.el8_10",
+      "licenses": [
+        {
+          "license": {
+            "name": "Public Domain"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:redhat:tzdata:2026f-1.el8_10:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/tzdata@2026f-1.el8_10?arch=noarch&distro=rhel-8.10&upstream=tzdata-2026f-1.el8_10.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:tzdata:tzdata:2026f-1.el8_10:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "1.el8_10"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "2015771"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "tzdata-2026f-1.el8_10.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm",
+      "type": "library",
+      "publisher": "Red Hat, Inc.",
+      "name": "xz-libs",
+      "version": "5.2.4-4.el8_6",
+      "licenses": [
+        {
+          "license": {
+            "name": "Public Domain"
+          }
+        }
+      ],
+      "cpe": "cpe:2.3:a:xz-libs:xz-libs:5.2.4-4.el8_6:*:*:*:*:*:*:*",
+      "purl": "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&upstream=xz-5.2.4-4.el8_6.src.rpm",
+      "properties": [
+        {
+          "name": "syft:package:foundBy",
+          "value": "rpm-db-cataloger"
+        },
+        {
+          "name": "syft:package:type",
+          "value": "rpm"
+        },
+        {
+          "name": "syft:package:metadataType",
+          "value": "rpm-db-entry"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:xz-libs:xz_libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:xz_libs:xz-libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:xz_libs:xz_libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:xz-libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:redhat:xz_libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:xz:xz-libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:cpe23",
+          "value": "cpe:2.3:a:xz:xz_libs:5.2.4-4.el8_6:*:*:*:*:*:*:*"
+        },
+        {
+          "name": "syft:location:0:layerID",
+          "value": "sha256:224dbcd20342ddffc203cd1c58c7f9320cd004917d45986f292b3c0c0cec18df"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/var/lib/rpm/Packages"
+        },
+        {
+          "name": "syft:metadata:release",
+          "value": "4.el8_6"
+        },
+        {
+          "name": "syft:metadata:size",
+          "value": "164967"
+        },
+        {
+          "name": "syft:metadata:sourceRpm",
+          "value": "xz-5.2.4-4.el8_6.src.rpm"
+        }
+      ]
+    },
+    {
+      "bom-ref": "os:rhel@8.10",
+      "type": "operating-system",
+      "name": "rhel",
+      "version": "8.10",
+      "description": "Red Hat Enterprise Linux 8.10 (Ootpa)",
+      "cpe": "cpe:2.3:o:redhat:enterprise_linux:8:*:baseos:*:*:*:*:*",
+      "swid": {
+        "tagId": "rhel",
+        "name": "rhel",
+        "version": "8.10"
+      },
+      "externalReferences": [
+        {
+          "url": "https://issues.redhat.com/",
+          "type": "issue-tracker"
+        },
+        {
+          "url": "https://www.redhat.com/",
+          "type": "website"
+        }
+      ],
+      "properties": [
+        {
+          "name": "syft:distro:extendedSupport",
+          "value": "false"
+        },
+        {
+          "name": "syft:distro:id",
+          "value": "rhel"
+        },
+        {
+          "name": "syft:distro:idLike:0",
+          "value": "fedora"
+        },
+        {
+          "name": "syft:distro:prettyName",
+          "value": "Red Hat Enterprise Linux 8.10 (Ootpa)"
+        },
+        {
+          "name": "syft:distro:versionID",
+          "value": "8.10"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/ncurses-libs@6.1-10.20180224.el8?arch=x86_64&distro=rhel-8.10&package-id=740497c732ce2972&upstream=ncurses-6.1-10.20180224.el8.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/ca-certificates@2026.2.92_v9.0.319-81.3.el8_10?arch=noarch&distro=rhel-8.10&package-id=2df4e29836c06c4b&upstream=ca-certificates-2026.2.92_v9.0.319-81.3.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&package-id=254f3c73586a7ad8&upstream=sed-4.5-5.el8_10.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/curl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=c75327309ad2ca02&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/libcurl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=aa155fe3f43819c0&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+        "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/glibc-common@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=33ec673f6f619706&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/tzdata@2026f-1.el8_10?arch=noarch&distro=rhel-8.10&package-id=cda23a90f5e08912&upstream=tzdata-2026f-1.el8_10.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc-common@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=33ec673f6f619706&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/gmp@6.1.2-11.el8?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=b0459a24a538a2cb&upstream=gmp-6.1.2-11.el8.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/krb5-libs@1.18.2-34.el8_10?arch=x86_64&distro=rhel-8.10&package-id=af4525477ddde7ef&upstream=krb5-1.18.2-34.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+        "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&package-id=254f3c73586a7ad8&upstream=sed-4.5-5.el8_10.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/libcurl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=aa155fe3f43819c0&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/krb5-libs@1.18.2-34.el8_10?arch=x86_64&distro=rhel-8.10&package-id=af4525477ddde7ef&upstream=krb5-1.18.2-34.el8_10.src.rpm",
+        "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&package-id=e6b6c223dcf8c19a&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/libgcc@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&package-id=fff60d2f9da96466&upstream=gcc-8.5.0-31.el8_10.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/libxml2@2.9.7-21.el8_10.10?arch=x86_64&distro=rhel-8.10&package-id=02e4c823a7cd3eab&upstream=libxml2-2.9.7-21.el8_10.10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/ncurses-libs@6.1-10.20180224.el8?arch=x86_64&distro=rhel-8.10&package-id=740497c732ce2972&upstream=ncurses-6.1-10.20180224.el8.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/ca-certificates@2026.2.92_v9.0.319-81.3.el8_10?arch=noarch&distro=rhel-8.10&package-id=2df4e29836c06c4b&upstream=ca-certificates-2026.2.92_v9.0.319-81.3.el8_10.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/rpm-libs@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=9c24e9e6f2be9987&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+        "pkg:rpm/redhat/rpm@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=6bc666a9176652aa&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+        "pkg:rpm/redhat/sqlite-libs@3.26.0-21.el8_10?arch=x86_64&distro=rhel-8.10&package-id=bcecf49dfefd132c&upstream=sqlite-3.26.0-21.el8_10.src.rpm",
+        "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/rpm@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=6bc666a9176652aa&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/curl@7.61.1-34.el8_10.18?arch=x86_64&distro=rhel-8.10&package-id=c75327309ad2ca02&upstream=curl-7.61.1-34.el8_10.18.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=rhel-8.10&epoch=1&package-id=fd407f60307ddee8&upstream=openssl-1.1.1k-18.el8_6.src.rpm",
+        "pkg:rpm/redhat/rpm-libs@4.14.3-32.el8_10?arch=x86_64&distro=rhel-8.10&package-id=9c24e9e6f2be9987&upstream=rpm-4.14.3-32.el8_10.src.rpm",
+        "pkg:rpm/redhat/sqlite-libs@3.26.0-21.el8_10?arch=x86_64&distro=rhel-8.10&package-id=bcecf49dfefd132c&upstream=sqlite-3.26.0-21.el8_10.src.rpm",
+        "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&package-id=254f3c73586a7ad8&upstream=sed-4.5-5.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/sqlite-libs@3.26.0-21.el8_10?arch=x86_64&distro=rhel-8.10&package-id=bcecf49dfefd132c&upstream=sqlite-3.26.0-21.el8_10.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/systemd-libs@239-82.el8_10.19?arch=x86_64&distro=rhel-8.10&package-id=7450a4efde9a814b&upstream=systemd-239-82.el8_10.19.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/bash@4.4.20-6.el8_10?arch=x86_64&distro=rhel-8.10&package-id=5c3c0815345c00a5&upstream=bash-4.4.20-6.el8_10.src.rpm",
+        "pkg:rpm/redhat/glibc-common@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=33ec673f6f619706&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm",
+        "pkg:rpm/redhat/libgcc@8.5.0-31.el8_10?arch=x86_64&distro=rhel-8.10&package-id=fff60d2f9da96466&upstream=gcc-8.5.0-31.el8_10.src.rpm",
+        "pkg:rpm/redhat/sed@4.5-5.el8_10?arch=x86_64&distro=rhel-8.10&package-id=254f3c73586a7ad8&upstream=sed-4.5-5.el8_10.src.rpm",
+        "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm"
+      ]
+    },
+    {
+      "ref": "pkg:rpm/redhat/xz-libs@5.2.4-4.el8_6?arch=x86_64&distro=rhel-8.10&package-id=e91578fe83af8db0&upstream=xz-5.2.4-4.el8_6.src.rpm",
+      "dependsOn": [
+        "pkg:rpm/redhat/glibc@2.28-251.el8_10.53?arch=x86_64&distro=rhel-8.10&package-id=e22912d0764572bd&upstream=glibc-2.28-251.el8_10.53.src.rpm"
+      ]
+    }
+  ]
+}

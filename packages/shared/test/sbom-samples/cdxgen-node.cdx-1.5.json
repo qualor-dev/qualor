@@ -1,0 +1,520 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:6ad9ca30-69ac-44c3-b48e-0ddac45f17f8",
+  "version": 2,
+  "metadata": {
+    "timestamp": "2026-11-16T14:11:51Z",
+    "tools": {
+      "components": [
+        {
+          "group": "@cdxgen",
+          "name": "cdxgen",
+          "version": "13.8.0",
+          "purl": "pkg:npm/%40cdxgen/cdxgen@13.8.0",
+          "type": "application",
+          "bom-ref": "pkg:npm/@cdxgen/cdxgen@13.8.0",
+          "publisher": "OWASP Foundation"
+        }
+      ]
+    },
+    "authors": [
+      {
+        "name": "OWASP Foundation"
+      }
+    ],
+    "lifecycles": [
+      {
+        "phase": "pre-build"
+      }
+    ],
+    "component": {
+      "name": "deps-web",
+      "group": "",
+      "version": "1.0.0",
+      "purl": "pkg:npm/deps-web@1.0.0",
+      "bom-ref": "pkg:npm/deps-web@1.0.0",
+      "properties": [],
+      "type": "application"
+    },
+    "properties": [
+      {
+        "name": "cdx:bom:componentNamespaces",
+        "value": "@babel"
+      },
+      {
+        "name": "cdx:bom:componentSrcFiles",
+        "value": "package-lock.json"
+      },
+      {
+        "name": "cdx:bom:componentTypes",
+        "value": "npm"
+      }
+    ]
+  },
+  "components": [
+    {
+      "group": "@babel",
+      "name": "code-frame",
+      "version": "7.26.2",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4499481d1b9e420c168ad5a017c39d1581995f7dbc031e4109e98d1a5a877e9967453f444a2f0990596f69561b4be52e6d563a769bfcec5b36bb9336f6234555"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/code-frame@7.26.2",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.26.2.tgz"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/@babel/code-frame@7.26.2",
+      "properties": [
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "internal:ImportedModules",
+          "value": "@babel/code-frame"
+        },
+        {
+          "name": "internal:ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.26.2.tgz"
+        },
+        {
+          "name": "internal:SrcFile",
+          "value": "package-lock.json"
+        }
+      ],
+      "evidence": {
+        "identity": {
+          "field": "purl",
+          "confidence": 1,
+          "methods": [
+            {
+              "technique": "manifest-analysis",
+              "confidence": 1,
+              "value": "package-lock.json"
+            }
+          ]
+        },
+        "occurrences": [
+          {
+            "location": "index.js"
+          },
+          {
+            "location": "index.js"
+          }
+        ]
+      }
+    },
+    {
+      "group": "@babel",
+      "name": "helper-validator-identifier",
+      "version": "7.29.7",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a9e8711a4463e7987f7dff0431a27e71887268a947231a980e7ebcdb0403ed1369f54ba3390b07a20dae4b4af6bf3af8a56fac5dff7435e79aca370d697ddf16"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/helper-validator-identifier@7.29.7",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/@babel/helper-validator-identifier@7.29.7",
+      "properties": [
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "internal:ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz"
+        },
+        {
+          "name": "internal:SrcFile",
+          "value": "package-lock.json"
+        }
+      ],
+      "evidence": {
+        "identity": {
+          "field": "purl",
+          "confidence": 1,
+          "methods": [
+            {
+              "technique": "manifest-analysis",
+              "confidence": 1,
+              "value": "package-lock.json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "group": "",
+      "name": "js-tokens",
+      "version": "4.0.0",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "45d2547e5704ddc5332a232a420b02bb4e853eef5474824ed1b7986cf84737893a6a9809b627dca02b53f5b7313a9601b690f690233a49bce0e026aeb16fcf29"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/js-tokens@4.0.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/js-tokens@4.0.0",
+      "properties": [
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "internal:ResolvedUrl",
+          "value": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz"
+        },
+        {
+          "name": "internal:SrcFile",
+          "value": "package-lock.json"
+        }
+      ],
+      "evidence": {
+        "identity": {
+          "field": "purl",
+          "confidence": 1,
+          "methods": [
+            {
+              "technique": "manifest-analysis",
+              "confidence": 1,
+              "value": "package-lock.json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "group": "",
+      "name": "picocolors",
+      "version": "1.1.1",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "c5c787dac9e1b5be4cf658aa0ec984c39ea57b7efa993664117fe311bfd1c4d1727a036e97b78db250973fd1438ff2dcbb45fc284c8c71e3f69eda5a1eb0c454"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC",
+            "url": "https://opensource.org/licenses/ISC",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/picocolors@1.1.1",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/picocolors@1.1.1",
+      "properties": [
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "internal:ResolvedUrl",
+          "value": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz"
+        },
+        {
+          "name": "internal:SrcFile",
+          "value": "package-lock.json"
+        }
+      ],
+      "evidence": {
+        "identity": {
+          "field": "purl",
+          "confidence": 1,
+          "methods": [
+            {
+              "technique": "manifest-analysis",
+              "confidence": 1,
+              "value": "package-lock.json"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "group": "",
+      "name": "minimist",
+      "version": "1.2.5",
+      "scope": "required",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "14cf6735462b4410042d9413df179943b7e630e060ea758d989293720b0979a2ecb4ffd43835691acaf93a15e185783a7feaad27cba267e3d4c640d67202172f"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/minimist@1.2.5",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz"
+        }
+      ],
+      "type": "library",
+      "bom-ref": "pkg:npm/minimist@1.2.5",
+      "properties": [
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "internal:ImportedModules",
+          "value": "minimist"
+        },
+        {
+          "name": "internal:ResolvedUrl",
+          "value": "https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz"
+        },
+        {
+          "name": "internal:SrcFile",
+          "value": "package-lock.json"
+        }
+      ],
+      "evidence": {
+        "identity": {
+          "field": "purl",
+          "confidence": 1,
+          "methods": [
+            {
+              "technique": "manifest-analysis",
+              "confidence": 1,
+              "value": "package-lock.json"
+            }
+          ]
+        },
+        "occurrences": [
+          {
+            "location": "index.js"
+          },
+          {
+            "location": "index.js"
+          }
+        ]
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:npm/@babel/helper-validator-identifier@7.29.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/js-tokens@4.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/picocolors@1.1.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/code-frame@7.26.2",
+      "dependsOn": [
+        "pkg:npm/@babel/helper-validator-identifier@7.29.7",
+        "pkg:npm/js-tokens@4.0.0",
+        "pkg:npm/picocolors@1.1.1"
+      ]
+    },
+    {
+      "ref": "pkg:npm/minimist@1.2.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/deps-web@1.0.0",
+      "dependsOn": ["pkg:npm/@babel/code-frame@7.26.2", "pkg:npm/minimist@1.2.5"]
+    }
+  ],
+  "annotations": [
+    {
+      "bom-ref": "metadata-annotations",
+      "subjects": ["pkg:npm/deps-web@1.0.0"],
+      "annotator": {
+        "component": {
+          "group": "@cdxgen",
+          "name": "cdxgen",
+          "version": "13.8.0",
+          "purl": "pkg:npm/%40cdxgen/cdxgen@13.8.0",
+          "type": "application",
+          "bom-ref": "pkg:npm/@cdxgen/cdxgen@13.8.0",
+          "publisher": "OWASP Foundation"
+        }
+      },
+      "timestamp": "2026-11-16T14:11:51Z",
+      "text": "This Software Bill-of-Materials (SBOM) document was created on Monday, November 16, 2026 with cdxgen. The data was captured during the pre-build lifecycle phase without building the application. The document describes an application named 'deps-web' with version '1.0.0'. The package type in this SBOM is npm with a single purl namespace '@babel' described under components. The components were identified from the source files: package-lock.json."
+    }
+  ]
+}

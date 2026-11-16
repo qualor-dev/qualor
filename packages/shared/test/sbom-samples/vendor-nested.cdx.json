@@ -1,0 +1,93 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:3f0c1f5e-8a2b-4c7d-9e61-2b5d0a4c7e19",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-16T12:00:00Z",
+    "component": {
+      "type": "application",
+      "bom-ref": "appliance",
+      "group": "com.example",
+      "name": "appliance",
+      "version": "4.2.0"
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "bom-ref": "gateway",
+      "group": "com.example",
+      "name": "gateway",
+      "version": "4.2.0",
+      "purl": "pkg:generic/example/gateway@4.2.0",
+      "components": [
+        {
+          "type": "library",
+          "bom-ref": "netty-handler",
+          "group": "io.netty",
+          "name": "netty-handler",
+          "version": "4.1.100.Final",
+          "purl": "pkg:maven/io.netty/netty-handler@4.1.100.Final",
+          "licenses": [{ "license": { "id": "Apache-2.0" } }],
+          "components": [
+            {
+              "type": "library",
+              "bom-ref": "netty-buffer",
+              "group": "io.netty",
+              "name": "netty-buffer",
+              "version": "4.1.100.Final",
+              "purl": "pkg:maven/io.netty/netty-buffer@4.1.100.Final",
+              "licenses": [{ "license": { "id": "Apache-2.0" } }]
+            }
+          ]
+        },
+        {
+          "type": "library",
+          "bom-ref": "jackson-databind",
+          "group": "com.fasterxml.jackson.core",
+          "name": "jackson-databind",
+          "version": "2.15.2",
+          "purl": "pkg:maven/com.fasterxml.jackson.core/jackson-databind@2.15.2",
+          "licenses": [{ "license": { "name": "Apache License 2.0" } }]
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "console",
+      "group": "com.example",
+      "name": "console",
+      "version": "4.2.0",
+      "purl": "pkg:generic/example/console@4.2.0",
+      "components": [
+        {
+          "type": "framework",
+          "bom-ref": "angular-core",
+          "group": "@angular",
+          "name": "core",
+          "version": "17.3.0",
+          "purl": "pkg:npm/%40angular/core@17.3.0",
+          "licenses": [{ "expression": "MIT" }],
+          "components": [
+            {
+              "type": "library",
+              "bom-ref": "tslib",
+              "name": "tslib",
+              "version": "2.6.2",
+              "purl": "pkg:npm/tslib@2.6.2",
+              "licenses": [{ "license": { "id": "0BSD" } }]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    { "ref": "appliance", "dependsOn": ["gateway", "console"] },
+    { "ref": "gateway", "dependsOn": ["netty-handler", "jackson-databind"] },
+    { "ref": "netty-handler", "dependsOn": ["netty-buffer"] },
+    { "ref": "console", "dependsOn": ["angular-core"] },
+    { "ref": "angular-core", "dependsOn": ["tslib"] }
+  ]
+}
