@@ -1,36 +1,8 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { bom, entry, inventory, lib, sample } from '../../test/sbom';
 import { readCycloneDx } from './cyclonedx';
 import { parseSbom } from './parse';
-import type { SbomEntry, SbomInventory } from './types';
-
-const SAMPLES = join(__dirname, '../../test/sbom-samples');
-const sample = (file: string): string => readFileSync(join(SAMPLES, file), 'utf8');
-
-function inventory(text: string): SbomInventory {
-  const result = parseSbom(text);
-  if (!('inventory' in result)) throw new Error(`refused: ${JSON.stringify(result.refusal)}`);
-  return result.inventory;
-}
-
-function entry(inv: SbomInventory, name: string): SbomEntry {
-  const found = inv.entries.filter((e) => e.name === name);
-  expect(found, name).toHaveLength(1);
-  return found[0]!;
-}
-
-/** A CycloneDX 1.6 document holding these components (and any other top-level fields). */
-function bom(components: unknown[], extra: Record<string, unknown> = {}): string {
-  return JSON.stringify({ bomFormat: 'CycloneDX', specVersion: '1.6', components, ...extra });
-}
-
-const lib = (purl: string, more: Record<string, unknown> = {}) => ({
-  type: 'library',
-  name: 'ignored',
-  purl,
-  ...more,
-});
+import type { SbomEntry } from './types';
 
 const NO_SKIPS = { noPurl: 0, unsupportedType: 0, duplicate: 0 };
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;

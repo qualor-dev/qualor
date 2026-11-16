@@ -9,6 +9,7 @@ import { readCycloneDx } from './cyclonedx';
 import { cutText, mergeLicenses, SBOM_BOUNDS } from './fields';
 import { isOsPackageType, osFamilyOf, sameOsVersion } from './os';
 import { inventoryName, inventoryVersion, type Purl } from './purl';
+import { readSpdx } from './spdx';
 import {
   SBOM_MAX_DEPTH,
   SBOM_MAX_JSON_CONTAINERS,
@@ -96,12 +97,7 @@ function readDocument(doc: Record<string, unknown>): SbomDocument | SbomRefusal 
     };
   }
   if (doc.bomFormat === 'CycloneDX') return readCycloneDx(doc);
-  if ('spdxVersion' in doc) {
-    return {
-      code: 'SBOM_FORMAT_UNSUPPORTED',
-      message: 'SPDX documents are not read yet. Export the SBOM as CycloneDX JSON.',
-    };
-  }
+  if ('spdxVersion' in doc) return readSpdx(doc);
   return {
     code: 'SBOM_INVALID',
     message:

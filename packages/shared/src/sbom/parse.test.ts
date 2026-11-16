@@ -1,36 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { budgetMs } from '../../test/perf';
+import { bom, inventory, lib, os, refusal, sample } from '../../test/sbom';
 import { parseSbom } from './parse';
-import type { SbomInventory, SbomRefusal } from './types';
-
-const SAMPLES = join(__dirname, '../../test/sbom-samples');
-const sample = (file: string): string => readFileSync(join(SAMPLES, file), 'utf8');
-
-function inventory(text: string): SbomInventory {
-  const result = parseSbom(text);
-  if (!('inventory' in result)) throw new Error(`refused: ${JSON.stringify(result.refusal)}`);
-  return result.inventory;
-}
-
-function refusal(text: string): SbomRefusal {
-  const result = parseSbom(text);
-  if (!('refusal' in result)) throw new Error('not refused');
-  return result.refusal;
-}
-
-function bom(components: unknown[], extra: Record<string, unknown> = {}): string {
-  return JSON.stringify({ bomFormat: 'CycloneDX', specVersion: '1.6', components, ...extra });
-}
-
-const lib = (purl: string, more: Record<string, unknown> = {}) => ({
-  type: 'library',
-  name: 'ignored',
-  purl,
-  ...more,
-});
-const os = (name: string, version: string) => ({ type: 'operating-system', name, version });
 
 describe('refusals', () => {
   it('refuses text that is not JSON', () => {
