@@ -6104,7 +6104,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description SBOM_TOO_LARGE: the body is over 33554432 bytes (also by its declared Content-Length, before 100 Continue), over 67108864 bytes inflated, or holds more than 2 000 000 JSON objects and arrays, 6 000 000 JSON keys and values or 10 000 distinct JSON keys */
+                /** @description SBOM_TOO_LARGE: the body is over 33554432 bytes (also by its declared Content-Length, before 100 Continue), over 67108864 bytes inflated, or holds more than 2000000 JSON objects and arrays, 6000000 JSON keys and values or 10000 distinct JSON keys */
                 413: {
                     headers: {
                         [name: string]: unknown;
