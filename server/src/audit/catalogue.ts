@@ -480,6 +480,14 @@ export const AUDIT_CATALOGUE = {
       tracking: z.enum(['auto', 'pinned', 'unsupported']),
     }),
   },
+  /** 0.16: a version deleted by hand. */
+  'project_version.deleted': {
+    target: 'project',
+    details: z.strictObject({
+      label: z.string().max(100),
+      source: z.enum(['tag', 'label', 'sbom']),
+    }),
+  },
   /** 0.16: an SBOM uploaded as a version (`PUT /projects/sbom`). */
   'project_version.sbom_uploaded': {
     target: 'project',

@@ -39,6 +39,9 @@ const severitySchema = z.enum(SEVERITIES);
 const decisionStatusSchema = z.enum(DECISION_STATUSES);
 const trackingSchema = z.enum(['auto', 'pinned', 'unsupported']);
 
+const sourceSchema = z.enum(['tag', 'label', 'sbom']);
+const distributionSchema = z.object({ family: z.string(), version: z.string() });
+
 const countsSchema = z.object({
   critical: z.number().int(),
   high: z.number().int(),
@@ -57,6 +60,12 @@ const targetSchema = z.object({
   tracking: trackingSchema.nullable(),
   /** Whether a dependency list exists to read the vulnerabilities from. */
   hasInventory: z.boolean(),
+  /** A version's source; null for a branch. */
+  source: sourceSchema.nullable(),
+  /** What an uploaded SBOM describes; null otherwise. */
+  sbomSubject: z.string().nullable(),
+  /** The operating system an image SBOM names; null otherwise. */
+  distribution: distributionSchema.nullable(),
   /** Open, not ignored rows (a decision that is not Open takes a row out). */
   counts: countsSchema,
   /** Open, not ignored rows in the KEV catalog; null without the vuln.priority feature. */
@@ -72,6 +81,9 @@ const untrackedSchema = z.object({
   tracking: trackingSchema,
   trackingReason: z.enum(TRACKING_REASONS),
   hasInventory: z.boolean(),
+  source: sourceSchema,
+  sbomSubject: z.string().nullable(),
+  distribution: distributionSchema.nullable(),
   /** The rows the version kept when it stopped being tracked. */
   counts: countsSchema,
   exploited: z.number().int().nullable(),

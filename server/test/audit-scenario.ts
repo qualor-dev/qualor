@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Report } from '@qualor/shared';
 import type { Config } from '../src/config';
 import {
@@ -370,6 +370,13 @@ export async function runAuditScenario(
     }),
   });
   expectStatus(sbom, 201, 'PUT /projects/sbom');
+
+  // project_version.deleted (0.16): the uploaded SBOM version is deleted again
+  const [sbomVersion] = await ctx.db
+    .select({ id: projectVersions.id })
+    .from(projectVersions)
+    .where(and(eq(projectVersions.projectId, main.id), eq(projectVersions.label, '1.1.0')));
+  await call('DELETE', `/projects/${main.id}/versions/${sbomVersion!.id}`, 204);
 
   const ingest = async (token: string, key: string, report: Report) => {
     const analysisId = await uploadReport(ctx, bearer(token), key, gzipJson(report));

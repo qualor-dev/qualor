@@ -1,7 +1,14 @@
+import type { SbomDistribution } from '@qualor/shared';
 import { eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
-import { branches, projectVersions, vulnerabilityTargetChecks } from '../db/schema';
+import {
+  branches,
+  projectVersions,
+  vulnerabilityTargetChecks,
+  type VersionSource,
+} from '../db/schema';
+import { distributionOf } from '../versions/distribution';
 import { branchHasInventory } from '../dependencies/inventory';
 import {
   isTrackedBranch,
@@ -29,6 +36,12 @@ export interface TargetSummary {
   /** A version's override; null for a branch. */
   tracking: 'auto' | 'pinned' | 'unsupported' | null;
   hasInventory: boolean;
+  /** A version's source; null for a branch. */
+  source: VersionSource | null;
+  /** What an uploaded SBOM describes; null otherwise. */
+  sbomSubject: string | null;
+  /** The operating system an image SBOM names; null otherwise. */
+  distribution: SbomDistribution | null;
   counts: SeverityCounts;
   /** Open, not ignored rows in the KEV catalog; null without `vuln.priority`. */
   exploited: number | null;
@@ -42,6 +55,9 @@ export interface UntrackedVersion {
   tracking: 'auto' | 'pinned' | 'unsupported';
   trackingReason: TrackingReason;
   hasInventory: boolean;
+  source: VersionSource;
+  sbomSubject: string | null;
+  distribution: SbomDistribution | null;
   /** From the rows the version kept when it stopped being tracked. */
   counts: SeverityCounts;
   exploited: number | null;
@@ -198,6 +214,10 @@ export async function readTargetSummary(
         analyzedAt: projectVersions.analyzedAt,
         tracking: projectVersions.tracking,
         hasInventory: projectVersions.hasInventory,
+        source: projectVersions.source,
+        sbomSubject: projectVersions.sbomSubject,
+        osFamily: projectVersions.osFamily,
+        osVersion: projectVersions.osVersion,
       })
       .from(projectVersions)
       .where(eq(projectVersions.projectId, projectId)),
@@ -283,6 +303,9 @@ export async function readTargetSummary(
       isMain: branch?.isMain ?? false,
       tracking: version?.tracking ?? null,
       hasInventory: version?.hasInventory ?? withInventory.has(id),
+      source: version?.source ?? null,
+      sbomSubject: version?.sbomSubject ?? null,
+      distribution: version ? distributionOf(version) : null,
       ...factsOf(key),
       new: counts.get(key)?.new ?? 0,
     });
@@ -293,6 +316,9 @@ export async function readTargetSummary(
     tracking: v.tracking,
     trackingReason: decided(v.id).reason,
     hasInventory: v.hasInventory,
+    source: v.source,
+    sbomSubject: v.sbomSubject,
+    distribution: distributionOf(v),
     ...factsOf(keyOf('version', v.id)),
   }));
   return {

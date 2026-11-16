@@ -1,9 +1,27 @@
 import { desc, eq } from 'drizzle-orm';
+import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { addMember, createUser, login, type Session } from '../../test/app';
+import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
-import { auditEvents, branches, jobs, projectVersions } from '../db/schema';
+import { reportWith } from '../../test/reports';
+import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
+import {
+  analyses,
+  auditEvents,
+  branches,
+  complianceReports,
+  jobs,
+  projectVersions,
+  targetVulnerabilities,
+  versionDependencies,
+  vulnerabilityAlertItems,
+  vulnerabilityAlertTargets,
+  vulnerabilityDecisions,
+  vulnerabilityTargetChecks,
+} from '../db/schema';
+import { first } from '../db/rows';
+import { upsertVersion } from '../versions/store';
 import { writeVulndbSettings } from '../vulndb/settings';
 import { RECHECK_QUEUE } from '../vulnerabilities/recheck';
 
@@ -490,5 +508,323 @@ describe('versions and vulnerability monitoring API (0.15)', () => {
     const pinned = await call('PATCH', url, h.orgAdmin, { tracking: 'pinned' });
     expect(pinned.statusCode, pinned.body).toBe(200);
     expect(await rechecks()).toHaveLength(1);
+  });
+});
+
+describe('SBOM versions: DTO and DELETE (0.16)', () => {
+  let h: IngestHarness;
+  let member: Session;
+  let n = 0;
+
+  const call = (method: 'GET' | 'DELETE', url: string, session: Session = h.orgAdmin) =>
+    h.ctx.app.inject({ method, url: `/api/v0${url}`, headers: session.headers });
+  const project = async () => h.project(`acme/sbomv-${++n}`);
+  const seedSbom = async (projectId: string, label: string) => {
+    const result = await h.ctx.db.transaction((tx) =>
+      upsertVersion(tx, {
+        projectId,
+        label,
+        source: 'sbom',
+        tag: null,
+        analysisId: null,
+        analyzedAt: new Date(BASE),
+        inventory: {
+          dependencies: [
+            {
+              path: 'sbom',
+              ecosystem: 'npm',
+              name: 'left-pad',
+              version: '1.3.0',
+              licenses: [],
+            },
+          ],
+          ignores: null,
+        },
+        sbom: {
+          format: 'CycloneDX 1.7',
+          subject: 'debian:12',
+          distribution: { family: 'debian', version: '12.15' },
+        },
+      }),
+    );
+    if (typeof result === 'string') throw new Error(`upsertVersion: ${result}`);
+    return result.version.id;
+  };
+  const rechecks = () => h.ctx.db.select().from(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+
+  beforeAll(async () => {
+    h = await createIngestHarness({
+      pluginsFor: rbacPlugins({ now: () => new Date('2026-10-30T00:00:00Z') }),
+    });
+    const user = await createUser(h.ctx, { username: 'sbomv-member' });
+    await addMember(h.ctx, h.organizationId, user.id, 'viewer');
+    member = await login(h.ctx, user.username, user.password);
+  });
+  afterAll(async () => {
+    await h.close();
+  });
+
+  it('lists the SBOM facts of a version, and nulls for a tag version', async () => {
+    const p = await project();
+    await seedSbom(p.id, '1.4.0');
+    await h.ctx.db.insert(projectVersions).values({
+      projectId: p.id,
+      label: '1.0.0',
+      source: 'tag',
+      tag: 'v1.0.0',
+      analyzedAt: new Date(BASE - 60_000),
+    });
+    const items = (await call('GET', `/projects/${p.id}/versions`)).json().items as {
+      label: string;
+    }[];
+    expect(items.find((i) => i.label === '1.4.0')).toMatchObject({
+      source: 'sbom',
+      tag: null,
+      sbomFormat: 'CycloneDX 1.7',
+      sbomSubject: 'debian:12',
+      distribution: { family: 'debian', version: '12.15' },
+      packages: 1,
+    });
+    expect(items.find((i) => i.label === '1.0.0')).toMatchObject({
+      source: 'tag',
+      sbomFormat: null,
+      sbomSubject: null,
+      distribution: null,
+    });
+  });
+
+  it('carries source, subject and distribution on the targets', async () => {
+    const p = await project();
+    const pinned = await seedSbom(p.id, '1.4.0');
+    const dropped = await seedSbom(p.id, '1.3.0');
+    await h.ctx.db
+      .update(projectVersions)
+      .set({ tracking: 'pinned' })
+      .where(eq(projectVersions.id, pinned));
+    await h.ctx.db
+      .update(projectVersions)
+      .set({ tracking: 'unsupported' })
+      .where(eq(projectVersions.id, dropped));
+    const res = await call('GET', `/projects/${p.id}/vulnerabilities/targets`);
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json() as {
+      targets: { kind: string; id: string; source: unknown }[];
+      untracked: { id: string }[];
+    };
+    expect(body.targets.find((t) => t.id === pinned)).toMatchObject({
+      kind: 'version',
+      source: 'sbom',
+      sbomSubject: 'debian:12',
+      distribution: { family: 'debian', version: '12.15' },
+    });
+    expect(body.targets.find((t) => t.kind === 'branch')).toMatchObject({
+      source: null,
+      sbomSubject: null,
+      distribution: null,
+    });
+    expect(body.untracked.find((t) => t.id === dropped)).toMatchObject({
+      source: 'sbom',
+      sbomSubject: 'debian:12',
+      distribution: { family: 'debian', version: '12.15' },
+    });
+  });
+
+  it('carries source, subject and distribution on the targets', async () => {
+    const p = await project();
+    const pinned = await seedSbom(p.id, '1.4.0');
+    const dropped = await seedSbom(p.id, '1.3.0');
+    await h.ctx.db
+      .update(projectVersions)
+      .set({ tracking: 'pinned' })
+      .where(eq(projectVersions.id, pinned));
+    await h.ctx.db
+      .update(projectVersions)
+      .set({ tracking: 'unsupported' })
+      .where(eq(projectVersions.id, dropped));
+    const res = await call('GET', `/projects/${p.id}/vulnerabilities/targets`);
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json() as {
+      targets: { kind: string; id: string }[];
+      untracked: { id: string }[];
+    };
+    expect(body.targets.find((t) => t.id === pinned)).toMatchObject({
+      kind: 'version',
+      source: 'sbom',
+      sbomSubject: 'debian:12',
+      distribution: { family: 'debian', version: '12.15' },
+    });
+    expect(body.targets.find((t) => t.kind === 'branch')).toMatchObject({
+      source: null,
+      sbomSubject: null,
+      distribution: null,
+    });
+    expect(body.untracked.find((t) => t.id === dropped)).toMatchObject({
+      source: 'sbom',
+      sbomSubject: 'debian:12',
+      distribution: { family: 'debian', version: '12.15' },
+    });
+  });
+
+  it('deletes a version with everything that hangs on it, and keeps analyses and reports', async () => {
+    const p = await project();
+    const versionId = await seedSbom(p.id, '1.4.0');
+    const db = h.ctx.db;
+    await seedCheck(db, { projectId: p.id, versionId, baselineAt: new Date(BASE) });
+    await seedTargetRow(db, {
+      projectId: p.id,
+      versionId,
+      packageName: 'left-pad',
+      vulnerabilityId: 'CVE-2026-0001',
+    });
+    const alertTarget = first(
+      await db
+        .insert(vulnerabilityAlertTargets)
+        .values({ projectId: p.id, versionId, dayOne: false })
+        .returning({ id: vulnerabilityAlertTargets.id }),
+    ).id;
+    await db
+      .insert(vulnerabilityAlertItems)
+      .values({ targetId: alertTarget, vulnerabilityId: 'CVE-2026-0001', baseline: true });
+    await db.insert(vulnerabilityDecisions).values({
+      projectId: p.id,
+      versionId,
+      packageName: 'left-pad',
+      vulnerabilityId: 'CVE-2026-0001',
+      status: 'wont_fix',
+    });
+    const analysisId = first(
+      await db
+        .insert(analyses)
+        .values({ projectId: p.id, versionId, status: 'queued' })
+        .returning({ id: analyses.id }),
+    ).id;
+    const reportId = first(
+      await db
+        .insert(complianceReports)
+        .values({
+          organizationId: h.organizationId,
+          projectId: p.id,
+          versionId,
+          scope: 'project',
+          createdByName: 'admin',
+          standards: [],
+        })
+        .returning({ id: complianceReports.id }),
+    ).id;
+    await db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+
+    const res = await call('DELETE', `/projects/${p.id}/versions/${versionId}`);
+    expect(res.statusCode, res.body).toBe(204);
+
+    const count = async (table: PgTable, column: PgColumn, value: string) =>
+      (await db.select().from(table).where(eq(column, value))).length;
+    expect(await count(projectVersions, projectVersions.id, versionId)).toBe(0);
+    expect(await count(versionDependencies, versionDependencies.versionId, versionId)).toBe(0);
+    expect(await count(targetVulnerabilities, targetVulnerabilities.versionId, versionId)).toBe(0);
+    expect(
+      await count(vulnerabilityTargetChecks, vulnerabilityTargetChecks.versionId, versionId),
+    ).toBe(0);
+    expect(
+      await count(vulnerabilityAlertTargets, vulnerabilityAlertTargets.versionId, versionId),
+    ).toBe(0);
+    expect(
+      await count(vulnerabilityAlertItems, vulnerabilityAlertItems.targetId, alertTarget),
+    ).toBe(0);
+    expect(await count(vulnerabilityDecisions, vulnerabilityDecisions.versionId, versionId)).toBe(
+      0,
+    );
+    const [analysis] = await db.select().from(analyses).where(eq(analyses.id, analysisId));
+    expect(analysis).toMatchObject({ id: analysisId, versionId: null });
+    const [report] = await db
+      .select()
+      .from(complianceReports)
+      .where(eq(complianceReports.id, reportId));
+    expect(report).toMatchObject({ id: reportId, versionId: null });
+
+    const [event] = await db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.projectId, p.id))
+      .orderBy(desc(auditEvents.seq))
+      .limit(1);
+    expect(event).toMatchObject({
+      action: 'project_version.deleted',
+      targetType: 'project',
+      details: { label: '1.4.0', source: 'sbom' },
+    });
+    expect(await rechecks()).toHaveLength(1);
+  });
+
+  it('queues no re-check while the instance switch is off', async () => {
+    const p = await project();
+    const versionId = await seedSbom(p.id, '2.0.0');
+    await h.ctx.db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
+    try {
+      await writeVulndbSettings(h.ctx.db, { enabled: false }, 'k');
+      expect((await call('DELETE', `/projects/${p.id}/versions/${versionId}`)).statusCode).toBe(
+        204,
+      );
+    } finally {
+      await writeVulndbSettings(h.ctx.db, { enabled: true }, 'k');
+    }
+    expect(await rechecks()).toHaveLength(0);
+  });
+
+  it('refuses a member without project.settings, and answers 404 for another project', async () => {
+    const a = await project();
+    const b = await project();
+    const versionId = await seedSbom(a.id, '1.4.0');
+    const denied = await call('DELETE', `/projects/${a.id}/versions/${versionId}`, member);
+    expect(denied.statusCode).toBe(403);
+    const other = await call('DELETE', `/projects/${b.id}/versions/${versionId}`);
+    expect(other.statusCode).toBe(404);
+    expect(JSON.stringify(other.json())).toContain('Version not found');
+    expect(
+      await h.ctx.db.select().from(projectVersions).where(eq(projectVersions.id, versionId)),
+    ).toHaveLength(1);
+  });
+
+  it('refuses a project token', async () => {
+    const p = await project();
+    const versionId = await seedSbom(p.id, '1.4.0');
+    const res = await h.ctx.app.inject({
+      method: 'DELETE',
+      url: `/api/v0/projects/${p.id}/versions/${versionId}`,
+      headers: bearer(p.token),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(JSON.stringify(res.json())).toContain('TOKEN_NOT_ALLOWED');
+  });
+
+  it('lets a later tag scan create the version again, with a new id', async () => {
+    const p = await project();
+    const versionId = await seedSbom(p.id, '1.4.0');
+    expect((await call('DELETE', `/projects/${p.id}/versions/${versionId}`)).statusCode).toBe(204);
+    await p.ingestOk(
+      reportWith({
+        projectKey: p.key,
+        branch: null,
+        tag: 'v1.4.0',
+        version: '1.4.0',
+        findings: [],
+        files: [],
+        dependencies: [
+          {
+            path: 'package-lock.json',
+            ecosystem: 'npm',
+            name: 'a',
+            version: '1.0.0',
+            licenses: [],
+          },
+        ],
+      }),
+    );
+    const rows = await h.ctx.db
+      .select()
+      .from(projectVersions)
+      .where(eq(projectVersions.projectId, p.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ label: '1.4.0', source: 'tag' });
+    expect(rows[0]!.id).not.toBe(versionId);
   });
 });

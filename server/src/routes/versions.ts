@@ -18,8 +18,9 @@ import {
 } from '../db/schema';
 import { decodeCursor, encodeCursor, pageQuery, pageSchema } from '../http/pagination';
 import { notFound, validationFailed } from '../http/problem';
-import { idParams, iso, noNul } from '../http/schemas';
+import { idParams, iso, noContent, noNul } from '../http/schemas';
 import { projectForUser } from '../projects/access';
+import { distributionOf } from '../versions/distribution';
 import { branchMatcher, normalizePatterns } from '../versions/branches';
 import { parseVersionLabel } from '../versions/label';
 import { vulnerabilitySettings, type VulnerabilitySettings } from '../versions/settings';
@@ -51,7 +52,7 @@ const versionSchema = z.object({
   id: z.uuid(),
   /** `project.version`, else the tag. */
   label: z.string(),
-  /** `tag`: a tag scan; `label`: taken from a branch analysis that carries `project.version`. */
+  /** `tag`: a tag scan; `label`: a branch analysis that carries `project.version`; `sbom`: an uploaded SBOM. */
   source: z.enum(['tag', 'label', 'sbom']),
   tag: z.string().nullable(),
   analyzedAt: z.iso.datetime(),
@@ -64,6 +65,12 @@ const versionSchema = z.object({
   prerelease: z.boolean(),
   /** Entries of the version's dependency inventory. */
   packages: z.number().int(),
+  /** The SBOM format and spec version of an uploaded SBOM, such as `CycloneDX 1.7`; null otherwise. */
+  sbomFormat: z.string().nullable(),
+  /** What the SBOM describes (the subject component's name); null otherwise. */
+  sbomSubject: z.string().nullable(),
+  /** The operating system an image SBOM names; null when it names none. */
+  distribution: z.object({ family: z.string(), version: z.string() }).nullable(),
 });
 type VersionDto = z.infer<typeof versionSchema>;
 
@@ -122,7 +129,19 @@ function compare(a: string, b: string): number {
 }
 
 interface VersionTrack {
-  row: Pick<ProjectVersionRow, 'id' | 'label' | 'source' | 'tag' | 'analyzedAt' | 'tracking'>;
+  row: Pick<
+    ProjectVersionRow,
+    | 'id'
+    | 'label'
+    | 'source'
+    | 'tag'
+    | 'analyzedAt'
+    | 'tracking'
+    | 'sbomFormat'
+    | 'sbomSubject'
+    | 'osFamily'
+    | 'osVersion'
+  >;
   tracked: boolean;
   reason: TrackingReason;
 }
@@ -141,6 +160,10 @@ async function trackVersions(
       tag: projectVersions.tag,
       analyzedAt: projectVersions.analyzedAt,
       tracking: projectVersions.tracking,
+      sbomFormat: projectVersions.sbomFormat,
+      sbomSubject: projectVersions.sbomSubject,
+      osFamily: projectVersions.osFamily,
+      osVersion: projectVersions.osVersion,
     })
     .from(projectVersions)
     .where(eq(projectVersions.projectId, projectId));
@@ -180,6 +203,9 @@ function versionDto(track: VersionTrack, packages: number): VersionDto {
     trackingReason: track.reason,
     prerelease: parseVersionLabel(row.label)?.prerelease ?? false,
     packages,
+    sbomFormat: row.sbomFormat,
+    sbomSubject: row.sbomSubject,
+    distribution: distributionOf(row),
   };
 }
 
@@ -346,6 +372,60 @@ export const versionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         await recheckProject(tx, project.id);
         return dto;
       });
+    },
+  );
+
+  app.delete(
+    '/projects/:id/versions/:versionId',
+    {
+      schema: {
+        tags: ['versions'],
+        summary:
+          'Delete a version with its dependency inventory, vulnerabilities and decisions; a later tag scan of the same tag creates it again',
+        params: z.strictObject({ id: z.uuid(), versionId: z.uuid() }),
+        response: { 204: noContent },
+      },
+    },
+    async (request, reply) => {
+      const principal = requireUser(request);
+      const project = await projectForUser(
+        accessOf(deps),
+        principal,
+        request.params.id,
+        'project.settings',
+      );
+      await deps.db.transaction(async (tx) => {
+        const [version] = await tx
+          .select({
+            id: projectVersions.id,
+            label: projectVersions.label,
+            source: projectVersions.source,
+          })
+          .from(projectVersions)
+          .where(
+            and(
+              eq(projectVersions.id, request.params.versionId),
+              eq(projectVersions.projectId, project.id),
+            ),
+          )
+          .for('update');
+        if (!version) throw notFound('Version');
+        await tx.delete(projectVersions).where(eq(projectVersions.id, version.id));
+        if (deps.audit.active()) {
+          const refs = await projectRefs(tx, project.id);
+          await deps.audit.record(tx, actorOf(request), [
+            {
+              action: 'project_version.deleted',
+              organization: refs.organization,
+              project: refs.project,
+              target: { type: 'project', id: project.id, label: project.name },
+              details: { label: version.label, source: version.source },
+            },
+          ]);
+        }
+        await recheckProject(tx, project.id);
+      });
+      return reply.code(204).send();
     },
   );
 

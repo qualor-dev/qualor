@@ -5336,6 +5336,12 @@ export interface paths {
                                 trackingReason: "pinned" | "unsupported" | "prerelease" | "newest_in_line" | "replaced" | "older_line" | "recent" | "older" | "rule_all" | "rule_none";
                                 prerelease: boolean;
                                 packages: number;
+                                sbomFormat: string | null;
+                                sbomSubject: string | null;
+                                distribution: {
+                                    family: string;
+                                    version: string;
+                                } | null;
                             }[];
                             nextCursor: string | null;
                         };
@@ -5397,7 +5403,73 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a version with its dependency inventory, vulnerabilities and decisions; a later tag scan of the same tag creates it again */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    versionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         /** Pin a version, mark it unsupported, or leave its tracking to the project's rule */
@@ -5442,6 +5514,12 @@ export interface paths {
                             trackingReason: "pinned" | "unsupported" | "prerelease" | "newest_in_line" | "replaced" | "older_line" | "recent" | "older" | "rule_all" | "rule_none";
                             prerelease: boolean;
                             packages: number;
+                            sbomFormat: string | null;
+                            sbomSubject: string | null;
+                            distribution: {
+                                family: string;
+                                version: string;
+                            } | null;
                         };
                     };
                 };
@@ -6087,6 +6165,12 @@ export interface paths {
                                 isMain: boolean;
                                 tracking: ("auto" | "pinned" | "unsupported") | null;
                                 hasInventory: boolean;
+                                source: ("tag" | "label" | "sbom") | null;
+                                sbomSubject: string | null;
+                                distribution: {
+                                    family: string;
+                                    version: string;
+                                } | null;
                                 counts: {
                                     critical: number;
                                     high: number;
@@ -6107,6 +6191,13 @@ export interface paths {
                                 /** @enum {string} */
                                 trackingReason: "pinned" | "unsupported" | "prerelease" | "newest_in_line" | "replaced" | "older_line" | "recent" | "older" | "rule_all" | "rule_none";
                                 hasInventory: boolean;
+                                /** @enum {string} */
+                                source: "tag" | "label" | "sbom";
+                                sbomSubject: string | null;
+                                distribution: {
+                                    family: string;
+                                    version: string;
+                                } | null;
                                 counts: {
                                     critical: number;
                                     high: number;

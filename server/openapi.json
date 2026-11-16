@@ -10748,6 +10748,41 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "sbomFormat": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "sbomSubject": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "distribution": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "family": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "family",
+                                  "version"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           }
                         },
                         "required": [
@@ -10760,7 +10795,10 @@
                           "tracked",
                           "trackingReason",
                           "prerelease",
-                          "packages"
+                          "packages",
+                          "sbomFormat",
+                          "sbomSubject",
+                          "distribution"
                         ],
                         "additionalProperties": false
                       }
@@ -10944,6 +10982,41 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "sbomFormat": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sbomSubject": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "distribution": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "family": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "family",
+                            "version"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -10956,12 +11029,98 @@
                     "tracked",
                     "trackingReason",
                     "prerelease",
-                    "packages"
+                    "packages",
+                    "sbomFormat",
+                    "sbomSubject",
+                    "distribution"
                   ],
                   "additionalProperties": false
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a version with its dependency inventory, vulnerabilities and decisions; a later tag scan of the same tag creates it again",
+        "tags": [
+          "versions"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "versionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
           },
           "401": {
             "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
@@ -12301,6 +12460,50 @@
                           "hasInventory": {
                             "type": "boolean"
                           },
+                          "source": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "tag",
+                                  "label",
+                                  "sbom"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "sbomSubject": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "distribution": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "family": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "family",
+                                  "version"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "counts": {
                             "type": "object",
                             "properties": {
@@ -12376,6 +12579,9 @@
                           "isMain",
                           "tracking",
                           "hasInventory",
+                          "source",
+                          "sbomSubject",
+                          "distribution",
                           "counts",
                           "exploited",
                           "new",
@@ -12422,6 +12628,43 @@
                           },
                           "hasInventory": {
                             "type": "boolean"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": [
+                              "tag",
+                              "label",
+                              "sbom"
+                            ]
+                          },
+                          "sbomSubject": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "distribution": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "family": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "family",
+                                  "version"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "counts": {
                             "type": "object",
@@ -12492,6 +12735,9 @@
                           "tracking",
                           "trackingReason",
                           "hasInventory",
+                          "source",
+                          "sbomSubject",
+                          "distribution",
                           "counts",
                           "exploited",
                           "checkedAt"
