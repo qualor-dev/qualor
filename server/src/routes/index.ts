@@ -31,6 +31,7 @@ import { projectRoutes } from './projects';
 import { reviewRoutes } from './review';
 import { setupChecklistRoutes } from './setup-checklist';
 import { ruleRoutes } from './rules';
+import { sbomUploadRoutes } from './sbom-upload';
 import { scannerVulndbRoutes } from './scanner-vulndb';
 import { systemRoutes } from './system';
 import { tokenRoutes } from './tokens';
@@ -46,8 +47,8 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   // Ruling G7: one bound per app on the issue changes of a user, shared by the routes that
   // change issues or act on them (llm.md §8.2).
   const chargeIssueChanges = issueChangeCharge();
-  // S11, 6I-2: one bound per app on the uploads read at once, the reports and the review
-  // snapshots together (QUALOR_MAX_CONCURRENT_UPLOADS).
+  // S11, 6I-2: one bound per app on the uploads read at once, the reports, the review snapshots
+  // and the SBOMs together (QUALOR_MAX_CONCURRENT_UPLOADS).
   const uploadSlots = new TransferSlots(deps.config.maxConcurrentUploads);
   await app.register(systemRoutes, { deps });
   await app.register(authRoutes, { prefix: '/api/v0', deps });
@@ -67,6 +68,8 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(dependencyRoutes, { prefix: '/api/v0', deps });
   await app.register(versionRoutes, { prefix: '/api/v0', deps });
   await app.register(exportRoutes, { prefix: '/api/v0', deps });
+  // Its own plugin: its raw-stream body parsers stay in its encapsulation context (0.16 SBOM).
+  await app.register(sbomUploadRoutes, { prefix: '/api/v0', deps, uploadSlots });
   await app.register(vulnerabilityRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });
   await app.register(gateRoutes, { prefix: '/api/v0', deps });
   await app.register(issueRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });

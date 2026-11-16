@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./tar": "./src/tar.ts",
     "./test/trivy-archive": "./test/trivy-archive.ts",
-    "./test/ci-cache": "./test/ci-cache.ts"
+    "./test/ci-cache": "./test/ci-cache.ts",
+    "./test/sbom": "./test/sbom.ts"
   },
   "scripts": {
     "schemas": "tsx scripts/export-schemas.ts"

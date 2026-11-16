@@ -480,6 +480,17 @@ export const AUDIT_CATALOGUE = {
       tracking: z.enum(['auto', 'pinned', 'unsupported']),
     }),
   },
+  /** 0.16: an SBOM uploaded as a version (`PUT /projects/sbom`). */
+  'project_version.sbom_uploaded': {
+    target: 'project',
+    details: z.strictObject({
+      label: z.string().max(100),
+      format: z.string().max(32),
+      packages: count,
+      osPackages: count,
+      outcome: z.enum(['created', 'replaced']),
+    }),
+  },
   'project.deleted': { target: 'project', details: z.strictObject({ key: projectKey }) },
   'project.profile_assigned': {
     target: 'project',

@@ -86,7 +86,7 @@ const ABORT_ERROR_CODES = new Set([
   'ABORT_ERR',
 ]);
 
-function isClientAbort(err: unknown): boolean {
+export function isClientAbort(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
   const code = (err as { code?: unknown }).code;
   const name = (err as { name?: unknown }).name;

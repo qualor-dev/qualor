@@ -358,6 +358,19 @@ export async function runAuditScenario(
     tracking: 'pinned',
   });
 
+  // project_version.sbom_uploaded (0.16): an SBOM uploaded with the project token
+  const sbom = await ctx.app.inject({
+    method: 'PUT',
+    url: `/api/v0/projects/sbom?projectKey=${encodeURIComponent(main.key)}&version=1.1.0`,
+    headers: { ...bearer(mainToken.token), 'content-type': 'application/vnd.cyclonedx+json' },
+    payload: JSON.stringify({
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      components: [{ type: 'library', name: 'left-pad', purl: 'pkg:npm/left-pad@1.3.0' }],
+    }),
+  });
+  expectStatus(sbom, 201, 'PUT /projects/sbom');
+
   const ingest = async (token: string, key: string, report: Report) => {
     const analysisId = await uploadReport(ctx, bearer(token), key, gzipJson(report));
     await runUntilIdle(

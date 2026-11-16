@@ -5766,7 +5766,196 @@ export interface paths {
                 };
             };
         };
-        put?: never;
+        /** Upload an SBOM (CycloneDX or SPDX JSON) as a released version of the project; a second upload of a label replaces the first */
+        put: {
+            parameters: {
+                query: {
+                    projectKey: string;
+                    /** @description The version label, 1 to 100 characters after trimming. Without it, the SBOM's own version (CycloneDX metadata.component.version, SPDX versionInfo) */
+                    version?: string;
+                };
+                header?: {
+                    /** @description Send `gzip` for a gzipped body; without it the body is plain. */
+                    "Content-Encoding"?: "gzip";
+                    /** @description Send `100-continue` to have every check (auth, project, type, encoding, version, declared length, upload slots) run before the body is sent. */
+                    Expect?: "100-continue";
+                };
+                path?: never;
+                cookie?: never;
+            };
+            /** @description The SBOM: CycloneDX JSON 1.2 to 1.7, or SPDX 2.2 or 2.3 JSON, read from its content whatever its type. At most 32 MiB as sent and 64 MiB of text, plain or with Content-Encoding: gzip. */
+            requestBody: {
+                content: {
+                    "application/vnd.cyclonedx+json": string;
+                    "application/spdx+json": string;
+                    "application/json": string;
+                };
+            };
+            responses: {
+                /** @description The SBOM replaced the version of its label */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            version: {
+                                /** Format: uuid */
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                source: "sbom";
+                            };
+                            /** @description `CycloneDX 1.6`, `SPDX 2.3`, … */
+                            format: string;
+                            /** @description What the SBOM describes, with its version; null when it names nothing */
+                            subject: string | null;
+                            /** @description The operating system of an image SBOM, its family as Trivy names it */
+                            distribution: {
+                                family: string;
+                                version: string;
+                            } | null;
+                            /** @description Packages stored, after duplicates were merged */
+                            packages: number;
+                            /** @description Of those, operating-system packages (deb, rpm, apk) */
+                            osPackages: number;
+                            /** @description Components not stored, by reason */
+                            skipped: {
+                                noPurl: number;
+                                unsupportedType: number;
+                                duplicate: number;
+                            };
+                            warnings: {
+                                code: string;
+                                message: string;
+                            }[];
+                            /** @description Whether the instance and the project monitor vulnerabilities, and so whether a re-check was queued */
+                            monitoring: {
+                                enabled: boolean;
+                                recheckQueued: boolean;
+                            };
+                        };
+                    };
+                };
+                /** @description The SBOM is stored as a new version */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            version: {
+                                /** Format: uuid */
+                                id: string;
+                                label: string;
+                                /** @enum {string} */
+                                source: "sbom";
+                            };
+                            /** @description `CycloneDX 1.6`, `SPDX 2.3`, … */
+                            format: string;
+                            /** @description What the SBOM describes, with its version; null when it names nothing */
+                            subject: string | null;
+                            /** @description The operating system of an image SBOM, its family as Trivy names it */
+                            distribution: {
+                                family: string;
+                                version: string;
+                            } | null;
+                            /** @description Packages stored, after duplicates were merged */
+                            packages: number;
+                            /** @description Of those, operating-system packages (deb, rpm, apk) */
+                            osPackages: number;
+                            /** @description Components not stored, by reason */
+                            skipped: {
+                                noPurl: number;
+                                unsupportedType: number;
+                                duplicate: number;
+                            };
+                            warnings: {
+                                code: string;
+                                message: string;
+                            }[];
+                            /** @description Whether the instance and the project monitor vulnerabilities, and so whether a re-check was queued */
+                            monitoring: {
+                                enabled: boolean;
+                                recheckQueued: boolean;
+                            };
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description PROJECT_NOT_FOUND: no such project, one the caller cannot see, or a project token of another project */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description VERSION_LABEL_TAKEN: a tag scan made the version of this label; upload the image SBOM to a project of its own, with the same label; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description SBOM_TOO_LARGE: the body is over 33554432 bytes (also by its declared Content-Length, before 100 Continue), over 67108864 bytes inflated, or holds more than 2 000 000 JSON objects and arrays */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description UNSUPPORTED_MEDIA_TYPE: another Content-Type; UNSUPPORTED_ENCODING: a Content-Encoding other than gzip */
+                415: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description VERSION_LABEL_INVALID: `version` blank or over 100 characters, or absent while the SBOM names no version; SBOM_INVALID: not gzip as Content-Encoding says, not UTF-8, not JSON (SPDX tag-value included), neither CycloneDX nor SPDX, or a field of the wrong shape (`detail` names its JSON path); SBOM_FORMAT_UNSUPPORTED: CycloneDX XML, SPDX 3, an attestation or a version outside CycloneDX 1.2–1.7 and SPDX 2.2–2.3 (`detail` says what to export); SBOM_TOO_MANY_PACKAGES: over 50 000 packages; SBOM_MULTIPLE_OS: more than one operating system; VALIDATION_FAILED: the query */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description UPLOADS_BUSY: the upload slots are taken, or another SBOM is being read; see Retry-After */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
