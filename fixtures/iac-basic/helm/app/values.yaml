@@ -1,0 +1,6 @@
+debug: true
+dbgName: dbg
+dbgImage: busybox:1.36
+dbgSecurity:
+  securityContext:
+    privileged: true

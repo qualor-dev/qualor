@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: main
+          image: nginx:1.25
+{{- if .Values.debug }}
+        - name: {{ .Values.dbgName }}
+          image: {{ .Values.dbgImage }}
+          {{- toYaml .Values.dbgSecurity | nindent 10 }}
+{{- end }}
