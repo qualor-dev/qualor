@@ -477,9 +477,20 @@ function knownGoodOf(os: OsRelease): OsRelease {
   return osVersion === undefined ? DEFAULT_KNOWN_GOOD : { ...os, osVersion };
 }
 
-/** A failed run that is Trivy's own answer: it ran, and exited with a non-zero code. */
-function rejected(got: TrivyRun): got is Extract<TrivyRun, { ok: false }> & { exitCode: number } {
-  return !got.ok && got.code === 'FAILED' && typeof got.exitCode === 'number';
+/**
+ * What a failed run was (ruling R21):
+ * - `'rejected'`: Trivy ran and exited with a non-zero code, its own answer;
+ * - `'heavy'`: Trivy ran but gave no answer for the size of its work: its output over the cap
+ *   (TOO_LARGE), over the time limit (TIMEOUT), or killed by a signal the server did not send (the
+ *   kernel's OOM killer: Trivy builds its report in memory). Our own kills answer TOO_LARGE,
+ *   TIMEOUT or ABORTED, never a signal death;
+ * - `'infrastructure'`: Trivy never ran its scan (not installed, a spawn error, EACCES, no work
+ *   directory) or wrote no readable output: the server's problem, never a package's.
+ */
+function failureOf(got: Extract<TrivyRun, { ok: false }>): 'rejected' | 'heavy' | 'infrastructure' {
+  if (got.code === 'TOO_LARGE' || got.code === 'TIMEOUT') return 'heavy';
+  if (got.code !== 'FAILED' || got.exitCode === undefined) return 'infrastructure';
+  return got.exitCode === null ? 'heavy' : 'rejected';
 }
 
 const failedRun = (got: Extract<TrivyRun, { ok: false }>): Problem => ({
@@ -512,10 +523,8 @@ async function runProbe(run: Run, sbom: string): Promise<ProbeAnswer> {
   const answer = await run.runner.run(sbom, run.cacheDir, run.shutdown);
   if (stopping(run)) return { kind: 'end', end: STOPPED };
   if (answer.ok) return { kind: 'ok' };
-  if (rejected(answer) || answer.code === 'TOO_LARGE') {
-    return { kind: 'failed', message: `Trivy failed (${answer.code}): ${answer.message}` };
-  }
-  return { kind: 'end', end: failedRun(answer) };
+  if (failureOf(answer) === 'infrastructure') return { kind: 'end', end: failedRun(answer) };
+  return { kind: 'failed', message: `Trivy failed (${answer.code}): ${answer.message}` };
 }
 
 const broken = (message: string): Problem => ({
@@ -578,14 +587,16 @@ const halves = (chunk: readonly SbomPackage[]): (readonly SbomPackage[])[] => {
 };
 
 /**
- * A chunk Trivy rejected (it exited non-zero) or answered too much for (TOO_LARGE), library or
- * OS alike (rulings R16, R17, R19, R20; Critical 1). A chunk too large is halved, down to one
- * package. Otherwise {@link faultOf} decides: a distribution Trivy cannot scan is given up whole;
- * when the packages are at fault, those of organisations past their budget go unchecked and the
- * rest of the chunk runs again, or the chunk is halved, down to one package; a single package
- * Trivy still fails on, or still answers too much for, stays unchecked, only that one, and counts
- * against each organisation that holds it. Any other failure is not Trivy's answer and fails the
- * run. Answers the chunks to run next, or the run's end.
+ * A failed chunk, library or OS alike (rulings R16, R17, R19, R20, R21). An infrastructure failure
+ * ({@link failureOf}) fails the run. Otherwise, first and before any other Trivy run, the packages
+ * whose every organisation is past its budget go unchecked (`overBudget`) and the rest of the
+ * chunk runs again. A heavy chunk (too large, timed out, killed) is halved, down to one package.
+ * A rejected chunk, or a single heavy package, goes to {@link faultOf}: a distribution Trivy
+ * cannot scan is given up whole, and a Trivy that fails its own probe fails the run. Else the
+ * packages are at fault: a rejected chunk is halved, down to one package, and a single package
+ * Trivy still rejects, answers too much for, times out on or dies on stays unchecked, only that
+ * one, and counts against each organisation that holds it. Answers the chunks to run next, or
+ * the run's end.
  */
 async function chunkFailed(
   run: Run,
@@ -593,26 +604,15 @@ async function chunkFailed(
   first: SbomPackage,
   got: Extract<TrivyRun, { ok: false }>,
 ): Promise<(readonly SbomPackage[])[] | Problem | typeof STOPPED> {
-  const tooLarge = got.code === 'TOO_LARGE';
-  if (!tooLarge && !rejected(got)) return failedRun(got);
-  if (tooLarge && chunk.length > 1) return halves(chunk);
-  const fault = await faultOf(run, first);
-  if (fault === STOPPED || typeof fault === 'object') return fault;
+  const failure = failureOf(got);
+  if (failure === 'infrastructure') return failedRun(got);
   const { os } = first;
   const fields = {
     component: 'vulnerabilities',
     packageType: os?.type ?? 'library',
     ...(os !== undefined && { distribution: `${os.family} ${os.osVersion}` }),
   };
-  if (fault === 'release' && os !== undefined) {
-    run.failedGroups.add(sbomGroupKey(first));
-    run.unsupported.add(`${os.family} ${os.osVersion}`);
-    run.logger?.warn(
-      { ...fields, message: got.message },
-      'Trivy cannot scan this distribution; its OS packages stay unchecked',
-    );
-    return [];
-  }
+  // Budget first: an organisation past it costs no halving and no probe (R17).
   const kept = chunk.filter((p) => !pastBudget(run, p.purl));
   if (kept.length < chunk.length) {
     for (const p of chunk) if (pastBudget(run, p.purl)) run.overBudget.add(p.purl);
@@ -622,6 +622,18 @@ async function chunkFailed(
     );
     return kept.length > 0 ? [kept] : [];
   }
+  if (failure === 'heavy' && chunk.length > 1) return halves(chunk);
+  const fault = await faultOf(run, first);
+  if (fault === STOPPED || typeof fault === 'object') return fault;
+  if (fault === 'release' && os !== undefined) {
+    run.failedGroups.add(sbomGroupKey(first));
+    run.unsupported.add(`${os.family} ${os.osVersion}`);
+    run.logger?.warn(
+      { ...fields, message: got.message },
+      'Trivy cannot scan this distribution; its OS packages stay unchecked',
+    );
+    return [];
+  }
   if (chunk.length > 1) return halves(chunk);
   run.failedKeys.add(first.purl);
   for (const owner of ownersOf(run, first.purl)) {
@@ -629,8 +641,8 @@ async function chunkFailed(
   }
   run.logger?.warn(
     { ...fields, purl: first.purl, message: got.message },
-    tooLarge
-      ? 'Trivy answers too much for one package; it stays unchecked'
+    failure === 'heavy'
+      ? 'Trivy gives no answer for one package (too large, timed out or killed); it stays unchecked'
       : 'Trivy failed on one package; it stays unchecked',
   );
   return [];

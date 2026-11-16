@@ -1368,16 +1368,6 @@ describe('vulnerability re-checks', () => {
         { ok: false, code: 'FAILED', message: 'Trivy is not executable' } as TrivyRun,
       ],
       [
-        'Trivy is killed by a signal',
-        {
-          ok: false,
-          code: 'FAILED',
-          message: 'Trivy exited with null: ',
-          exitCode: null,
-          stderr: '',
-        } as TrivyRun,
-      ],
-      [
         'Trivy’s output is unreadable',
         { ok: false, code: 'BAD_OUTPUT', message: 'garbage' } as TrivyRun,
       ],
@@ -1637,6 +1627,152 @@ describe('vulnerability re-checks', () => {
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
       if (result.kind === 'failed') expect(result.error.message).toContain('broken since');
       trivyFails.restore();
+    });
+
+    /** Trivy killed by a signal the server did not send (the kernel's OOM killer). */
+    const killed: TrivyRun = {
+      ok: false,
+      code: 'FAILED',
+      message: 'Trivy exited with null: ',
+      exitCode: null,
+      stderr: '',
+    };
+    const timedOut: TrivyRun = {
+      ok: false,
+      code: 'TIMEOUT',
+      message: 'Trivy ran longer than 900000 ms',
+    };
+
+    it.each([
+      ['killed by a signal', killed],
+      ['timed out', timedOut],
+    ])(
+      'isolates one package Trivy is %s on: the others are matched (R21)',
+      async (_why, failure) => {
+        const p = await project();
+        const victim = await otherTenant();
+        await sbomVersion(p, 'shop', DEBIAN, [osDep('deb', 'poison', '0', 'linux', '0'), LOGIN]);
+        await sbomVersion(victim, 'image', DEBIAN, [LIBSSL3, PASSWD]);
+        warnings.length = 0;
+        const trivyFails = failingWhen((components) =>
+          components.some((c) => c.name === 'poison') ? failure : null,
+        );
+        const result = await recheck({ projectIds: [p.id, victim.id] }, { logger: logged });
+        expect(result).toMatchObject({
+          kind: 'done',
+          summary: { packages: 3, unchecked: 1, givenUp: { trivyFailed: 1, overBudget: 0 } },
+        });
+        expect(await osRows(victim)).toEqual([
+          `image deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+        ]);
+        expect(
+          Object.keys(await digests([PSSL, keyOf(LOGIN, DEBIAN), keyOf(PASSWD, DEBIAN)])),
+        ).toHaveLength(3);
+        expect(JSON.stringify(warnings)).toContain('timed out or killed');
+        trivyFails.restore();
+      },
+    );
+
+    it.each([
+      ['killed by a signal', killed],
+      ['timed out', timedOut],
+    ])('fails the run when Trivy is %s on its own probe too (R21)', async (_why, failure) => {
+      const p = await project();
+      await sbomVersion(p, 'shop', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.type === 'operating-system') ? failure : null,
+      );
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      if (result.kind === 'failed') expect(result.error.message).toContain('probe');
+      expect(await digests([PSSL])).toEqual({});
+      trivyFails.restore();
+    });
+
+    it('fails the run when Alpine fails at every release, Debian working: the known-good release is of the same family (R20)', async () => {
+      const p = await project();
+      await sbomVersion(p, 'debian', DEBIAN, [LIBSSL3]);
+      await sbomVersion(p, 'alpine', ALPINE, [LIBCRYPTO3]);
+      // A baseline of another family (debian 12) would pass and file Alpine as unsupported.
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.type === 'operating-system' && c.name === 'alpine')
+          ? exited('FATAL alpine detector broken')
+          : null,
+      );
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      if (result.kind === 'failed')
+        expect(result.error.message).toContain('alpine detector broken');
+      trivyFails.restore();
+    });
+
+    it('gives up a library organisation past its budget as overBudget (R17, R19)', async () => {
+      const attacker = await project();
+      const victim = await otherTenant();
+      const evil = Array.from({ length: 20 }, (_, i) => dep(`evil-${i}`, '1.0.0'));
+      await sbomVersion(attacker, 'image', null, evil);
+      await sbomVersion(victim, 'image', null, [A, B]);
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.name.startsWith('evil-')) ? exited('FATAL panic: evil') : null,
+      );
+      const result = await recheck({ projectIds: [attacker.id, victim.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: {
+          packages: 2,
+          unchecked: 20,
+          givenUp: {
+            trivyFailed: MAX_FAILED_PER_ORGANISATION,
+            overBudget: 20 - MAX_FAILED_PER_ORGANISATION,
+          },
+        },
+      });
+      expect(await described(victim)).toEqual(
+        [
+          `image ${PA} CVE-2026-0001`,
+          `image ${PB} CVE-2026-0002`,
+          `image ${PB} CVE-2026-0003`,
+        ].sort(),
+      );
+      trivyFails.restore();
+    });
+
+    it('charges too-large packages to their organisation and stops spending runs past its budget (Important A)', async () => {
+      const attacker = await project();
+      const victim = await otherTenant();
+      const heavy = Array.from({ length: 40 }, (_, i) =>
+        osDep('deb', `heavy-${i}`, '0', 'linux', '0'),
+      );
+      await sbomVersion(attacker, 'image', DEBIAN, heavy);
+      await sbomVersion(victim, 'image', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      let runs = 0;
+      const inner = trivy.run.bind(trivy);
+      trivy.run = (sbom, cacheDir, signal) => {
+        runs += 1;
+        const { components } = JSON.parse(sbom) as { components: FakeComponent[] };
+        return components.some((c) => c.name.startsWith('heavy-'))
+          ? Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' })
+          : inner(sbom, cacheDir, signal);
+      };
+      const result = await recheck({ projectIds: [attacker.id, victim.id] });
+      // Too-large singles count against the budget like rejected ones; then the rest go unbisected.
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: {
+          packages: 3,
+          unchecked: 40,
+          givenUp: {
+            trivyFailed: MAX_FAILED_PER_ORGANISATION,
+            overBudget: 40 - MAX_FAILED_PER_ORGANISATION,
+          },
+        },
+      });
+      expect(await osRows(victim)).toEqual([
+        `image deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+      ]);
+      // Bounded by the budget: about 2 runs and a probe per charged package, a few more to drop the
+      // rest (measured: 60; the order of the packages varies). Without the budget first: 125.
+      expect(runs).toBeLessThanOrEqual(80);
     });
   });
 
