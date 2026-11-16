@@ -40,7 +40,13 @@ interface Pkg {
 
 interface Row {
   project: { id: string; key: string; name: string };
-  target: { kind: 'branch' | 'version'; id: string; name: string; main: boolean };
+  target: {
+    kind: 'branch' | 'version';
+    id: string;
+    name: string;
+    main: boolean;
+    source: 'tag' | 'label' | 'sbom' | null;
+  };
   ecosystem: string;
   purlType: string | null;
   name: string;
@@ -353,7 +359,7 @@ describe('GET /packages/usages (0.16 where used)', () => {
     expect(answer).toMatchObject({ page: 1, pageSize: 50, total: 8, totalCapped: false });
     expect(answer.rows[2]).toEqual({
       project: { id: a1, key: 'a1', name: 'Alpha' },
-      target: { kind: 'branch', id: mainA, name: 'main', main: true },
+      target: { kind: 'branch', id: mainA, name: 'main', main: true, source: null },
       ecosystem: 'pom',
       purlType: 'maven',
       name: LOG4J_CORE,
@@ -368,12 +374,14 @@ describe('GET /packages/usages (0.16 where used)', () => {
       id: featureA,
       name: 'feature/x',
       main: false,
+      source: null,
     });
     expect(answer.rows[4]!.target).toEqual({
       kind: 'version',
       id: tagVersion,
       name: '1.0.0',
       main: false,
+      source: 'tag',
     });
     const second = await search(`${q('log4j')}&page=2&pageSize=3`);
     expect(second.rows.map((r) => [r.target.name, r.path])).toEqual([
@@ -496,6 +504,16 @@ describe('GET /packages/usages (0.16 where used)', () => {
       );
     }
     expect((await search(q('libfoo'))).rows[0]!.distribution).toBeNull();
+  });
+
+  it('names the source of a version row: sbom, tag, or null on a branch', async () => {
+    const rows = (await search(q('log4j-core'))).rows;
+    for (const row of rows) {
+      const expected =
+        row.target.kind === 'branch' ? null : row.target.id === tagVersion ? 'tag' : 'sbom';
+      expect(row.target.source, row.target.name).toBe(expected);
+    }
+    expect(rows.some((r) => r.target.id === imageVersion && r.target.source === 'sbom')).toBe(true);
   });
 
   it('paging and the cap: 100 pages of 100 reach exactly 10 000', async () => {

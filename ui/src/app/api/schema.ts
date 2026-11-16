@@ -5821,6 +5821,7 @@ export interface paths {
                                     id: string;
                                     name: string;
                                     main: boolean;
+                                    source: ("tag" | "label" | "sbom") | null;
                                 };
                                 ecosystem: string;
                                 purlType: string | null;

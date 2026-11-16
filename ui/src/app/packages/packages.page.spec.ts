@@ -13,7 +13,7 @@ const PROJECT = { id: '11111111-1111-4111-8111-111111111111', key: 'shop', name:
 function row(over: Record<string, unknown> = {}) {
   return {
     project: PROJECT,
-    target: { kind: 'branch', id: 'b1', name: 'main', main: true },
+    target: { kind: 'branch', id: 'b1', name: 'main', main: true, source: null },
     ecosystem: 'npm',
     purlType: 'npm',
     name: 'lodash',
@@ -129,13 +129,13 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
       body: answer([
         row(),
         row({
-          target: { kind: 'branch', id: 'b2', name: 'release/1', main: false },
+          target: { kind: 'branch', id: 'b2', name: 'release/1', main: false, source: null },
           path: '',
           direct: false,
           vulnerabilities: null,
         }),
         row({
-          target: { kind: 'version', id: 'v1', name: '9.9.9', main: false },
+          target: { kind: 'version', id: 'v1', name: '9.9.9', main: false, source: 'sbom' },
           distribution: { family: 'debian', version: '12.15' },
           direct: null,
           vulnerabilities: 0,
@@ -173,6 +173,25 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
     expect(href(0)).toBe(`${base}?q=lodash`);
     expect(href(1)).toBe(`${base}?branch=release%2F1&q=lodash`);
     expect(href(2)).toBe(`${base}?version=v1&q=lodash`);
+  });
+
+  it('marks a version SBOM by its source, not by its distribution', async () => {
+    await setup({
+      body: answer([
+        row({
+          target: { kind: 'version', id: 'v1', name: '9.9.9', main: false, source: 'sbom' },
+          distribution: null,
+        }),
+        row({
+          target: { kind: 'version', id: 'v2', name: '1.0.0', main: false, source: 'tag' },
+          distribution: { family: 'debian', version: '12.15' },
+        }),
+      ]),
+    });
+    const root = await open('/packages?q=lodash');
+    const rows = [...root.querySelectorAll('tbody tr')];
+    expect(text(rows[0]!.children[1])).toBe('9.9.9 SBOM');
+    expect(text(rows[1]!.children[1])).toBe('1.0.0');
   });
 
   it('says so when nothing matches', async () => {

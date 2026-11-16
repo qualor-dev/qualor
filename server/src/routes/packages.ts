@@ -16,6 +16,8 @@ const usageRowSchema = z.object({
     name: z.string(),
     /** The project's main branch. */
     main: z.boolean(),
+    /** How a version came about: a tag scan, a branch label or an uploaded SBOM; null for a branch. */
+    source: z.enum(['tag', 'label', 'sbom']).nullable(),
   }),
   /** As stored: a scan's Trivy type (`npm`, `pip`, `pom`, …) or an SBOM's purl type. */
   ecosystem: z.string(),

@@ -30,7 +30,14 @@ export interface UsagesQuery {
 /** One package in one branch or version of a project. */
 export interface UsageRow {
   project: { id: string; key: string; name: string };
-  target: { kind: 'branch' | 'version'; id: string; name: string; main: boolean };
+  target: {
+    kind: 'branch' | 'version';
+    id: string;
+    name: string;
+    main: boolean;
+    /** Where a version came from (`project_versions.source`); null for a branch. */
+    source: 'tag' | 'label' | 'sbom' | null;
+  };
   ecosystem: string;
   purlType: string | null;
   name: string;
@@ -156,7 +163,7 @@ function inventoryRows(search: UsageSearch, query: UsagesQuery): SQL {
   const family = search.kind === 'purl' ? search.family : null;
   const versions = sql`
     SELECT 'version'::text AS kind, v.id AS target_id, v.label AS target_name, false AS main,
-           2 AS target_rank, v.project_id,
+           2 AS target_rank, v.project_id, v.source AS target_source,
            d.ecosystem, d.name, d.version, d.path, d.direct,
            v.os_family, v.os_version, d.source_name, d.source_version, d.arch, d.modularity_label
       FROM version_dependencies d JOIN project_versions v ON v.id = d.version_id
@@ -164,7 +171,7 @@ function inventoryRows(search: UsageSearch, query: UsagesQuery): SQL {
   if (family !== null) return versions;
   return sql`
     SELECT 'branch'::text AS kind, b.id AS target_id, b.name AS target_name, b.is_main AS main,
-           CASE WHEN b.is_main THEN 0 ELSE 1 END AS target_rank, b.project_id,
+           CASE WHEN b.is_main THEN 0 ELSE 1 END AS target_rank, b.project_id, NULL::text AS target_source,
            d.ecosystem, d.name, d.version, d.path, d.direct,
            NULL::text AS os_family, NULL::text AS os_version, NULL::text AS source_name,
            NULL::text AS source_version, NULL::text AS arch, NULL::text AS modularity_label
@@ -178,6 +185,7 @@ interface UsageRecord extends Record<string, unknown> {
   target_id: string;
   target_name: string;
   main: boolean;
+  target_source: 'tag' | 'label' | 'sbom' | null;
   project_id: string;
   project_key: string;
   project_name: string;
@@ -282,7 +290,7 @@ export async function packageUsages(
      WHERE ${visible ?? sql`true`}`;
   const [page, counted] = await Promise.all([
     db.execute<UsageRecord>(sql`
-      SELECT u.kind, u.target_id, u.target_name, u.main, u.project_id,
+      SELECT u.kind, u.target_id, u.target_name, u.main, u.target_source, u.project_id,
              ${projects.key} AS project_key, ${projects.name} AS project_name,
              u.ecosystem, u.name, u.version, u.path, u.direct, u.os_family, u.os_version,
              u.source_name, u.source_version, u.arch, u.modularity_label
@@ -298,7 +306,13 @@ export async function packageUsages(
   return {
     rows: page.rows.map((r, i) => ({
       project: { id: r.project_id, key: r.project_key, name: r.project_name },
-      target: { kind: r.kind, id: r.target_id, name: r.target_name, main: r.main },
+      target: {
+        kind: r.kind,
+        id: r.target_id,
+        name: r.target_name,
+        main: r.main,
+        source: r.target_source,
+      },
       ecosystem: r.ecosystem,
       purlType: purlTypeOf(r.ecosystem),
       name: r.name,

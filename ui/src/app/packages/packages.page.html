@@ -97,7 +97,7 @@
                   @if (row.target.main) {
                     &ngsp;<span class="badge badge-tag" i18n="@@packages.main">main</span>
                   }
-                  @if (row.target.kind === 'version' && row.distribution) {
+                  @if (row.target.source === 'sbom') {
                     &ngsp;<span class="badge badge-tag" i18n="@@packages.sbom">SBOM</span>
                   }
                 </td>

@@ -11743,13 +11743,29 @@
                               },
                               "main": {
                                 "type": "boolean"
+                              },
+                              "source": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "tag",
+                                      "label",
+                                      "sbom"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               }
                             },
                             "required": [
                               "kind",
                               "id",
                               "name",
-                              "main"
+                              "main",
+                              "source"
                             ],
                             "additionalProperties": false
                           },
