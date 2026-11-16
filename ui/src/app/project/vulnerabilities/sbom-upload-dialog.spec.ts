@@ -228,6 +228,21 @@ describe('SbomUploadDialog', () => {
     expect(text(root.querySelector('[role=alert]'))).toContain('another upload');
   });
 
+  it("shows the server's reason for SBOM_TOO_LARGE: a 20 MiB flood is not over 32 MiB", async () => {
+    const detail = 'The SBOM holds more than 6000000 JSON keys and values.';
+    server.on('PUT', PATH, {
+      status: 413,
+      body: { ...problem(413, 'SBOM_TOO_LARGE'), detail },
+    });
+    const { fixture, root } = await render();
+    await choose(fixture, root, '{}');
+    setLabel(root, '1.4.0');
+    await submit(fixture, root);
+    const alert = text(root.querySelector('[role=alert]'));
+    expect(alert).toContain(detail);
+    expect(alert).not.toContain('32 MiB');
+  });
+
   it('prefills the label from the SBOM subject version, without overwriting a typed one', async () => {
     const { fixture, root } = await render();
     await choose(fixture, root, JSON.stringify({ metadata: { component: { version: '2.0.0' } } }));

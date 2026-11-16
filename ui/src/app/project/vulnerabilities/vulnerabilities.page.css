@@ -193,4 +193,8 @@
   margin-top: 4px;
   border-top: 1px solid var(--hairline);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--bad);
+}
+.row-menu-panel .menu-danger:not(:disabled):hover {
+  background: var(--bad-soft);
 }

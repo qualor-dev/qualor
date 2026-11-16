@@ -226,7 +226,11 @@ export class SbomUploadDialog {
     if (!(err instanceof ApiError)) return problemMessage(err);
     switch (err.code) {
       case 'SBOM_TOO_LARGE':
-        return $localize`:@@sbom.upload.tooLarge:The SBOM is too large. Qualor takes at most 32 MiB as sent and 64 MiB unpacked.`;
+        // The server says which limit (the size, or a JSON limit a smaller file can pass).
+        return (
+          err.problem?.detail ??
+          $localize`:@@sbom.upload.tooLarge:The SBOM is too large. Qualor takes at most 32 MiB as sent and 64 MiB unpacked.`
+        );
       case 'UPLOADS_BUSY':
         return $localize`:@@sbom.upload.busy:The server is processing another upload. Try again in a moment.`;
       case 'VERSION_LABEL_TAKEN':

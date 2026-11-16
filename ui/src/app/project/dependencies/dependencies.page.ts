@@ -51,18 +51,26 @@ const VERSION_PAGE = 100;
 /** A version's value in the selector, apart from the branch ids. */
 const VERSION_PREFIX = 'version:';
 const Q_MAX_LENGTH = 200;
+/** The most of an SBOM's subject the select shows (spec §6.9); a longer one ends in `…`. */
+const SUBJECT_CHARS = 40;
 /**
  * A version in the select: its label, and in brackets what sets it apart, an SBOM with its
- * distribution and a tracked one, as in `1.4.0 (SBOM, debian 12.15, tracked)`.
+ * subject (clipped) and distribution and a tracked one, as in
+ * `1.4.0 (SBOM, ghcr.io/acme/shop, debian 12.15, tracked)`.
  */
 function versionTitle(v: {
   label: string;
   source: string;
   tracked: boolean;
+  sbomSubject?: string | null;
   distribution: { family: string; version: string } | null;
 }): string {
+  const subject = v.source === 'sbom' ? (v.sbomSubject ?? '') : '';
   const notes = [
     ...(v.source === 'sbom' ? [$localize`:@@deps.versionSbom:SBOM`] : []),
+    ...(subject === ''
+      ? []
+      : [subject.length > SUBJECT_CHARS ? `${clip(subject, SUBJECT_CHARS)}…` : subject]),
     ...(v.source === 'sbom' && v.distribution
       ? [`${v.distribution.family} ${v.distribution.version}`]
       : []),

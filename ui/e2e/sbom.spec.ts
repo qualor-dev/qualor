@@ -1,11 +1,11 @@
 import { fileURLToPath } from 'node:url';
+import type { APIRequestContext } from '@playwright/test';
 import { expect, expectAccessible, test } from './fixtures';
 import { SHOP } from './seed-data';
 
 /**
  * 0.16 SBOM: upload an SBOM on a project's Vulnerabilities tab, then find its package on the
- * Packages page and follow the row to the Dependencies tab. The uploaded version is deleted
- * afterwards, so the seed is as the other specs expect it.
+ * Packages page and follow the row to the Dependencies tab.
  */
 const SAMPLE = fileURLToPath(
   new URL('../../packages/shared/test/sbom-samples/cdxgen-node.cdx-1.7.json', import.meta.url),
@@ -13,19 +13,28 @@ const SAMPLE = fileURLToPath(
 const LABEL = '9.9.9';
 const PACKAGE = 'minimist';
 
-test.afterAll(async ({ request }) => {
+/**
+ * Deletes the version this spec uploads, if it is there: before the test (a killed run left it)
+ * and after it, so the seed is as the other specs expect it.
+ */
+async function removeUploadedVersion(request: APIRequestContext): Promise<void> {
   const me = (await (await request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
   const projects = await request.get('/api/v0/projects?limit=100');
   const { items } = (await projects.json()) as { items: { id: string; key: string }[] };
   const shop = items.find((p) => p.key === SHOP.key)!;
-  const versions = await request.get(`/api/v0/projects/${shop.id}/versions`);
+  const versions = await request.get(`/api/v0/projects/${shop.id}/versions?limit=100`);
+  expect(versions.status()).toBe(200);
   const list = (await versions.json()) as { items: { id: string; label: string }[] };
   for (const v of list.items.filter((i) => i.label === LABEL)) {
-    await request.delete(`/api/v0/projects/${shop.id}/versions/${v.id}`, {
+    const deleted = await request.delete(`/api/v0/projects/${shop.id}/versions/${v.id}`, {
       headers: { 'x-qualor-csrf': me.csrfToken },
     });
+    expect(deleted.status()).toBe(204);
   }
-});
+}
+
+test.beforeAll(async ({ request }) => removeUploadedVersion(request));
+test.afterAll(async ({ request }) => removeUploadedVersion(request));
 
 test('an uploaded SBOM is found on the Packages page and opens its Dependencies tab', async ({
   page,

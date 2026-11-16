@@ -322,12 +322,13 @@ export class VulnerabilitiesPage {
     return tracking ? CHOICES[tracking] : [];
   }
 
+  /** The menu changes the tracking and deletes the version: its names say both. */
   protected menuLabel(name: string): string {
-    return $localize`:@@vuln.menu.label:Change tracking of ${name}:name:`;
+    return $localize`:@@vuln.menu.label:Change tracking of ${name}:name: or delete it`;
   }
 
   protected groupLabel(name: string): string {
-    return $localize`:@@vuln.menu.group:Tracking of ${name}:name:`;
+    return $localize`:@@vuln.menu.group:Tracking and deletion of ${name}:name:`;
   }
 
   protected choiceLabel(tracking: Tracking, from: Target['tracking']): string {

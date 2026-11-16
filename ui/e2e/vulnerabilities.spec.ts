@@ -112,10 +112,10 @@ test('the row menu works from the keyboard', async ({ page }) => {
     .click();
   await page.locator('p.untracked').getByRole('button', { name: 'Show' }).click();
   const trigger = rowOf(page, '0.9.0').getByRole('button', {
-    name: 'Change tracking of 0.9.0',
+    name: 'Change tracking of 0.9.0 or delete it',
     exact: true,
   });
-  const menu = page.getByRole('menu', { name: 'Tracking of 0.9.0', exact: true });
+  const menu = page.getByRole('menu', { name: 'Tracking and deletion of 0.9.0', exact: true });
   const automatic = menu.getByRole('menuitem', { name: 'Track automatically', exact: true });
   const pin = menu.getByRole('menuitem', { name: 'Pin', exact: true });
 

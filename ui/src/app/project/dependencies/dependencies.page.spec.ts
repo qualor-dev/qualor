@@ -351,7 +351,7 @@ describe('DependenciesPage (6M §8)', () => {
     ).toBe('100');
   });
 
-  it('marks an SBOM version and names its distribution in the select', async () => {
+  it('marks an SBOM version and names its subject, clipped, and its distribution in the select', async () => {
     server.on('GET', `/api/v0/projects/${PROJECT}/versions`, {
       body: page([
         version({ id: VERSION_ID, label: '2.1.0', tracked: true }),
@@ -372,14 +372,25 @@ describe('DependenciesPage (6M §8)', () => {
           source: 'sbom',
           tag: null,
         },
+        {
+          ...version({
+            id: '0190a6c2-0000-7000-8000-0000000000c4',
+            label: '1.2.0',
+            tracked: false,
+          }),
+          source: 'sbom',
+          tag: null,
+          sbomSubject: `ghcr.io/acme/${'x'.repeat(60)}`,
+        },
       ]),
     });
     const { root } = await render();
     const options = [...root.querySelectorAll('#deps-branch optgroup option')].map((o) => text(o));
     expect(options).toEqual([
       '2.1.0 (tracked)',
-      '1.4.0 (SBOM, debian 12.15, tracked)',
+      '1.4.0 (SBOM, shop, debian 12.15, tracked)',
       '1.3.0 (SBOM)',
+      `1.2.0 (SBOM, ghcr.io/acme/${'x'.repeat(27)}…)`,
     ]);
   });
 

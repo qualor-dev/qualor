@@ -315,10 +315,10 @@ describe('VulnerabilitiesPage', () => {
       const name = row?.querySelector('th a')?.textContent?.trim() ?? '';
       expect(name).not.toBe('');
       expect(row?.querySelector('.menu-trigger')?.getAttribute('aria-label')).toBe(
-        'Change tracking of ' + name,
+        'Change tracking of ' + name + ' or delete it',
       );
       expect(row?.querySelector('.row-menu-panel')?.getAttribute('aria-label')).toBe(
-        'Tracking of ' + name,
+        'Tracking and deletion of ' + name,
       );
     });
 
