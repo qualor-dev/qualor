@@ -34,16 +34,49 @@ const MISCONFIG_SCANNERS = [
   'terraformplan-snapshot',
 ].join(',');
 
-const IAC_EXTENSIONS = new Set(['.tf', '.tfvars', '.json', '.yaml', '.yml']);
 const DOCKERFILE_NAME = /^(?:dockerfile|containerfile|dockerfile\..*|.*\.dockerfile)$/i;
+const NAMED_EXTENSIONS = new Set(['.tf', '.tfvars', '.tfplan']);
+const NAMED_FILES = new Set(['chart.yaml', 'chart.yml', 'tfplan']);
 
-/** True for a file the pass can read as infrastructure code (a `.tf.json` ends in `.json`). */
-export function isIacCandidate(repoPath: string): boolean {
+/** Kubernetes, CloudFormation: a YAML file counts only when it looks like one of them. */
+const yamlLooksLikeIac = (text: string): boolean =>
+  (/^\s*apiVersion\s*:/m.test(text) && /^\s*kind\s*:/m.test(text)) ||
+  /^AWSTemplateFormatVersion\s*:/m.test(text) ||
+  (/^Resources\s*:/m.test(text) && /^\s+Type\s*:\s*['"]?AWS::/m.test(text));
+
+/** Kubernetes, CloudFormation, ARM and Terraform plan JSON. */
+const jsonLooksLikeIac = (text: string): boolean =>
+  (/"apiVersion"\s*:/.test(text) && /"kind"\s*:/.test(text)) ||
+  /"AWSTemplateFormatVersion"\s*:/.test(text) ||
+  /"Type"\s*:\s*"AWS::/.test(text) ||
+  /deploymentTemplate\.json#/.test(text) ||
+  (/"format_version"\s*:/.test(text) && /"(?:planned_values|resource_changes)"\s*:/.test(text));
+
+/**
+ * True for a file the pass can read as infrastructure code. Terraform, plan snapshots, Helm charts
+ * and Dockerfiles are recognised by name; JSON and YAML only by content, so `package.json` or a CI
+ * file alone never starts the pass. `readText` returns a file's text, or null when it cannot be
+ * read safely (a link, not a regular file, over the size bound).
+ */
+export function isIacCandidate(
+  repoPath: string,
+  readText: (repoPath: string) => string | null,
+): boolean {
   const name = repoPath.slice(repoPath.lastIndexOf('/') + 1);
+  const lower = name.toLowerCase();
   const dot = name.lastIndexOf('.');
-  return (
-    (dot > 0 && IAC_EXTENSIONS.has(name.slice(dot).toLowerCase())) || DOCKERFILE_NAME.test(name)
-  );
+  const ext = dot > 0 ? lower.slice(dot) : '';
+  if (NAMED_EXTENSIONS.has(ext) || NAMED_FILES.has(lower) || DOCKERFILE_NAME.test(name))
+    return true;
+  if (ext === '.yaml' || ext === '.yml') {
+    const text = readText(repoPath);
+    return text !== null && yamlLooksLikeIac(text);
+  }
+  if (ext === '.json') {
+    const text = readText(repoPath);
+    return text !== null && jsonLooksLikeIac(text);
+  }
+  return false;
 }
 
 /**
@@ -94,9 +127,12 @@ export function createTrivyIacAnalyzer(defaultDir = DEFAULT_IAC_CHECKS_DIR): Ana
     // `qualor scan` stops with exit 2 on this before any analyzer runs (checkConfig).
     const problem = checkTrivyConfig(ctx.root, ctx.config, ctx.env);
     if (problem !== null) return Promise.resolve({ skip: problem });
-    if (!ctx.files.some((f) => isIacCandidate(f.path))) {
+    const lines = fileLines(ctx.root);
+    const readText = (p: string): string | null => lines(p)?.join('\n') ?? null;
+    if (!ctx.files.some((f) => isIacCandidate(f.path, readText))) {
       return Promise.resolve({ skip: 'no infrastructure files in scope' });
     }
+    const inScope = new Set(ctx.files.map((f) => f.path));
     const trivy = ctx.resolveBinary('trivy');
     if (trivy === null) {
       return Promise.resolve({
@@ -175,7 +211,9 @@ export function createTrivyIacAnalyzer(defaultDir = DEFAULT_IAC_CHECKS_DIR): Ana
         okExitCodes: [0],
         version: pinned === null ? 'embedded checks' : checksVersion(pinned),
         ...(warnings.length > 0 && { warnings }),
-        transform: (output) => trivyIacJsonToSarif(output, fileLines(ctx.root)),
+        // Only scope files are read: a path Trivy reports outside the scope gets no lines.
+        transform: (output) =>
+          trivyIacJsonToSarif(output, (p) => (inScope.has(p) ? lines(p) : null)),
       },
     });
   };

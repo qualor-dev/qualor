@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 /** A rule's `shortDescription` is cut to this many characters. */
 const MAX_DESCRIPTION = 4_000;
+/** A target inside a packaged chart (`chart.tgz:templates/x.yaml`). */
+const PACKAGED_CHART = /\.(?:tgz|tar\.gz):/;
 const NOT_MAPPED = ' (line not mapped from the rendered chart)';
 
 const text = z.string().max(4_096);
@@ -34,11 +36,14 @@ const result = z.looseObject({
   Target: z.string(),
   Class: text.optional(),
   Type: text.optional(),
-  Misconfigurations: z.array(misconfiguration).nullish(),
+  Misconfigurations: z.array(z.unknown()).nullish(),
 });
-/** `trivy fs --scanners misconfig --format json`, only the fields Qualor uses. */
+/**
+ * `trivy fs --scanners misconfig --format json`, only the fields Qualor uses. Results and entries
+ * are checked one by one (below): one that breaks a bound is dropped alone, not the whole run.
+ */
 export const trivyIacReportSchema = z.looseObject({
-  Results: z.array(result).nullish(),
+  Results: z.array(z.unknown()).nullish(),
 });
 
 type Misconfiguration = z.infer<typeof misconfiguration>;
@@ -92,6 +97,13 @@ function helmRegion(
   return null;
 }
 
+/** The 1-based number of the last line with text, or 0 when there is none or no lines. */
+function lastNonEmptyLine(lines: readonly string[] | null): number {
+  if (lines === null) return 0;
+  for (let i = lines.length - 1; i >= 0; i--) if ((lines[i] ?? '').trim() !== '') return i + 1;
+  return 0;
+}
+
 const severityOf = (s: string | undefined) => (s === undefined || s === '' ? 'UNKNOWN' : s);
 
 function ruleOf(m: Misconfiguration): SarifRule {
@@ -108,6 +120,7 @@ function ruleOf(m: Misconfiguration): SarifRule {
     shortDescription: { text: full.slice(0, MAX_DESCRIPTION) },
     ...(m.PrimaryURL?.startsWith('https://') === true && { helpUri: m.PrimaryURL }),
     properties: {
+      trivySeverity: severityOf(m.Severity),
       tags: [
         'iac',
         ...(provider ? [provider] : []),
@@ -122,7 +135,7 @@ function ruleOf(m: Misconfiguration): SarifRule {
  * check id (`AWS-0086`, `KSV-0001`), with the config type and the resource in `properties`, which
  * the shared mapping turns into severity and identity. Results Qualor does not take are dropped:
  * passed checks, the `KCV-` Kubernetes cluster checks, findings inside a packaged chart (a target
- * with a `:`) and exact duplicates. `readLines` reads a repository file, for the Helm template
+ * inside a `.tgz`/`.tar.gz`) and exact duplicates. `readLines` reads a repository file, for the Helm template
  * behind a rendered manifest. Throws on output that is not a JSON object (the runner then records
  * a fixed failure reason).
  */
@@ -132,9 +145,15 @@ export function trivyIacJsonToSarif(output: unknown, readLines: ReadLines): Sari
   const rules = new Map<string, SarifRule>();
   const results: SarifResult[] = [];
   const seen = new Set<string>();
-  for (const target of report.Results ?? []) {
-    if (target.Class !== 'config' || target.Target.includes(':')) continue;
-    for (const m of target.Misconfigurations ?? []) {
+  for (const rawTarget of report.Results ?? []) {
+    const parsedTarget = result.safeParse(rawTarget);
+    if (!parsedTarget.success) continue;
+    const target = parsedTarget.data;
+    if (target.Class !== 'config' || PACKAGED_CHART.test(target.Target)) continue;
+    for (const rawEntry of target.Misconfigurations ?? []) {
+      const parsedEntry = misconfiguration.safeParse(rawEntry);
+      if (!parsedEntry.success) continue;
+      const m = parsedEntry.data;
       if (m.Status !== 'FAIL' || m.ID.startsWith('KCV-')) continue;
       const meta = m.CauseMetadata;
       const start = meta?.StartLine ?? 0;
@@ -146,7 +165,12 @@ export function trivyIacJsonToSarif(output: unknown, readLines: ReadLines): Sari
 
       let region: Region | null = null;
       let note = '';
-      if (start > 0) {
+      if (start <= 0 && target.Type === 'dockerfile') {
+        // Absence checks (no USER, no HEALTHCHECK) have no line: they sit on the last non-empty
+        // line, which a base-image bump on line 1 does not move.
+        const last = lastNonEmptyLine(read(target.Target));
+        if (last > 0) region = { startLine: last, endLine: last };
+      } else if (start > 0) {
         const last = end >= start ? end : start;
         if (target.Type === 'helm') {
           region = helmRegion(start, last, meta?.Code?.Lines ?? [], read(target.Target));

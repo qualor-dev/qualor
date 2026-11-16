@@ -117,10 +117,13 @@ describe('trivyIacJsonToSarif: recorded fixture', () => {
     });
   });
 
-  it('gives the Dockerfile DS-0002 result no region', () => {
+  it('puts the Dockerfile DS-0002 result on the last non-empty line of the file', () => {
     const user = results.find((r) => r.ruleId === 'DS-0002');
     expect(user === undefined ? undefined : uriOf(user)).toBe('docker/Dockerfile');
-    expect(regionOf(user)).toBeUndefined();
+    const lines = fixtureLines('docker/Dockerfile') ?? [];
+    const last = lines.findLastIndex((l) => l.trim() !== '') + 1;
+    expect(last).toBeGreaterThan(1);
+    expect(regionOf(user)).toEqual({ startLine: last, endLine: last });
   });
 
   it('gives nothing for the Terraform aggregate', () => {
@@ -150,6 +153,21 @@ describe('trivyIacJsonToSarif: recorded fixture', () => {
 });
 
 describe('trivyIacJsonToSarif: rule metadata', () => {
+  it('carries the check severity on the rule, for the default severity', async () => {
+    const { engineMapping } = await import('@qualor/shared');
+    const log = trivyIacJsonToSarif(
+      report([
+        { Target: 'a.tf', ID: 'AWS-0001', Severity: 'CRITICAL', StartLine: 1 },
+        { Target: 'a.tf', ID: 'AWS-0002', Severity: 'LOW', StartLine: 2 },
+      ]),
+      none,
+    );
+    const rules = run(log).tool.driver.rules ?? [];
+    expect(rules.map((r) => r.properties?.['trivySeverity'])).toEqual(['CRITICAL', 'LOW']);
+    const defaults = rules.map((r) => engineMapping('trivy-iac')?.rule?.(r).defaultSeverity);
+    expect(defaults).toEqual(['blocker', 'low']);
+  });
+
   const rule = (entry: Omit<Entry, 'Target' | 'ID'>) =>
     run(trivyIacJsonToSarif(report([{ Target: 'a.tf', ID: 'AWS-0086', ...entry }]), none)).tool
       .driver.rules?.[0];
@@ -213,6 +231,37 @@ describe('trivyIacJsonToSarif: rule metadata', () => {
   });
 });
 
+describe('trivyIacJsonToSarif: Dockerfile checks without a line', () => {
+  const absence = (target: string, type: string) =>
+    report([{ Target: target, Type: type, ID: 'DS-0002' }]);
+
+  it('anchors on the last non-blank line, past trailing blank lines', () => {
+    const lines = ['FROM node:20', 'RUN npm ci', 'CMD ["node"]', '', '  ', ''];
+    const log = trivyIacJsonToSarif(absence('Dockerfile', 'dockerfile'), () => lines);
+    expect(regionOf(resultsOf(log)[0])).toEqual({ startLine: 3, endLine: 3 });
+  });
+
+  it('has no region when the file cannot be read', () => {
+    const log = trivyIacJsonToSarif(absence('Dockerfile', 'dockerfile'), none);
+    expect(regionOf(resultsOf(log)[0])).toBeUndefined();
+  });
+
+  it('keeps an entry with a line where Trivy put it', () => {
+    const log = trivyIacJsonToSarif(
+      report([
+        { Target: 'Dockerfile', Type: 'dockerfile', ID: 'DS-0001', StartLine: 1, EndLine: 1 },
+      ]),
+      () => ['FROM a', 'CMD b'],
+    );
+    expect(regionOf(resultsOf(log)[0])).toEqual({ startLine: 1, endLine: 1 });
+  });
+
+  it('leaves other types without a line on no region', () => {
+    const log = trivyIacJsonToSarif(absence('k.yaml', 'kubernetes'), () => ['a', 'b']);
+    expect(regionOf(resultsOf(log)[0])).toBeUndefined();
+  });
+});
+
 describe('trivyIacJsonToSarif: drops', () => {
   it('drops KCV ids, archive targets, PASS entries and exact duplicates', () => {
     const entry = { Target: 'a.tf', ID: 'AWS-0001', StartLine: 1, EndLine: 2 };
@@ -222,11 +271,22 @@ describe('trivyIacJsonToSarif: drops', () => {
         entry,
         { Target: 'a.tf', ID: 'KCV-0001', StartLine: 1 },
         { Target: 'chart.tgz:templates/x.yaml', Type: 'helm', ID: 'KSV-0001', StartLine: 1 },
+        { Target: 'chart.tar.gz:templates/x.yaml', Type: 'helm', ID: 'KSV-0003', StartLine: 1 },
         { Target: 'a.tf', ID: 'AWS-0002', Status: 'PASS', StartLine: 1 },
       ]),
       none,
     );
     expect(resultsOf(log).map((r) => r.ruleId)).toEqual(['AWS-0001']);
+  });
+
+  it('keeps a target whose directory name holds a colon', () => {
+    const log = trivyIacJsonToSarif(
+      report([
+        { Target: 'dir:with:colons/x.yaml', Type: 'kubernetes', ID: 'KSV-0001', StartLine: 1 },
+      ]),
+      none,
+    );
+    expect(resultsOf(log).map(uriOf)).toEqual(['dir:with:colons/x.yaml']);
   });
 
   it('keeps two buckets with the same id', () => {
@@ -367,6 +427,32 @@ describe('trivyIacJsonToSarif: tolerates', () => {
     const [r] = resultsOf(log);
     expect(regionOf(r)).toBeUndefined();
     expect(r?.properties).toEqual({ trivySeverity: 'LOW', iacType: 'terraform' });
+  });
+
+  it('drops one bad entry alone and converts the rest', () => {
+    const good = (ID: string) => ({ ID, Status: 'FAIL', Severity: 'LOW', Message: ID });
+    const log = trivyIacJsonToSarif(
+      {
+        Results: [
+          {
+            Target: 'a.tf',
+            Class: 'config',
+            Type: 'terraform',
+            Misconfigurations: [
+              good('AWS-0001'),
+              {
+                ...good('AWS-0002'),
+                CauseMetadata: { Resource: 'r'.repeat(5000), Provider: 'AWS' },
+              },
+              good('AWS-0003'),
+            ],
+          },
+          { Target: 42 },
+        ],
+      },
+      none,
+    );
+    expect(resultsOf(log).map((r) => r.ruleId)).toEqual(['AWS-0001', 'AWS-0003']);
   });
 
   it('throws on input that is not an object, as the dependency converter does', () => {

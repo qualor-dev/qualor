@@ -1,6 +1,14 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
-import { parseConfig } from '@qualor/shared';
+import { parseConfig, type SarifLog } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   describeWithTools,
@@ -51,10 +59,13 @@ interface SetupOptions {
   env?: Record<string, string>;
   config?: FakeContextOptions['config'];
   binary?: boolean;
+  /** Files written under the root before the pass is prepared. */
+  tree?: Record<string, string>;
 }
 
 function setup(o: SetupOptions = {}): { root: string; ctx: AnalyzerContext } {
   const root = tmp();
+  if (o.tree !== undefined) writeTree(root, o.tree);
   const ctx = fakeContext(root, {
     binaries: o.binary === false ? {} : { trivy: '/opt/qualor/bin/trivy' },
     env: o.env ?? {},
@@ -167,21 +178,114 @@ describe('trivyIacAnalyzer.prepare', () => {
     });
   });
 
-  it.each(['Dockerfile.prod', 'app.Dockerfile', 'infra/x.tf.json', 'package.json'])(
-    'treats %s as a candidate',
-    async (file) => {
-      const { ctx } = setup({ files: ['src/a.ts', file] });
-      expect('run' in (await createTrivyIacAnalyzer(checks()).prepare(ctx))).toBe(true);
-    },
-  );
+  it.each(['Dockerfile.prod', 'app.Dockerfile'])('treats %s as a candidate', async (file) => {
+    const { ctx } = setup({ files: ['src/a.ts', file] });
+    expect('run' in (await createTrivyIacAnalyzer(checks()).prepare(ctx))).toBe(true);
+  });
 
-  it('knows the candidate names', () => {
-    for (const p of ['a.tf', 'a.tfvars', 'a.yaml', 'a.YML', 'x/Containerfile', 'DOCKERFILE']) {
-      expect(isIacCandidate(p), p).toBe(true);
+  it('takes a Kubernetes manifest by its content', async () => {
+    const { ctx } = setup({ files: ['k.yaml'], tree: { 'k.yaml': 'apiVersion: v1\nkind: Pod\n' } });
+    expect('run' in (await createTrivyIacAnalyzer(checks()).prepare(ctx))).toBe(true);
+  });
+
+  it('skips a scope of ordinary JSON and YAML files', async () => {
+    const tree = {
+      'qualor.yml': 'version: 1\nanalyzers:\n  trivy-iac:\n    enabled: auto\n',
+      'package.json': '{"name":"a","version":"1.0.0","dependencies":{"x":"1"}}',
+      'tsconfig.json': '{"compilerOptions":{"strict":true}}',
+      'openapi.yaml': 'openapi: 3.0.0\ninfo:\n  title: t\npaths: {}\n',
+      'docker-compose.yml': 'services:\n  web:\n    image: nginx\n',
+    };
+    const { ctx } = setup({ files: Object.keys(tree), tree });
+    expect(await createTrivyIacAnalyzer(checks()).prepare(ctx)).toEqual({
+      skip: 'no infrastructure files in scope',
+    });
+  });
+
+  it('does not take a Kubernetes YAML that is a symlink', async () => {
+    const { root, ctx } = setup({
+      files: ['link.yaml'],
+      tree: { 'real/k.yaml': 'apiVersion: v1\nkind: Pod\n' },
+    });
+    try {
+      symlinkSync(path.join(root, 'real', 'k.yaml'), path.join(root, 'link.yaml'));
+    } catch {
+      return; // no symlink right on this machine
     }
-    for (const p of ['a.ts', 'dockerfiles', 'README.md', 'a.hcl', 'Dockerfile.md.ts']) {
-      expect(isIacCandidate(p), p).toBe(p === 'Dockerfile.md.ts');
-    }
+    expect(await createTrivyIacAnalyzer(checks()).prepare(ctx)).toEqual({
+      skip: 'no infrastructure files in scope',
+    });
+  });
+
+  it('reads only scope files when it converts: a Helm target outside the scope gets no region', async () => {
+    const template = '{{- if .Values.x }}\n- name: main\n  image: a\n{{- end }}\n';
+    const { ctx } = setup({
+      files: ['main.tf'],
+      tree: { 'main.tf': '', 'chart/templates/d.yaml': template },
+    });
+    const run = runOf(await createTrivyIacAnalyzer(checks()).prepare(ctx));
+    const output = {
+      Results: [
+        {
+          Target: 'chart/templates/d.yaml',
+          Class: 'config',
+          Type: 'helm',
+          Misconfigurations: [
+            {
+              ID: 'KSV-0001',
+              Status: 'FAIL',
+              Severity: 'HIGH',
+              Message: 'm',
+              CauseMetadata: {
+                StartLine: 3,
+                EndLine: 3,
+                Code: { Lines: [{ Number: 3, Content: '- name: main', IsCause: true }] },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const result = (run.transform?.(output) as SarifLog).runs[0]?.results?.[0];
+    expect(result?.locations?.[0]?.physicalLocation?.region).toBeUndefined();
+    expect(result?.message.text).toContain('line not mapped');
+  });
+
+  it('knows the candidates by name and by content', () => {
+    const yes: Record<string, string> = {
+      'main.tf': '',
+      'x.tfvars': '',
+      'prod.auto.tfvars': '',
+      'x.tf.json': '{"apiVersion":"v1","kind":"Pod"}',
+      'a/tfplan': '',
+      'a/b.tfplan': '',
+      'Chart.yaml': 'name: a\n',
+      'charts/Chart.yml': 'name: a\n',
+      'k.yaml': 'apiVersion: v1\nkind: Pod\n',
+      'cfn.yaml': "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n",
+      'cfn2.yml': 'Resources:\n  B:\n    Type: AWS::S3::Bucket\n',
+      'k.json': '{"apiVersion":"v1","kind":"Pod"}',
+      'cfn.json': '{"AWSTemplateFormatVersion":"2010-09-09"}',
+      'cfn2.json': '{"Resources":{"B":{"Type": "AWS::S3::Bucket"}}}',
+      'arm.json':
+        '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"}',
+      'plan.json': '{"format_version":"1.2","planned_values":{}}',
+      'plan2.json': '{"format_version":"1.2","resource_changes":[]}',
+      Dockerfile: '',
+      'x/Containerfile': '',
+    };
+    const no: Record<string, string> = {
+      'package.json': '{"version":"1"}',
+      'only-kind.yaml': 'kind: Pod\n',
+      'only-version.json': '{"format_version":"1"}',
+      'a.ts': '',
+      dockerfiles: '',
+    };
+    const { root } = setup({ files: [], tree: { ...yes, ...no } });
+    const text = (p: string): string | null => fileLines(root)(p)?.join('\n') ?? null;
+    for (const p of Object.keys(yes)) expect(isIacCandidate(p, text), p).toBe(true);
+    for (const p of Object.keys(no)) expect(isIacCandidate(p, text), p).toBe(false);
+    expect(isIacCandidate('gone.yaml', () => null)).toBe(false);
   });
 
   it('is unavailable without a trivy binary', async () => {
@@ -330,6 +434,11 @@ describeWithTools(['trivy'])('Trivy IaC on real trees (real Trivy, offline)', ()
         }
         for (let i = 0; i < 50; i++)
           files[`config/c${i}.yaml`] = `name: c${i}\nitems:\n  - a\n  - b\n`;
+        // Alone these are not infrastructure and the pass is skipped; one Terraform file runs it.
+        const alone = tmp();
+        writeTree(alone, files);
+        expect((await scanTree(alone)).capture.status).toBe('skipped');
+        files['main.tf'] = 'variable "a" {}\n';
         writeTree(root, files);
         const { capture, out, keys, seconds } = await scanTree(root);
         expect(capture.status, capture.reason ?? '').toBe('ok');

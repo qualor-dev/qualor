@@ -13,3 +13,7 @@ module "reg" {
 module "git" {
   source = "git@github.com:example/mod.git"
 }
+
+module "http" {
+  source = "https://example.com/mod.zip"
+}

@@ -1,5 +1,5 @@
 {
-  "description": "Infrastructure as code (0.16): Trivy's misconfiguration pass over Terraform (with a local, a registry and a git@ module), CloudFormation, Kubernetes, a Helm chart, a Dockerfile and an ARM template",
+  "description": "Infrastructure as code (0.16): Trivy's misconfiguration pass over Terraform (with a local, a registry, a git@ and an https module), CloudFormation, Kubernetes, a Helm chart, a Dockerfile and an ARM template",
   "engines": ["trivy-iac"],
   "findingsExhaustive": true,
   "findings": [
@@ -20,8 +20,8 @@
     { "ruleKey": "trivy-iac:AWS-0093", "path": "cloudformation/bucket.yaml", "startLine": 3, "severity": "high", "quality": "security" },
     { "ruleKey": "trivy-iac:AWS-0094", "path": "cloudformation/bucket.yaml", "startLine": 3, "severity": "low", "quality": "security" },
     { "ruleKey": "trivy-iac:AWS-0132", "path": "cloudformation/bucket.yaml", "startLine": 3, "severity": "high", "quality": "security" },
-    { "ruleKey": "trivy-iac:DS-0002", "path": "docker/Dockerfile", "startLine": 1, "severity": "high", "quality": "security" },
-    { "ruleKey": "trivy-iac:DS-0026", "path": "docker/Dockerfile", "startLine": 1, "severity": "low", "quality": "security" },
+    { "ruleKey": "trivy-iac:DS-0002", "path": "docker/Dockerfile", "startLine": 3, "severity": "high", "quality": "security" },
+    { "ruleKey": "trivy-iac:DS-0026", "path": "docker/Dockerfile", "startLine": 3, "severity": "low", "quality": "security" },
     { "ruleKey": "trivy-iac:KSV-0001", "path": "helm/app/templates/deployment.yaml", "startLine": 1, "severity": "medium", "quality": "security" },
     { "ruleKey": "trivy-iac:KSV-0003", "path": "helm/app/templates/deployment.yaml", "startLine": 1, "severity": "low", "quality": "security" },
     { "ruleKey": "trivy-iac:KSV-0004", "path": "helm/app/templates/deployment.yaml", "startLine": 1, "severity": "low", "quality": "security" },
@@ -96,7 +96,7 @@
     "helm/app/templates/deployment.yaml": { "language": "other", "kind": "main", "lines": 22 },
     "helm/app/values.yaml": { "language": "other", "kind": "main", "lines": 6 },
     "k8s/deployment.yaml": { "language": "other", "kind": "main", "lines": 19 },
-    "terraform/main.tf": { "language": "other", "kind": "main", "lines": 15 },
+    "terraform/main.tf": { "language": "other", "kind": "main", "lines": 19 },
     "terraform/modules/bucket/main.tf": { "language": "other", "kind": "main", "lines": 3 }
   },
   "duplications": [],
@@ -104,7 +104,7 @@
   "notes": {
     "engines": "trivy-iac only: the misconfiguration pass needs the trivy binary and the scanner image's pinned trivy-checks 2.3.0 (ENGINE_TOOLS in tools/fixtures/run.ts), no vulnerability database; the expected engines are those that must report ok, not every engine of the report",
     "findings": "captured with Trivy 0.74.0 and trivy-checks 2.3.0 (tools/analyzers/install.sh), offline, with the adapter's own flags; the raw output is cli/test/analyzer-output/trivy-iac/iac-basic.json. The list is exhaustive: after a bump of the Trivy or trivy-checks pin, re-run the fixture in the Linux image and review new or changed findings by hand",
-    "terraform/main.tf": "three modules the scan cannot fetch (a registry one, a git@ one and a local one): the local module is scanned, the other two are skipped without delay, and the root findings are present",
+    "terraform/main.tf": "a local module and three the scan cannot fetch (a registry one, a git@ one and an https one): the local module is scanned, the other three are skipped without delay, and the root findings are present",
     "helm/app/templates/deployment.yaml": "Trivy renders the chart; the CLI maps each cause line back to the template line holding the same text",
     "kcv": "KCV- (Kubernetes cluster) checks are removed from the bundle and from the converter: none is expected",
     "files": "every file is a file of language other (config.md §3.1 includes them); each line count is the file's own (wc -l)"
