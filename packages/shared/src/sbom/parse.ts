@@ -7,7 +7,14 @@
 import { REPORT_BOUNDS } from '../report/schema';
 import { readCycloneDx } from './cyclonedx';
 import { cutText, mergeLicenses, SBOM_BOUNDS } from './fields';
-import { isModularityLabel, isOsPackageType, isPackageArch, osFamilyOf, sameOsVersion } from './os';
+import {
+  isModularityLabel,
+  isOsPackageType,
+  isPackageArch,
+  osFamilyOf,
+  sameOsVersion,
+  trivyChecksRelease,
+} from './os';
 import { inventoryName, inventoryVersion, type Purl } from './purl';
 import { readSpdx } from './spdx';
 import {
@@ -298,6 +305,24 @@ function sourceOf(c: SbomComponent, name: string, version: string): SbomEntry['s
   return fits(upstream) ? upstream : { name, version };
 }
 
+/**
+ * Why the OS packages of an SBOM with this distribution are not checked, or null when they are:
+ * no distribution, a family Trivy does not know, or a release Trivy 0.74.0 cannot check (R29).
+ */
+function uncheckedWhy(distribution: SbomDistribution | null): string | null {
+  if (distribution === null) {
+    return 'the SBOM names no distribution (no operating-system component and no distro qualifier)';
+  }
+  const { family, version } = distribution;
+  if (!osFamilyOf(family).known) {
+    return `${family} is not a distribution the vulnerability database covers`;
+  }
+  if (!trivyChecksRelease(family, version)) {
+    return `Trivy 0.74.0 needs the content sets of ${family} ${version} images, which Qualor does not keep`;
+  }
+  return null;
+}
+
 function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
   let noPurl = doc.skipped.noPurl;
   let unsupportedType = doc.skipped.unsupportedType;
@@ -386,11 +411,8 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
       message: `${doc.tooDeep} components nested deeper than ${SBOM_MAX_DEPTH} levels were not read.`,
     });
   }
-  if (osPackages > 0 && (distribution === null || !osFamilyOf(distribution.family).known)) {
-    const why =
-      distribution === null
-        ? 'the SBOM names no distribution (no operating-system component and no distro qualifier)'
-        : `${distribution.family} is not a distribution the vulnerability database covers`;
+  const why = osPackages > 0 ? uncheckedWhy(distribution) : null;
+  if (why !== null) {
     warnings.push({
       code: 'SBOM_OS_PACKAGES_UNCHECKED',
       message: `${osPackages} operating-system packages are stored but not checked for vulnerabilities: ${why}.`,

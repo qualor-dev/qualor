@@ -221,6 +221,38 @@ describe('no distribution', () => {
     expect(inv.warnings.map((w) => w.code)).toEqual(['SBOM_OS_PACKAGES_UNCHECKED']);
   });
 
+  it('warns that RHEL and CentOS releases outside 6–9 are not checked (R29)', () => {
+    const warning = (name: string, version: string) =>
+      inventory(bom([os(name, version), lib(`pkg:rpm/${name}/bash@5.2.26-6.el10?arch=x86_64`)]))
+        .warnings;
+    for (const [name, version] of [
+      ['redhat', '10.0'],
+      ['rhel', '10.1'],
+      ['centos', '10'],
+      ['redhat', '5.11'],
+      ['redhat', 'ten'],
+    ] as const) {
+      const warnings = warning(name, version);
+      expect(
+        warnings.map((w) => w.code),
+        `${name} ${version}`,
+      ).toEqual(['SBOM_OS_PACKAGES_UNCHECKED']);
+      expect(warnings[0]!.message).toBe(
+        `1 operating-system packages are stored but not checked for vulnerabilities: Trivy 0.74.0 needs the content sets of ${name === 'rhel' ? 'redhat' : name} ${version} images, which Qualor does not keep.`,
+      );
+    }
+    for (const [name, version] of [
+      ['redhat', '9.4'],
+      ['redhat', '8'],
+      ['centos', '7.9.2009'],
+      ['centos', '6'],
+      ['rocky', '10.0'],
+      ['alma', '10.0'],
+    ] as const) {
+      expect(warning(name, version), `${name} ${version}`).toEqual([]);
+    }
+  });
+
   it('warns about nothing without OS packages', () => {
     const inv = inventory(bom([os('plan9', '1'), lib('pkg:npm/c@3')]));
     expect(inv.distribution).toEqual({ family: 'plan9', version: '1' });

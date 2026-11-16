@@ -5,6 +5,8 @@ import {
   osFamilyOf,
   sameOsVersion,
   TRIVY_OS_FAMILIES,
+  TRIVY_RELEASE_MAJORS,
+  trivyChecksRelease,
 } from './os';
 
 describe('osFamilyOf', () => {
@@ -32,6 +34,31 @@ describe('osFamilyOf', () => {
 
   it('maps only to Trivy families', () => {
     for (const family of Object.values(OS_FAMILY_ALIASES)) {
+      expect(TRIVY_OS_FAMILIES.has(family), family).toBe(true);
+    }
+  });
+});
+
+describe('trivyChecksRelease (R29)', () => {
+  it.each([
+    ['redhat', '6.10', true],
+    ['redhat', '9.4', true],
+    ['redhat', '10.0', false],
+    ['redhat', '5', false],
+    ['redhat', '', false],
+    ['redhat', 'x', false],
+    ['redhat', '09', false],
+    ['centos', '7.9.2009', true],
+    ['centos', '10', false],
+    ['debian', '13', true],
+    ['rocky', '10.0', true],
+    ['plan9', '1', true],
+  ])('%s %s: %s', (family, version, checked) => {
+    expect(trivyChecksRelease(family, version)).toBe(checked);
+  });
+
+  it('names only Trivy families', () => {
+    for (const family of Object.keys(TRIVY_RELEASE_MAJORS)) {
       expect(TRIVY_OS_FAMILIES.has(family), family).toBe(true);
     }
   });

@@ -42,6 +42,31 @@ export const TRIVY_OS_FAMILIES: ReadonlySet<string> = new Set([
   'wolfi',
 ]);
 
+/**
+ * The major releases Trivy 0.74.0 checks, for families where it checks only some (R29). Red Hat
+ * and CentOS advisories are found through the image's content sets; Trivy has defaults for
+ * releases 6 to 9 only and needs the image's own (`aquasecurity:trivy:ContentSet`) for others,
+ * which Qualor does not keep. A family not listed here has every release checked.
+ */
+export const TRIVY_RELEASE_MAJORS: Readonly<Record<string, readonly number[]>> = {
+  redhat: [6, 7, 8, 9],
+  centos: [6, 7, 8, 9],
+};
+
+/**
+ * Whether Trivy 0.74.0 checks this release of a family ({@link TRIVY_RELEASE_MAJORS}): its major,
+ * the digits before the first dot, written without a leading zero.
+ */
+export function trivyChecksRelease(family: string, version: string): boolean {
+  const majors = Object.hasOwn(TRIVY_RELEASE_MAJORS, family)
+    ? TRIVY_RELEASE_MAJORS[family]
+    : undefined;
+  if (majors === undefined) return true;
+  const dot = version.indexOf('.');
+  const major = dot < 0 ? version : version.slice(0, dot);
+  return /^[1-9]\d{0,2}$/.test(major) && majors.includes(Number(major));
+}
+
 /** os-release ids, Syft ids and Trivy's own aliases (lowercase) to Trivy's family names. */
 export const OS_FAMILY_ALIASES: Readonly<Record<string, string>> = {
   rhel: 'redhat',

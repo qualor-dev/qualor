@@ -279,6 +279,26 @@ describe('PUT /projects/sbom', () => {
     });
   });
 
+  it('warns that the OS packages of a RHEL 10 image are not checked (R29)', async () => {
+    const res = await put(
+      bearer(otherProjectToken),
+      bom([os('redhat', '10.0'), lib('pkg:rpm/redhat/bash@5.2.26-6.el10?arch=x86_64')]),
+      'version=rhel-10',
+      { key: 'acme/other' },
+    );
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.json()).toMatchObject({
+      distribution: { family: 'redhat', version: '10.0' },
+      osPackages: 1,
+      warnings: [
+        {
+          code: 'SBOM_OS_PACKAGES_UNCHECKED',
+          message: expect.stringContaining('content sets of redhat 10.0') as unknown,
+        },
+      ],
+    });
+  });
+
   it('answers 415 to another type or encoding, after the project check', async () => {
     const text = await put(
       { ...bearer(projectToken), 'content-type': 'text/plain' },
