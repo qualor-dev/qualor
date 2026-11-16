@@ -1,3 +1,5 @@
+import type { SbomDistribution } from '@qualor/shared';
+
 /** What an export document says about itself and the target it describes. */
 export interface ExportDocument {
   project: { key: string; name: string };
@@ -7,6 +9,8 @@ export interface ExportDocument {
   /** A uuid, the document's serial number. */
   serial: string;
   toolVersion: string;
+  /** The operating system of an SBOM version (0.16); null or absent for a branch and a scan. */
+  distribution?: SbomDistribution | null;
 }
 
 /** One entry of a target's dependency inventory. */
@@ -16,6 +20,11 @@ export interface ExportPackage {
   version: string;
   purl: string | null;
   licenses: string[];
+  /**
+   * The source package of an OS package written under its match key (0.16); null for every other
+   * package, including an OS package without a key, which is written as a plain component.
+   */
+  source: { name: string; version: string } | null;
 }
 
 /**

@@ -1,0 +1,248 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a branch export is unchanged > writes the 0.15 document for a branch, in both formats > cyclonedx 1`] = `
+"{
+ "bomFormat": "CycloneDX",
+ "specVersion": "1.6",
+ "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+ "version": 1,
+ "metadata": {
+  "timestamp": "2026-11-10T08:30:15.123Z",
+  "tools": {
+   "components": [
+    {
+     "type": "application",
+     "name": "Qualor",
+     "version": "0.15.0"
+    }
+   ]
+  },
+  "component": {
+   "type": "application",
+   "name": "Acme Web",
+   "version": "release/2.x",
+   "bom-ref": "pkg:generic/acme-web@release%2F2.x",
+   "purl": "pkg:generic/acme-web@release%2F2.x"
+  }
+ },
+ "components": [
+  {
+   "type": "library",
+   "bom-ref": "pkg:npm/left-pad@1.3.0",
+   "name": "left-pad",
+   "version": "1.3.0",
+   "purl": "pkg:npm/left-pad@1.3.0",
+   "licenses": [
+    {
+     "expression": "MIT"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pip:requests@2.31.0",
+   "name": "requests",
+   "version": "2.31.0",
+   "licenses": [
+    {
+     "expression": "Apache-2.0"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:npm/%40angular/core@19.0.0",
+   "name": "@angular/core",
+   "version": "19.0.0",
+   "purl": "pkg:npm/%40angular/core@19.0.0",
+   "licenses": [
+    {
+     "expression": "(MIT OR Apache-2.0) AND BSD-3-Clause"
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1",
+   "name": "org.apache.logging.log4j:log4j-core",
+   "version": "2.17.1",
+   "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1",
+   "licenses": [
+    {
+     "license": {
+      "name": "MIT"
+     }
+    },
+    {
+     "license": {
+      "name": "Some Custom Licence"
+     }
+    }
+   ]
+  },
+  {
+   "type": "library",
+   "bom-ref": "go:example.com/lib@v1.0.0",
+   "name": "example.com/lib",
+   "version": "v1.0.0"
+  }
+ ],
+ "dependencies": [
+  {
+   "ref": "pkg:generic/acme-web@release%2F2.x",
+   "dependsOn": [
+    "pkg:npm/left-pad@1.3.0",
+    "pip:requests@2.31.0",
+    "pkg:npm/%40angular/core@19.0.0",
+    "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1",
+    "go:example.com/lib@v1.0.0"
+   ]
+  }
+ ]
+}"
+`;
+
+exports[`a branch export is unchanged > writes the 0.15 document for a branch, in both formats > spdx 1`] = `
+"{
+ "spdxVersion": "SPDX-2.3",
+ "dataLicense": "CC0-1.0",
+ "SPDXID": "SPDXRef-DOCUMENT",
+ "name": "Acme Web release/2.x",
+ "documentNamespace": "https://qualor.dev/spdx/acme-web/release%2F2.x/3e671687-395b-41f5-a30f-a58921a69b79",
+ "creationInfo": {
+  "created": "2026-11-10T08:30:15Z",
+  "creators": [
+   "Tool: Qualor-0.15.0"
+  ]
+ },
+ "packages": [
+  {
+   "SPDXID": "SPDXRef-Package-root",
+   "name": "Acme Web",
+   "versionInfo": "release/2.x",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "NOASSERTION",
+   "copyrightText": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:generic/acme-web@release%2F2.x"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-1",
+   "name": "left-pad",
+   "versionInfo": "1.3.0",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "MIT",
+   "copyrightText": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:npm/left-pad@1.3.0"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-2",
+   "name": "requests",
+   "versionInfo": "2.31.0",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "Apache-2.0",
+   "copyrightText": "NOASSERTION"
+  },
+  {
+   "SPDXID": "SPDXRef-Package-3",
+   "name": "@angular/core",
+   "versionInfo": "19.0.0",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "(MIT OR Apache-2.0) AND BSD-3-Clause",
+   "copyrightText": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:npm/%40angular/core@19.0.0"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-4",
+   "name": "org.apache.logging.log4j:log4j-core",
+   "versionInfo": "2.17.1",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "MIT AND LicenseRef-a51b5c38bad8",
+   "copyrightText": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceType": "purl",
+     "referenceLocator": "pkg:maven/org.apache.logging.log4j/log4j-core@2.17.1"
+    }
+   ]
+  },
+  {
+   "SPDXID": "SPDXRef-Package-5",
+   "name": "example.com/lib",
+   "versionInfo": "v1.0.0",
+   "downloadLocation": "NOASSERTION",
+   "filesAnalyzed": false,
+   "licenseConcluded": "NOASSERTION",
+   "licenseDeclared": "NOASSERTION",
+   "copyrightText": "NOASSERTION"
+  }
+ ],
+ "hasExtractedLicensingInfos": [
+  {
+   "licenseId": "LicenseRef-a51b5c38bad8",
+   "extractedText": "Some Custom Licence",
+   "name": "Some Custom Licence"
+  }
+ ],
+ "relationships": [
+  {
+   "spdxElementId": "SPDXRef-DOCUMENT",
+   "relationshipType": "DESCRIBES",
+   "relatedSpdxElement": "SPDXRef-Package-root"
+  },
+  {
+   "spdxElementId": "SPDXRef-Package-root",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-Package-1"
+  },
+  {
+   "spdxElementId": "SPDXRef-Package-root",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-Package-2"
+  },
+  {
+   "spdxElementId": "SPDXRef-Package-root",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-Package-3"
+  },
+  {
+   "spdxElementId": "SPDXRef-Package-root",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-Package-4"
+  },
+  {
+   "spdxElementId": "SPDXRef-Package-root",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-Package-5"
+  }
+ ]
+}"
+`;

@@ -1,11 +1,18 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { isOsPackageType, type SbomDistribution } from '@qualor/shared';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { listAllDependencies, type DependencyTarget } from '../../dependencies/query';
 import type { Executor } from '../../db/client';
-import { branches, projectVersions, vulnerabilityTargetChecks } from '../../db/schema';
+import {
+  branches,
+  projectVersions,
+  versionDependencies,
+  vulnerabilityTargetChecks,
+} from '../../db/schema';
 import { notFound } from '../../http/problem';
 import { decisionsOf } from '../list';
 import { compare } from '../order';
-import { purlOf } from '../purl';
+import { distributionOf } from '../../versions/distribution';
+import { matchKeyOf, osSourceOf, purlOf } from '../purl';
 import { SEVERITIES, scopedRows, type VulnerabilitySeverity } from '../summary';
 import type { ExportPackage } from './types';
 import type { VexEntry } from './vex-documents';
@@ -49,25 +56,112 @@ export async function exportTarget(
   return { target: { kind: 'branch', branchId: row.id }, name: row.name, kind: 'branch' };
 }
 
+/** The distribution of an SBOM version (0.16); null for a branch and for a version without one. */
+export async function exportDistribution(
+  db: Executor,
+  target: DependencyTarget,
+): Promise<SbomDistribution | null> {
+  if (target.kind === 'branch') return null;
+  const [row] = await db
+    .select({ osFamily: projectVersions.osFamily, osVersion: projectVersions.osVersion })
+    .from(projectVersions)
+    .where(eq(projectVersions.id, target.versionId));
+  return row === undefined ? null : distributionOf(row);
+}
+
+/** An inventory row with what an OS package's key needs (a branch row has none of it). */
+interface ExportRow {
+  ecosystem: string;
+  name: string;
+  version: string;
+  licenses: string[];
+  sourceName: string | null;
+  sourceVersion: string | null;
+  arch: string | null;
+  modularityLabel: string | null;
+}
+
+async function exportRows(db: Executor, target: DependencyTarget): Promise<ExportRow[]> {
+  if (target.kind === 'branch') {
+    const rows = await listAllDependencies(db, target, {});
+    return rows.map((r) => ({
+      ecosystem: r.ecosystem,
+      name: r.name,
+      version: r.version,
+      licenses: r.licenses,
+      sourceName: null,
+      sourceVersion: null,
+      arch: null,
+      modularityLabel: null,
+    }));
+  }
+  const d = versionDependencies;
+  return db
+    .select({
+      ecosystem: d.ecosystem,
+      name: d.name,
+      version: d.version,
+      licenses: d.licenses,
+      sourceName: d.sourceName,
+      sourceVersion: d.sourceVersion,
+      arch: d.arch,
+      modularityLabel: d.modularityLabel,
+    })
+    .from(d)
+    .where(eq(d.versionId, target.versionId))
+    .orderBy(asc(d.name), asc(d.version), asc(d.path), asc(d.ecosystem));
+}
+
 /**
  * E5: the packages of the target, once each, sorted by name, version and ecosystem. A package is
  * the same when its reference is: its purl, which two ecosystems (npm and yarn) can share, else
  * its ecosystem, name and version. The licences of the copies are joined. The builders do not
  * deduplicate, and a repeated `bom-ref` makes a document invalid.
+ *
+ * A library's purl is `purlOf`, as in 0.15. An OS package (deb, rpm, apk) of a version with a
+ * distribution is written under its match key (`matchKeyOf`, the key it is matched by) and with
+ * its source package. One whose key is null (no distribution, an unknown family, or stored values
+ * the key refuses) has no purl and no source: it is written as a plain component, keyed
+ * `eco:name@version` like any package without a purl, and a re-import counts it as without purl.
  */
 export async function exportPackages(
   db: Executor,
   target: DependencyTarget,
+  distribution: SbomDistribution | null = null,
 ): Promise<ExportPackage[]> {
-  const rows = await listAllDependencies(db, target, {});
+  const rows = await exportRows(db, target);
   const sorted = rows
-    .map((r) => ({
-      ecosystem: r.ecosystem,
-      name: r.name,
-      version: r.version,
-      purl: purlOf(r.ecosystem, r.name, r.version),
-      licenses: r.licenses,
-    }))
+    .map((r): ExportPackage => {
+      if (!isOsPackageType(r.ecosystem)) {
+        return {
+          ecosystem: r.ecosystem,
+          name: r.name,
+          version: r.version,
+          purl: purlOf(r.ecosystem, r.name, r.version),
+          licenses: r.licenses,
+          source: null,
+        };
+      }
+      const key = matchKeyOf({
+        ecosystem: r.ecosystem,
+        name: r.name,
+        version: r.version,
+        osFamily: distribution?.family ?? null,
+        osVersion: distribution?.version ?? null,
+        sourceName: r.sourceName,
+        sourceVersion: r.sourceVersion,
+        arch: r.arch,
+        modularityLabel: r.modularityLabel,
+      });
+      return {
+        ecosystem: r.ecosystem,
+        name: r.name,
+        version: r.version,
+        purl: key,
+        licenses: r.licenses,
+        source: key === null ? null : osSourceOf(r),
+      };
+    })
     .sort(
       (a, b) =>
         compare(a.name, b.name) ||

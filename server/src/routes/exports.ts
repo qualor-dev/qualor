@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SbomDistribution } from '@qualor/shared';
 import { eq } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -13,6 +14,7 @@ import { projectForExport, type ProjectRow } from '../projects/access';
 import { monitoringOn } from '../vulnerabilities/targets';
 import { sbomNotLicensed, SBOM_FEATURE } from '../vulnerabilities/export/feature';
 import {
+  exportDistribution,
   exportPackages,
   exportTarget,
   targetChecked,
@@ -36,11 +38,13 @@ const serialOf = (
   project: { id: string },
   target: DependencyTarget,
   packages: readonly ExportPackage[],
+  distribution: SbomDistribution | null,
 ): string =>
   sbomSerial(
     project.id,
     target.kind === 'branch' ? `branch:${target.branchId}` : `version:${target.versionId}`,
     packages,
+    distribution,
   );
 
 const targetQuery = {
@@ -81,14 +85,16 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, project.organizationId));
+    const distribution = await exportDistribution(deps.db, resolved.target);
     const doc: Omit<ExportDocument, 'serial'> = {
       project: { key: project.key, name: project.name },
       organization: org?.name ?? '',
       target: { kind: resolved.kind, name: resolved.name },
       generatedAt: new Date(),
       toolVersion: VERSION,
+      distribution,
     };
-    return { resolved, doc };
+    return { resolved, doc, distribution };
   }
 
   // A Buffer is sent as it is: Fastify would rewrite the content type of a string (quotes and a charset).
@@ -126,8 +132,8 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         requirePrincipal(request),
         query.projectKey,
       );
-      const { resolved, doc } = await resolve(project, query);
-      const packages = await exportPackages(deps.db, resolved.target);
+      const { resolved, doc, distribution } = await resolve(project, query);
+      const packages = await exportPackages(deps.db, resolved.target, distribution);
       if (!(await hasInventory(deps.db, resolved.target, packages.length))) {
         throw new ProblemError(
           404,
@@ -141,7 +147,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         format === 'spdx'
           ? buildSpdxSbom({ ...doc, serial: randomUUID() }, packages)
           : buildCycloneDxSbom(
-              { ...doc, serial: serialOf(project, resolved.target, packages) },
+              { ...doc, serial: serialOf(project, resolved.target, packages, distribution) },
               packages,
             );
       attachment(
@@ -177,7 +183,7 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
         requirePrincipal(request),
         query.projectKey,
       );
-      const { resolved, doc } = await resolve(project, query);
+      const { resolved, doc, distribution } = await resolve(project, query);
       if (!(await monitoringOn(deps.db, project.id))) {
         throw new ProblemError(
           404,
@@ -199,8 +205,12 @@ export const exportRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       if (format === 'openvex') body = buildOpenVex(vexDoc, entries);
       else {
         // D8-1: the links name the SBOM of the inventory as it is now.
-        const packages = await exportPackages(deps.db, resolved.target);
-        body = buildCycloneDxVex(vexDoc, entries, serialOf(project, resolved.target, packages));
+        const packages = await exportPackages(deps.db, resolved.target, distribution);
+        body = buildCycloneDxVex(
+          vexDoc,
+          entries,
+          serialOf(project, resolved.target, packages, distribution),
+        );
       }
       attachment(
         reply,

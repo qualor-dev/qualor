@@ -14,7 +14,7 @@ import {
 } from '../db/schema';
 import { hasInventory, type DependencyTarget } from '../dependencies/query';
 import { VERSION } from '../index';
-import { exportPackages } from '../vulnerabilities/export/query';
+import { exportDistribution, exportPackages } from '../vulnerabilities/export/query';
 import { buildCycloneDxSbom } from '../vulnerabilities/export/sbom-documents';
 import { effectiveDecisionJoin, type VexJustification } from '../vulnerabilities/decisions';
 import { projectTargets } from '../vulnerabilities/targets';
@@ -163,7 +163,8 @@ async function sbomOf(
     generatedAt: string;
   },
 ): Promise<ComplianceSbom | null> {
-  const packages = await exportPackages(tx, input.target);
+  const distribution = await exportDistribution(tx, input.target);
+  const packages = await exportPackages(tx, input.target, distribution);
   if (!(await hasInventory(tx, input.target, packages.length))) return null;
   const json = JSON.stringify(
     buildCycloneDxSbom(
@@ -174,6 +175,7 @@ async function sbomOf(
         generatedAt: new Date(input.generatedAt),
         serial: input.reportId,
         toolVersion: VERSION,
+        distribution,
       },
       packages,
     ),

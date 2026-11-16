@@ -1,6 +1,30 @@
+import { isOsPackageType, type SbomDistribution } from '@qualor/shared';
 import { compare } from '../order';
+import { splitOsVersion } from '../sbom';
 import { cycloneDxLicenses, spdxLicense } from './licenses';
 import { productId, SBOM_BOM_VERSION, type ExportDocument, type ExportPackage } from './types';
+
+const TRIVY = 'aquasecurity:trivy:';
+
+/**
+ * Trivy's properties for an OS package's source (R9), so that Trivy reads the file as it reads its
+ * own: `SrcEpoch` is always written (`0` for none), `SrcRelease` only when there is one. They say
+ * what the `upstream` qualifier of the purl says.
+ */
+function trivyProperties(
+  p: ExportPackage,
+  distribution: SbomDistribution | null,
+): { name: string; value: string }[] | undefined {
+  if (p.source === null || distribution === null || !isOsPackageType(p.ecosystem)) return undefined;
+  const source = splitOsVersion(p.ecosystem, p.source.version);
+  return [
+    { name: `${TRIVY}PkgType`, value: distribution.family },
+    { name: `${TRIVY}SrcName`, value: p.source.name },
+    { name: `${TRIVY}SrcVersion`, value: source.version },
+    ...(source.release === '' ? [] : [{ name: `${TRIVY}SrcRelease`, value: source.release }]),
+    { name: `${TRIVY}SrcEpoch`, value: source.epoch === '' ? '0' : source.epoch },
+  ];
+}
 
 /** A CycloneDX 1.6 SBOM of a target. Packages keep the order they are given. */
 export function buildCycloneDxSbom(
@@ -8,8 +32,21 @@ export function buildCycloneDxSbom(
   packages: readonly ExportPackage[],
 ): object {
   const root = productId(doc.project, doc.target);
-  const components = packages.map((p) => {
+  const distribution = doc.distribution ?? null;
+  const system =
+    distribution === null
+      ? []
+      : [
+          {
+            type: 'operating-system',
+            'bom-ref': 'operating-system',
+            name: distribution.family,
+            version: distribution.version,
+          },
+        ];
+  const libraries = packages.map((p) => {
     const licenses = cycloneDxLicenses(p.licenses);
+    const properties = trivyProperties(p, distribution);
     return {
       type: 'library',
       'bom-ref': p.purl ?? `${p.ecosystem}:${p.name}@${p.version}`,
@@ -17,8 +54,10 @@ export function buildCycloneDxSbom(
       version: p.version,
       ...(p.purl === null ? {} : { purl: p.purl }),
       ...(licenses === undefined ? {} : { licenses }),
+      ...(properties === undefined ? {} : { properties }),
     };
   });
+  const components = [...system, ...libraries];
   return {
     bomFormat: 'CycloneDX',
     specVersion: '1.6',
@@ -48,6 +87,7 @@ function purlRef(locator: string): object {
 export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPackage[]): object {
   const extracted = new Map<string, string>();
   const rootId = 'SPDXRef-Package-root';
+  const distribution = doc.distribution ?? null;
   const spdxPackages = [
     {
       SPDXID: rootId,
@@ -60,6 +100,21 @@ export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPack
       copyrightText: 'NOASSERTION',
       externalRefs: [purlRef(productId(doc.project, doc.target))],
     },
+    ...(distribution === null
+      ? []
+      : [
+          {
+            SPDXID: 'SPDXRef-OperatingSystem-1',
+            name: distribution.family,
+            versionInfo: distribution.version,
+            primaryPackagePurpose: 'OPERATING_SYSTEM',
+            downloadLocation: 'NOASSERTION',
+            filesAnalyzed: false,
+            licenseConcluded: 'NOASSERTION',
+            licenseDeclared: 'NOASSERTION',
+            copyrightText: 'NOASSERTION',
+          },
+        ]),
     ...packages.map((p, i) => ({
       SPDXID: `SPDXRef-Package-${i + 1}`,
       name: p.name,
@@ -70,6 +125,9 @@ export function buildSpdxSbom(doc: ExportDocument, packages: readonly ExportPack
       licenseDeclared: spdxLicense(p.licenses, extracted),
       copyrightText: 'NOASSERTION',
       ...(p.purl === null ? {} : { externalRefs: [purlRef(p.purl)] }),
+      ...(p.source === null
+        ? {}
+        : { sourceInfo: `built package from: ${p.source.name} ${p.source.version}` }),
     })),
   ];
   const infos = [...extracted.entries()]

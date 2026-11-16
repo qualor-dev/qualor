@@ -12,7 +12,8 @@ import type { SbomComponent, SbomDocument, SbomRefusal } from './types';
 export const SPDX_VERSIONS: readonly string[] = ['SPDX-2.2', 'SPDX-2.3'];
 
 const DOCUMENT_ID = 'SPDXRef-DOCUMENT';
-/** Trivy's OS package ids start with this; the purpose `OPERATING-SYSTEM` says it for others. */
+/** Trivy's OS package ids start with this; the purpose says it for others: SPDX 2.3's `OPERATING_SYSTEM`, and the `OPERATING-SYSTEM` some tools write. */
+const OS_PURPOSES: ReadonlySet<string> = new Set(['OPERATING_SYSTEM', 'OPERATING-SYSTEM']);
 const OS_ID_PREFIX = 'SPDXRef-OperatingSystem-';
 const BUILT_FROM = 'built package from: ';
 /** A longer `sourceInfo` is not Trivy's one-line form. */
@@ -190,7 +191,10 @@ export function readSpdx(doc: Record<string, unknown>): SbomDocument | SbomRefus
 
   for (const p of packages) {
     if (p.SPDXID === subjectId) continue;
-    if (p.SPDXID.startsWith(OS_ID_PREFIX) || p.primaryPackagePurpose === 'OPERATING-SYSTEM') {
+    if (
+      p.SPDXID.startsWith(OS_ID_PREFIX) ||
+      (p.primaryPackagePurpose !== undefined && OS_PURPOSES.has(p.primaryPackagePurpose))
+    ) {
       const name = cleanText(cutText(p.name ?? '', SBOM_BOUNDS.name)).trim();
       if (name !== '') {
         operatingSystems.push({

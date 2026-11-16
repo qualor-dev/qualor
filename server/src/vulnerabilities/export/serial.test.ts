@@ -11,9 +11,17 @@ const PACKAGES: ExportPackage[] = [
     name: 'lodash',
     version: '4.17.21',
     purl: 'pkg:npm/lodash@4.17.21',
+    source: null,
     licenses: ['MIT'],
   },
-  { ecosystem: 'pip', name: 'requests', version: '2.31.0', purl: null, licenses: ['Apache-2.0'] },
+  {
+    ecosystem: 'pip',
+    name: 'requests',
+    version: '2.31.0',
+    purl: null,
+    source: null,
+    licenses: ['Apache-2.0'],
+  },
 ];
 
 describe('sbomSerial', () => {
@@ -47,5 +55,18 @@ describe('sbomSerial', () => {
       serial,
     );
     expect(sbomSerial('0197a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5d', TARGET, PACKAGES)).not.toBe(serial);
+  });
+});
+
+describe('sbomSerial and the distribution', () => {
+  const debian = { family: 'debian', version: '12.15' };
+  it('keeps the serial without one, and changes it with one', () => {
+    expect(sbomSerial(PROJECT, TARGET, PACKAGES, null)).toBe(sbomSerial(PROJECT, TARGET, PACKAGES));
+    expect(sbomSerial(PROJECT, TARGET, PACKAGES, debian)).not.toBe(
+      sbomSerial(PROJECT, TARGET, PACKAGES),
+    );
+    expect(sbomSerial(PROJECT, TARGET, PACKAGES, { ...debian, version: '12.14' })).not.toBe(
+      sbomSerial(PROJECT, TARGET, PACKAGES, debian),
+    );
   });
 });

@@ -262,21 +262,20 @@ describe('subject and operating system', () => {
     expect(inv.entries).toHaveLength(1);
   });
 
-  it('takes a package of purpose OPERATING-SYSTEM as the distribution', () => {
-    const inv = invOf(
-      spdx([
-        spdxPkg('os', null, {
-          name: 'alpine',
-          versionInfo: '3.20.3',
-          primaryPackagePurpose: 'OPERATING-SYSTEM',
-        }),
-        spdxPkg('a', 'pkg:apk/alpine/a@1-r0'),
-      ]),
-    );
-    expect(inv.distribution).toEqual({ family: 'alpine', version: '3.20.3' });
-    expect(inv.entries).toHaveLength(1);
-    expect(inv.skipped.noPurl).toBe(0);
-  });
+  it.each(['OPERATING-SYSTEM', 'OPERATING_SYSTEM'])(
+    'takes a package of purpose %s as the distribution',
+    (primaryPackagePurpose) => {
+      const inv = invOf(
+        spdx([
+          spdxPkg('os', null, { name: 'alpine', versionInfo: '3.20.3', primaryPackagePurpose }),
+          spdxPkg('a', 'pkg:apk/alpine/a@1-r0'),
+        ]),
+      );
+      expect(inv.distribution).toEqual({ family: 'alpine', version: '3.20.3' });
+      expect(inv.entries).toHaveLength(1);
+      expect(inv.skipped.noPurl).toBe(0);
+    },
+  );
 
   it('reads a source package only from the built-from form of sourceInfo', () => {
     const src = (sourceInfo: string) =>

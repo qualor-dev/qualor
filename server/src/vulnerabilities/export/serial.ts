@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { SbomDistribution } from '@qualor/shared';
 import { compare } from '../order';
 import type { ExportPackage } from './types';
 
@@ -6,7 +7,8 @@ import type { ExportPackage } from './types';
  * D8-1: the serial number of a target's CycloneDX SBOM, a uuid that follows from the project, the
  * target and its packages, so every download of one inventory carries it. The CycloneDX VEX links
  * to it, and Trivy applies a VEX only to the SBOM whose serial its links name. The packages are
- * hashed in (purl, ecosystem, name, version, licences) order, each with its licences sorted. The
+ * hashed in (purl, ecosystem, name, version, licences) order, each with its licences sorted, and the
+ * distribution of an SBOM version. The
  * uuid is the first 16 bytes of the sha256, with the version (8) and variant bits of RFC 9562 set
  * as `uuidv7` sets them (`db/ids.ts`).
  */
@@ -14,6 +16,7 @@ export function sbomSerial(
   projectId: string,
   targetKey: string,
   packages: readonly ExportPackage[],
+  distribution: SbomDistribution | null = null,
 ): string {
   const rows = packages
     .map(
@@ -28,7 +31,14 @@ export function sbomSerial(
         compare(a[4].join('\n'), b[4].join('\n')),
     );
   const bytes = createHash('sha256')
-    .update(JSON.stringify([projectId, targetKey, rows]))
+    .update(
+      // The distribution joins the hash only when there is one: a branch keeps its 0.15 serial.
+      JSON.stringify(
+        distribution === null
+          ? [projectId, targetKey, rows]
+          : [projectId, targetKey, rows, [distribution.family, distribution.version]],
+      ),
+    )
     .digest()
     .subarray(0, 16);
   bytes.writeUInt8(0x80 | (bytes.readUInt8(6) & 0x0f), 6);

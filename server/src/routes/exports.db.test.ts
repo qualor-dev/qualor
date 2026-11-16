@@ -360,6 +360,66 @@ describe('the SBOM and VEX export routes (4c)', () => {
       }
     });
 
+    it('writes the distribution and the OS packages of an uploaded SBOM version', async () => {
+      const p = await fresh();
+      const [version] = await h.ctx.db
+        .insert(projectVersions)
+        .values({
+          projectId: p.id,
+          label: 'image-1',
+          source: 'sbom',
+          analyzedAt: new Date('2026-11-16T10:00:00Z'),
+          hasInventory: true,
+          osFamily: 'debian',
+          osVersion: '12.15',
+        })
+        .returning();
+      await h.ctx.db.insert(versionDependencies).values([
+        {
+          versionId: version!.id,
+          path: '',
+          ecosystem: 'deb',
+          name: 'libssl3',
+          version: '3.0.22-1~deb12u2',
+          licenses: [],
+          sourceName: 'openssl',
+          sourceVersion: '3.0.22-1~deb12u2',
+        },
+        {
+          versionId: version!.id,
+          path: '',
+          ecosystem: 'npm',
+          name: 'zod',
+          version: '4.0.0',
+          licenses: ['MIT'],
+        },
+      ]);
+      const key =
+        'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.22-1~deb12u2';
+      const cdx = (await sbom(`projectKey=${p.key}&version=image-1`)).json();
+      expect(validateAgainst('cyclonedx', cdx)).toEqual([]);
+      expect(cdx.components[0]).toMatchObject({
+        type: 'operating-system',
+        name: 'debian',
+        version: '12.15',
+      });
+      expect(cdx.components.find((c: { name: string }) => c.name === 'libssl3')).toMatchObject({
+        purl: key,
+        'bom-ref': key,
+      });
+      const spdx = (await sbom(`projectKey=${p.key}&version=image-1&format=spdx`)).json();
+      expect(validateAgainst('spdx', spdx)).toEqual([]);
+      expect(spdx.packages[1]).toMatchObject({
+        SPDXID: 'SPDXRef-OperatingSystem-1',
+        name: 'debian',
+      });
+      // A branch has none, and keeps its 0.15 document.
+      const branch = (await sbom(`projectKey=${p.key}`)).json();
+      expect(branch.components.map((c: { type: string }) => c.type)).not.toContain(
+        'operating-system',
+      );
+    });
+
     it('sorts packages by name, version, then ecosystem', async () => {
       const p = await fresh();
       const [known] = await h.ctx.db
