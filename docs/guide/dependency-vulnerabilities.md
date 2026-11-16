@@ -61,6 +61,9 @@ Versions that are not tracked fold into one line, such as
 "2.1.9 · 2.0.5 · 14 more — not tracked". **Show** lists them with "Not tracked" and the counts
 they kept. **Hide** folds them again.
 
+**Upload SBOM** adds a version from a CycloneDX or SPDX file ([SBOM upload](./sbom-upload.md)). An
+SBOM version shows an **SBOM** mark, its subject and its distribution.
+
 The menu of a version row changes how the version is tracked. It needs the permission to change
 the project's settings (Organization admin and Project admin, [Roles](./roles-and-audit.md#roles)).
 
@@ -70,6 +73,7 @@ the project's settings (Organization admin and Project admin, [Roles](./roles-an
 | **Unpin** | removes the pin: the rule decides |
 | **Mark as unsupported** | the version is never tracked |
 | **Track automatically** | removes the mark: the rule decides |
+| **Delete version** | deletes the version ([Delete a version](./sbom-upload.md#delete-a-version)). It needs the same permission |
 
 The marks are the ones of [Releases and versions](./releases.md#which-versions-are-tracked).
 
@@ -272,6 +276,7 @@ An SBOM lists every package of the target's dependency list, sorted by name, ver
 - A package is one entry. Packages that share a purl, such as one package in an npm and a yarn
   lockfile, are one entry.
 - A package without a purl is still listed.
+- An SBOM version with OS packages also lists its distribution ([Export](./sbom-upload.md#export)).
 - The document names the project and the target, and carries the time it was made and Qualor as
   its tool.
 
@@ -374,6 +379,45 @@ The scanner sends the ids that the repository's `.trivyignore` ignores, with the
 ([The vulnerability database](./vulnerability-database.md#the-re-check)). A vulnerability ignored
 there shows dimmed with "Ignored in .trivyignore". It is not counted and is never new.
 
+## Where used
+
+**Packages** in the top bar shows every project, branch and version that holds a package. Use it
+after an advisory: "are we on log4j 2.14 anywhere?" It is in every edition.
+
+| Field | Meaning |
+|---|---|
+| **Package name or purl** | a name, or a purl that starts with `pkg:`. 1 to 300 characters |
+| **Ecosystem** | narrows the search to one purl type, such as `npm` or `deb` |
+| **Version** | an exact version |
+
+- A name of 3 or more characters matches any package whose name contains it. A name of 1 or 2
+  characters, such as `qs`, must match the whole name. Case does not matter, and `%` and `_` are
+  ordinary characters.
+- A purl matches the name and the version exactly. Its type covers every ecosystem that maps to it:
+  `pkg:pypi/…` also finds packages scanned as `pip`, `poetry` or `uv`.
+- For `deb`, `rpm` and `apk`, the purl's namespace must be the distribution's family, as in
+  [OS packages](./sbom-upload.md#os-packages): `pkg:rpm/rhel/…` finds `redhat`. Without a
+  namespace, the search covers every family. The `distro` qualifier is ignored. An rpm `epoch`
+  is part of the version.
+- The search covers the branches and all versions of every project you can read, with monitoring
+  on or off. It skips merge requests. An old release may still be deployed.
+- A project token cannot search (403 `TOKEN_NOT_ALLOWED`). A personal token needs the `read` scope.
+
+A row has:
+
+| Column | Meaning |
+|---|---|
+| **Project**, **Branch or version** | where the package is. **main** marks the main branch. **SBOM** marks a version [made from an upload](./sbom-upload.md) |
+| **Package**, **Version**, **Path** | the package, with the file it came from. The name links to the **Dependencies** tab of that branch or version |
+| **Dependency** | **Direct**, **Transitive**, or "–" when the file does not say |
+| **Distribution** | the distribution of an SBOM version with OS packages |
+| **Vulnerabilities** | the package's open vulnerabilities, counted as the **Vulnerabilities** tab counts them. "not checked" when Qualor has no current check for the package in that branch or version, for example while monitoring is off for its project |
+
+Rows are ordered by name, version, project, then branches before versions. The page shows 50 rows
+(`pageSize` up to 100). The total stops at "10 000+".
+
+An agent asks the same question with `qualor_package_usages` in the [MCP server](./mcp.md).
+
 ## The rate limit
 
 A decision counts as 1, plus 1 for each issue it changes, against the per-user budget of issue
@@ -388,6 +432,7 @@ A refused or failed decision costs nothing.
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
 | `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`, tracked or not; a merge request is not a target (404)), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
+| `GET /api/v0/packages/usages` | the `read` scope; not a project token | where a package is used ([Where used](#where-used)). Query: `q` (required), `ecosystem`, `version`, `page`, `pageSize` (50 by default, at most 100). Each row has `project`, `target`, `ecosystem`, `name`, `version`, `path`, `direct`, `distribution` and `vulnerabilities`; the answer has `total` and `totalCapped` |
 
 A decision is a body like this:
 

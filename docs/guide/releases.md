@@ -2,7 +2,7 @@
 
 Qualor records each release of a project as a **version**: a label and the release's dependency
 list. A scan in a tag pipeline records it. The GitLab component and the GitHub workflow templates
-run that scan on every tag.
+run that scan on every tag. An [uploaded SBOM](./sbom-upload.md) records a version too.
 
 A project's rules decide which of its versions are tracked. The settings panel, the
 **Dependencies** tab and the API show which ones are. The server checks the tracked ones for
@@ -183,6 +183,30 @@ each analysis records a new version.
 - An analysis without a dependency list records no version, for example with
   `analyzers.trivy.licenses: false`.
 
+## Versions from an SBOM
+
+A version has a source: `tag` (a tag scan), `label` (a branch analysis) or `sbom` (an
+[upload](./sbom-upload.md)). When two sources want one label, the higher one keeps it:
+**tag, then SBOM, then label**.
+
+| Event | Result |
+|---|---|
+| Upload onto a tag version | refused, 409 `VERSION_LABEL_TAKEN` |
+| Upload onto a label version | the SBOM takes it |
+| Tag scan onto an SBOM version | the scan takes it, with the warning `VERSION_SBOM_REPLACED` |
+| Branch label onto an SBOM version | the SBOM stays |
+
+An SBOM version is tracked by the same rules, pins and marks. Its label is often not a version
+number, and the rule then ranks it by upload time. An image SBOM goes in a project of its own
+([Precedence](./sbom-upload.md#precedence)).
+
+### Delete a version
+
+**Delete version** in the row menu of the **Vulnerabilities** tab, or
+`DELETE /projects/{id}/versions/{versionId}`, deletes any version. It needs the right to change
+project settings, and the **Admin** scope on a personal token. See
+[Delete a version](./sbom-upload.md#delete-a-version).
+
 ## A version's packages
 
 **Project → Dependencies** shows a version's packages. Choose the version under **Versions** in the
@@ -212,12 +236,14 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
 - `GET /projects/{id}/versions` pages with `limit` (1 to 100, 50 by default) and `cursor`. Each
   version has:
   - `id`, `label`, `tag` and `analyzedAt`, the date of its scan;
-  - `source`: `tag`, or `label` for a version taken from a branch analysis;
+  - `source`: `tag`, `label` for a version taken from a branch analysis, or `sbom`;
+  - `sbomFormat`, `sbomSubject` and `distribution` (`family` and `version`), set for an SBOM version;
   - `tracking`: the mark, `auto`, `pinned` or `unsupported`;
   - `tracked` and `trackingReason`, below;
   - `prerelease`, and `packages`, the number of packages.
 - `PATCH /projects/{id}/versions/{versionId}` takes `{"tracking": …}` and answers the version.
   Setting the tracking a version already has changes nothing: no audit entry, no re-check.
+- `DELETE /projects/{id}/versions/{versionId}` answers 204.
 - `GET /projects/{id}/vulnerability-monitoring` answers the four settings, plus `mainBranchName`,
   `matchingBranches` (up to 50), `trackedVersions` and `versionCount`. `trackedVersions` holds up
   to 50 labels, the most recently scanned first.
@@ -232,8 +258,9 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
   settings, and a personal token needs the **Admin** scope for them.
 - `GET /analyses/{id}` of a tag scan answers `version` (`id` and `label`), `"branch": null`, and
   the gate status `none`.
-- With `audit-log`, changes are recorded as `project.vulnerability_monitoring_updated` and
-  `project_version.updated` ([Roles and the audit log](./roles-and-audit.md#what-is-recorded)).
+- With `audit-log`, changes are recorded as `project.vulnerability_monitoring_updated`,
+  `project_version.updated`, `project_version.deleted` and `project_version.sbom_uploaded`
+  ([Roles and the audit log](./roles-and-audit.md#what-is-recorded)).
 
 | `trackingReason` | Tracked | Why |
 |---|---|---|

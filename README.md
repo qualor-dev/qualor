@@ -196,6 +196,11 @@ against it. A vulnerability published after your last scan shows up without a ne
 - **Triage once.** **Change status** marks a vulnerability Not affected, with one of the five VEX
   reasons, or Affected, won't fix. The decision covers every branch and version of the project, and
   the matching Trivy issues.
+- **SBOM upload.** A CycloneDX or SPDX file, such as an image's SBOM with its OS packages,
+  becomes a tracked version. Upload it with `qualor upload-sbom`, the API or the UI. See
+  [SBOM upload](docs/guide/sbom-upload.md).
+- **Where used.** **Packages** finds every project, branch and version that holds a package, by name
+  or purl. See [Where used](docs/guide/dependency-vulnerabilities.md#where-used).
 - **Offline too.** The database comes from the official source, your mirror or an uploaded file.
   Scanners take it from the server.
 - **Licences.** The **Dependencies** tab lists every package with its licences.

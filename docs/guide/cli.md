@@ -57,6 +57,25 @@ also uploads a snapshot of the repository right after the report. Its log lines 
 `AI review`. A failure there is only a warning: the exit code stays the quality gate's. A scan that
 exits 3 sends no snapshot.
 
+## `qualor upload-sbom`
+
+```text
+qualor upload-sbom FILE [--version LABEL] [--project-key KEY] [--config PATH]
+                   [--token-file PATH] [--server-url URL] [--ca-file PATH]
+```
+
+It uploads a CycloneDX or SPDX JSON file as a [version](./sbom-upload.md). The server, token and
+project key come from the same flags, environment and `qualor.yml` as `qualor scan`. The CLI
+gzips the file, prints what the server stored, and retries for up to 300 seconds while the server
+reads another SBOM.
+
+| Code | When |
+|---|---|
+| 0 | the server stored the version |
+| 2 | the file cannot be read, a flag is wrong, or there is no server, token or project key |
+| 4 | the server refused the upload (the CLI prints its code, title and detail, such as `VERSION_LABEL_TAKEN`), is unreachable, or stayed busy |
+| 5 | 401 or 403: the token is wrong, or lacks the permission |
+
 ## `qualor dotnet begin | end | abort`
 
 The C# route ([Languages and analyzers](./languages-and-analyzers.md#c)):

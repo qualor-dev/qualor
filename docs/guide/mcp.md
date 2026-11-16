@@ -77,6 +77,7 @@ the box unticked.
 | `qualor_issue` | One issue in full: the code, secondary locations, the rule and its history. For a finding of the AI review, also the review's text, what it assumes, the second check, the suggested change and the commit it read | read |
 | `qualor_rule` | What a rule checks and how to fix what it reports | read |
 | `qualor_measures` | Coverage, duplication and ratings; for a file, its covered and uncovered lines | read |
+| `qualor_package_usages` | Where a package is used: the projects, branches and versions you can read that hold it, with their open vulnerabilities. Takes a name or purl, and optionally an ecosystem and a version. Returns the first 50 rows and the total ([Where used](./dependency-vulnerabilities.md#where-used)) | read |
 | `qualor_explain` | Asks the AI assistant to explain an issue | read, and the AI assistant on |
 | `qualor_suggest_fix` | Asks the AI assistant for a fix. Nothing is posted anywhere | read, and the AI assistant on |
 | `qualor_transition_issue` | Marks an issue false positive or won't fix, or reopens it, with a mandatory comment. The optional `reason` (a VEX justification) is required for a false positive on a Trivy issue of the main branch or a tracked branch ([Dependency vulnerabilities](./dependency-vulnerabilities.md#statuses-and-reasons)) | change issue statuses |

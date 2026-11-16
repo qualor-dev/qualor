@@ -24,6 +24,8 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   'install-server': () => import('../../../../docs/guide/install-server.md'),
   'languages-and-analyzers': () => import('../../../../docs/guide/languages-and-analyzers.md'),
   mcp: () => import('../../../../docs/guide/mcp.md'),
+  'migrate-from-dependency-track': () =>
+    import('../../../../docs/guide/migrate-from-dependency-track.md'),
   'migrate-from-sonarqube': () => import('../../../../docs/guide/migrate-from-sonarqube.md'),
   'other-ci': () => import('../../../../docs/guide/other-ci.md'),
   portfolio: () => import('../../../../docs/guide/portfolio.md'),
@@ -31,6 +33,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   'quick-start': () => import('../../../../docs/guide/quick-start.md'),
   releases: () => import('../../../../docs/guide/releases.md'),
   'roles-and-audit': () => import('../../../../docs/guide/roles-and-audit.md'),
+  'sbom-upload': () => import('../../../../docs/guide/sbom-upload.md'),
   'sso-and-scim': () => import('../../../../docs/guide/sso-and-scim.md'),
   'support-bundle': () => import('../../../../docs/guide/support-bundle.md'),
   telemetry: () => import('../../../../docs/guide/telemetry.md'),
