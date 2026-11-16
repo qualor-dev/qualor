@@ -163,15 +163,16 @@ const settingsDto = z.object({
       givenUp: z
         .object({
           invalid: z.number().int().meta({
-            description: 'Packages whose stored values failed validation and never reached Trivy',
+            description:
+              'Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy',
           }),
           trivyFailed: z
             .number()
             .int()
-            .meta({ description: 'Single operating-system packages Trivy failed on' }),
+            .meta({ description: 'Single packages Trivy failed on, or answered too much for' }),
           overBudget: z.number().int().meta({
             description:
-              'Operating-system packages of organisations past their failure budget for the run',
+              'Packages of organisations past their failure budget for the run, not bisected',
           }),
           unsupported: z.array(z.string()).meta({
             description:

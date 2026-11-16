@@ -198,17 +198,49 @@ export function validStoredValues(p: MatchKeyInput): boolean {
 }
 
 /**
+ * The longest key stored, in UTF-8 bytes. The key is indexed in `matched_packages`,
+ * `vulnerability_matches` and `target_vulnerabilities`, and PostgreSQL's B-tree takes at most
+ * 2 704 bytes per index row: a longer key would fail the run's write, for every project.
+ */
+export const MAX_KEY_BYTES = 2_000;
+
+/** The key of a row ({@link matchKeyOf}), and whether its stored values are what keeps it from one. */
+function keyCheck(p: MatchKeyInput): { key: string | null; invalid: boolean } {
+  if (!validStoredValues(p)) return { key: null, invalid: true };
+  let key: string | null;
+  if (!isOsPackageType(p.ecosystem)) {
+    key = purlOf(p.ecosystem, p.name, p.version);
+  } else if (
+    p.osFamily === null ||
+    p.osVersion === null ||
+    p.osVersion === '' ||
+    !TRIVY_OS_FAMILIES.has(p.osFamily) ||
+    p.name === '' ||
+    p.version === ''
+  ) {
+    key = null;
+  } else {
+    key = osMatchKey(p.ecosystem, p.osFamily, p.osVersion, p.name, p.version, osSourceOf(p));
+  }
+  if (key !== null && Buffer.byteLength(key, 'utf8') > MAX_KEY_BYTES) {
+    return { key: null, invalid: true };
+  }
+  return { key, invalid: false };
+}
+
+/**
  * The key a stored package is matched under: an OS package's {@link osMatchKey} when its version
  * names a distribution Trivy knows, a library's {@link purlOf}. Null, "not checked", for values
- * that fail {@link validStoredValues}, an OS package without a distribution or of an unknown
- * family, and anything without a purl type.
+ * that fail {@link validStoredValues} or give a key over {@link MAX_KEY_BYTES}, an OS package
+ * without a distribution or of an unknown family, and anything without a purl type.
  */
 export function matchKeyOf(p: MatchKeyInput): string | null {
-  if (!validStoredValues(p)) return null;
-  if (!isOsPackageType(p.ecosystem)) return purlOf(p.ecosystem, p.name, p.version);
-  if (p.osFamily === null || p.osVersion === null || p.osVersion === '') return null;
-  if (!TRIVY_OS_FAMILIES.has(p.osFamily) || p.name === '' || p.version === '') return null;
-  return osMatchKey(p.ecosystem, p.osFamily, p.osVersion, p.name, p.version, osSourceOf(p));
+  return keyCheck(p).key;
+}
+
+/** Whether a row has no key because of its stored values ({@link matchKeyOf}): it is "invalid". */
+export function invalidStoredPackage(p: MatchKeyInput): boolean {
+  return keyCheck(p).invalid;
 }
 
 /** The ecosystems stored for a purl type: the type itself and every one that maps to it. */

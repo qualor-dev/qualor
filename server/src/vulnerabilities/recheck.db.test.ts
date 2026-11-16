@@ -1095,9 +1095,9 @@ describe('vulnerability re-checks', () => {
         ).length > 1
           ? Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' })
           : inner(sbom, cacheDir, signal);
-      expect(
-        await recheck({ projectIds: [p.id] }, { chunk: { components: 4, floor: 1 } }),
-      ).toMatchObject({ kind: 'done' });
+      expect(await recheck({ projectIds: [p.id] }, { chunk: { components: 4 } })).toMatchObject({
+        kind: 'done',
+      });
       expect(runsByGroup().sort()).toEqual(
         [
           `libraries: ${PA}`,
@@ -1280,7 +1280,7 @@ describe('vulnerability re-checks', () => {
       expect(runsByGroup()).toEqual([`debian 12.15: ${badKey}`]);
     });
 
-    it('gives up a whole distribution only when Trivy cannot scan its release (CPE indices)', async () => {
+    it('gives up a distribution only when its probe fails and a known-good release of its family passes (R20)', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A] });
       await sbomVersion(p, 'shop-debian', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
@@ -1342,10 +1342,10 @@ describe('vulnerability re-checks', () => {
           givenUp: { invalid: 0, trivyFailed: 1, unsupported: [] },
         },
       });
-      // The probe of the release passed (once: remembered for the run), so the chunk was bisected
-      // and the others are matched.
+      // The probe of the release passed (in each step: never remembered, R20), so the chunk was
+      // bisected and the others are matched.
       const names = trivy.calls.flatMap((c) => c.names);
-      expect(names.filter((n) => n === 'qualor-release-probe')).toHaveLength(1);
+      expect(names.filter((n) => n === 'qualor-release-probe').length).toBeGreaterThan(0);
       expect(names).toEqual(expect.arrayContaining(['libssl3', 'login']));
       expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
       expect(await digests([keyOf(LOGIN, DEBIAN)])).toEqual({
@@ -1492,6 +1492,150 @@ describe('vulnerability re-checks', () => {
       // The chunk and the probe of that release failed; the baseline probe passed.
       expect(trivyFails.failures()).toBe(2);
       expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
+      trivyFails.restore();
+    });
+
+    it('halves a chunk that is too large down to one package; a single one still too large is given up (Critical 1)', async () => {
+      const p = await project();
+      const debs = Array.from({ length: 11 }, (_, i) => osDep('deb', `small-${i}`, '1.0-1'));
+      await sbomVersion(p, 'shop', DEBIAN, [...debs, osDep('deb', 'huge', '0'), LIBSSL3]);
+      await onBranch(p, 'main', { dependencies: [A, B, dep('huge-lib', '0')] });
+      warnings.length = 0;
+      // One package whose answer alone is over the output cap, as linux@0 can be.
+      let tooLarge = 0;
+      const inner = trivy.run.bind(trivy);
+      trivy.run = (sbom, cacheDir, signal) => {
+        const { components } = JSON.parse(sbom) as { components: FakeComponent[] };
+        if (!components.some((c) => c.name === 'huge' || c.name === 'huge-lib')) {
+          return inner(sbom, cacheDir, signal);
+        }
+        tooLarge += 1;
+        return Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' });
+      };
+      // The real chunk size and no floor: down to one package.
+      const result = await recheck({ projectIds: [p.id] }, { logger: logged });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: {
+          packages: 14,
+          unchecked: 2,
+          givenUp: { invalid: 0, trivyFailed: 2, overBudget: 0, unsupported: [] },
+        },
+      });
+      expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
+      expect(await described(p)).toEqual(
+        expect.arrayContaining([`main ${PA} CVE-2026-0001`, `main ${PB} CVE-2026-0002`]),
+      );
+      // Halving only the chunk that holds it: 13 OS packages down to 1 in at most 5 answers, 3
+      // libraries in at most 3.
+      expect(tooLarge).toBeGreaterThanOrEqual(5);
+      expect(tooLarge).toBeLessThanOrEqual(8);
+      expect(JSON.stringify(warnings)).toContain('output over the budget');
+    });
+
+    it('leaves a row whose key would pass PostgreSQL’s index limit unchecked (Important 2)', async () => {
+      const p = await project();
+      // Varied CJK characters, so that PostgreSQL cannot compress the index row below its limit.
+      const cjk = (n: number, seed: number) =>
+        Array.from({ length: n }, (_, i) =>
+          String.fromCharCode(0x4e00 + ((i * 7_919 + seed) % 20_000)),
+        ).join('');
+      // 512 in the name and in the source: a key of about 9 300 bytes.
+      const longDeb = osDep('deb', cjk(512, 1), '1.0-1', cjk(512, 2), '1.0-1');
+      await sbomVersion(p, 'shop', DEBIAN, [LIBSSL3, longDeb]);
+      // 300 CJK characters in a library's name: a purl of about 2 700 bytes.
+      await onBranch(p, 'main', { dependencies: [A, dep(cjk(300, 3), '1.0.0')] });
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { packages: 2, unchecked: 2, givenUp: { invalid: 2 } },
+      });
+      expect(trivy.calls.flatMap((c) => c.names).sort()).toEqual(['libssl3', 'lodash']);
+      expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
+    });
+
+    it('isolates a library Trivy rejects: another tenant’s libraries are matched (R19)', async () => {
+      const attacker = await project();
+      const victim = await otherTenant();
+      await sbomVersion(attacker, 'image', null, [dep('evil-lib', '1.0.0'), C]);
+      await sbomVersion(victim, 'image', null, [A, B]);
+      warnings.length = 0;
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.name === 'evil-lib') ? exited('FATAL panic: evil') : null,
+      );
+      const result = await recheck({ projectIds: [attacker.id, victim.id] }, { logger: logged });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { packages: 3, unchecked: 1, givenUp: { trivyFailed: 1, overBudget: 0 } },
+      });
+      expect(await described(victim)).toEqual(
+        [
+          `image ${PA} CVE-2026-0001`,
+          `image ${PB} CVE-2026-0002`,
+          `image ${PB} CVE-2026-0003`,
+        ].sort(),
+      );
+      expect(await digests([PA, PB, PC])).toEqual({
+        [PA]: primary.digest,
+        [PB]: primary.digest,
+        [PC]: primary.digest,
+      });
+      expect(JSON.stringify(warnings)).toContain('evil');
+      trivyFails.restore();
+    });
+
+    it('fails the run when Trivy rejects libraries and the server’s library probe too (R19)', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A, B] });
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.type === 'operating-system') ? null : exited('FATAL db broken'),
+      );
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      if (result.kind === 'failed') expect(result.error.message).toContain('db broken');
+      // The chunk and the probe: no bisecting.
+      expect(trivyFails.failures()).toBe(2);
+      expect(await digests([PA, PB])).toEqual({});
+      trivyFails.restore();
+    });
+
+    it('fails the run when a known-good release of the family fails too (R20)', async () => {
+      const p = await project();
+      await sbomVersion(p, 'debian', DEBIAN, [LIBSSL3]);
+      await sbomVersion(p, 'alpine', ALPINE, [LIBCRYPTO3]);
+      // Trivy's Debian detector is broken, whatever the release; Alpine works.
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.type === 'operating-system' && c.name === 'debian')
+          ? exited('FATAL debian detector broken')
+          : null,
+      );
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      if (result.kind === 'failed') {
+        expect(result.error.message).toContain('debian detector broken');
+      }
+      expect(await digests([PSSL])).toEqual({});
+      trivyFails.restore();
+    });
+
+    it('decides every give-up in its own step: Trivy breaking mid-run fails the run (R20)', async () => {
+      const p = await project();
+      await sbomVersion(p, 'debian', DEBIAN, [LIBSSL3]);
+      await sbomVersion(p, 'alpine', ALPINE, [LIBCRYPTO3]);
+      // Both releases fail as releases; once the first known-good probe has passed, Trivy breaks.
+      let broken = false;
+      const trivyFails = failingWhen((components) => {
+        if (broken) return exited('FATAL broken since the first give-up');
+        const os = components.find((c) => c.type === 'operating-system');
+        if (os === undefined) return null;
+        if (os.version === '12.15' || os.version === '3.20.3') return exited('FATAL release');
+        broken = true; // the known-good probe (debian 12 or alpine 3.20) passes, once
+        return null;
+      });
+      const result = await recheck({ projectIds: [p.id] });
+      // The second distribution is not filed as unsupported on the first one's verdict.
+      expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
+      if (result.kind === 'failed') expect(result.error.message).toContain('broken since');
       trivyFails.restore();
     });
   });
@@ -1657,17 +1801,18 @@ describe('vulnerability re-checks', () => {
         (JSON.parse(sbom) as { components: unknown[] }).components.length > 2
           ? Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' })
           : inner(sbom, cacheDir, signal);
-      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 4, floor: 1 } });
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 4 } });
       expect(result).toMatchObject({ kind: 'done' });
       expect(await described(p)).toHaveLength(4);
       expect((await digests([PA, PB, PC, PD]))[PC]).toBeDefined();
     });
 
-    it('a chunk still too large at the floor fails the re-check and stores nothing of it', async () => {
+    it('fails the re-check, storing nothing, when even the library probe is too large', async () => {
       const p = await project();
       await onBranch(p, 'main', { dependencies: [A, B] });
+      // Every run answers TOO_LARGE, the server's own probe too: Trivy is what is broken.
       trivy.failure = { ok: false, code: 'TOO_LARGE', message: 'output over the budget' };
-      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 2, floor: 1 } });
+      const result = await recheck({ projectIds: [p.id] }, { chunk: { components: 2 } });
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
       expect((await readVulndbState(db())).lastRecheckError?.message).toContain('TOO_LARGE');
       expect(await rows(p)).toEqual([]);

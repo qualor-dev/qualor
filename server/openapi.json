@@ -28296,19 +28296,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",
@@ -29077,19 +29077,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",
@@ -29706,19 +29706,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",
@@ -30325,19 +30325,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",
@@ -30992,19 +30992,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",
@@ -31659,19 +31659,19 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                  "description": "Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy"
                                 },
                                 "trivyFailed": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Single operating-system packages Trivy failed on"
+                                  "description": "Single packages Trivy failed on, or answered too much for"
                                 },
                                 "overBudget": {
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991,
-                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                  "description": "Packages of organisations past their failure budget for the run, not bisected"
                                 },
                                 "unsupported": {
                                   "type": "array",

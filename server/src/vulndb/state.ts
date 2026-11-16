@@ -43,9 +43,10 @@ export interface VulndbState {
     unchecked: number;
     /**
      * The packages the run gave up on purpose (0.16, rulings R16, R17), counted in `unchecked`
-     * too: stored values that failed validation and never reached Trivy; single OS packages
-     * Trivy failed on; OS packages of organisations past their failure budget; and the
-     * distributions (`<family> <version>`, at most 20) Trivy cannot scan.
+     * too: stored values that failed validation (or would give a key over 2 000 bytes) and never
+     * reached Trivy; single packages Trivy failed on or answered too much for; packages of
+     * organisations past their failure budget; and the distributions (`<family> <version>`, at
+     * most 20) Trivy cannot scan.
      */
     givenUp: { invalid: number; trivyFailed: number; overBudget: number; unsupported: string[] };
     durationMs: number;

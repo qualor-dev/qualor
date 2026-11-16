@@ -2,7 +2,9 @@ import { parsePurl, parseSbom } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   ecosystemsOfType,
+  invalidStoredPackage,
   matchKeyOf,
+  MAX_KEY_BYTES,
   osMatchKey,
   osSourceOf,
   purlOf,
@@ -342,6 +344,32 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
     const row = { ...rpm, ...change };
     expect(validStoredValues(row)).toBe(false);
     expect(matchKeyOf(row)).toBeNull();
+  });
+
+  it('gives no key, and calls invalid, a row whose key is over 2 000 bytes (Important 2)', () => {
+    // PostgreSQL's B-tree takes at most 2 704 bytes per index row; the keys are indexed.
+    const cjk = '一'.repeat(512);
+    const longDeb = { ...rpm, ecosystem: 'deb', name: cjk, version: '1.0-1', sourceName: cjk };
+    expect(validStoredValues(longDeb)).toBe(true);
+    expect(matchKeyOf(longDeb)).toBeNull();
+    expect(invalidStoredPackage(longDeb)).toBe(true);
+    const npm = {
+      ecosystem: 'npm',
+      osFamily: null,
+      osVersion: null,
+      sourceName: null,
+      sourceVersion: null,
+    };
+    // 300 CJK characters encode to 2 700 bytes; 200 to 1 800.
+    expect(matchKeyOf({ ...npm, name: '丁'.repeat(300), version: '1' })).toBeNull();
+    const fits = matchKeyOf({ ...npm, name: '丁'.repeat(200), version: '1' });
+    expect(Buffer.byteLength(fits ?? '')).toBeGreaterThan(1_800);
+    expect(Buffer.byteLength(fits ?? '')).toBeLessThanOrEqual(MAX_KEY_BYTES);
+    expect(invalidStoredPackage({ ...npm, name: 'left-pad', version: '1' })).toBe(false);
+    // No key without being invalid: an ecosystem without a purl type.
+    expect(invalidStoredPackage({ ...npm, ecosystem: 'generic', name: 'x', version: '1' })).toBe(
+      false,
+    );
   });
 
   it('checks a library’s name and version too', () => {

@@ -12824,11 +12824,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
@@ -12998,11 +12998,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
@@ -13170,11 +13170,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
@@ -13337,11 +13337,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
@@ -13532,11 +13532,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
@@ -13727,11 +13727,11 @@ export interface paths {
                                 unchecked: number;
                                 /** @description Of `unchecked`, the packages the re-check gave up, by reason */
                                 givenUp?: {
-                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    /** @description Packages whose stored values failed validation, or would give a key over 2 000 bytes, and never reached Trivy */
                                     invalid: number;
-                                    /** @description Single operating-system packages Trivy failed on */
+                                    /** @description Single packages Trivy failed on, or answered too much for */
                                     trivyFailed: number;
-                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    /** @description Packages of organisations past their failure budget for the run, not bisected */
                                     overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
