@@ -9,6 +9,19 @@ import type { Purl } from './purl';
 export const SBOM_MAX_DEPTH = 32;
 /** A JSON text with more objects and arrays than this is refused before `JSON.parse` (ruling R2). */
 export const SBOM_MAX_JSON_CONTAINERS = 2_000_000;
+/**
+ * A JSON text with more keys and values than this (strings, numbers, literals, objects and arrays)
+ * is refused before `JSON.parse`. A 64 MiB array of numbers or short strings took a 1 GiB server
+ * down, and so did 8 million short strings after other large uploads. A real 50 000-package SBOM
+ * holds under 4 million (0.16 Task 16).
+ */
+export const SBOM_MAX_JSON_VALUES = 6_000_000;
+/**
+ * A JSON text with more distinct keys than this is refused before `JSON.parse`: `JSON.parse` keeps
+ * every distinct key, and 4 million of them took a 1 GiB server down. Real SBOMs use under 50
+ * (0.16 Task 16).
+ */
+export const SBOM_MAX_JSON_KEYS = 10_000;
 
 /** The operating system of an image SBOM, its family named as Trivy names it. */
 export interface SbomDistribution {

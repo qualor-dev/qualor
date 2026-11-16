@@ -13,6 +13,8 @@ import { readSpdx } from './spdx';
 import {
   SBOM_MAX_DEPTH,
   SBOM_MAX_JSON_CONTAINERS,
+  SBOM_MAX_JSON_KEYS,
+  SBOM_MAX_JSON_VALUES,
   type SbomComponent,
   type SbomDistribution,
   type SbomDocument,
@@ -46,25 +48,51 @@ function refuse(code: SbomRefusal['code'], message: string): { refusal: SbomRefu
 }
 
 /**
- * Whether a JSON text holds more than `limit` objects and arrays: one linear scan counting `{` and
- * `[` outside strings (a backslash in a string skips the character after it), stopping at the
- * limit. `JSON.parse` builds every value at once, so a flood of `{}` must be refused before it.
+ * Which bound a JSON text passes, if any: more objects and arrays than
+ * {@link SBOM_MAX_JSON_CONTAINERS}, more keys and values than {@link SBOM_MAX_JSON_VALUES}, or more
+ * distinct keys than {@link SBOM_MAX_JSON_KEYS}. One linear scan, stopping at a bound:
+ * - a key or a value starts at the first character after `{`, `[`, `,` or `:` that is neither
+ *   white space nor a closing bracket;
+ * - a string ends at the next quote that no backslash escapes;
+ * - a key is a string that starts right after `{` or `,` inside an object. Keys are compared as
+ *   written, escapes included.
+ *
+ * `JSON.parse` builds every value at once, so a flood of `{}`, of numbers, of short strings or of
+ * unique keys must be refused before it.
  */
-function exceedsContainers(text: string, limit: number): boolean {
-  let count = 0;
-  let inString = false;
+function jsonFlood(text: string): 'containers' | 'values' | 'keys' | null {
+  let containers = 0;
+  let values = 0;
+  let expecting = true;
+  let previous = 0;
+  /** The open containers, innermost last: true for an object. */
+  const open: boolean[] = [];
+  const keys = new Set<string>();
   for (let i = 0; i < text.length; i++) {
     const c = text.charCodeAt(i);
-    if (inString) {
-      if (c === 0x5c) i++;
-      else if (c === 0x22) inString = false;
-    } else if (c === 0x22) {
-      inString = true;
-    } else if ((c === 0x7b || c === 0x5b) && ++count > limit) {
-      return true;
+    if (c === 0x20 || c === 0x0a || c === 0x0d || c === 0x09) continue;
+    if (expecting && c !== 0x7d && c !== 0x5d && ++values > SBOM_MAX_JSON_VALUES) return 'values';
+    expecting = c === 0x7b || c === 0x5b || c === 0x2c || c === 0x3a;
+    if (c === 0x22) {
+      const start = i + 1;
+      for (i = start; i < text.length; i++) {
+        const s = text.charCodeAt(i);
+        if (s === 0x5c) i++;
+        else if (s === 0x22) break;
+      }
+      if ((previous === 0x7b || previous === 0x2c) && open.at(-1) === true) {
+        keys.add(text.slice(start, i));
+        if (keys.size > SBOM_MAX_JSON_KEYS) return 'keys';
+      }
+    } else if (c === 0x7b || c === 0x5b) {
+      if (++containers > SBOM_MAX_JSON_CONTAINERS) return 'containers';
+      open.push(c === 0x7b);
+    } else if (c === 0x7d || c === 0x5d) {
+      open.pop();
     }
+    previous = c;
   }
-  return false;
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -402,10 +430,23 @@ export function parseSbom(text: string, options: ParseSbomOptions = {}): ParseSb
   if (!head.startsWith('{') && !head.startsWith('[') && /^SPDXVersion:/m.test(head)) {
     return refuse('SBOM_INVALID', `The SBOM is SPDX tag-value, not JSON. ${EXPORT_HINT}.`);
   }
-  if (exceedsContainers(body, SBOM_MAX_JSON_CONTAINERS)) {
+  const flood = jsonFlood(body);
+  if (flood === 'containers') {
     return refuse(
       'SBOM_TOO_LARGE',
       `The SBOM holds more than ${SBOM_MAX_JSON_CONTAINERS} JSON objects and arrays.`,
+    );
+  }
+  if (flood === 'values') {
+    return refuse(
+      'SBOM_TOO_LARGE',
+      `The SBOM holds more than ${SBOM_MAX_JSON_VALUES} JSON keys and values.`,
+    );
+  }
+  if (flood === 'keys') {
+    return refuse(
+      'SBOM_TOO_LARGE',
+      `The SBOM holds more than ${SBOM_MAX_JSON_KEYS} distinct JSON keys.`,
     );
   }
   let doc: unknown;

@@ -504,4 +504,72 @@ describe('flood guard', () => {
     const inv = inventory(bom([], { metadata: { component: { type: 'application', name } } }));
     expect(inv.subject).toHaveLength(512);
   });
+
+  // Task 16: 64 MiB of numbers in `components` took a 1 GiB server down in JSON.parse.
+  it('refuses more than 6 000 000 values before JSON.parse', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    const r = refusal(`{"bomFormat":"CycloneDX","components":[${'1,'.repeat(6_000_000)}1]}`);
+    expect(r.code).toBe('SBOM_TOO_LARGE');
+    expect(r.message).toBe('The SBOM holds more than 6000000 JSON keys and values.');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('counts short strings as values', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    const r = refusal(`[${'"ab", '.repeat(6_000_000)}"ab"]`);
+    expect(r.code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('counts keys as well as values', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // One object and 3 000 001 keys with their values: 6 000 003.
+    const r = refusal(`{${'"a":1,'.repeat(3_000_000)}"a":1}`);
+    expect(r.code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('lets exactly 6 000 000 values through to JSON.parse', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // The array and 5 999 999 numbers, with white space and line breaks between them.
+    const r = refusal(`[\n${'1 ,\t'.repeat(5_999_998)}1\r\n]`);
+    expect(r.code).toBe('SBOM_INVALID');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not count values inside strings', () => {
+    const name = `1,"a":[${'1,'.repeat(6_100_000)}`;
+    const inv = inventory(bom([], { metadata: { component: { type: 'application', name } } }));
+    expect(inv.subject).toHaveLength(512);
+  });
+
+  const keys = (n: number) => Array.from({ length: n }, (_, i) => `"k${i}":1`).join(',');
+
+  // Task 16: 4 000 000 unique keys (42 MB) took a 1 GiB server down in JSON.parse.
+  it('refuses more than 10 000 distinct keys in one object before JSON.parse', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    const r = refusal(`{${keys(10_001)}}`);
+    expect(r.code).toBe('SBOM_TOO_LARGE');
+    expect(r.message).toBe('The SBOM holds more than 10000 distinct JSON keys.');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('refuses more than 10 000 distinct keys spread over objects', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    const objects = Array.from({ length: 5_001 }, (_, i) => `{"a${i}":1, "b${i}":[{}]}`);
+    expect(refusal(`[${objects.join(',')}]`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('counts a repeated key once, and strings that are values or array items not at all', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // 9 998 keys and x and y: 10 000 distinct.
+    const repeated = `{"x":{${keys(9_998)}},"y":[${Array(1_000)
+      .fill(`{${keys(100)}}`)
+      .join(',')}]}`;
+    const strings = Array.from({ length: 20_000 }, (_, i) => `"s${i}"`).join(',');
+    const values = Array.from({ length: 20_000 }, (_, i) => `{"k1":"v${i}"}`).join(',');
+    expect(refusal(`[${repeated},[${strings}],${values}]`).code).toBe('SBOM_INVALID');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
 });

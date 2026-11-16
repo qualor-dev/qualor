@@ -157,7 +157,7 @@ export const sbomUploadRoutes: FastifyPluginAsyncZod<{
           problemDescriptions: {
             404: 'PROJECT_NOT_FOUND: no such project, one the caller cannot see, or a project token of another project',
             409: 'VERSION_LABEL_TAKEN: a tag scan made the version of this label; upload the image SBOM to a project of its own, with the same label',
-            413: `SBOM_TOO_LARGE: the body is over ${SBOM_BODY_MAX_BYTES} bytes (also by its declared Content-Length, before 100 Continue), over ${SBOM_TEXT_MAX_BYTES} bytes inflated, or holds more than 2 000 000 JSON objects and arrays`,
+            413: `SBOM_TOO_LARGE: the body is over ${SBOM_BODY_MAX_BYTES} bytes (also by its declared Content-Length, before 100 Continue), over ${SBOM_TEXT_MAX_BYTES} bytes inflated, or holds more than 2 000 000 JSON objects and arrays, 6 000 000 JSON keys and values or 10 000 distinct JSON keys`,
             415: 'UNSUPPORTED_MEDIA_TYPE: another Content-Type; UNSUPPORTED_ENCODING: a Content-Encoding other than gzip',
             422: 'VERSION_LABEL_INVALID: `version` blank or over 100 characters, or absent while the SBOM names no version; SBOM_INVALID: not gzip as Content-Encoding says, not UTF-8, not JSON (SPDX tag-value included), neither CycloneDX nor SPDX, or a field of the wrong shape (`detail` names its JSON path); SBOM_FORMAT_UNSUPPORTED: CycloneDX XML, SPDX 3, an attestation or a version outside CycloneDX 1.2–1.7 and SPDX 2.2–2.3 (`detail` says what to export); SBOM_TOO_MANY_PACKAGES: over 50 000 packages; SBOM_MULTIPLE_OS: more than one operating system; VALIDATION_FAILED: the query',
             503: 'UPLOADS_BUSY: the upload slots are taken, or another SBOM is being read; see Retry-After',

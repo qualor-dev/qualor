@@ -138,6 +138,8 @@ that is not a package. Qualor finds the vulnerabilities itself.
 | File after gunzip | 64 MiB |
 | Packages after merging duplicates | 50 000 |
 | JSON objects and arrays | 2 000 000 |
+| JSON keys and values | 6 000 000 |
+| Distinct JSON keys | 10 000 |
 
 ## OS packages
 
@@ -252,7 +254,7 @@ Errors are `application/problem+json` with a `code`.
 | 403 | `FORBIDDEN`, `INSUFFICIENT_SCOPE` | the permission or the token scope is missing |
 | 404 | `PROJECT_NOT_FOUND` | no such project, or you cannot see it |
 | 409 | `VERSION_LABEL_TAKEN` | the label belongs to a tag-scan version. The detail suggests a project of its own |
-| 413 | `SBOM_TOO_LARGE` | the file is over 32 MiB, or over 64 MiB after gunzip, or holds over 2 000 000 JSON objects and arrays |
+| 413 | `SBOM_TOO_LARGE` | the file is over 32 MiB, or over 64 MiB after gunzip, or holds over 2 000 000 JSON objects and arrays, over 6 000 000 JSON keys and values, or over 10 000 distinct keys |
 | 415 | `UNSUPPORTED_MEDIA_TYPE`, `UNSUPPORTED_ENCODING` | another content type, or an encoding other than gzip |
 | 422 | `VERSION_LABEL_INVALID` | no label, a blank one, or one over 100 characters |
 | 422 | `VALIDATION_FAILED` | the label holds a NUL or a lone surrogate |
