@@ -26,6 +26,7 @@ C#.
 | [Security patterns (SAST)](#sast-patterns-opengrep-semgrep) | **OpenGrep** (or Semgrep), with rule files you keep in the repository; none are bundled | you name rule files in `qualor.yml` |
 | [Secrets](#secrets-gitleaks) | **Gitleaks** | always (`enabled: true` by default) |
 | [Vulnerable dependencies](#dependencies-trivy) | **Trivy** | lockfiles or manifests exist |
+| [Infrastructure as code](#infrastructure-as-code-trivy) | **Trivy**'s misconfiguration checks, for Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles and Azure ARM | `.tf`, `.json`, `.yaml` or `.yml` files or Dockerfiles are in scope |
 | [Anything else](#external-sarif) | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 The `qualor/scanner` image holds every analyzer except three: ESLint runs from your `node_modules`,
@@ -48,8 +49,8 @@ databases or plugins during a scan. Every setting and its default is in the
 
 Qualor computes lines of code, functions, classes, cyclomatic and cognitive complexity, and
 duplication for TypeScript, JavaScript, Java, Kotlin, Swift, C, C++, C#, Python, PHP, Ruby, Go, HTML
-and CSS. SCSS gets findings only. Other files still get findings from Gitleaks, Trivy, OpenGrep and
-external SARIF.
+and CSS. SCSS gets findings only. Other files still get findings from Gitleaks, Trivy (dependencies and
+infrastructure code), OpenGrep and external SARIF.
 
 - Python: a docstring counts as a comment, not as code.
 - Ruby: functions are `def` and `def self.` methods, and classes are `class` and `module`
@@ -902,6 +903,94 @@ which lockfiles give licences and why to install your dependencies first.
 `analyzers.trivy.licenses` and `licenseTimeoutSeconds` control the pass
 ([Configuration](./configuration.md#qualoryml)).
 
+## Infrastructure as code (Trivy)
+
+Trivy's misconfiguration checks find insecure settings in your infrastructure files: Terraform,
+CloudFormation, Kubernetes manifests, Helm charts, Dockerfiles and Azure ARM templates. The findings
+are security issues of the `trivy-iac` engine. The pass runs when a file in scope could be
+infrastructure code: a `.tf`, `.tfvars`, `.json`, `.yaml` or `.yml` file, or a Dockerfile (`Dockerfile`,
+`Containerfile`, `Dockerfile.*`, `*.dockerfile`). Otherwise it is skipped with the reason "no
+infrastructure files in scope".
+
+| Format | What is detected |
+|---|---|
+| Terraform | `.tf`, `.tf.json` and `.tfvars` files. Terraform plans: plan JSON and snapshot |
+| CloudFormation | `.yaml`, `.yml` and `.json` templates |
+| Kubernetes | `.yaml`, `.yml` and `.json` manifests |
+| Helm | chart directories (`Chart.yaml` and `templates/`) |
+| Dockerfile | `Dockerfile`, `Containerfile`, `Dockerfile.*` and `*.dockerfile` |
+| Azure ARM | `.json` templates |
+
+Rule keys are `trivy-iac:<id>`, for example `trivy-iac:AWS-0086`. Every issue has the tags `iac` and
+the cloud provider (`aws`, `azure`, `google`, `kubernetes`, `dockerfile` …), and the service where
+there is one. Its severity follows Trivy's: CRITICAL is blocker, HIGH is high, MEDIUM is medium and
+LOW is low. A Terraform issue is identified by its resource. Each issue's help link goes to the check's page at Aqua's AVD site.
+
+### Offline, with pinned checks
+
+The `qualor/scanner` image holds a pinned copy of Trivy's checks (trivy-checks 2.3.0). A scan
+downloads nothing, and the engine's version in the report is `checks 2.3.0`. The copy leaves out the
+Kubernetes cluster checks (ids `KCV-…`). The pass also never reads a `trivy.yaml` of your repository.
+
+Outside the image, the pass finds the checks in `QUALOR_TRIVY_CHECKS_DIR`: an absolute path outside
+the checkout, with a `policy/content` directory in it. Without them, Trivy uses the checks built
+into its binary, and the scan warns `IAC_CHECKS_EMBEDDED`: "Trivy used its built-in checks (the
+scanner image's pinned checks were not found); findings can differ from the scanner image." The
+engine's version is then `embedded checks`.
+
+Without a Trivy binary, a repository with infrastructure files gets the engine `unavailable`
+("Trivy is not installed (trivy on PATH or in the scanner image)"), and the scan is reported
+incomplete. With `enabled: true`, the scan exits with code 3.
+
+### Terraform
+
+- Local modules (`source = "./modules/db"`) are scanned.
+- Modules from the Terraform registry, git and https are not fetched. The root module is still
+  scanned, so its findings are present.
+- `.tfvars` files are applied.
+- Terraform is analysed statically. A value that comes from a data source or is computed is unknown,
+  which can cause a false positive or a missed finding.
+
+### Helm
+
+The chart is rendered with its default `values.yaml`, and the checks run on the rendered manifests.
+Qualor maps each line back to the template. When the rendered line has no matching template line,
+the issue sits on line 1 of the template and its message ends with "(line not mapped from the
+rendered chart)".
+
+### Ignore a finding
+
+| Way | Use it for |
+|---|---|
+| A status in Qualor (**False positive**, **Won't fix**) | a decision you want in the project's history. It applies first, as for any issue ([Quality gates](./quality-gates.md#issue-statuses)) |
+| `#trivy:ignore:<id>` above the resource | Terraform, CloudFormation, Helm and Dockerfile files: one resource, in the file itself. Add `:exp:YYYY-MM-DD` for an expiry |
+| `.trivyignore` at the repository root | every file. One id per line, as for [dependency vulnerabilities](#dependencies-trivy): the same file holds both |
+
+The `<id>` is the check's id (`AWS-0089`), its long name (`aws-s3-enable-logging`) or its alias
+(`AVD-AWS-0089`). A check that fires because a resource is missing, such as a Dockerfile without a
+`USER`, cannot be ignored inline: use `.trivyignore`.
+
+### Settings
+
+```yaml
+analyzers:
+  trivy-iac:
+    enabled: auto          # auto | true | false
+    timeoutSeconds: 600
+```
+
+`QUALOR_TRIVY_CHECKS_DIR` is described in the [configuration reference](./configuration.md#environment-variables-scanner).
+
+### Not covered
+
+| What | Do this |
+|---|---|
+| Kubernetes cluster checks (`KCV-…`) | not included |
+| Kustomize overlays | scan the base, or the output of `kustomize build` |
+| Bicep | build it to ARM first (`az bicep build`) |
+| Ansible and packaged charts (`.tgz`) | not scanned |
+| Azure ARM expressions such as `[parameters(...)]` | are not evaluated and count as unset |
+
 ## Security rules (Qualor)
 
 Qualor has its own security rules for JavaScript, TypeScript, Python, Java, Go and C#: 69 rules that
@@ -1132,7 +1221,7 @@ sarif:
 These engine ids are reserved:
 
 - the built-in analyzers: `eslint`, `sonarjs`, `ruff`, `pmd`, `spotbugs`, `semgrep`, `gitleaks`,
-  `trivy`, `roslyn`, `stylelint`, `htmlhint`, `detekt`, `swiftlint`, `phpstan`, `rubocop`,
+  `trivy`, `trivy-iac`, `roslyn`, `stylelint`, `htmlhint`, `detekt`, `swiftlint`, `phpstan`, `rubocop`,
   `staticcheck`, `govet`, `gosec`, `cppcheck`, `clang-tidy` and `qualor`
 - `license`, the engine of the [licence policy](./dependency-licenses.md#licence-issues)'s issues
 - `trivy-licenses`, the scanner's licence pass

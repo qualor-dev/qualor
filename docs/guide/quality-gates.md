@@ -93,8 +93,8 @@ threshold shows as its letter: 1 is A.
 
 Common additions:
 
-- `new_security_issues gt 0`: no new vulnerabilities, secrets or vulnerable dependencies, even when
-  you relax `new_issues`.
+- `new_security_issues gt 0`: no new vulnerabilities, secrets, vulnerable dependencies or insecure
+  infrastructure settings, even when you relax `new_issues`.
 - `new_blocker_issues gt 0` and `new_high_issues gt 0` instead of `new_issues gt 0`: a softer start
   on a noisy codebase.
 - `security_rating gt 3` on the main branch: an overall floor.
@@ -175,7 +175,7 @@ path before you act. The mark does not change the severity, the gate or the coun
 | open | system / user | an active problem |
 | resolved | user | "fixed". If the next analysis still finds it, it reopens |
 | won't fix | user, **comment required** | accepted as is. It stays so across analyses |
-| false positive | user, **comment required** | the analyzer is wrong. It stays so across analyses. On a Trivy issue of the main branch or a tracked branch, it also needs a **Reason** |
+| false positive | user, **comment required** | the analyzer is wrong. It stays so across analyses. On a vulnerable-dependency issue (Trivy) of the main branch or a tracked branch, it also needs a **Reason** |
 | closed | system | no longer detected. If it comes back within 30 days, its earlier won't fix or false positive is restored |
 
 Won't fix and false positive issues do not count in the gate. A status change re-judges the branch's

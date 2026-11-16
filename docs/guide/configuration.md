@@ -87,6 +87,7 @@ analyzers:
     timeoutSeconds: 600
     licenses: auto                   # the licence pass: auto (whenever Trivy runs), true (also warn when it cannot run) or false
     licenseTimeoutSeconds: 300       # the licence pass's own timeout; it reads node_modules and the Go module cache
+  trivy-iac: { enabled: auto, timeoutSeconds: 600 }   # infrastructure as code: Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles, Azure ARM
   roslyn:    { enabled: auto, bundledAnalyzers: true, sonarAnalyzer: true }
   stylelint: { enabled: auto, configFile: null, timeoutSeconds: 600 }   # configFile: qualor-default forces Qualor's default
   htmlhint:  { enabled: auto, configFile: null, timeoutSeconds: 300 }
@@ -173,6 +174,7 @@ The server's variables, such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | `QUALOR_CA_FILE` | a PEM CA bundle for the server's certificate. Keep it outside the checkout |
 | `QUALOR_LOG_LEVEL` | `error`, `warn`, `info` (default) or `debug` |
 | `QUALOR_TRIVY_CACHE_DIR` | where the scanner keeps the vulnerability database it downloads from the server (absolute; default `~/.cache/qualor/trivy`; may be inside the checkout). See [the vulnerability database](./languages-and-analyzers.md#the-vulnerability-database) |
+| `QUALOR_TRIVY_CHECKS_DIR` | another location for the infrastructure-as-code checks (absolute, outside the checkout, with `policy/content` in it; default `/opt/qualor/share/trivy-iac`, set in `qualor/scanner`). See [Infrastructure as code](./languages-and-analyzers.md#infrastructure-as-code-trivy) |
 | `QUALOR_SONARJS_DIR` | another location for Qualor's sonarjs pass (absolute, outside the checkout; default `/opt/qualor/sonarjs`, set in `qualor/scanner`) |
 | `QUALOR_WEBLINT_DIR` | directory of the HTML and CSS linters (absolute, outside the checkout; default `/opt/qualor/weblint`, in `qualor/scanner`) |
 | `QUALOR_DETEKT_JAR` | another location for detekt's jar (absolute, outside the checkout; default `/opt/qualor/lib/detekt/detekt-cli.jar`, set in `qualor/scanner`) |

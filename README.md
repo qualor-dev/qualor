@@ -156,6 +156,7 @@ See [Quality gates, profiles and issues](docs/guide/quality-gates.md).
 | Go                     | staticcheck, go vet, gosec, Qualor security rules                                            |
 | C, C++                 | cppcheck; clang-tidy when your job has it                                                    |
 | CSS, HTML              | stylelint, HTMLHint                                                                          |
+| Infrastructure as code | Trivy: Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles, Azure ARM                   |
 | Every language         | OpenGrep, Gitleaks for secrets, Trivy for dependencies, any SARIF file                       |
 
 Some analyzers need the project prepared first: installed `node_modules` for ESLint, compiled

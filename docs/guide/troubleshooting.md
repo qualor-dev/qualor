@@ -46,6 +46,7 @@ The scanner's exit codes are in the [CLI reference](./cli.md#exit-codes).
 | `no C# project was built between qualor dotnet begin and end` | the build ran elsewhere, or not at all | run the build in the same job, between the two commands |
 | `TAINT_ENGINE_FALLBACK` | Qualor's Roslyn taint engine gave no complete result, so the OpenGrep C# rules ran instead. The message gives the reason, the log the detail | see the reasons below |
 | `TAINT_ENGINE_PROJECT_ERRORS` | the engine analysed C# projects with load or compile errors, for example unresolved packages. Their findings may be incomplete | restore the packages and build without errors. The log names each project and its first error |
+| `IAC_CHECKS_EMBEDDED` | Trivy did not find the scanner image's pinned checks and used the ones built into its binary. Findings can differ from the scanner image | run in `qualor/scanner`, or set `QUALOR_TRIVY_CHECKS_DIR` ([Infrastructure as code](./languages-and-analyzers.md#infrastructure-as-code-trivy)) |
 | `NESTED_REPOSITORY_SKIPPED` | a submodule or nested clone | none: this is expected. Scan that repository on its own |
 | many issues in generated code | generated files are scanned | add them to `sources.exclude` |
 
