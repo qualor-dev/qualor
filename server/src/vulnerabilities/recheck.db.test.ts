@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
-import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
+import type { DependencyEntry, DependencyIgnore, OsPackageType } from '@qualor/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { waitForLockWaiters } from '../../test/db';
@@ -29,7 +29,9 @@ import { writeVulndbSettings } from '../vulndb/settings';
 import { withLocalDatabase } from '../vulndb/local';
 import { readVulndbState, updateVulndbState } from '../vulndb/state';
 import { makeDatasetCurrent, storeDataset, type DatasetRow } from '../vulndb/store';
-import { purlOf } from './purl';
+import { upsertVersion, type VersionDependencyEntry } from '../versions/store';
+import { osMatchKey, purlOf } from './purl';
+import { buildSbom } from './sbom';
 import {
   enqueueRecheck,
   ignoreActive,
@@ -59,11 +61,42 @@ const D = dep('@babel/traverse', '7.0.0');
 const purl = (d: DependencyEntry): string => purlOf(d.ecosystem, d.name, d.version)!;
 const [PA, PB, PC, PD] = [A, B, C, D].map(purl) as [string, string, string, string];
 
+/** An OS package of an uploaded SBOM, with its source package. */
+const osDep = (
+  ecosystem: 'deb' | 'rpm' | 'apk',
+  name: string,
+  version: string,
+  sourceName = name,
+  sourceVersion = version,
+): VersionDependencyEntry => ({
+  path: '',
+  ecosystem,
+  name,
+  version,
+  licenses: [],
+  sourceName,
+  sourceVersion,
+});
+const LIBSSL3 = osDep('deb', 'libssl3', '3.0.22-1~deb12u2', 'openssl');
+const LOGIN = osDep('deb', 'login', '1:4.13+dfsg1-1+deb12u2', 'shadow');
+const PASSWD = osDep('deb', 'passwd', '1:4.13+dfsg1-1+deb12u2', 'shadow');
+const LIBCRYPTO3 = osDep('apk', 'libcrypto3', '3.3.2-r0', 'openssl');
+const BUSYBOX = osDep('apk', 'busybox', '1.36.1-r29');
+const DEBIAN = { family: 'debian', version: '12.15' };
+const ALPINE = { family: 'alpine', version: '3.20.3' };
+const keyOf = (d: VersionDependencyEntry, os: { family: string; version: string }): string =>
+  osMatchKey(d.ecosystem as OsPackageType, os.family, os.version, d.name, d.version);
+const PSSL = keyOf(LIBSSL3, DEBIAN);
+const PCRYPTO = keyOf(LIBCRYPTO3, ALPINE);
+
 /** What the fake Trivy finds, per purl. */
 const FINDS: Record<string, string[]> = {
   [PA]: ['CVE-2026-0001'],
   [PB]: ['CVE-2026-0002', 'CVE-2026-0003'],
   [PD]: ['CVE-2026-0004'],
+  [PSSL]: ['CVE-2025-27587'],
+  [keyOf(LIBSSL3, { family: 'debian', version: '12.16' })]: ['CVE-2026-1216'],
+  [PCRYPTO]: ['CVE-2024-12797'],
 };
 
 /** The GHSA id the fake Trivy gives a CVE as its vendor id. */
@@ -80,9 +113,23 @@ const matchOf = (id: string, vendorIds = [ghsaOf(id)]): VulnerabilityMatch => ({
 });
 
 interface FakeTrivy extends TrivyRunner {
-  calls: { purls: string[]; names: string[]; cacheDir: string }[];
+  calls: {
+    purls: string[];
+    names: string[];
+    cacheDir: string;
+    /** The SBOM's `operating-system` components, as `<name> <version>`. */
+    systems: string[];
+    sbom: string;
+  }[];
   failure: TrivyRun | null;
   onRun: (() => Promise<void>) | null;
+}
+
+interface FakeComponent {
+  type: string;
+  purl?: string;
+  name: string;
+  version?: string;
 }
 
 /** A Trivy that answers {@link FINDS} for the purls of the SBOM and records each run. */
@@ -92,12 +139,18 @@ function fakeTrivy(): FakeTrivy {
     failure: null,
     onRun: null,
     async run(sbomJson, cacheDir) {
-      const components = (JSON.parse(sbomJson) as { components: { purl: string; name: string }[] })
-        .components;
+      const all = (JSON.parse(sbomJson) as { components: FakeComponent[] }).components;
+      const components = all.filter(
+        (c): c is FakeComponent & { purl: string } => c.purl !== undefined,
+      );
       fake.calls.push({
         purls: components.map((c) => c.purl),
         names: components.map((c) => c.name),
         cacheDir,
+        systems: all
+          .filter((c) => c.type === 'operating-system')
+          .map((c) => `${c.name} ${c.version ?? ''}`),
+        sbom: sbomJson,
       });
       const hook = fake.onRun;
       fake.onRun = null;
@@ -187,6 +240,40 @@ describe('vulnerability re-checks', () => {
       .where(and(eq(branches.projectId, p.id), eq(branches.name, name)));
     return row!.id;
   };
+  /**
+   * An uploaded SBOM: the version `label` holding `packages`, of `distribution`, pinned so that it
+   * is tracked whatever the rule says.
+   */
+  const sbomVersion = async (
+    p: IngestProject,
+    label: string,
+    distribution: { family: string; version: string } | null,
+    packages: VersionDependencyEntry[],
+  ): Promise<string> => {
+    const written = await db().transaction((tx) =>
+      upsertVersion(tx, {
+        projectId: p.id,
+        label,
+        source: 'sbom',
+        tag: null,
+        analysisId: null,
+        analyzedAt: new Date(Date.UTC(2026, 9, 1) + ++day * 86_400_000),
+        inventory: { dependencies: packages, ignores: null },
+        sbom: { format: 'CycloneDX 1.6', subject: null, distribution },
+      }),
+    );
+    if (written === 'taken') throw new Error(`${label} is taken`);
+    await db()
+      .update(projectVersions)
+      .set({ tracking: 'pinned' })
+      .where(eq(projectVersions.id, written.version.id));
+    return written.version.id;
+  };
+  /** The runs of the fake Trivy as `<OS or "libraries">: <purls, sorted>`. */
+  const runsByGroup = () =>
+    trivy.calls.map(
+      (c) => `${c.systems.join(', ') || 'libraries'}: ${[...c.purls].sort().join(' ')}`,
+    );
   const versionId = async (p: IngestProject, label: string): Promise<string> => {
     const [row] = await db()
       .select({ id: projectVersions.id })
@@ -905,6 +992,223 @@ describe('vulnerability re-checks', () => {
       // Its inventory would weigh on every later full re-check of this file.
       await db().delete(projects).where(eq(projects.id, p.id));
     }, 120_000);
+  });
+
+  describe('OS packages of uploaded SBOMs (0.16)', () => {
+    /** The OS packages' rows as `<label> <ecosystem> <name>@<version> <purl> <id>`, sorted. */
+    const osRows = async (p: IngestProject): Promise<string[]> => {
+      const labels = new Map<string, string>();
+      for (const v of await db()
+        .select({ id: projectVersions.id, label: projectVersions.label })
+        .from(projectVersions)
+        .where(eq(projectVersions.projectId, p.id))) {
+        labels.set(v.id, v.label);
+      }
+      return (await rows(p))
+        .filter((r) => r.versionId !== null)
+        .map(
+          (r) =>
+            `${labels.get(r.versionId ?? '') ?? '?'} ${r.ecosystem} ${r.packageName}@${r.packageVersion} ${r.purl} ${r.vulnerabilityId}`,
+        )
+        .sort();
+    };
+
+    it('runs one SBOM per distribution, with its operating-system component', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await sbomVersion(p, 'shop-debian', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      await sbomVersion(p, 'shop-alpine', ALPINE, [LIBCRYPTO3, BUSYBOX]);
+
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { projects: 1, packages: 6, unchecked: 0 },
+      });
+      expect(runsByGroup().sort()).toEqual(
+        [
+          `libraries: ${PA}`,
+          `debian 12.15: ${[PSSL, keyOf(LOGIN, DEBIAN), keyOf(PASSWD, DEBIAN)].sort().join(' ')}`,
+          `alpine 3.20.3: ${[PCRYPTO, keyOf(BUSYBOX, ALPINE)].sort().join(' ')}`,
+        ].sort(),
+      );
+      // Libraries keep today's SBOM; an OS SBOM names each package's source.
+      const library = trivy.calls.find((c) => c.systems.length === 0)!;
+      expect(JSON.parse(library.sbom)).toEqual(
+        JSON.parse(buildSbom([{ purl: PA, name: 'lodash', version: '4.17.20' }])),
+      );
+      const debian = trivy.calls.find((c) => c.systems[0] === 'debian 12.15')!;
+      const login = (
+        JSON.parse(debian.sbom) as {
+          components: { purl?: string; properties?: { name: string; value: string }[] }[];
+        }
+      ).components.find((c) => c.purl === keyOf(LOGIN, DEBIAN));
+      expect(login?.properties).toEqual(
+        expect.arrayContaining([
+          { name: 'aquasecurity:trivy:SrcName', value: 'shadow' },
+          { name: 'aquasecurity:trivy:SrcEpoch', value: '1' },
+        ]),
+      );
+      expect(await osRows(p)).toEqual(
+        [
+          `shop-debian deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+          `shop-alpine apk libcrypto3@3.3.2-r0 ${PCRYPTO} CVE-2024-12797`,
+        ].sort(),
+      );
+      expect(await digests([PSSL, PCRYPTO])).toEqual({
+        [PSSL]: primary.digest,
+        [PCRYPTO]: primary.digest,
+      });
+    });
+
+    it('cuts chunks inside a group, and halves an oversized one inside it too', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await sbomVersion(p, 'shop-debian', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      await sbomVersion(p, 'shop-alpine', ALPINE, [LIBCRYPTO3, BUSYBOX]);
+
+      expect(await recheck({ projectIds: [p.id] }, { chunk: { components: 2 } })).toMatchObject({
+        kind: 'done',
+      });
+      const groups = trivy.calls.map((c) => c.systems.join(', ') || 'libraries');
+      expect(groups.sort()).toEqual(
+        ['alpine 3.20.3', 'debian 12.15', 'debian 12.15', 'libraries'].sort(),
+      );
+      expect(
+        trivy.calls
+          .filter((c) => c.systems[0] === 'debian 12.15')
+          .map((c) => c.purls.length)
+          .sort(),
+      ).toEqual([1, 2]);
+
+      // The dataset changes, and anything over one component "writes too much output".
+      await db().delete(matchedPackages);
+      trivy.calls = [];
+      const inner = trivy.run.bind(trivy);
+      trivy.run = (sbom, cacheDir, signal) =>
+        (JSON.parse(sbom) as { components: { purl?: string }[] }).components.filter(
+          (c) => c.purl !== undefined,
+        ).length > 1
+          ? Promise.resolve({ ok: false, code: 'TOO_LARGE', message: 'output over the budget' })
+          : inner(sbom, cacheDir, signal);
+      expect(
+        await recheck({ projectIds: [p.id] }, { chunk: { components: 4, floor: 1 } }),
+      ).toMatchObject({ kind: 'done' });
+      expect(runsByGroup().sort()).toEqual(
+        [
+          `libraries: ${PA}`,
+          ...[LIBSSL3, LOGIN, PASSWD].map((d) => `debian 12.15: ${keyOf(d, DEBIAN)}`),
+          ...[LIBCRYPTO3, BUSYBOX].map((d) => `alpine 3.20.3: ${keyOf(d, ALPINE)}`),
+        ].sort(),
+      );
+      expect(await osRows(p)).toHaveLength(2);
+    });
+
+    it('never shares matches between two releases of a distribution', async () => {
+      const p = await project();
+      const q = await project();
+      const debian1216 = { family: 'debian', version: '12.16' };
+      await sbomVersion(p, 'shop-1', DEBIAN, [LIBSSL3]);
+      await sbomVersion(q, 'shop-2', debian1216, [LIBSSL3]);
+
+      expect(await recheck({ projectIds: [p.id, q.id] })).toMatchObject({
+        kind: 'done',
+        summary: { packages: 2 },
+      });
+      expect(runsByGroup().sort()).toEqual(
+        [`debian 12.15: ${PSSL}`, `debian 12.16: ${keyOf(LIBSSL3, debian1216)}`].sort(),
+      );
+      const marks = await db()
+        .select({ purl: matchedPackages.purl })
+        .from(matchedPackages)
+        .where(sql`${matchedPackages.purl} LIKE 'pkg:deb/%'`);
+      expect(marks.map((m) => m.purl).sort()).toEqual([PSSL, keyOf(LIBSSL3, debian1216)].sort());
+      expect(await osRows(p)).toEqual([
+        `shop-1 deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+      ]);
+      expect(await osRows(q)).toEqual([
+        `shop-2 deb libssl3@3.0.22-1~deb12u2 ${keyOf(LIBSSL3, debian1216)} CVE-2026-1216`,
+      ]);
+    });
+
+    it('counts OS packages without a known distribution as unchecked and matches the rest', async () => {
+      const p = await project();
+      const q = await project();
+      await sbomVersion(p, 'no-distro', null, [LIBSSL3, LOGIN, osDep('rpm', 'bash', '4.4-1'), A]);
+      await sbomVersion(q, 'plan9', { family: 'plan9', version: '4' }, [PASSWD]);
+
+      const result = await recheck({ projectIds: [p.id, q.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { projects: 2, packages: 1, unchecked: 4 },
+      });
+      expect(runsByGroup()).toEqual([`libraries: ${PA}`]);
+      expect(await described(p)).toEqual([`no-distro ${PA} CVE-2026-0001`]);
+      expect(await rows(q)).toEqual([]);
+    });
+
+    it('leaves a malformed source epoch unchecked, never sending Trivy what it cannot read', async () => {
+      const p = await project();
+      const odd = osDep('deb', 'odd', '1.0-1', 'odd', '99999999999:1.0-1');
+      await sbomVersion(p, 'shop', DEBIAN, [
+        LIBSSL3,
+        odd,
+        osDep('deb', 'odd2', '1.0', 'o', 'x:1.0'),
+      ]);
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({ kind: 'done', summary: { packages: 1, unchecked: 2 } });
+      expect(runsByGroup()).toEqual([`debian 12.15: ${PSSL}`]);
+    });
+
+    it('a distribution Trivy fails on stays unchecked; the re-check goes on and is done', async () => {
+      const p = await project();
+      await onBranch(p, 'main', { dependencies: [A] });
+      await sbomVersion(p, 'shop-debian', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      await sbomVersion(p, 'shop-alpine', ALPINE, [LIBCRYPTO3]);
+      const warnings: unknown[] = [];
+      let failed = 0;
+      const inner = trivy.run.bind(trivy);
+      // Trivy 0.74.0 exits 1 on a Red Hat release its database has no content sets for.
+      trivy.run = (sbom, cacheDir, signal) => {
+        const { components } = JSON.parse(sbom) as { components: FakeComponent[] };
+        if (!components.some((c) => c.type === 'operating-system' && c.name === 'debian')) {
+          return inner(sbom, cacheDir, signal);
+        }
+        failed += 1;
+        return Promise.resolve({
+          ok: false,
+          code: 'FAILED',
+          message: 'Trivy exited with 1: unable to find CPE indices',
+        });
+      };
+
+      const result = await recheck(
+        { projectIds: [p.id] },
+        {
+          chunk: { components: 2 },
+          logger: { info: () => undefined, warn: (...args: unknown[]) => warnings.push(args) },
+        },
+      );
+      // Two Debian chunks, but the group is given up after its first failure.
+      expect(failed).toBe(1);
+      expect(result).toMatchObject({ kind: 'done', summary: { packages: 2, unchecked: 3 } });
+      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
+      expect(await osRows(p)).toEqual([
+        `shop-alpine apk libcrypto3@3.3.2-r0 ${PCRYPTO} CVE-2024-12797`,
+      ]);
+      expect(await digests([PSSL, PCRYPTO])).toEqual({ [PCRYPTO]: primary.digest });
+      expect(JSON.stringify(warnings)).toContain('unable to find CPE indices');
+
+      // The next re-check tries the group again.
+      trivy.run = inner;
+      trivy.calls = [];
+      expect(await recheck({ projectIds: [p.id] })).toMatchObject({
+        kind: 'done',
+        summary: { packages: 5, unchecked: 0 },
+      });
+      expect(runsByGroup()).toEqual([
+        `debian 12.15: ${[PSSL, keyOf(LOGIN, DEBIAN), keyOf(PASSWD, DEBIAN)].sort().join(' ')}`,
+      ]);
+    });
   });
 
   describe('one dataset from start to end', () => {

@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import { asc, inArray, sql, type SQL } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
+import { isOsPackageType, OS_PACKAGE_TYPES } from '@qualor/shared';
 import { z } from 'zod';
 import type { Config } from '../config';
 import { jsonChunks, textList, uuidList } from '../db/bulk';
@@ -15,13 +16,21 @@ import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
 import { enqueueVulnerabilityAlerts } from './alerts/enqueue';
-import { purlOf } from './purl';
-import { buildSbom, type SbomPackage } from './sbom';
+import { matchKeyOf } from './purl';
+import {
+  buildOsSbom,
+  buildSbom,
+  readableEpoch,
+  sbomGroupKey,
+  splitOsVersion,
+  type SbomPackage,
+} from './sbom';
 import { projectTargets, type Target } from './targets';
 import {
   createTrivyRunner,
   MAX_VENDOR_IDS,
   removeStaleWorkDirs,
+  type TrivyRun,
   type TrivyRunner,
   type VulnerabilityMatch,
 } from './trivy';
@@ -162,10 +171,17 @@ export type RecheckResult =
   | { kind: 'stopped' }
   | { kind: 'done'; summary: RecheckSummary };
 
+/** A package of an inventory, with its version's distribution and its source (0.16 SBOMs). */
 interface Package {
   ecosystem: string;
   name: string;
   version: string;
+  /** The distribution of the version it belongs to; null on a branch or without one. */
+  osFamily: string | null;
+  osVersion: string | null;
+  /** The source package an SBOM named; null on a branch and for libraries. */
+  sourceName: string | null;
+  sourceVersion: string | null;
 }
 
 /** What one run uses from start to end: one dataset (its digest and its local copy). */
@@ -180,6 +196,12 @@ interface Run {
   chunk: { components: number; floor: number };
   /** Trivy runs made so far, splits included. */
   trivyRuns: number;
+  /**
+   * The {@link sbomGroupKey} of each distribution Trivy failed on in this run: its packages stay
+   * unchecked, and its other chunks are not run.
+   */
+  failedGroups: Set<string>;
+  logger: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
 
 /** What a run answers when the server's stop ended it (before a step, or by killing Trivy). */
@@ -189,8 +211,11 @@ const stopping = (of: { shutdown?: AbortSignal | undefined }): boolean =>
 
 interface Counts {
   projects: number;
+  /** The match keys of the inventories' packages. */
   packages: Set<string>;
   unchecked: Set<string>;
+  /** The keys of OS packages, by {@link sbomGroupKey}: a group Trivy fails on is unchecked. */
+  osGroups: Map<string, Set<string>>;
 }
 
 /** How the steps of a re-check ended: its counts, the problem that stopped it, or a stop. */
@@ -213,21 +238,71 @@ async function projectsOf(db: Db, scope: RecheckScope): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
+/** The OS package types (deb, rpm, apk), as an SQL list. */
+const OS_TYPES = sql`(${sql.join(
+  OS_PACKAGE_TYPES.map((type) => sql`${type}`),
+  sql`, `,
+)})`;
+
+/**
+ * The columns of {@link Package} from `version_dependencies d` joined to its `project_versions v`:
+ * the distribution and the source only for OS packages, so a library stays one row per
+ * (ecosystem, name, version) across the targets.
+ */
+const VERSION_PACKAGE = sql`d.ecosystem, d.name, d.version,
+  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN v.os_family END AS "osFamily",
+  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN v.os_version END AS "osVersion",
+  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_name END AS "sourceName",
+  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_version END AS "sourceVersion"`;
+/** A branch has no distribution and no source packages. */
+const BRANCH_PACKAGE = sql`ecosystem, name, version, NULL::text AS "osFamily",
+  NULL::text AS "osVersion", NULL::text AS "sourceName", NULL::text AS "sourceVersion"`;
+
 /** The distinct packages of these targets' inventories. */
 async function distinctPackages(db: Db, targets: readonly Target[]): Promise<Package[]> {
   const branchIds = targets.flatMap((t) => (t.kind === 'branch' ? [t.branchId] : []));
   const versionIds = targets.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
   const parts: SQL[] = [];
   if (branchIds.length > 0) {
-    parts.push(sql`SELECT ecosystem, name, version FROM branch_dependencies
+    parts.push(sql`SELECT ${BRANCH_PACKAGE} FROM branch_dependencies
                     WHERE branch_id IN ${uuidList(branchIds)}`);
   }
   if (versionIds.length > 0) {
-    parts.push(sql`SELECT ecosystem, name, version FROM version_dependencies
-                    WHERE version_id IN ${uuidList(versionIds)}`);
+    parts.push(sql`SELECT ${VERSION_PACKAGE}
+                     FROM version_dependencies d JOIN project_versions v ON v.id = d.version_id
+                    WHERE d.version_id IN ${uuidList(versionIds)}`);
   }
   if (parts.length === 0) return [];
   return (await db.execute<Package & Record<string, unknown>>(sql.join(parts, sql` UNION `))).rows;
+}
+
+/**
+ * What Trivy is given for a package: its match key and, for an OS package, its distribution and
+ * source package (the binary's own when the SBOM named none). Null when it is not checked: no
+ * match key ({@link matchKeyOf}: no purl type, an OS package without a known distribution), or a
+ * source version whose epoch Trivy cannot read (it would fail the whole SBOM, spec §4).
+ */
+function sbomPackageOf(p: Package): SbomPackage | null {
+  const purl = matchKeyOf(p);
+  if (purl === null) return null;
+  if (!isOsPackageType(p.ecosystem)) return { purl, name: p.name, version: p.version };
+  if (p.osFamily === null || p.osVersion === null) return null;
+  const sourceName = p.sourceName === null || p.sourceName === '' ? p.name : p.sourceName;
+  const sourceVersion =
+    p.sourceVersion === null || p.sourceVersion === '' ? p.version : p.sourceVersion;
+  if (!readableEpoch(splitOsVersion(p.ecosystem, sourceVersion).epoch)) return null;
+  return {
+    purl,
+    name: p.name,
+    version: p.version,
+    os: {
+      type: p.ecosystem,
+      family: p.osFamily,
+      osVersion: p.osVersion,
+      sourceName,
+      sourceVersion,
+    },
+  };
 }
 
 /** Removes from `byPurl` the purls already matched against `digest`. */
@@ -307,20 +382,71 @@ async function storeMatches(
 }
 
 /**
- * Runs Trivy on `packages` in SBOMs of at most `run.chunk.components`, storing each chunk's
- * matches as it comes. A chunk whose output is over the budget (TOO_LARGE) is split in half and
- * both halves run, down to `run.chunk.floor`. A failed run stops there, its chunk untouched and
- * the later ones never started (R12); so does a stop.
+ * The chunks of `packages` in the order they run: one {@link sbomGroupKey} group after another
+ * (libraries first), each cut into SBOMs of at most `size`; the groups Trivy failed on are left
+ * out. Reversed, so that `pop()` takes them in order.
+ */
+function chunksOf(
+  packages: readonly SbomPackage[],
+  size: number,
+  failedGroups: ReadonlySet<string>,
+): (readonly SbomPackage[])[] {
+  const groups = new Map<string, SbomPackage[]>([['', []]]);
+  for (const p of packages) {
+    const key = sbomGroupKey(p);
+    if (failedGroups.has(key)) continue;
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [p]);
+    else group.push(p);
+  }
+  const chunks: (readonly SbomPackage[])[] = [];
+  for (const group of groups.values()) {
+    for (const chunk of slices(group, size)) chunks.push(chunk);
+  }
+  return chunks.reverse();
+}
+
+/**
+ * Trivy failed (exited non-zero) on a chunk of OS packages: their distribution is one it cannot
+ * scan (Trivy 0.74.0 exits 1 on a Red Hat release its database has no content sets for, spec §4).
+ * The group's packages stay unchecked for this run, and its other chunks are not run; the
+ * re-check goes on. Any other failure, and any failure on libraries, stops the re-check (R12).
+ */
+function givesUpGroup(run: Run, first: SbomPackage, got: TrivyRun): boolean {
+  const { os } = first;
+  if (os === undefined || got.ok || got.code !== 'FAILED') return false;
+  run.failedGroups.add(sbomGroupKey(first));
+  run.logger?.warn(
+    {
+      component: 'vulnerabilities',
+      packageType: os.type,
+      distribution: `${os.family} ${os.osVersion}`,
+      message: got.message,
+    },
+    'Trivy failed on the OS packages of a distribution; they stay unchecked',
+  );
+  return true;
+}
+
+/**
+ * Runs Trivy on `packages` in SBOMs of at most `run.chunk.components`, one distribution (or the
+ * libraries) per SBOM, storing each chunk's matches as it comes. A chunk whose output is over the
+ * budget (TOO_LARGE) is split in half and both halves run, down to `run.chunk.floor`. A chunk of
+ * OS packages Trivy fails on gives up its group ({@link givesUpGroup}). Any other failed run
+ * stops there, its chunk untouched and the later ones never started (R12); so does a stop.
  */
 async function matchPackages(
   run: Run,
   packages: readonly SbomPackage[],
 ): Promise<Problem | typeof STOPPED | null> {
-  const todo: (readonly SbomPackage[])[] = [...slices(packages, run.chunk.components)].reverse();
+  const todo = chunksOf(packages, run.chunk.components, run.failedGroups);
   for (let chunk = todo.pop(); chunk !== undefined; chunk = todo.pop()) {
     if (stopping(run)) return STOPPED;
+    const first = chunk[0];
+    if (first === undefined || run.failedGroups.has(sbomGroupKey(first))) continue;
     run.trivyRuns += 1;
-    const got = await run.runner.run(buildSbom(chunk), run.cacheDir, run.shutdown);
+    const sbom = first.os === undefined ? buildSbom(chunk) : buildOsSbom(chunk);
+    const got = await run.runner.run(sbom, run.cacheDir, run.shutdown);
     if (!got.ok) {
       if (stopping(run)) return STOPPED;
       if (got.code === 'TOO_LARGE' && chunk.length > run.chunk.floor && chunk.length > 1) {
@@ -328,6 +454,7 @@ async function matchPackages(
         todo.push(chunk.slice(half), chunk.slice(0, half));
         continue;
       }
+      if (givesUpGroup(run, first, got)) continue;
       return {
         code: 'RECHECK_FAILED',
         message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
@@ -343,13 +470,21 @@ async function matchPackages(
   return null;
 }
 
-/** A target's distinct packages (one per purl) and the ignore ids active when the run started. */
+/** A package of an inventory as its rows store it, and what Trivy is given for it. */
+interface InventoryPackage {
+  ecosystem: string;
+  name: string;
+  version: string;
+  entry: SbomPackage;
+}
+
+/** A target's distinct packages (one per match key) and the ignore ids active when the run started. */
 interface Inventory {
   projectId: string;
   target: Target;
   /** What the target's check records (see {@link writeChecks}), read before its packages. */
   basis: string;
-  packages: Map<string, Package>;
+  packages: Map<string, InventoryPackage>;
   ignored: Set<string>;
 }
 
@@ -430,16 +565,30 @@ function emptyInventories(targetsOf: ReadonlyMap<string, Target[]>): {
   return { ofBranch, ofVersion };
 }
 
-/** Counts a package into `counts` (with a purl, or as unchecked) and adds it to `inventory`. */
+/**
+ * Counts a package into `counts` (with a match key, or as unchecked) and adds it to `inventory`.
+ */
 function addPackage(counts: Counts, inventory: Inventory | undefined, p: Package): void {
-  const purl = purlOf(p.ecosystem, p.name, p.version);
-  if (purl === null) {
+  const entry = sbomPackageOf(p);
+  if (entry === null) {
     counts.unchecked.add(`${p.ecosystem}\u0000${p.name}\u0000${p.version}`);
     return;
   }
+  const { purl } = entry;
   counts.packages.add(purl);
+  if (entry.os !== undefined) {
+    const group = sbomGroupKey(entry);
+    const keys = counts.osGroups.get(group);
+    if (keys === undefined) counts.osGroups.set(group, new Set([purl]));
+    else keys.add(purl);
+  }
   if (inventory !== undefined && !inventory.packages.has(purl)) {
-    inventory.packages.set(purl, { ecosystem: p.ecosystem, name: p.name, version: p.version });
+    inventory.packages.set(purl, {
+      ecosystem: p.ecosystem,
+      name: p.name,
+      version: p.version,
+      entry,
+    });
   }
 }
 
@@ -459,7 +608,7 @@ async function readBranchPackages(
 ): Promise<Map<string, Inventory[]>> {
   const branchesOf = new Map<string, Inventory[]>();
   const got = await db.execute<DependencyRow & Record<string, unknown>>(sql`
-    SELECT DISTINCT branch_id AS owner, analysis_id, ecosystem, name, version
+    SELECT DISTINCT branch_id AS owner, analysis_id, ${BRANCH_PACKAGE}
       FROM branch_dependencies
      WHERE branch_id IN ${uuidList([...ofBranch.keys()])}
      ORDER BY owner, ecosystem, name, version`);
@@ -481,9 +630,9 @@ async function readVersionPackages(
   counts: Counts,
 ): Promise<void> {
   const got = await db.execute<DependencyRow & Record<string, unknown>>(sql`
-    SELECT DISTINCT version_id AS owner, NULL::uuid AS analysis_id, ecosystem, name, version
-      FROM version_dependencies
-     WHERE version_id IN ${uuidList([...ofVersion.keys()])}
+    SELECT DISTINCT d.version_id AS owner, NULL::uuid AS analysis_id, ${VERSION_PACKAGE}
+      FROM version_dependencies d JOIN project_versions v ON v.id = d.version_id
+     WHERE d.version_id IN ${uuidList([...ofVersion.keys()])}
      ORDER BY owner, ecosystem, name, version`);
   for (const row of got.rows) addPackage(counts, ofVersion.get(row.owner), row);
 }
@@ -779,13 +928,31 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Rech
   if (failed !== null) return failed;
   pending.clear();
 
-  const counts: Counts = { projects: 0, packages: new Set(), unchecked: new Set() };
+  const counts: Counts = {
+    projects: 0,
+    packages: new Set(),
+    unchecked: new Set(),
+    osGroups: new Map(),
+  };
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
     if (stopping(run)) return STOPPED;
     const failure = await recheckBatch(run, batch, counts);
     if (failure !== null) return failure;
   }
   return counts;
+}
+
+/**
+ * The summary's counts: the packages with a match key, less those of the distributions Trivy
+ * failed on in this run ({@link givesUpGroup}), which count as unchecked.
+ */
+function checkedCounts(
+  counts: Counts,
+  failedGroups: ReadonlySet<string>,
+): { packages: number; unchecked: number } {
+  let failed = 0;
+  for (const group of failedGroups) failed += counts.osGroups.get(group)?.size ?? 0;
+  return { packages: counts.packages.size - failed, unchecked: counts.unchecked.size + failed };
 }
 
 /**
@@ -807,28 +974,28 @@ async function pendingPackages(
   return pending;
 }
 
-/** The packages with a purl that `pending` does not hold, once each, as SBOM entries. */
+/** The packages with a match key that `pending` does not hold, once each, as SBOM entries. */
 function newSbomPackages(
   packages: readonly Package[],
   pending: ReadonlyMap<string, SbomPackage>,
 ): Map<string, SbomPackage> {
   const byPurl = new Map<string, SbomPackage>();
   for (const p of packages) {
-    const purl = purlOf(p.ecosystem, p.name, p.version);
     // R13: the SBOM names a package by its stored name.
-    if (purl !== null && !pending.has(purl) && !byPurl.has(purl)) {
-      byPurl.set(purl, { purl, name: p.name, version: p.version });
+    const entry = sbomPackageOf(p);
+    if (entry !== null && !pending.has(entry.purl) && !byPurl.has(entry.purl)) {
+      byPurl.set(entry.purl, entry);
     }
   }
   return byPurl;
 }
 
-/** The distinct packages of the inventories, by purl, as SBOM entries. */
+/** The distinct packages of the inventories, by match key, as SBOM entries. */
 function inventoryPackages(batchInventories: readonly Inventory[]): Map<string, SbomPackage> {
   const late = new Map<string, SbomPackage>();
   for (const inventory of batchInventories) {
     for (const [purl, p] of inventory.packages) {
-      if (!late.has(purl)) late.set(purl, { purl, name: p.name, version: p.version });
+      if (!late.has(purl)) late.set(purl, p.entry);
     }
   }
   return late;
@@ -1027,6 +1194,8 @@ export async function recheckProjects(
         floor: deps.chunk?.floor ?? SBOM_MIN_COMPONENTS,
       },
       trivyRuns: 0,
+      failedGroups: new Set(),
+      logger: deps.logger,
     };
     return current;
   };
@@ -1065,8 +1234,7 @@ export async function recheckProjects(
   const summary: RecheckSummary = {
     at: now().toISOString(),
     projects: outcome.projects,
-    packages: outcome.packages.size,
-    unchecked: outcome.unchecked.size,
+    ...checkedCounts(outcome, current?.failedGroups ?? new Set()),
     durationMs: Math.round(performance.now() - started),
   };
   await updateVulndbState(deps.db, (state) => ({

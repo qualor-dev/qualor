@@ -149,6 +149,31 @@ function killTree(pid: number | undefined): void {
 /** How often a running Trivy's output file is measured against the cap. */
 const OUTPUT_POLL_MS = 1000;
 
+/**
+ * The arguments of one run, after the command's own: `trivy sbom` on `input`, offline, against the
+ * database in `cacheDir`, its JSON written to `output`. The real tests run Trivy with these too.
+ */
+export function trivySbomArgs(cacheDir: string, output: string, input: string): string[] {
+  return [
+    'sbom',
+    '--format',
+    'json',
+    '--skip-db-update',
+    '--skip-java-db-update',
+    '--offline-scan',
+    '--scanners',
+    'vuln',
+    '--disable-telemetry',
+    '--skip-version-check',
+    '--quiet',
+    '--cache-dir',
+    cacheDir,
+    '-o',
+    output,
+    input,
+  ];
+}
+
 const tooLarge = (size: number, cap: number): TrivyRun => ({
   ok: false,
   code: 'TOO_LARGE',
@@ -182,25 +207,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
         const input = path.join(work, 'sbom.json');
         const output = path.join(work, 'out.json');
         await writeFile(input, sbomJson);
-        const args = [
-          ...lead,
-          'sbom',
-          '--format',
-          'json',
-          '--skip-db-update',
-          '--skip-java-db-update',
-          '--offline-scan',
-          '--scanners',
-          'vuln',
-          '--disable-telemetry',
-          '--skip-version-check',
-          '--quiet',
-          '--cache-dir',
-          cacheDir,
-          '-o',
-          output,
-          input,
-        ];
+        const args = [...lead, ...trivySbomArgs(cacheDir, output, input)];
         const env: NodeJS.ProcessEnv = { HOME: work, TMPDIR: work };
         if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
         const exit = await new Promise<
