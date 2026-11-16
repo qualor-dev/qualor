@@ -1,0 +1,624 @@
+{
+  "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+  "@graph": [
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "Anchore, Inc",
+      "spdxId": "SPDXRef:Organization-1",
+      "type": "Organization"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "syft-1.57.1",
+      "spdxId": "SPDXRef:Tool-1",
+      "type": "Tool"
+    },
+    {
+      "@id": "_:CreationInfo-1",
+      "comment": "LicenseListVersion: 3.29",
+      "created": "2026-11-16T14:53:19Z",
+      "createdBy": ["SPDXRef:Organization-1"],
+      "createdUsing": ["SPDXRef:Tool-1"],
+      "specVersion": "3.0.1",
+      "type": "CreationInfo"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper-validator-identifier:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper-validator-identifier:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper_validator_identifier:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper_validator_identifier:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper-validator:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper-validator:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper_validator:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper_validator:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/helper:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "@babel/helper-validator-identifier",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz",
+      "software_packageUrl": "pkg:npm/%40babel/helper-validator-identifier@7.29.7",
+      "software_packageVersion": "7.29.7",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "package-lock.json",
+      "software_copyrightText": "NOASSERTION",
+      "software_fileKind": "file",
+      "software_primaryPurpose": "application",
+      "spdxId": "SPDXRef:File-package-lock.json-fd71c2238fc07657",
+      "type": "software_File",
+      "verifiedUsing": [
+        {
+          "algorithm": "sha1",
+          "hashValue": "f265d40757a63a3d640136ac30b2bae2691b9021",
+          "type": "Hash"
+        },
+        {
+          "algorithm": "sha256",
+          "hashValue": "8ffa3a33318d6383cb734f81325b68927e02259fd6ba6db5ce9724ca9e69ce73",
+          "type": "Hash"
+        }
+      ]
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-1",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js-tokens:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js-tokens:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js_tokens:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js_tokens:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:js:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "js-tokens",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+      "software_packageUrl": "pkg:npm/js-tokens@4.0.0",
+      "software_packageVersion": "4.0.0",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "MIT",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-1",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-2",
+      "to": ["SPDXRef:ListedLicense-1"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:minimist:minimist:1.2.5:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "minimist",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz",
+      "software_packageUrl": "pkg:npm/minimist@1.2.5",
+      "software_packageVersion": "1.2.5",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps-web:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps-web:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps_web:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps_web:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:deps:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "deps-web",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "NOASSERTION",
+      "software_packageUrl": "pkg:npm/deps-web@1.0.0",
+      "software_packageVersion": "1.0.0",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "spdxId": "https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense",
+      "type": "expandedlicensing_IndividualLicensingInfo"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-3",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "/src",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "NOASSERTION",
+      "software_primaryPurpose": "file",
+      "spdxId": "SPDXRef:DocumentRoot-Directory--src",
+      "type": "software_Package",
+      "verifiedUsing": [
+        {
+          "algorithm": "sha1",
+          "hashValue": "40a8a0c25084151e79de07f19b8ffcc7be2196a4",
+          "type": "PackageVerificationCode"
+        }
+      ]
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code-frame:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code-frame:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code_frame:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code_frame:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        },
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:\\@babel\\/code:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "@babel/code-frame",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.26.2.tgz",
+      "software_packageUrl": "pkg:npm/%40babel/code-frame@7.26.2",
+      "software_packageVersion": "7.26.2",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "externalIdentifier": [
+        {
+          "externalIdentifierType": "cpe23",
+          "identifier": "cpe:2.3:a:picocolors:picocolors:1.1.1:*:*:*:*:*:*:*",
+          "type": "ExternalIdentifier"
+        }
+      ],
+      "name": "picocolors",
+      "software_copyrightText": "NOASSERTION",
+      "software_downloadLocation": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+      "software_packageUrl": "pkg:npm/picocolors@1.1.1",
+      "software_packageVersion": "1.1.1",
+      "software_sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "spdxId": "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+      "type": "software_Package"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:DocumentRoot-Directory--src",
+      "relationshipType": "contains",
+      "spdxId": "SPDXRef:Relationship-4",
+      "to": [
+        "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+        "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+        "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+        "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+        "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+        "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+        "SPDXRef:File-package-lock.json-fd71c2238fc07657"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-5",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "dependsOn",
+      "spdxId": "SPDXRef:Relationship-6",
+      "to": [
+        "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+        "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-7",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "ISC",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-2",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-8",
+      "to": ["SPDXRef:ListedLicense-2"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-9",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "MIT",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-3",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-10",
+      "to": ["SPDXRef:ListedLicense-3"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "MIT",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-4",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-11",
+      "to": ["SPDXRef:ListedLicense-4"],
+      "type": "Relationship"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-12",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-13",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "dependsOn",
+      "spdxId": "SPDXRef:Relationship-14",
+      "to": [
+        "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+        "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+        "SPDXRef:Package-npm-picocolors-9b208867cdc8b323"
+      ],
+      "type": "Relationship"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-15",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:DocumentRoot-Directory--src",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-16",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-17",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "MIT",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-5",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-18",
+      "to": ["SPDXRef:ListedLicense-5"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-19",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+      "relationshipType": "hasConcludedLicense",
+      "spdxId": "SPDXRef:Relationship-20",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-21",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:DocumentRoot-Directory--src",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-22",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-23",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "hasDeclaredLicense",
+      "spdxId": "SPDXRef:Relationship-24",
+      "to": ["https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense"],
+      "type": "Relationship"
+    },
+    {
+      "comment": "evident-by: indicates the package's existence is evident by the given file",
+      "creationInfo": "_:CreationInfo-1",
+      "from": "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+      "relationshipType": "other",
+      "spdxId": "SPDXRef:Relationship-25",
+      "to": ["SPDXRef:File-package-lock.json-fd71c2238fc07657"],
+      "type": "Relationship"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "element": [
+        "SPDXRef:Relationship-1",
+        "SPDXRef:Package-npm-js-tokens-132a500346fcea0c",
+        "SPDXRef:Relationship-2",
+        "SPDXRef:Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+        "SPDXRef:Package-npm-minimist-545fcbfd94ce86b5",
+        "SPDXRef:Relationship-3",
+        "SPDXRef:Relationship-4",
+        "SPDXRef:Relationship-5",
+        "SPDXRef:ListedLicense-1",
+        "SPDXRef:Organization-1",
+        "SPDXRef:File-package-lock.json-fd71c2238fc07657",
+        "SPDXRef:DocumentRoot-Directory--src",
+        "SPDXRef:Relationship-6",
+        "SPDXRef:Relationship-7",
+        "https://spdx.org/rdf/3.0.1/terms/ExpandedLicensing/NoAssertionLicense",
+        "SPDXRef:Relationship-8",
+        "SPDXRef:ListedLicense-2",
+        "SPDXRef:Relationship-9",
+        "SPDXRef:Relationship-10",
+        "SPDXRef:Relationship-11",
+        "SPDXRef:Relationship-12",
+        "SPDXRef:Relationship-13",
+        "SPDXRef:Relationship-14",
+        "SPDXRef:Relationship-15",
+        "SPDXRef:Relationship-16",
+        "SPDXRef:Relationship-17",
+        "SPDXRef:Relationship-18",
+        "SPDXRef:Relationship-19",
+        "SPDXRef:Relationship-20",
+        "SPDXRef:ListedLicense-4",
+        "SPDXRef:ListedLicense-3",
+        "SPDXRef:Package-npm-deps-web-0ba18e1e7c65c9cc",
+        "SPDXRef:Relationship-21",
+        "SPDXRef:Relationship-22",
+        "SPDXRef:Relationship-23",
+        "SPDXRef:Relationship-24",
+        "SPDXRef:Package-npm-picocolors-9b208867cdc8b323",
+        "SPDXRef:ListedLicense-5",
+        "SPDXRef:Tool-1",
+        "SPDXRef:Package-npm--babel-code-frame-8ae3e7edd14743ff",
+        "SPDXRef:Relationship-25"
+      ],
+      "rootElement": ["SPDXRef:DocumentRoot-Directory--src"],
+      "spdxId": "SPDXRef:SBOM-1",
+      "type": "software_Sbom"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "name": "CC0-1.0",
+      "simplelicensing_licenseText": "NOASSERTION",
+      "spdxId": "SPDXRef:ListedLicense-6",
+      "type": "expandedlicensing_ListedLicense"
+    },
+    {
+      "creationInfo": "_:CreationInfo-1",
+      "dataLicense": "SPDXRef:ListedLicense-6",
+      "name": "/src",
+      "namespaceMap": [
+        {
+          "namespace": "https://anchore.com/syft/dir/src-de035dc4-f6a2-43ed-ae49-ca745ad9158f#",
+          "prefix": "SPDXRef",
+          "type": "NamespaceMap"
+        }
+      ],
+      "profileConformance": ["core", "software"],
+      "rootElement": ["SPDXRef:SBOM-1"],
+      "spdxId": "https://anchore.com/syft/dir/src-de035dc4-f6a2-43ed-ae49-ca745ad9158f#",
+      "type": "SpdxDocument"
+    }
+  ]
+}

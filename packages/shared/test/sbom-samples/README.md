@@ -1,6 +1,6 @@
 # SBOM samples
 
-Real SBOMs from Trivy, Syft and cdxgen, trimmed where noted, plus three hand-written files. The SBOM parser tests (`src/sbom/*.test.ts`) and later tests (the re-check against Trivy, the upload) read them.
+Real SBOMs (CycloneDX and SPDX) from Trivy, Syft and cdxgen, trimmed where noted, plus three hand-written files. The SBOM parser tests (`src/sbom/*.test.ts`) and later tests (the re-check against Trivy, the upload) read them.
 
 All files were made on 2026-11-16 with Docker 29.8.2. Every image is pinned by digest. The JSON files are pretty-printed by Prettier; their content is what the tool wrote, apart from the trimming below.
 
@@ -36,21 +36,28 @@ cdxgen moved to the `cdxgen` organisation: `ghcr.io/cyclonedx/cdxgen` stops at 1
 
 ## Files
 
-| File                       | Tool                | Source                     | Format            | Trimmed                                            |
-| -------------------------- | ------------------- | -------------------------- | ----------------- | -------------------------------------------------- |
-| `trivy-debian.cdx.json`    | Trivy               | Debian image               | CycloneDX 1.7     | to the 22 Debian packages below                    |
-| `syft-debian.cdx.json`     | Syft                | Debian image               | CycloneDX 1.6     | to the same 22 packages; `file` components dropped |
-| `trivy-alpine.cdx.json`    | Trivy               | Alpine image               | CycloneDX 1.7     | no (14 packages)                                   |
-| `trivy-ubi8.cdx.json`      | Trivy               | UBI 8 image                | CycloneDX 1.7     | to the 21 Red Hat packages below                   |
-| `syft-ubi8.cdx.json`       | Syft                | UBI 8 image                | CycloneDX 1.5     | to the same 21 packages; `file` components dropped |
-| `syft-node.cdx-1.4.json`   | Syft                | Node project               | CycloneDX 1.4     | no                                                 |
-| `cyclonedx.xml`            | Syft                | Node project               | CycloneDX 1.7 XML | no (byte for byte)                                 |
-| `cdxgen-node.cdx-1.7.json` | cdxgen              | Node project               | CycloneDX 1.7     | no                                                 |
-| `cdxgen-node.cdx-1.5.json` | cdxgen `convert.js` | `cdxgen-node.cdx-1.7.json` | CycloneDX 1.5     | no                                                 |
-| `vendor-nested.cdx.json`   | by hand             | none                       | CycloneDX 1.6     | not applicable                                     |
-| `in-toto.json`             | by hand             | none                       | DSSE envelope     | not applicable                                     |
+| File                       | Tool                | Source                     | Format             | Trimmed                                                     |
+| -------------------------- | ------------------- | -------------------------- | ------------------ | ----------------------------------------------------------- |
+| `trivy-debian.cdx.json`    | Trivy               | Debian image               | CycloneDX 1.7      | to the 22 Debian packages below                             |
+| `syft-debian.cdx.json`     | Syft                | Debian image               | CycloneDX 1.6      | to the same 22 packages; `file` components dropped          |
+| `trivy-alpine.cdx.json`    | Trivy               | Alpine image               | CycloneDX 1.7      | no (14 packages)                                            |
+| `trivy-ubi8.cdx.json`      | Trivy               | UBI 8 image                | CycloneDX 1.7      | to the 21 Red Hat packages below                            |
+| `syft-ubi8.cdx.json`       | Syft                | UBI 8 image                | CycloneDX 1.5      | to the same 21 packages; `file` components dropped          |
+| `syft-node.cdx-1.4.json`   | Syft                | Node project               | CycloneDX 1.4      | no                                                          |
+| `trivy-debian.spdx.json`   | Trivy               | Debian image               | SPDX 2.3           | to the same 22 packages, the OS package and the image root  |
+| `syft-debian.spdx.json`    | Syft                | Debian image               | SPDX 2.3           | to the same 22 packages and the image root; `files` dropped |
+| `syft-node.spdx-2.2.json`  | Syft                | Node project               | SPDX 2.2           | no                                                          |
+| `spdx-3.0.json`            | Syft                | Node project               | SPDX 3.0.1 JSON-LD | no                                                          |
+| `spdx.tag-value.spdx`      | Syft                | Node project               | SPDX 2.3 tag-value | no (byte for byte)                                          |
+| `cyclonedx.xml`            | Syft                | Node project               | CycloneDX 1.7 XML  | no (byte for byte)                                          |
+| `cdxgen-node.cdx-1.7.json` | cdxgen              | Node project               | CycloneDX 1.7      | no                                                          |
+| `cdxgen-node.cdx-1.5.json` | cdxgen `convert.js` | `cdxgen-node.cdx-1.7.json` | CycloneDX 1.5      | no                                                          |
+| `vendor-nested.cdx.json`   | by hand             | none                       | CycloneDX 1.6      | not applicable                                              |
+| `in-toto.json`             | by hand             | none                       | DSSE envelope      | not applicable                                              |
 
-Trimming keeps `metadata`, the `operating-system` component and the named `library` components. It keeps the `dependencies` entries of the kept `bom-ref`s and of the subject, with `dependsOn` limited to kept `bom-ref`s.
+SPDX trimming keeps the packages of the same list, the OS package (Trivy), the root package and the relationships whose two ends are kept, plus the `hasExtractedLicensingInfos` that the kept packages reference. Syft's `files` and every relationship to a file are dropped. The SPDX files were pretty-printed by Prettier like the others.
+
+Trimming of the CycloneDX files keeps `metadata`, the `operating-system` component and the named `library` components. It keeps the `dependencies` entries of the kept `bom-ref`s and of the subject, with `dependsOn` limited to kept `bom-ref`s.
 
 - **Debian, 22 packages** (both files): `libssl3`, `openssl`, `login`, `passwd`, `libc6`, `libc-bin`, `curl`, `libcurl4`, `zlib1g`, `bash`, `bsdutils`, `util-linux`, `libcap2`, `e2fsprogs`, `libsystemd0`, `libudev1`, `perl-base`, `tar`, `coreutils`, `libgnutls30`, `gpgv`, `ca-certificates`. The SPDX files of the same image use the same digest and list.
 - **Red Hat, 21 packages** (both files): `openssl-libs`, `gmp`, `curl`, `libcurl`, `glibc`, `glibc-common`, `bash`, `systemd-libs`, `libxml2`, `sqlite-libs`, `krb5-libs`, `xz-libs`, `ncurses-libs`, `libstdc++`, `rpm`, `rpm-libs`, `sed`, `tzdata`, `ca-certificates`, `redhat-release`, `libgcc`. The two `gpg-pubkey` entries are left out: Trivy writes no source package for them.
@@ -59,6 +66,8 @@ What the samples show:
 
 - Trivy writes the Debian epoch as an `epoch` qualifier (`pkg:deb/debian/login@4.13%2Bdfsg1-1%2Bdeb12u2?…&epoch=1`) and the source in `aquasecurity:trivy:Src*` properties. Syft writes it in the version (`login@1%3A4.13…`) and the source as `upstream`, with a version only when it differs (`upstream=bash%405.2.15-2`).
 - Syft names the Red Hat OS `rhel` (`distro=rhel-8.10`, namespace `redhat`); Trivy names it `redhat`. Both write rpm epochs as `epoch=1`; Syft adds `upstream=<name>-<version>-<release>.src.rpm`.
+- Trivy's SPDX root is the `SPDXRef-ContainerImage-…` package (with a `pkg:oci` purl), described by the document; the OS is a `SPDXRef-OperatingSystem-…` package that `CONTAINS` the packages, and `sourceInfo` is `built package from: <name> <version>` with the epoch in the version. Syft's root is `SPDXRef-DocumentRoot-Image-…`; it writes no OS package, every purl carries `distro=debian-12.15` and `upstream`, and it links packages with `DEPENDENCY_OF` (never `DEPENDS_ON`).
+- Licences differ by format: CycloneDX lists the terms one by one, SPDX writes one expression, with `LicenseRef-…` ids that `hasExtractedLicensingInfos` names.
 - `trivy-ubi8.cdx.json` keeps Trivy's `aquasecurity:trivy:ContentSet` properties, which Trivy's Red Hat detection reads.
 
 ## Commands
@@ -76,6 +85,13 @@ docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \
   scan registry:<debian image reference> --platform linux/amd64 -o cyclonedx-json@1.6=/out/syft-debian.cdx.json
 docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \
   scan registry:<ubi8 image reference> --platform linux/amd64 -o cyclonedx-json@1.5=/out/syft-ubi8.cdx.json
+
+# Trivy and Syft, SPDX of the Debian image (then trimmed)
+docker run --rm --entrypoint /opt/qualor/bin/trivy -v "$OUT:/out" qualor/scanner:0.16-iac-dev \n  image --skip-version-check --format spdx-json --output /out/trivy-debian.spdx.json \n  --cache-dir /tmp/trivy-cache --platform linux/amd64 --image-src remote <debian image reference>
+docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \n  scan registry:<debian image reference> --platform linux/amd64 -o spdx-json@2.3=/out/syft-debian.spdx.json
+
+# Syft, Node project (SPDX 2.2, SPDX 3.0 and tag-value, the project mounted read-only, no network)
+docker run --rm --network none -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$SRC:/src:ro" -v "$OUT:/out" <syft image> \n  scan dir:/src -o spdx-json@2.2=/out/syft-node.spdx-2.2.json -o spdx-json@3.0=/out/spdx-3.0.json -o spdx-tag-value=/out/spdx.tag-value.spdx
 
 # Syft, Node project
 docker run --rm --network none -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$SRC:/src:ro" -v "$OUT:/out" <syft image> \

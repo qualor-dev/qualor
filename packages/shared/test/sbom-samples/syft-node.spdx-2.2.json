@@ -1,0 +1,411 @@
+{
+  "spdxVersion": "SPDX-2.2",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "/src",
+  "documentNamespace": "https://anchore.com/syft/dir/src-079cf7cb-68e5-424d-ba6c-6fbd9783d509",
+  "creationInfo": {
+    "licenseListVersion": "3.29",
+    "creators": ["Organization: Anchore, Inc", "Tool: syft-1.57.1"],
+    "created": "2026-11-16T14:53:18Z"
+  },
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.26.2.tgz",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code-frame:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code-frame:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code_frame:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code_frame:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code:\\@babel\\/code-frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/code:\\@babel\\/code_frame:7.26.2:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/%40babel/code-frame@7.26.2",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "@babel/code-frame",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "7.26.2"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper-validator-identifier:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper-validator-identifier:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper_validator_identifier:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper_validator_identifier:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper-validator:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper-validator:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper_validator:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper_validator:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper:\\@babel\\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:\\@babel\\/helper:\\@babel\\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/%40babel/helper-validator-identifier@7.29.7",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "@babel/helper-validator-identifier",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "7.29.7"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps-web:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps-web:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps_web:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps_web:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps:deps-web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:deps:deps_web:1.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/deps-web@1.0.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "name": "deps-web",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "1.0.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm-js-tokens-132a500346fcea0c",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js-tokens:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js-tokens:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js_tokens:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js_tokens:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js:js-tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:js:js_tokens:4.0.0:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/js-tokens@4.0.0",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "js-tokens",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "4.0.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm-minimist-545fcbfd94ce86b5",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:minimist:minimist:1.2.5:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/minimist@1.2.5",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "name": "minimist",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "1.2.5"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-npm-picocolors-9b208867cdc8b323",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+      "externalRefs": [
+        {
+          "referenceCategory": "SECURITY",
+          "referenceLocator": "cpe:2.3:a:picocolors:picocolors:1.1.1:*:*:*:*:*:*:*",
+          "referenceType": "cpe23Type"
+        },
+        {
+          "referenceCategory": "PACKAGE_MANAGER",
+          "referenceLocator": "pkg:npm/picocolors@1.1.1",
+          "referenceType": "purl"
+        }
+      ],
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "ISC",
+      "name": "picocolors",
+      "sourceInfo": "acquired package info from installed node module manifest file: /package-lock.json",
+      "supplier": "NOASSERTION",
+      "versionInfo": "1.1.1"
+    },
+    {
+      "name": "/src",
+      "SPDXID": "SPDXRef-DocumentRoot-Directory--src",
+      "supplier": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": true,
+      "packageVerificationCode": {
+        "packageVerificationCodeValue": "40a8a0c25084151e79de07f19b8ffcc7be2196a4"
+      },
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "files": [
+    {
+      "fileName": "package-lock.json",
+      "SPDXID": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "fileTypes": ["APPLICATION"],
+      "checksums": [
+        { "algorithm": "SHA1", "checksumValue": "f265d40757a63a3d640136ac30b2bae2691b9021" },
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "8ffa3a33318d6383cb734f81325b68927e02259fd6ba6db5ce9724ca9e69ce73"
+        }
+      ],
+      "licenseConcluded": "NOASSERTION",
+      "licenseInfoInFiles": ["NOASSERTION"],
+      "copyrightText": "NOASSERTION"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-npm-js-tokens-132a500346fcea0c",
+      "relatedSpdxElement": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "DEPENDENCY_OF"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-minimist-545fcbfd94ce86b5",
+      "relatedSpdxElement": "SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "DEPENDENCY_OF"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relatedSpdxElement": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "DEPENDENCY_OF"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relatedSpdxElement": "SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "DEPENDENCY_OF"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-picocolors-9b208867cdc8b323",
+      "relatedSpdxElement": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "DEPENDENCY_OF"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-js-tokens-132a500346fcea0c",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-minimist-545fcbfd94ce86b5",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-npm-picocolors-9b208867cdc8b323",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "OTHER",
+      "comment": "evident-by: indicates the package's existence is evident by the given file"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm-js-tokens-132a500346fcea0c",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm-minimist-545fcbfd94ce86b5",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-Package-npm-picocolors-9b208867cdc8b323",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DocumentRoot-Directory--src",
+      "relatedSpdxElement": "SPDXRef-File-package-lock.json-fd71c2238fc07657",
+      "relationshipType": "CONTAINS"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relatedSpdxElement": "SPDXRef-DocumentRoot-Directory--src",
+      "relationshipType": "DESCRIBES"
+    }
+  ]
+}

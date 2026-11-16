@@ -1,0 +1,175 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: /src
+DocumentNamespace: https://anchore.com/syft/dir/src-7d3799ab-7402-41aa-bc71-9fc5625091f7
+LicenseListVersion: 3.29
+Creator: Organization: Anchore, Inc
+Creator: Tool: syft-1.57.1
+Created: 2026-11-16T14:53:21Z
+
+##### Unpackaged files
+
+FileName: package-lock.json
+SPDXID: SPDXRef-File-package-lock.json-fd71c2238fc07657
+FileType: APPLICATION
+FileChecksum: SHA1: f265d40757a63a3d640136ac30b2bae2691b9021
+FileChecksum: SHA256: 8ffa3a33318d6383cb734f81325b68927e02259fd6ba6db5ce9724ca9e69ce73
+LicenseConcluded: NOASSERTION
+LicenseInfoInFile: NOASSERTION
+FileCopyrightText: NOASSERTION
+
+##### Package: /src
+
+PackageName: /src
+SPDXID: SPDXRef-DocumentRoot-Directory--src
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: NOASSERTION
+PrimaryPackagePurpose: FILE
+PackageVerificationCode: 40a8a0c25084151e79de07f19b8ffcc7be2196a4
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: NOASSERTION
+
+##### Package: @babel/code-frame
+
+PackageName: @babel/code-frame
+SPDXID: SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff
+PackageVersion: 7.26.2
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.26.2.tgz
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code-frame:\@babel\/code-frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code-frame:\@babel\/code_frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code_frame:\@babel\/code-frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code_frame:\@babel\/code_frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code:\@babel\/code-frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/code:\@babel\/code_frame:7.26.2:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/%40babel/code-frame@7.26.2
+
+##### Package: @babel/helper-validator-identifier
+
+PackageName: @babel/helper-validator-identifier
+SPDXID: SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30
+PackageVersion: 7.29.7
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: https://registry.npmjs.org/@babel/helper-validator-identifier/-/helper-validator-identifier-7.29.7.tgz
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper-validator-identifier:\@babel\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper-validator-identifier:\@babel\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper_validator_identifier:\@babel\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper_validator_identifier:\@babel\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper-validator:\@babel\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper-validator:\@babel\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper_validator:\@babel\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper_validator:\@babel\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper:\@babel\/helper-validator-identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:\@babel\/helper:\@babel\/helper_validator_identifier:7.29.7:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/%40babel/helper-validator-identifier@7.29.7
+
+##### Package: deps-web
+
+PackageName: deps-web
+SPDXID: SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc
+PackageVersion: 1.0.0
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps-web:deps-web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps-web:deps_web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps_web:deps-web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps_web:deps_web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps:deps-web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:deps:deps_web:1.0.0:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/deps-web@1.0.0
+
+##### Package: js-tokens
+
+PackageName: js-tokens
+SPDXID: SPDXRef-Package-npm-js-tokens-132a500346fcea0c
+PackageVersion: 4.0.0
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js-tokens:js-tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js-tokens:js_tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js_tokens:js-tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js_tokens:js_tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js:js-tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:js:js_tokens:4.0.0:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/js-tokens@4.0.0
+
+##### Package: minimist
+
+PackageName: minimist
+SPDXID: SPDXRef-Package-npm-minimist-545fcbfd94ce86b5
+PackageVersion: 1.2.5
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: https://registry.npmjs.org/minimist/-/minimist-1.2.5.tgz
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:minimist:minimist:1.2.5:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/minimist@1.2.5
+
+##### Package: picocolors
+
+PackageName: picocolors
+SPDXID: SPDXRef-Package-npm-picocolors-9b208867cdc8b323
+PackageVersion: 1.1.1
+PackageSupplier: NOASSERTION
+PackageDownloadLocation: https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz
+FilesAnalyzed: false
+PackageSourceInfo: acquired package info from installed node module manifest file: /package-lock.json
+PackageLicenseConcluded: NOASSERTION
+PackageLicenseDeclared: ISC
+PackageCopyrightText: NOASSERTION
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:picocolors:picocolors:1.1.1:*:*:*:*:*:*:*
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/picocolors@1.1.1
+
+##### Relationships
+
+Relationship: SPDXRef-Package-npm-js-tokens-132a500346fcea0c DEPENDENCY_OF SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff
+Relationship: SPDXRef-Package-npm-minimist-545fcbfd94ce86b5 DEPENDENCY_OF SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc
+Relationship: SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30 DEPENDENCY_OF SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff
+Relationship: SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff DEPENDENCY_OF SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc
+Relationship: SPDXRef-Package-npm-picocolors-9b208867cdc8b323 DEPENDENCY_OF SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff
+Relationship: SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-Package-npm-js-tokens-132a500346fcea0c OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-Package-npm-minimist-545fcbfd94ce86b5 OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30 OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-Package-npm-picocolors-9b208867cdc8b323 OTHER SPDXRef-File-package-lock.json-fd71c2238fc07657
+RelationshipComment: evident-by: indicates the package's existence is evident by the given file
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm--babel-code-frame-8ae3e7edd14743ff
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm--babel-helper-validator-identifier-755ef6b621dddf30
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm-deps-web-0ba18e1e7c65c9cc
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm-js-tokens-132a500346fcea0c
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm-minimist-545fcbfd94ce86b5
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-Package-npm-picocolors-9b208867cdc8b323
+Relationship: SPDXRef-DocumentRoot-Directory--src CONTAINS SPDXRef-File-package-lock.json-fd71c2238fc07657
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-DocumentRoot-Directory--src
+
