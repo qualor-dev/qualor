@@ -474,10 +474,12 @@ describe('the notices (rulings L1 and L2)', () => {
     }
     expect(flat).toContain('MIT License Copyright (c) 2024 Aqua Security');
     expect(flat).toContain(
-      'Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. CIS Benchmark references in check descriptions are references only.',
+      'Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. Some check descriptions refer to or quote CIS Benchmark recommendations; Qualor does not assess or certify CIS compliance.',
     );
-    // No feature is labelled after the benchmark.
-    expect(flat).not.toMatch(/CIS (compliance|scanning)/i);
+    // No feature is labelled after the benchmark: only the disclaimer above may say 'CIS compliance'.
+    expect(flat.replace('does not assess or certify CIS compliance', '')).not.toMatch(
+      /CIS (compliance|scanning)/i,
+    );
   });
 
   it('lists the sources of the filtered Trivy database snapshot (D31)', () => {

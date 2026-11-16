@@ -68,6 +68,33 @@ describe('filter-trivy-checks.sh', () => {
   });
 });
 
+describe('filter-trivy-checks.sh when grep itself fails', () => {
+  // A grep that exits 2 (an unreadable file, a broken pipe) must not read as "no match".
+  const withGrep = (script: string) => {
+    const root = fakeBundle();
+    const stubs = mkdtempSync(path.join(tmpdir(), 'qualor-grep-'));
+    tmps.push(stubs);
+    writeFileSync(path.join(stubs, 'grep'), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    return spawnSync('sh', [SCRIPT, root], {
+      encoding: 'utf8',
+      env: { ...process.env, PATH: `${stubs}${path.delimiter}${process.env['PATH'] ?? ''}` },
+    });
+  };
+
+  it('fails when the removal grep errors', () => {
+    const result = withGrep('exit 2');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('grep failed while filtering');
+  });
+
+  it('fails when only the post-check grep errors', () => {
+    // The first call (-rl) finds nothing; the check (-rq) errors.
+    const result = withGrep('case "$1" in -rlE) exit 1;; *) exit 2;; esac');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('grep failed while checking');
+  });
+});
+
 describe('the trivy-checks pins of install.sh', () => {
   it('pins 2.3.0 by a 64-hex layer digest and filters before it installs', () => {
     expect(installSh).toMatch(/^TRIVY_CHECKS_VERSION=2\.3\.0$/m);

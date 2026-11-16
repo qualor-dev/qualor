@@ -126,7 +126,7 @@ Trivy runs for the `trivy-iac` engine: the layer
 (`tools/analyzers/filter-trivy-checks.sh`): it removed the Kubernetes cluster checks (the ones
 with an id that starts with `KCV-`) and the `specs/` directory. Everything else is as upstream.
 
-Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. CIS Benchmark references in check descriptions are references only.
+Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. Some check descriptions refer to or quote CIS Benchmark recommendations; Qualor does not assess or certify CIS compliance.
 
 trivy-checks is licensed under the MIT licence:
 
