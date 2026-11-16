@@ -138,10 +138,14 @@ export function inventoryName(purl: Purl): string {
   return purl.type === 'pypi' ? full.toLowerCase().replace(/_/g, '-') : full;
 }
 
-/** The version an inventory row carries: rpm folds the `epoch` qualifier in (`1:` prefix, none for 0). */
+/**
+ * The version an inventory row carries: rpm and deb fold the `epoch` qualifier in (`1:` prefix,
+ * none for 0), unless the version already starts with one. Syft writes a Debian epoch in the
+ * version (`login@1%3A4.13…`); Trivy 0.74.0 writes it as `epoch=1`, as for rpm.
+ */
 export function inventoryVersion(purl: Purl): string | null {
-  if (purl.type !== 'rpm' || purl.version === null) return purl.version;
+  if ((purl.type !== 'rpm' && purl.type !== 'deb') || purl.version === null) return purl.version;
   const epoch = purl.qualifiers.epoch;
-  if (epoch === undefined || /^0*$/.test(epoch)) return purl.version;
+  if (epoch === undefined || /^0*$/.test(epoch) || /^\d+:/.test(purl.version)) return purl.version;
   return `${epoch}:${purl.version}`;
 }

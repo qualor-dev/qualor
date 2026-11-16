@@ -137,6 +137,19 @@ describe('rpm epoch', () => {
   });
 });
 
+describe('deb epoch', () => {
+  it('folds the epoch qualifier in, as Trivy 0.74.0 writes it', () => {
+    const p = parsePurl(
+      'pkg:deb/debian/login@4.13%2Bdfsg1-1%2Bdeb12u2?arch=amd64&distro=debian-12.15&epoch=1',
+    )!;
+    expect(inventoryVersion(p)).toBe('1:4.13+dfsg1-1+deb12u2');
+  });
+  it('keeps an epoch already in the version, as Syft writes it', () => {
+    const p = parsePurl('pkg:deb/debian/login@1%3A4.13%2Bdfsg1-1%2Bdeb12u2?epoch=1')!;
+    expect(inventoryVersion(p)).toBe('1:4.13+dfsg1-1+deb12u2');
+  });
+});
+
 describe('refuses', () => {
   it.each([
     'npm/foo@1',
