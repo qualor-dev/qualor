@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { json, problem, useTestServers } from '../../test/http';
 import { useTempDirs } from '../../test/tmp';
 import { CliError } from '../errors';
-import { silentLogger } from '../log';
+import { createLogger, silentLogger } from '../log';
 import type { HttpResponse } from './http';
 import {
   MAX_SBOM_RETRY_ATTEMPTS,
@@ -95,6 +95,29 @@ describe('uploadSbom', () => {
     );
     expect(r.status).toBe(201);
     expect(waits).toHaveLength(2);
+  });
+
+  it('logs the first busy retry, then every 10th (t12m1)', async () => {
+    const { file, size } = gz();
+    let n = 0;
+    const { url } = await serve((_req, res) => {
+      n += 1;
+      if (n <= 25) problem(res, 503, 'UPLOADS_BUSY');
+      else json(res, 201, answer);
+    });
+    const lines: string[] = [];
+    const log = createLogger('debug', (line) => lines.push(line));
+    await uploadSbom(
+      ep(url),
+      { projectKey: 'a/b', file, size },
+      { log, wait: () => Promise.resolve() },
+    );
+    const busy = lines.filter((l) => l.includes('busy'));
+    // Retries 1, 10 and 20 of 25: the first says so, the others how long it has been busy.
+    expect(busy).toHaveLength(3);
+    expect(busy[0]).toContain('retrying in');
+    expect(busy[1]).toContain('retry 10');
+    expect(busy[2]).toContain('retry 20');
   });
 
   it('gives up with exit 4 when the server stays busy past the attempts', async () => {

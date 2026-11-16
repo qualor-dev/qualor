@@ -118,7 +118,11 @@ describe('runUploadSbom', () => {
   it('exits 2 when there is no project key, no server or no token', async () => {
     const { url } = await serve((_req, res) => json(res, 201, answer));
     expect((await run({}, { QUALOR_URL: url, QUALOR_TOKEN: TOKEN })).code).toBe(2);
-    expect((await run({ projectKey: 'a/b' }, { QUALOR_TOKEN: TOKEN })).code).toBe(2);
+    const noServer = await run({ projectKey: 'a/b' }, { QUALOR_TOKEN: TOKEN });
+    expect(noServer.code).toBe(2);
+    // upload-sbom has no --dry-run: the message does not offer it (t12m2).
+    expect(noServer.err).toContain('a server URL');
+    expect(noServer.err).not.toContain('--dry-run');
     expect((await run({ projectKey: 'a/b' }, { QUALOR_URL: url })).code).toBe(2);
   });
 

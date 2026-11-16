@@ -22,6 +22,8 @@ import { busyRetryDelay } from './upload';
  */
 export const MAX_SBOM_RETRY_ATTEMPTS = 300;
 export const MAX_SBOM_RETRY_WAIT_MS = 300_000;
+/** After the first busy retry, one in this many is logged. */
+const BUSY_LOG_EVERY = 10;
 
 /** `busyRetryDelay` with the SBOM budget above. */
 export function sbomRetryDelay(res: HttpResponse, attempt: number, waited: number): number | null {
@@ -120,7 +122,14 @@ export async function uploadSbom(
     }
     const delay = sbomRetryDelay(res, attempt, waited);
     if (delay !== null) {
-      o.log.info(`the server is busy with another upload; retrying in ${delay / 1000} s`);
+      // Up to 300 retries: the first one is logged, then every 10th.
+      if (attempt === 1) {
+        o.log.info(`the server is busy with another upload; retrying in ${delay / 1000} s`);
+      } else if (attempt % BUSY_LOG_EVERY === 0) {
+        o.log.info(
+          `the server is still busy (retry ${attempt}, ${Math.round(waited / 1000)} s so far); retrying`,
+        );
+      }
       waited += delay;
       await wait(delay);
       continue;

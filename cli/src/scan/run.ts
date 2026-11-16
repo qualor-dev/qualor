@@ -897,7 +897,7 @@ function prepareScan(flags: ScanFlags, io: CliIO, log: Logger, deps: ScanDeps): 
     throw new CliError(EXIT.USAGE, '--dry-run needs --output FILE');
   }
   checkGitLabReportPaths(flags, io.cwd);
-  if (!flags.dryRun) requireServer(settings);
+  if (!flags.dryRun) requireServer(settings, { offerDryRun: true });
   // Ruling V8 and the server settings (URL shape, token, CA file) exit 2 before any request;
   // under --dry-run a repo-chosen URL only warns and nothing is sent.
   const found = serverEndpoint(settings, { upload: !flags.dryRun, log, env: io.env });

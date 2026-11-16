@@ -280,12 +280,17 @@ export function loadSettings(input: LoadSettingsInput): Settings {
 }
 
 /** Upload needs both; `--dry-run` needs neither (config.md §7, exit code 2). */
-export function requireServer(settings: Settings): { url: string; token: string } {
+export function requireServer(
+  settings: Settings,
+  options: { offerDryRun?: boolean } = {},
+): { url: string; token: string } {
   const url = settings.config.server.url;
   if (url === undefined || settings.token === null) {
+    // Only `qualor scan` has --dry-run.
+    const unless = options.offerDryRun === true ? ' unless --dry-run is used' : '';
     throw new CliError(
       EXIT.USAGE,
-      'a server URL (--server-url, QUALOR_URL or server.url) and a token (QUALOR_TOKEN or --token-file) are required unless --dry-run is used',
+      `a server URL (--server-url, QUALOR_URL or server.url) and a token (QUALOR_TOKEN or --token-file) are required${unless}`,
     );
   }
   return { url, token: settings.token };
