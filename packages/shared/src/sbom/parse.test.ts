@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { budgetMs } from '../../test/perf';
 import { parseSbom } from './parse';
 import type { SbomInventory, SbomRefusal } from './types';
 
@@ -130,6 +131,24 @@ describe('multiple OS', () => {
   it('refuses an OS component of one family with packages of another', () => {
     const r = refusal(bom([os('debian', '12.15'), lib('pkg:apk/alpine/b@1-r0?distro=3.20.3')]));
     expect(r.code).toBe('SBOM_MULTIPLE_OS');
+  });
+
+  it('refuses 50 000 packages of distinct distros in linear time, naming the first two', () => {
+    const text = bom(
+      Array.from({ length: 50_000 }, (_, n) => lib(`pkg:deb/debian/p${n}@1?distro=debian-${n}`)),
+    );
+    const started = performance.now();
+    const r = refusal(text);
+    expect(performance.now() - started).toBeLessThan(budgetMs(500));
+    expect(r.code).toBe('SBOM_MULTIPLE_OS');
+    expect(r.message).toContain('(debian 0, debian 1)');
+  });
+
+  it('refuses 50 000 OS components of distinct versions in linear time', () => {
+    const text = bom(Array.from({ length: 50_000 }, (_, n) => os('debian', String(n))));
+    const started = performance.now();
+    expect(refusal(text).code).toBe('SBOM_MULTIPLE_OS');
+    expect(performance.now() - started).toBeLessThan(budgetMs(500));
   });
 
   it('takes a distro that lacks the minor version as the same distribution', () => {

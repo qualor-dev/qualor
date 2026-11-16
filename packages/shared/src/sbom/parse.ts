@@ -129,10 +129,16 @@ interface Candidate {
  * side, or versions where one only adds parts (`12` and `12.15`), is one distribution. The OS
  * components are added first, and a purl's version never replaces a component's; between two
  * components, or two purls, the longer version wins.
+ *
+ * Two distributions, or OS packages of two types, are a refusal whatever follows, so the caller
+ * asks {@link refusal} after every addition and stops at the first one. `found` therefore never
+ * holds more than two candidates, and the work stays linear in the number of packages (an SBOM
+ * of 50 000 distinct `distro` values would otherwise compare every pair).
  */
 class Distributions {
   readonly found: Candidate[] = [];
   private readonly seen = new Set<string>();
+  private readonly types = new Set<string>();
 
   add(name: string, version: string | null, fromComponent: boolean): void {
     const family = osFamilyOf(name).family;
@@ -156,7 +162,9 @@ class Distributions {
     }
   }
 
-  addPurl(purl: Purl): void {
+  /** An OS package: its type, and the distribution its `distro` qualifier or namespace names. */
+  addPackage(purl: Purl): void {
+    this.types.add(purl.type);
     const distro = purl.qualifiers.distro;
     if (distro !== undefined) {
       const { id, version } = splitDistro(distro);
@@ -167,8 +175,17 @@ class Distributions {
     }
   }
 
-  label(c: Candidate): string {
-    return c.version === null ? c.family : `${c.family} ${c.version}`;
+  /** `SBOM_MULTIPLE_OS` naming what was found, once there is more than one; else null. */
+  refusal(): { refusal: SbomRefusal } | null {
+    if (this.found.length < 2 && this.types.size < 2) return null;
+    const labels =
+      this.found.length > 1
+        ? this.found.map((c) => (c.version === null ? c.family : `${c.family} ${c.version}`))
+        : [...this.types].map((type) => `${type} packages`);
+    return refuse(
+      'SBOM_MULTIPLE_OS',
+      `The SBOM describes more than one operating system (${labels.join(', ')}). Upload one SBOM per image.`,
+    );
   }
 }
 
@@ -213,9 +230,12 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
   let unsupportedType = doc.skipped.unsupportedType;
   let duplicate = 0;
   const entries = new Map<string, SbomEntry>();
-  const osTypes = new Set<string>();
   const distributions = new Distributions();
-  for (const os of doc.operatingSystems) distributions.add(os.name, os.version || null, true);
+  for (const os of doc.operatingSystems) {
+    distributions.add(os.name, os.version || null, true);
+    const multiple = distributions.refusal();
+    if (multiple !== null) return multiple;
+  }
 
   for (const c of doc.components) {
     const ecosystem = c.purl.type;
@@ -235,8 +255,9 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
     }
     const os = isOsPackageType(ecosystem);
     if (os) {
-      osTypes.add(ecosystem);
-      distributions.addPurl(c.purl);
+      distributions.addPackage(c.purl);
+      const multiple = distributions.refusal();
+      if (multiple !== null) return multiple;
     }
     const key = `${c.path}\0${ecosystem}\0${name}\0${version}`;
     const seen = entries.get(key);
@@ -263,18 +284,8 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
     });
   }
 
-  const found = distributions.found;
-  if (found.length > 1 || osTypes.size > 1) {
-    const labels =
-      found.length > 1
-        ? found.map((c) => distributions.label(c))
-        : [...osTypes].map((type) => `${type} packages`);
-    return refuse(
-      'SBOM_MULTIPLE_OS',
-      `The SBOM describes more than one operating system (${labels.join(', ')}). Upload one SBOM per image.`,
-    );
-  }
-  const only = found[0];
+  // At most one distribution is left: the loops above refuse at the second.
+  const only = distributions.found[0];
   const distribution: SbomDistribution | null =
     only === undefined || only.version === null
       ? null
