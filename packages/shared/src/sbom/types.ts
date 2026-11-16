@@ -18,8 +18,10 @@ export const SBOM_MAX_JSON_CONTAINERS = 2_000_000;
 export const SBOM_MAX_JSON_VALUES = 6_000_000;
 /**
  * A JSON text with more distinct keys than this is refused before `JSON.parse`: `JSON.parse` keeps
- * every distinct key, and 4 million of them took a 1 GiB server down. Real SBOMs use under 50
- * (0.16 Task 16).
+ * every distinct key string, and 4 million of them took a 1 GiB server down. Real SBOMs use under
+ * 50 (0.16 Task 16). The bound limits distinct key strings, not V8's hidden classes (one per key
+ * order): 1.2 million objects with unique pairs of keys from these 10 000 still cost about 223 MiB
+ * of `JSON.parse` heap, where real 50 000-package files cost 138 to 196 MiB (ruling R26).
  */
 export const SBOM_MAX_JSON_KEYS = 10_000;
 

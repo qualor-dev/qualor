@@ -58,8 +58,8 @@ function refuse(code: SbomRefusal['code'], message: string): { refusal: SbomRefu
  * Which bound a JSON text passes, if any: more objects and arrays than
  * {@link SBOM_MAX_JSON_CONTAINERS}, more keys and values than {@link SBOM_MAX_JSON_VALUES}, or more
  * distinct keys than {@link SBOM_MAX_JSON_KEYS}. One linear scan, stopping at a bound:
- * - a key or a value starts at the first character after `{`, `[`, `,` or `:` that is neither
- *   white space nor a closing bracket;
+ * - a key or a value starts at the first character that is neither white space nor a closing
+ *   bracket, from the start of the text or after `{`, `[`, `,` or `:`;
  * - a string ends at the next quote that no backslash escapes;
  * - a key is a string that starts right after `{` or `,` inside an object. Keys are compared as
  *   written, escapes included.
