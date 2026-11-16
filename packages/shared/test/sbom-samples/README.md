@@ -88,11 +88,15 @@ docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \
   scan registry:<ubi8 image reference> --platform linux/amd64 -o cyclonedx-json@1.5=/out/syft-ubi8.cdx.json
 
 # Trivy and Syft, SPDX of the Debian image (then trimmed)
-docker run --rm --entrypoint /opt/qualor/bin/trivy -v "$OUT:/out" qualor/scanner:0.16-iac-dev \n  image --skip-version-check --format spdx-json --output /out/trivy-debian.spdx.json \n  --cache-dir /tmp/trivy-cache --platform linux/amd64 --image-src remote <debian image reference>
-docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \n  scan registry:<debian image reference> --platform linux/amd64 -o spdx-json@2.3=/out/syft-debian.spdx.json
+docker run --rm --entrypoint /opt/qualor/bin/trivy -v "$OUT:/out" qualor/scanner:0.16-iac-dev \
+  image --skip-version-check --format spdx-json --output /out/trivy-debian.spdx.json \
+  --cache-dir /tmp/trivy-cache --platform linux/amd64 --image-src remote <debian image reference>
+docker run --rm -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$OUT:/out" <syft image> \
+  scan registry:<debian image reference> --platform linux/amd64 -o spdx-json@2.3=/out/syft-debian.spdx.json
 
 # Syft, Node project (SPDX 2.2, SPDX 3.0 and tag-value, the project mounted read-only, no network)
-docker run --rm --network none -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$SRC:/src:ro" -v "$OUT:/out" <syft image> \n  scan dir:/src -o spdx-json@2.2=/out/syft-node.spdx-2.2.json -o spdx-json@3.0=/out/spdx-3.0.json -o spdx-tag-value=/out/spdx.tag-value.spdx
+docker run --rm --network none -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$SRC:/src:ro" -v "$OUT:/out" <syft image> \
+  scan dir:/src -o spdx-json@2.2=/out/syft-node.spdx-2.2.json -o spdx-json@3.0=/out/spdx-3.0.json -o spdx-tag-value=/out/spdx.tag-value.spdx
 
 # Syft, Node project
 docker run --rm --network none -e SYFT_CHECK_FOR_APP_UPDATE=false -v "$SRC:/src:ro" -v "$OUT:/out" <syft image> \

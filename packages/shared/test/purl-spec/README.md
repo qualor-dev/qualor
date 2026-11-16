@@ -6,7 +6,10 @@ https://github.com/package-url/purl-spec/tree/v1.1.1/tests
 - `<type>-test.json`: `tests/types/<type>-test.json`
 - `specification-test.json`: `tests/spec/specification-test.json` (the invalid cases)
 
-`src/sbom/purl.test.ts` runs every `parse` case. The purl-spec repository is MIT licensed:
+`src/sbom/purl.test.ts` runs every `parse` case except those in its `LENIENT` list: type rules the
+reader leaves out on purpose (each with its reason there), which the test checks on their own.
+
+The purl-spec repository is MIT licensed:
 
 ```
 MIT License

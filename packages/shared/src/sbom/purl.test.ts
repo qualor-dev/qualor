@@ -74,7 +74,6 @@ describe('the lenient cases', () => {
       namespace: 'Laravel',
       name: 'Laravel',
     });
-    expect(parsePurl('pkg:pypi/friendly.bard@1.0')!.name).toBe('friendly.bard');
     expect(parsePurl('pkg:gem/jruby-launcher@1.1.2?Platform=java')!.qualifiers).toEqual({
       platform: 'java',
     });
@@ -86,6 +85,28 @@ describe('the lenient cases', () => {
       namespace: 'github.com',
       name: 'Alamofire',
     });
+  });
+
+  it('keeps every pypi name as written, and inventoryName folds it as scans store it (R1)', () => {
+    const pypi: [input: string, written: string, folded: string][] = [
+      ['pkg:PYPI/Django_package@1.11.1.dev1', 'Django_package', 'django-package'],
+      ['pkg:pypi/My.PyPI_.--._Package@1.11.1.dev1', 'My.PyPI_.--._Package', 'my.pypi-.--.-package'],
+      ['pkg:pypi/friendly--bard@1.0', 'friendly--bard', 'friendly--bard'],
+      ['pkg:pypi/friendly.bard@1.0', 'friendly.bard', 'friendly.bard'],
+      ['pkg:pypi/friendly__bard@1.0', 'friendly__bard', 'friendly--bard'],
+    ];
+    // Every pypi case of the lenient list, none left out.
+    expect(pypi.map(([input]) => input).sort()).toEqual(
+      Object.keys(LENIENT)
+        .filter((input) => input.toLowerCase().startsWith('pkg:pypi/'))
+        .sort(),
+    );
+    for (const [input, written, folded] of pypi) {
+      const purl = parsePurl(input);
+      expect([purl?.type, purl?.name], input).toEqual(['pypi', written]);
+      // Lowercase, `_` as `-`: the form scans store (R1), not PEP 503's.
+      expect(inventoryName(purl!), input).toBe(folded);
+    }
   });
 });
 
