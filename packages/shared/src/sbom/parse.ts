@@ -142,8 +142,9 @@ function readDocument(doc: Record<string, unknown>): SbomDocument | SbomRefusal 
 
 /**
  * `distro=debian-12` → debian, 12; `opensuse-leap-15.5` → opensuse-leap, 15.5 (the first dash
- * before a digit); `debian-bookworm` → debian, bookworm (else the last dash); apk's bare `3.20.3`
- * → no id. Plain string scans, no regular expression: one pass, whatever the value holds.
+ * before a digit); `debian-bookworm` → debian, bookworm (else the last dash; a codename, which
+ * {@link Distributions.addPackage} takes as the family only); apk's bare `3.20.3` → no id. Plain
+ * string scans, no regular expression: one pass, whatever the value holds.
  */
 function splitDistro(value: string): { id: string | null; version: string } {
   for (let at = value.indexOf('-', 1); at >= 0; at = value.indexOf('-', at + 1)) {
@@ -204,14 +205,20 @@ class Distributions {
     }
   }
 
-  /** An OS package: its type, and the distribution its `distro` qualifier or namespace names. */
+  /**
+   * An OS package: its type, and the distribution its `distro` qualifier or namespace names. A
+   * version that does not start with a digit is a codename (`distro=jessie`, the purl
+   * specification's deb example; `debian-bookworm`): it names the family only (t2m5).
+   */
   addPackage(purl: Purl): void {
     this.types.add(purl.type);
     const distro = purl.qualifiers.distro;
     if (distro !== undefined && distro.length <= DISTRO_CHARS) {
       const { id, version } = splitDistro(distro);
       const family = id ?? purl.namespace;
-      if (family !== null) this.add(family, version, false);
+      const first = version.charCodeAt(0);
+      const numeric = first >= 0x30 && first <= 0x39;
+      if (family !== null) this.add(family, numeric ? version : null, false);
     } else if (purl.namespace !== null) {
       this.add(purl.namespace, null, false);
     }

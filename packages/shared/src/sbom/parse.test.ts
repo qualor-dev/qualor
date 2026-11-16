@@ -142,14 +142,33 @@ describe('multiple OS', () => {
       family: 'opensuse-leap',
       version: '15.5',
     });
-    expect(of('pkg:deb/debian/a@1?distro=debian-bookworm')).toEqual({
-      family: 'debian',
-      version: 'bookworm',
-    });
+    // A codename is no version: the family only (t2m5).
+    expect(of('pkg:deb/debian/a@1?distro=debian-bookworm')).toBeNull();
     expect(of('pkg:apk/alpine/a@1-r0?distro=3.20.3')).toEqual({
       family: 'alpine',
       version: '3.20.3',
     });
+  });
+
+  it('takes a codename distro next to an OS component as its family, not a second OS (t2m5)', () => {
+    // The purl specification's own deb example.
+    const spec = inventory(
+      bom([os('debian', '8.11'), lib('pkg:deb/debian/curl@7.50.3-1?arch=i386&distro=jessie')]),
+    );
+    expect(spec.distribution).toEqual({ family: 'debian', version: '8.11' });
+    expect(spec.warnings).toEqual([]);
+    const named = inventory(
+      bom([os('debian', '12.15'), lib('pkg:deb/debian/a@1?distro=debian-bookworm')]),
+    );
+    expect(named.distribution).toEqual({ family: 'debian', version: '12.15' });
+    // Alone, a codename names the family but no version: the packages are not checked.
+    const alone = inventory(bom([lib('pkg:deb/debian/curl@7.50.3-1?arch=i386&distro=jessie')]));
+    expect(alone.distribution).toBeNull();
+    expect(alone.warnings.map((w) => w.code)).toEqual(['SBOM_OS_PACKAGES_UNCHECKED']);
+    // Another family's codename is still a second OS.
+    expect(
+      refusal(bom([os('debian', '12.15'), lib('pkg:deb/ubuntu/a@1?distro=ubuntu-jammy')])).code,
+    ).toBe('SBOM_MULTIPLE_OS');
   });
 
   it('refuses 50 000 OS components of distinct versions in linear time', () => {

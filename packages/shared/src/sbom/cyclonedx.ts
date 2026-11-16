@@ -47,7 +47,10 @@ const componentSchema = z.object({
   'bom-ref': z.string().optional(),
   purl: z.string().optional(),
   licenses: z.array(licenseChoice).optional(),
-  properties: z.array(z.object({ name: z.string(), value: z.string().optional() })).optional(),
+  // CycloneDX 1.2 to 1.4 do not require a property's name; one without is skipped.
+  properties: z
+    .array(z.object({ name: z.string().optional(), value: z.string().optional() }))
+    .optional(),
   evidence: z
     .object({ occurrences: z.array(z.object({ location: z.string() })).optional() })
     .optional(),
@@ -92,7 +95,9 @@ function named(
 function propertiesOf(c: Component): Map<string, string> {
   const map = new Map<string, string>();
   for (const p of c.properties ?? []) {
-    if (p.value !== undefined && p.value !== '' && !map.has(p.name)) map.set(p.name, p.value);
+    if (p.name === undefined || p.value === undefined || p.value === '' || map.has(p.name))
+      continue;
+    map.set(p.name, p.value);
   }
   return map;
 }

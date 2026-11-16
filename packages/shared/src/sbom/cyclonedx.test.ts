@@ -368,6 +368,17 @@ describe('path precedence', () => {
     expect(pathOf({})).toBe('');
   });
 
+  it('skips a property without a name, as CycloneDX 1.2 to 1.4 allow (t2m6)', () => {
+    const inv = inventory(
+      bom([
+        lib('pkg:npm/a@1', {
+          properties: [{ value: 'no name' }, syft],
+        }),
+      ]),
+    );
+    expect(inv.entries[0]!.path).toBe('/syft/path');
+  });
+
   it('cuts a path to 1 024 characters', () => {
     const value = 'p'.repeat(1_100);
     const path = pathOf({ properties: [{ name: 'aquasecurity:trivy:FilePath', value }] });
