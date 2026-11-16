@@ -1,6 +1,7 @@
 // Fake `trivy` for tests: node fake-trivy.mjs <mode> sbom ... -o <out> <in>
 // Modes: ok (recorded output), echo (reports its arguments and environment), sleep, garbage, fail,
-// flood (writes 2 KiB of output, then keeps running).
+// flood (writes 2 KiB of output, then keeps running). Its output is what the server's lean template
+// (trivy.ts TRIVY_LEAN_TEMPLATE) makes Trivy write: one JSON object per line and vulnerability.
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +9,22 @@ import { fileURLToPath } from 'node:url';
 const [, , mode, ...args] = process.argv;
 const out = args[args.indexOf('-o') + 1];
 const input = args[args.length - 1];
+
+/** The lean template's line for one entry of Trivy's JSON report. */
+const lean = (v) =>
+  JSON.stringify({
+    VulnerabilityID: v.VulnerabilityID,
+    PkgIdentifier: { BOMRef: v.PkgIdentifier?.BOMRef ?? '', PURL: v.PkgIdentifier?.PURL ?? '' },
+    Severity: v.Severity ?? '',
+    Title: v.Title ?? '',
+    FixedVersion: v.FixedVersion ?? '',
+    PrimaryURL: v.PrimaryURL ?? '',
+    PublishedDate: v.PublishedDate ?? null,
+    VendorIDs: v.VendorIDs ?? null,
+  }) + '\n';
+/** A Trivy JSON report as the lean template writes it. */
+const leanReport = (doc) =>
+  (doc.Results ?? []).flatMap((r) => (r.Vulnerabilities ?? []).map(lean)).join('');
 
 if (mode === 'sleep') {
   setTimeout(() => {}, 60_000);
@@ -40,11 +57,12 @@ if (mode === 'sleep') {
       },
     ],
   };
-  writeFileSync(out, JSON.stringify(doc));
+  writeFileSync(out, leanReport(doc));
 } else {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  writeFileSync(
-    out,
-    readFileSync(path.join(here, '../src/vulnerabilities/__fixtures__/trivy-sbom-output.json')),
+  const report = readFileSync(
+    path.join(here, '../src/vulnerabilities/__fixtures__/trivy-sbom-output.json'),
+    'utf8',
   );
+  writeFileSync(out, leanReport(JSON.parse(report)));
 }

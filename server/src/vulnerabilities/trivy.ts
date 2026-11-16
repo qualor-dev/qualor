@@ -112,11 +112,40 @@ function toMatch(v: Record<string, unknown>): { purl: string; match: Vulnerabili
   return { purl, match };
 }
 
+/** Adds one Trivy vulnerability entry to `matches`; an entry without a key or an id is skipped. */
+function addMatch(matches: Map<string, VulnerabilityMatch[]>, v: unknown): void {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return;
+  const entry = toMatch(v as Record<string, unknown>);
+  if (entry === null) return;
+  const list = matches.get(entry.purl);
+  if (list === undefined) matches.set(entry.purl, [entry.match]);
+  else list.push(entry.match);
+}
+
 /**
- * Reads `trivy sbom --format json` output into matches keyed by each package's BOMRef (the purl
- * our SBOM put there, unchanged), falling back to Trivy's PURL. Throws on bad JSON.
+ * Reads the run's output ({@link TRIVY_LEAN_TEMPLATE}: one JSON object per line and
+ * vulnerability) into matches keyed by each package's BOMRef (the purl our SBOM put there,
+ * unchanged), falling back to Trivy's PURL. Empty lines are skipped. Throws on a line that is not
+ * JSON (a cut or garbled output).
  */
-export function parseTrivyOutput(json: string): Map<string, VulnerabilityMatch[]> {
+export function parseTrivyOutput(text: string): Map<string, VulnerabilityMatch[]> {
+  const matches = new Map<string, VulnerabilityMatch[]>();
+  let start = 0;
+  while (start < text.length) {
+    const nl = text.indexOf('\n', start);
+    const end = nl === -1 ? text.length : nl;
+    const line = text.slice(start, end);
+    start = end + 1;
+    if (line.trim() !== '') addMatch(matches, JSON.parse(line));
+  }
+  return matches;
+}
+
+/**
+ * Reads Trivy's full report (`trivy sbom --format json`) the same way as
+ * {@link parseTrivyOutput}: the real tests' reference for the lean output. Throws on bad JSON.
+ */
+export function parseTrivyJsonReport(json: string): Map<string, VulnerabilityMatch[]> {
   const doc: unknown = JSON.parse(json);
   const matches = new Map<string, VulnerabilityMatch[]>();
   const results = (doc as { Results?: unknown } | null)?.Results;
@@ -124,13 +153,7 @@ export function parseTrivyOutput(json: string): Map<string, VulnerabilityMatch[]
   for (const result of results) {
     const vulns = (result as { Vulnerabilities?: unknown } | null)?.Vulnerabilities;
     if (!Array.isArray(vulns)) continue;
-    for (const v of vulns as Record<string, unknown>[]) {
-      const entry = toMatch(v);
-      if (entry === null) continue;
-      const list = matches.get(entry.purl);
-      if (list === undefined) matches.set(entry.purl, [entry.match]);
-      else list.push(entry.match);
-    }
+    for (const v of vulns) addMatch(matches, v);
   }
   return matches;
 }
@@ -157,14 +180,40 @@ function killTree(pid: number | undefined): void {
 const OUTPUT_POLL_MS = 1000;
 
 /**
- * The arguments of one run, after the command's own: `trivy sbom` on `input`, offline, against the
- * database in `cacheDir`, its JSON written to `output`. The real tests run Trivy with these too.
+ * What a run asks Trivy to write: one JSON object per line and vulnerability, with only the fields
+ * {@link parseTrivyOutput} reads, under the names of Trivy's JSON report. `--format json` writes
+ * every field of every package: for one Debian kernel package (`linux-libc-dev` 6.1.76-1, 7 954
+ * advisories in the full database of 2026-09-25) 47.4 MB, over the re-check's output cap; this
+ * template writes 4.0 MB with the same matches. Trivy's templates are Go's text/template (nothing
+ * HTML-escaped) and `toJson` is encoding/json. `{{ "\n" }}` keeps line breaks out of the argument.
  */
-export function trivySbomArgs(cacheDir: string, output: string, input: string): string[] {
+export const TRIVY_LEAN_TEMPLATE =
+  '{{- range . }}{{- range .Vulnerabilities }}' +
+  '{{- $purl := "" }}{{- with .PkgIdentifier.PURL }}{{ $purl = .String }}{{ end }}' +
+  '{{ toJson (dict "VulnerabilityID" .VulnerabilityID' +
+  ' "PkgIdentifier" (dict "BOMRef" .PkgIdentifier.BOMRef "PURL" $purl)' +
+  ' "Severity" .Severity "Title" .Title "FixedVersion" .FixedVersion "PrimaryURL" .PrimaryURL' +
+  ' "PublishedDate" .PublishedDate "VendorIDs" .VendorIDs) }}' +
+  '{{ "\\n" }}{{ end }}{{ end }}';
+
+/**
+ * The arguments of one run, after the command's own: `trivy sbom` on `input`, offline, against the
+ * database in `cacheDir`, its output written to `output`. `report`: `'lean'` (the default, what
+ * the server reads: {@link TRIVY_LEAN_TEMPLATE}) or `'json'` (Trivy's full report, what a user's
+ * `trivy sbom --format json` writes: the real tests' reference). The real tests run Trivy with
+ * these too.
+ */
+export function trivySbomArgs(
+  cacheDir: string,
+  output: string,
+  input: string,
+  report: 'lean' | 'json' = 'lean',
+): string[] {
   return [
     'sbom',
-    '--format',
-    'json',
+    ...(report === 'lean'
+      ? ['--format', 'template', '--template', TRIVY_LEAN_TEMPLATE]
+      : ['--format', 'json']),
     '--skip-db-update',
     '--skip-java-db-update',
     '--offline-scan',
@@ -212,7 +261,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
       }
       try {
         const input = path.join(work, 'sbom.json');
-        const output = path.join(work, 'out.json');
+        const output = path.join(work, 'out.jsonl');
         await writeFile(input, sbomJson);
         const args = [...lead, ...trivySbomArgs(cacheDir, output, input)];
         const env: NodeJS.ProcessEnv = { HOME: work, TMPDIR: work };

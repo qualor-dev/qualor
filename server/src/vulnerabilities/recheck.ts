@@ -33,14 +33,18 @@ export const RECHECK_QUEUE = 'vulnerabilities.recheck';
 /**
  * At most this many components in one SBOM, so in one Trivy run. Trivy's output grows with the
  * advisories found, not with the components: the densest inventory measured (old versions of
- * popular packages, 60% vulnerable, 5 414 distinct purls) wrote 28 KB per package, so 1 000
- * components write about 28 MB, where 20 000 wrote 570 MB and killed the server's heap.
+ * popular packages, 60% vulnerable, 5 414 distinct purls) wrote 28 KB per package in Trivy's JSON
+ * report, so 1 000 components write about 28 MB, where 20 000 wrote 570 MB and killed the server's
+ * heap. The lean output the server asks for (trivy.ts TRIVY_LEAN_TEMPLATE) is far smaller (12
+ * times for a Debian kernel package).
  */
 export const SBOM_MAX_COMPONENTS = 1_000;
 export const TRIVY_TIMEOUT_MS = 15 * 60_000;
 /**
- * The most output one run may leave for `JSON.parse` (about 3.5 times that in heap: 154 MB of
- * output exhausted the 512 MB heap of a 1 GiB server). Over it, the run answers TOO_LARGE unread.
+ * The most output one run may leave for parsing (Trivy's JSON report took about 3.5 times its size
+ * in heap: 154 MB of it exhausted the 512 MB heap of a 1 GiB server). Over it, the run answers
+ * TOO_LARGE unread. The lean output (one line per vulnerability, R28) keeps a single heavy package
+ * below it: a Debian kernel package with 7 954 advisories writes 4.0 MB (47.4 MB as JSON).
  */
 export const TRIVY_MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 /** Projects read and written together: bounds the memory of a run and the length of a write. */

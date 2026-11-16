@@ -22,7 +22,11 @@ import {
   type RecheckDeps,
   type RecheckResult,
 } from '../src/vulnerabilities/recheck';
-import { trivySbomArgs } from '../src/vulnerabilities/trivy';
+import {
+  parseTrivyJsonReport,
+  parseTrivyOutput,
+  trivySbomArgs,
+} from '../src/vulnerabilities/trivy';
 import { writeVulndbSettings } from '../src/vulndb/settings';
 import { makeDatasetCurrent, storeDataset } from '../src/vulndb/store';
 import {
@@ -127,25 +131,33 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
 
   /**
    * `trivy sbom` on the SBOM text, with the server's own arguments (trivy.ts) and environment,
-   * against the fixture extracted on its own: its exit code and its findings.
+   * against the fixture extracted on its own: its exit code, stderr and output. `report`: Trivy's
+   * full JSON report (what a user's `trivy sbom --format json` writes) or the server's lean lines.
    */
-  const direct = async (label: string, text: string) => {
-    const dir = path.join(work, `direct-${label}`);
+  const runTrivy = async (label: string, text: string, report: 'json' | 'lean') => {
+    const dir = path.join(work, `direct-${label}-${report}`);
     await mkdir(dir, { recursive: true });
     const input = path.join(dir, 'sbom.json');
-    const output = path.join(dir, 'out.json');
+    const output = path.join(dir, 'out');
     await writeFile(input, text);
     const env: NodeJS.ProcessEnv = { HOME: dir, TMPDIR: dir };
     if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
-    const run = spawnSync(trivyPath, trivySbomArgs(cacheDir, output, input), {
+    const run = spawnSync(trivyPath, trivySbomArgs(cacheDir, output, input, report), {
       env,
       cwd: dir,
       encoding: 'utf8',
       windowsHide: true,
     });
+    const out = run.status === 0 ? await readFile(output, 'utf8') : '';
+    return { status: run.status, stderr: run.stderr, output: out };
+  };
+
+  /** `trivy sbom --format json` on the SBOM text (see {@link runTrivy}): its findings. */
+  const direct = async (label: string, text: string) => {
+    const run = await runTrivy(label, text, 'json');
     const findings: Findings = new Set();
     if (run.status !== 0) return { status: run.status, stderr: run.stderr, findings };
-    const doc = JSON.parse(await readFile(output, 'utf8')) as {
+    const doc = JSON.parse(run.output) as {
       Results?: {
         Vulnerabilities?: { PkgName: string; InstalledVersion: string; VulnerabilityID: string }[];
       }[];
@@ -294,6 +306,29 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
       .from(matchedPackages)
       .where(sql`${matchedPackages.purl} LIKE '%distro=redhat-12.0%'`);
     expect(marks).toEqual([]);
+  });
+
+  it("the lean output the server reads holds what Trivy's JSON report holds (R28)", async () => {
+    let titles = 0;
+    for (const [label, text] of [
+      ['debian', TRIVY_DEBIAN],
+      ['alpine', TRIVY_ALPINE],
+      ['ubi8-outdated', TRIVY_UBI8_OUTDATED],
+      // SPDX has no bom-refs: Trivy's PURL is the key.
+      ['debian-spdx', sample('trivy-debian.spdx.json')],
+    ] as const) {
+      const json = await runTrivy(`both-${label}`, text, 'json');
+      const lean = await runTrivy(`both-${label}`, text, 'lean');
+      expect(json.status, json.stderr).toBe(0);
+      expect(lean.status, lean.stderr).toBe(0);
+      const want = parseTrivyJsonReport(json.output);
+      expect(want.size, label).toBeGreaterThan(0);
+      expect(parseTrivyOutput(lean.output), label).toEqual(want);
+      // Smaller: only the fields the server reads.
+      expect(lean.output.length, label).toBeLessThan(json.output.length / 2);
+      titles += [...want.values()].flat().filter((m) => /[<>&"']/.test(m.title ?? '')).length;
+    }
+    console.info(`R28: lean = json on 4 files; titles with < > & or quotes: ${titles}`);
   });
 
   it('(a) a Trivy-made Debian SBOM: Qualor finds what trivy sbom finds', async () => {

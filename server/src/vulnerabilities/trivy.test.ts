@@ -4,7 +4,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { buildSbom } from './sbom';
-import { createTrivyRunner, parseTrivyOutput, removeStaleWorkDirs } from './trivy';
+import {
+  TRIVY_LEAN_TEMPLATE,
+  createTrivyRunner,
+  parseTrivyJsonReport,
+  parseTrivyOutput,
+  removeStaleWorkDirs,
+  trivySbomArgs,
+} from './trivy';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fake = path.resolve(here, '../../test/fake-trivy.mjs');
@@ -25,9 +32,63 @@ const runner = (mode: string, timeoutMs = 20_000) =>
 
 const workdirs = () => readdirSync(base).filter((n) => n.startsWith('work-'));
 
+/** Trivy's lean output (TRIVY_LEAN_TEMPLATE): one JSON object per line and vulnerability. */
+const lines = (...vulns: unknown[]): string => vulns.map((v) => `${JSON.stringify(v)}\n`).join('');
+
+/** What the lean template writes for one entry of Trivy's JSON report: only the fields read. */
+const leanOf = (v: Record<string, unknown>) => {
+  const ident = (v.PkgIdentifier ?? {}) as { BOMRef?: string; PURL?: string };
+  return {
+    VulnerabilityID: v.VulnerabilityID,
+    PkgIdentifier: { BOMRef: ident.BOMRef ?? '', PURL: ident.PURL ?? '' },
+    Severity: v.Severity ?? '',
+    Title: v.Title ?? '',
+    FixedVersion: v.FixedVersion ?? '',
+    PrimaryURL: v.PrimaryURL ?? '',
+    PublishedDate: v.PublishedDate ?? null,
+    VendorIDs: v.VendorIDs ?? null,
+  };
+};
+
+describe('trivySbomArgs', () => {
+  it('asks for the lean template by default, and for the JSON report when told', () => {
+    const lean = trivySbomArgs('/cache', '/out', '/in');
+    expect(lean.slice(0, 5)).toEqual([
+      'sbom',
+      '--format',
+      'template',
+      '--template',
+      TRIVY_LEAN_TEMPLATE,
+    ]);
+    expect(lean).not.toContain('json');
+    expect(lean.slice(-3)).toEqual(['-o', '/out', '/in']);
+    const json = trivySbomArgs('/cache', '/out', '/in', 'json');
+    expect(json.slice(0, 3)).toEqual(['sbom', '--format', 'json']);
+    expect(json).not.toContain('--template');
+    expect(json.slice(3)).toEqual(lean.slice(5));
+  });
+
+  it('the template has no line break of its own: it passes on any command line', () => {
+    expect(TRIVY_LEAN_TEMPLATE).not.toMatch(/[\r\n]/);
+    // Each field the parser reads, under Trivy's own name.
+    for (const field of [
+      '.VulnerabilityID',
+      '.PkgIdentifier.BOMRef',
+      '.PkgIdentifier.PURL',
+      '.Severity',
+      '.Title',
+      '.FixedVersion',
+      '.PrimaryURL',
+      '.PublishedDate',
+      '.VendorIDs',
+    ])
+      expect(TRIVY_LEAN_TEMPLATE).toContain(field);
+  });
+});
+
 describe('parseTrivyOutput', () => {
   it('keys vulnerabilities by purl', () => {
-    const map = parseTrivyOutput(fixture);
+    const map = parseTrivyJsonReport(fixture);
     expect(map.size).toBeGreaterThanOrEqual(2);
     const lodash = map.get('pkg:npm/lodash@4.17.20');
     expect(lodash?.length).toBeGreaterThan(1);
@@ -39,25 +100,31 @@ describe('parseTrivyOutput', () => {
     expect([...map.values()].some((l) => l.some((m) => m.primaryUrl !== null))).toBe(true);
   });
 
+  it('reads the lean lines of a report as the report itself', () => {
+    const doc = JSON.parse(fixture) as {
+      Results: { Vulnerabilities?: Record<string, unknown>[] }[];
+    };
+    const lean = lines(...doc.Results.flatMap((r) => (r.Vulnerabilities ?? []).map(leanOf)));
+    expect(parseTrivyOutput(lean)).toEqual(parseTrivyJsonReport(fixture));
+    expect(parseTrivyOutput(lean).size).toBeGreaterThanOrEqual(2);
+  });
+
   it('maps severity and nulls', () => {
-    const json = JSON.stringify({
-      Results: [
-        {
-          Vulnerabilities: [
-            { VulnerabilityID: 'A', Severity: 'UNKNOWN', PkgIdentifier: { PURL: 'pkg:x/a@1' } },
-            {
-              VulnerabilityID: 'B',
-              Severity: 'WEIRD',
-              FixedVersion: '2',
-              PkgIdentifier: { PURL: 'pkg:x/a@1' },
-            },
-            { VulnerabilityID: 'C', Severity: 'HIGH' },
-          ],
-        },
-        {},
-      ],
-    });
-    expect(parseTrivyOutput(json).get('pkg:x/a@1')).toEqual([
+    const text = lines(
+      { VulnerabilityID: 'A', Severity: 'UNKNOWN', PkgIdentifier: { PURL: 'pkg:x/a@1' } },
+      {
+        VulnerabilityID: 'B',
+        Severity: 'WEIRD',
+        Title: '',
+        FixedVersion: '2',
+        PrimaryURL: '',
+        PublishedDate: null,
+        VendorIDs: null,
+        PkgIdentifier: { BOMRef: '', PURL: 'pkg:x/a@1' },
+      },
+      { VulnerabilityID: 'C', Severity: 'HIGH' },
+    );
+    expect(parseTrivyOutput(text).get('pkg:x/a@1')).toEqual([
       {
         vulnerabilityId: 'A',
         severity: 'unknown',
@@ -80,37 +147,24 @@ describe('parseTrivyOutput', () => {
   });
 
   it("reads Trivy's vendor ids, none where the key is missing", () => {
-    const log4j = parseTrivyOutput(fixture).get(
+    const log4j = parseTrivyJsonReport(fixture).get(
       'pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1',
     );
     expect(log4j?.find((m) => m.vulnerabilityId === 'CVE-2021-44228')?.vendorIds).toEqual([
       'GHSA-jfh8-c2jp-5v3q',
     ]);
-    const json = JSON.stringify({
-      Results: [
-        {
-          Vulnerabilities: [
-            { VulnerabilityID: 'NSWG-ECO-516', PkgIdentifier: { PURL: 'pkg:npm/lodash@4.17.15' } },
-          ],
-        },
-      ],
+    const text = lines({
+      VulnerabilityID: 'NSWG-ECO-516',
+      PkgIdentifier: { PURL: 'pkg:npm/lodash@4.17.15' },
     });
-    expect(parseTrivyOutput(json).get('pkg:npm/lodash@4.17.15')?.[0]?.vendorIds).toEqual([]);
+    expect(parseTrivyOutput(text).get('pkg:npm/lodash@4.17.15')?.[0]?.vendorIds).toEqual([]);
   });
 
   it('keeps the first 16 vendor ids, and only ids that are text of at most 4096 characters', () => {
     const many = Array.from({ length: 20 }, (_, i) => `GHSA-${String(i).padStart(4, '0')}`);
     const of = (VendorIDs: unknown) =>
       parseTrivyOutput(
-        JSON.stringify({
-          Results: [
-            {
-              Vulnerabilities: [
-                { VulnerabilityID: 'CVE-1', VendorIDs, PkgIdentifier: { PURL: 'pkg:x/a@1' } },
-              ],
-            },
-          ],
-        }),
+        lines({ VulnerabilityID: 'CVE-1', VendorIDs, PkgIdentifier: { PURL: 'pkg:x/a@1' } }),
       ).get('pkg:x/a@1')?.[0]?.vendorIds;
     expect(of(many)).toEqual(many.slice(0, 16));
     expect(of([' GO-2021-0238 ', '', 7, null, 'x'.repeat(4097), 'GHSA-p6mc-m468-83gw'])).toEqual([
@@ -121,31 +175,21 @@ describe('parseTrivyOutput', () => {
   });
 
   it('keys by the bom-ref and falls back to the purl', () => {
-    const json = JSON.stringify({
-      Results: [
-        {
-          Vulnerabilities: [
-            {
-              VulnerabilityID: 'A',
-              Severity: 'LOW',
-              PkgIdentifier: { PURL: 'pkg:npm/%40a/b@1', BOMRef: 'pkg:npm/@a/b@1' },
-            },
-            { VulnerabilityID: 'B', Severity: 'LOW', PkgIdentifier: { PURL: 'pkg:x/c@1' } },
-            {
-              VulnerabilityID: 'C',
-              Severity: 'LOW',
-              PkgIdentifier: { PURL: 'pkg:x/d@1', BOMRef: '' },
-            },
-            {
-              VulnerabilityID: 'D',
-              Severity: 'LOW',
-              PkgIdentifier: { PURL: 'pkg:x/e@1', BOMRef: '   ' },
-            },
-          ],
-        },
-      ],
-    });
-    expect([...parseTrivyOutput(json).keys()]).toEqual([
+    const text = lines(
+      {
+        VulnerabilityID: 'A',
+        Severity: 'LOW',
+        PkgIdentifier: { PURL: 'pkg:npm/%40a/b@1', BOMRef: 'pkg:npm/@a/b@1' },
+      },
+      { VulnerabilityID: 'B', Severity: 'LOW', PkgIdentifier: { PURL: 'pkg:x/c@1' } },
+      { VulnerabilityID: 'C', Severity: 'LOW', PkgIdentifier: { PURL: 'pkg:x/d@1', BOMRef: '' } },
+      {
+        VulnerabilityID: 'D',
+        Severity: 'LOW',
+        PkgIdentifier: { PURL: 'pkg:x/e@1', BOMRef: '   ' },
+      },
+    );
+    expect([...parseTrivyOutput(text).keys()]).toEqual([
       'pkg:npm/@a/b@1',
       'pkg:x/c@1',
       'pkg:x/d@1',
@@ -153,9 +197,22 @@ describe('parseTrivyOutput', () => {
     ]);
   });
 
+  it('reads text as Trivy wrote it: escapes decoded, nothing HTML-escaped', () => {
+    const title = 'kernel: clear skb2->cb[] & "disable" <sysfs>';
+    // encoding/json (Trivy's toJson) writes <, > and & as <, > and &.
+    const text = `{"VulnerabilityID":"CVE-1","PkgIdentifier":{"BOMRef":"pkg:deb/debian/a@1?distro=debian-12\\u0026upstream=a@1","PURL":""},"Title":"kernel: clear skb2-\\u003ecb[] \\u0026 \\"disable\\" \\u003csysfs\\u003e"}\n`;
+    const got = parseTrivyOutput(text);
+    expect([...got.keys()]).toEqual(['pkg:deb/debian/a@1?distro=debian-12&upstream=a@1']);
+    expect([...got.values()][0]?.[0]?.title).toBe(title);
+  });
+
   it('gives an empty map when there are no results, and throws on garbage', () => {
-    expect(parseTrivyOutput('{"SchemaVersion":2}').size).toBe(0);
+    expect(parseTrivyOutput('').size).toBe(0);
+    expect(parseTrivyOutput('\n\n').size).toBe(0);
+    expect(parseTrivyJsonReport('{"SchemaVersion":2}').size).toBe(0);
     expect(() => parseTrivyOutput('not json')).toThrow();
+    expect(() => parseTrivyOutput(`${lines({ VulnerabilityID: 'A' })}{"cut`)).toThrow();
+    expect(() => parseTrivyJsonReport('not json')).toThrow();
   });
 });
 
@@ -174,6 +231,9 @@ describe('createTrivyRunner', () => {
     if (!r.ok) return;
     const seen = JSON.parse(r.matches.get('echo')?.[0]?.title ?? '{}');
     expect(seen.args[0]).toBe('sbom');
+    // The lean template, unchanged by the command line (quotes, spaces, `$`).
+    expect(seen.args[seen.args.indexOf('--format') + 1]).toBe('template');
+    expect(seen.args[seen.args.indexOf('--template') + 1]).toBe(TRIVY_LEAN_TEMPLATE);
     for (const f of [
       '--skip-db-update',
       '--skip-java-db-update',
