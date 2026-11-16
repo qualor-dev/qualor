@@ -198,6 +198,38 @@ describe('trivy (plan 2B)', () => {
   });
 });
 
+describe('trivy-iac (0.16 IaC)', () => {
+  const m = ENGINE_MAPPINGS['trivy-iac'];
+  it('is a reserved built-in engine and has a mapping', () => {
+    expect(BUILTIN_ENGINES).toContain('trivy-iac');
+    expect(engineMapping('trivy-iac')).toBe(m);
+  });
+  it('maps Trivy severities', () => {
+    const levels = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'];
+    expect(levels.map((v) => m.severity!(result({ trivySeverity: v }), undefined))).toEqual([
+      'blocker',
+      'high',
+      'medium',
+      'low',
+      'medium',
+    ]);
+    expect(m.rule!(rule('AWS-0086', { trivySeverity: 'HIGH' }))).toEqual({
+      quality: 'security',
+      kind: 'issue',
+      defaultSeverity: 'high',
+    });
+  });
+  it('identifies a Terraform finding by its resource address, nothing else', () => {
+    const identity = (p: Record<string, unknown>) => m.identity!(result(p));
+    expect(identity({ iacType: 'terraform', iacResource: 'aws_s3_bucket.b' })).toBe(
+      'aws_s3_bucket.b',
+    );
+    expect(identity({ iacType: 'cloudformation', iacResource: 'cfn/t.yaml:3-6' })).toBeUndefined();
+    expect(identity({ iacType: 'terraform', iacResource: 'main.tf:1-4' })).toBeUndefined();
+    expect(identity({ iacType: 'kubernetes' })).toBeUndefined();
+  });
+});
+
 describe('roslyn (plan 2D)', () => {
   const rule = (category: string | undefined) => ({
     id: 'CA0000',

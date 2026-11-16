@@ -185,6 +185,25 @@ const trivy: EngineMapping = {
 };
 
 /**
+ * Trivy's misconfiguration scanner (0.16 IaC). Severities are Trivy's, like the dependency pass.
+ * Only a Terraform resource address identifies a finding: the other types carry a file span
+ * (`cfn/t.yaml:3-6`) there, which moves with the lines.
+ */
+const trivyIac: EngineMapping = {
+  rule: trivy.rule,
+  severity: trivy.severity,
+  identity: (result) => {
+    const { iacType, iacResource } = result.properties ?? {};
+    return iacType === 'terraform' &&
+      typeof iacResource === 'string' &&
+      iacResource !== '' &&
+      !/:\d+-\d+$/.test(iacResource)
+      ? iacResource
+      : undefined;
+  },
+};
+
+/**
  * SonarQube's rule category as SonarAnalyzer.CSharp writes it into SARIF (`properties.category`)
  * and the sonarjs runner copies it (report-format.md §7.1): "<Severity> <Type>".
  */
@@ -491,6 +510,7 @@ export const ENGINE_MAPPINGS = {
   qualor,
   gitleaks,
   trivy,
+  'trivy-iac': trivyIac,
   roslyn,
   sonarjs,
   ruff,

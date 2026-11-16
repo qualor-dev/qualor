@@ -26,6 +26,16 @@ describe('engineRuleDefaults for qualor (plan 6B-1)', () => {
   });
 });
 
+describe('engineRuleDefaults for trivy-iac (0.16)', () => {
+  it('gives a trivy-iac rule without metadata security/medium', () => {
+    expect(engineRuleDefaults('trivy-iac')).toEqual({
+      quality: 'security',
+      defaultSeverity: 'medium',
+    });
+    expect(DEPENDENCY_ENGINES.has('trivy-iac')).toBe(false);
+  });
+});
+
 describe('DEPENDENCY_ENGINES (scm.md §9)', () => {
   it('names Trivy only', () => {
     expect([...DEPENDENCY_ENGINES]).toEqual(['trivy']);

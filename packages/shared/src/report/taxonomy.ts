@@ -77,6 +77,7 @@ export const BUILTIN_ENGINES = [
   'semgrep',
   'gitleaks',
   'trivy',
+  'trivy-iac',
   'roslyn',
   'stylelint',
   'htmlhint',
