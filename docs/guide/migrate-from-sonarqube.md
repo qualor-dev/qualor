@@ -55,6 +55,7 @@ analyzers Qualor bundles, in one of these ways:
 | Kotlin | none: SonarQube's own Kotlin rules have no detekt counterpart | Kotlin profiles are reported as not supported, and Kotlin issue statuses are not imported |
 | Swift | none: SonarSource's Swift rules are not SwiftLint's rules | Swift profiles are read, with nothing to map |
 | `phpsecurity`, SonarQube's own PHP security rules, `css`, `Web` | none | not mapped |
+| Infrastructure as code (`terraform`, `cloudformation`, `kubernetes`, `docker`, `azureresourcemanager`) | none: [`trivy-iac`](./languages-and-analyzers.md#infrastructure-as-code-trivy) checks the same files with Trivy's checks | not mapped |
 
 The taint rules map for SQL, NoSQL, OS command, LDAP, XPath, code, expression-language and template
 injection, path traversal, zip slip, XSS, SSRF, open redirects, regular expressions built from

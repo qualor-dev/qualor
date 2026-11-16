@@ -26,7 +26,7 @@ C#.
 | [Security patterns (SAST)](#sast-patterns-opengrep-semgrep) | **OpenGrep** (or Semgrep), with rule files you keep in the repository; none are bundled | you name rule files in `qualor.yml` |
 | [Secrets](#secrets-gitleaks) | **Gitleaks** | always (`enabled: true` by default) |
 | [Vulnerable dependencies](#dependencies-trivy) | **Trivy** | lockfiles or manifests exist |
-| [Infrastructure as code](#infrastructure-as-code-trivy) | **Trivy**'s misconfiguration checks, for Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles and Azure ARM | `.tf`, `.json`, `.yaml` or `.yml` files or Dockerfiles are in scope |
+| [Infrastructure as code](#infrastructure-as-code-trivy) | **Trivy**'s misconfiguration checks, for Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles and Azure ARM | Terraform files, Dockerfiles, or JSON or YAML files that look like Kubernetes, CloudFormation, ARM or a Terraform plan, are in scope |
 | [Anything else](#external-sarif) | any tool that writes **SARIF 2.1.0** | you pass `--sarif file` or list it in `qualor.yml` |
 
 The `qualor/scanner` image holds every analyzer except three: ESLint runs from your `node_modules`,
@@ -907,24 +907,26 @@ which lockfiles give licences and why to install your dependencies first.
 
 Trivy's misconfiguration checks find insecure settings in your infrastructure files: Terraform,
 CloudFormation, Kubernetes manifests, Helm charts, Dockerfiles and Azure ARM templates. The findings
-are security issues of the `trivy-iac` engine. The pass runs when a file in scope could be
-infrastructure code: a `.tf`, `.tfvars`, `.json`, `.yaml` or `.yml` file, or a Dockerfile (`Dockerfile`,
-`Containerfile`, `Dockerfile.*`, `*.dockerfile`). Otherwise it is skipped with the reason "no
+are security issues of the `trivy-iac` engine. The pass runs when a file in scope is infrastructure
+code: a Terraform file (`.tf`, `.tfvars`, `.tf.json`), a Terraform plan (`tfplan`, `*.tfplan`), a Helm
+`Chart.yaml`, a Dockerfile (`Dockerfile`, `Containerfile`, `Dockerfile.*`, `*.dockerfile`), or a JSON or
+YAML file that looks like Kubernetes, CloudFormation, ARM or a Terraform plan (see the table). A `package.json`
+or a CI file alone does not start it. Otherwise the pass is skipped with the reason "no
 infrastructure files in scope".
 
 | Format | What is detected |
 |---|---|
-| Terraform | `.tf`, `.tf.json` and `.tfvars` files. Terraform plans: plan JSON and snapshot |
-| CloudFormation | `.yaml`, `.yml` and `.json` templates |
-| Kubernetes | `.yaml`, `.yml` and `.json` manifests |
+| Terraform | `.tf`, `.tf.json` and `.tfvars` files. Terraform plans: a `tfplan` or `*.tfplan` snapshot, and plan JSON (a `.json` file with `format_version` and `planned_values` or `resource_changes`) |
+| CloudFormation | `.yaml`, `.yml` and `.json` templates with `AWSTemplateFormatVersion`, or with `Resources` of `AWS::` types |
+| Kubernetes | `.yaml`, `.yml` and `.json` files with `apiVersion` and `kind` |
 | Helm | chart directories (`Chart.yaml` and `templates/`) |
 | Dockerfile | `Dockerfile`, `Containerfile`, `Dockerfile.*` and `*.dockerfile` |
-| Azure ARM | `.json` templates |
+| Azure ARM | `.json` templates whose `$schema` is a `deploymentTemplate.json` |
 
 Rule keys are `trivy-iac:<id>`, for example `trivy-iac:AWS-0086`. Every issue has the tags `iac` and
 the cloud provider (`aws`, `azure`, `google`, `kubernetes`, `dockerfile` …), and the service where
 there is one. Its severity follows Trivy's: CRITICAL is blocker, HIGH is high, MEDIUM is medium and
-LOW is low. A Terraform issue is identified by its resource. Each issue's help link goes to the check's page at Aqua's AVD site.
+LOW is low. A Terraform issue in a resource of the root module is identified by that resource; every other issue by its line. A check that reports something missing from a Dockerfile (no `USER`, no `HEALTHCHECK`) sits on the file's last line. Each issue's help link goes to the check's page at Aqua's AVD site.
 
 ### Offline, with pinned checks
 
@@ -947,7 +949,7 @@ incomplete. With `enabled: true`, the scan exits with code 3.
 - Local modules (`source = "./modules/db"`) are scanned.
 - Modules from the Terraform registry, git and https are not fetched. The root module is still
   scanned, so its findings are present.
-- `.tfvars` files are applied.
+- Only `terraform.tfvars` and `*.auto.tfvars` are applied automatically; other `.tfvars` files are not.
 - Terraform is analysed statically. A value that comes from a data source or is computed is unknown,
   which can cause a false positive or a missed finding.
 
