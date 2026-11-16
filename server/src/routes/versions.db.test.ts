@@ -784,6 +784,37 @@ describe('SBOM versions: DTO and DELETE (0.16)', () => {
     ).toHaveLength(1);
   });
 
+  it('needs the admin scope on a personal token', async () => {
+    const p = await project();
+    const versionId = await seedSbom(p.id, '1.4.0');
+    const tokenWith = async (scopes: string[]) => {
+      const res = await h.ctx.app.inject({
+        method: 'POST',
+        url: '/api/v0/tokens',
+        headers: h.orgAdmin.headers,
+        payload: { name: scopes.join('-'), scopes },
+      });
+      expect(res.statusCode, res.body).toBe(201);
+      return bearer((res.json() as { token: string }).token);
+    };
+    const del = async (headers: Record<string, string>) =>
+      h.ctx.app.inject({
+        method: 'DELETE',
+        url: `/api/v0/projects/${p.id}/versions/${versionId}`,
+        headers,
+      });
+    const refused = await del(await tokenWith(['read']));
+    expect(refused.statusCode).toBe(403);
+    expect(JSON.stringify(refused.json())).toContain('INSUFFICIENT_SCOPE');
+    expect(
+      await h.ctx.db.select().from(projectVersions).where(eq(projectVersions.id, versionId)),
+    ).toHaveLength(1);
+    expect((await del(await tokenWith(['admin']))).statusCode).toBe(204);
+    expect(
+      await h.ctx.db.select().from(projectVersions).where(eq(projectVersions.id, versionId)),
+    ).toHaveLength(0);
+  });
+
   it('refuses a project token', async () => {
     const p = await project();
     const versionId = await seedSbom(p.id, '1.4.0');
