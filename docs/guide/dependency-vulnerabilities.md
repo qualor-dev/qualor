@@ -73,7 +73,7 @@ the project's settings (Organization admin and Project admin, [Roles](./roles-an
 | **Unpin** | removes the pin: the rule decides |
 | **Mark as unsupported** | the version is never tracked |
 | **Track automatically** | removes the mark: the rule decides |
-| **Delete version** | deletes the version ([Delete a version](./sbom-upload.md#delete-a-version)). It needs the same permission |
+| **Delete version** | deletes the version ([Delete a version](./releases.md#delete-a-version)) |
 
 The marks are the ones of [Releases and versions](./releases.md#which-versions-are-tracked).
 

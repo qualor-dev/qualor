@@ -186,26 +186,24 @@ each analysis records a new version.
 ## Versions from an SBOM
 
 A version has a source: `tag` (a tag scan), `label` (a branch analysis) or `sbom` (an
-[upload](./sbom-upload.md)). When two sources want one label, the higher one keeps it:
-**tag, then SBOM, then label**.
-
-| Event | Result |
-|---|---|
-| Upload onto a tag version | refused, 409 `VERSION_LABEL_TAKEN` |
-| Upload onto a label version | the SBOM takes it |
-| Tag scan onto an SBOM version | the scan takes it, with the warning `VERSION_SBOM_REPLACED` |
-| Branch label onto an SBOM version | the SBOM stays |
+[upload](./sbom-upload.md)). When two sources want one label,
+[Precedence](./sbom-upload.md#precedence) says which keeps it.
 
 An SBOM version is tracked by the same rules, pins and marks. Its label is often not a version
-number, and the rule then ranks it by upload time. An image SBOM goes in a project of its own
-([Precedence](./sbom-upload.md#precedence)).
+number, and the rule then ranks it by upload time.
 
-### Delete a version
+## Delete a version
 
-**Delete version** in the row menu of the **Vulnerabilities** tab, or
-`DELETE /projects/{id}/versions/{versionId}`, deletes any version. It needs the right to change
-project settings, and the **Admin** scope on a personal token. See
-[Delete a version](./sbom-upload.md#delete-a-version).
+**Delete version** in the row menu of the version on the **Vulnerabilities** tab deletes any
+version, after a confirmation that names the label.
+
+- It needs the right to change the project's settings (Project admin and above). A personal token
+  needs the **Admin** scope.
+- The API is `DELETE /api/v0/projects/{id}/versions/{versionId}`. It answers 204.
+- The version's packages, results, checks, alert items and decisions scoped to it go.
+- Analyses and compliance reports stay, without the version.
+- A tag scan of the same tag later creates the version again.
+- With vulnerability monitoring off, the tab is hidden. Use the API.
 
 ## A version's packages
 
@@ -243,7 +241,7 @@ q -X PUT "$QUALOR_URL/api/v0/projects/<project id>/vulnerability-monitoring" -d 
   - `prerelease`, and `packages`, the number of packages.
 - `PATCH /projects/{id}/versions/{versionId}` takes `{"tracking": …}` and answers the version.
   Setting the tracking a version already has changes nothing: no audit entry, no re-check.
-- `DELETE /projects/{id}/versions/{versionId}` answers 204.
+- `DELETE /projects/{id}/versions/{versionId}`: [Delete a version](#delete-a-version).
 - `GET /projects/{id}/vulnerability-monitoring` answers the four settings, plus `mainBranchName`,
   `matchingBranches` (up to 50), `trackedVersions` and `versionCount`. `trackedVersions` holds up
   to 50 labels, the most recently scanned first.

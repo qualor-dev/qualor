@@ -1,11 +1,11 @@
 # Migrating from Dependency-Track
 
-Qualor takes the SBOMs you upload to Dependency-Track, tracks their packages for new
-vulnerabilities, and finds where a package is used. Change the upload step of your pipelines. There
-is no importer: Dependency-Track's data stays where it is.
+Qualor takes the SBOMs your pipelines send to Dependency-Track. It checks their packages for new
+vulnerabilities and shows where a package is used. You change the upload step: Qualor has no
+Dependency-Track API, and nothing is imported.
 
-Qualor is not a drop-in server. It has no Dependency-Track API, so `gh-upload-sbom` and similar
-tools cannot point at it ([What Qualor does not do](#what-qualor-does-not-do)).
+**Qualor adds SPDX.** It reads SPDX 2.2 and 2.3 JSON besides CycloneDX. Dependency-Track reads
+CycloneDX only.
 
 ## The mapping
 
@@ -62,12 +62,15 @@ Syft.
 | Dependency-Track feature | In Qualor |
 |---|---|
 | The upload API (`/api/v1/bom`, `X-Api-Key`, the token poll) and tools built on it, such as `gh-upload-sbom` | not offered. Use `qualor upload-sbom` or the Qualor API |
+| A multipart upload (`POST /api/v1/bom` with form fields) | not offered. The Qualor API takes the file as the request body ([With the API](./sbom-upload.md#with-the-api)) |
 | `autoCreate`: a project made by the first upload | not offered. The project must exist, or the upload answers `PROJECT_NOT_FOUND` |
+| Parent projects, project tags, `isLatest` and `active` | not offered. A rule per project decides which versions are tracked (see above) |
+| CycloneDX 1.0 and 1.1 | refused. Export CycloneDX 1.2 or later |
 | CycloneDX XML | refused. Export CycloneDX JSON |
-| SPDX 3.0 and SPDX tag-value | refused. Export SPDX 2.3 JSON |
 | Components without a purl | skipped and counted |
-| A version range in the component search, such as `< 2.17` | not offered. Search by package name or purl, and an exact version |
+| Component search by CPE or hash, or by a version range such as `< 2.17` | not offered. Search by package name or purl, and an exact version |
+| Vulnerability sources and analyzers besides one Trivy database: the NVD, GitHub Advisories, OSV, OSS Index, Snyk | not offered |
 | Vulnerabilities and VEX sections of the uploaded BOM | ignored. Qualor finds the vulnerabilities itself |
 | An SBOM with several distributions | refused. Split it, one file per image |
 
-The full list of limits is in [SBOM upload](./sbom-upload.md#limits).
+Other limits: [SBOM upload](./sbom-upload.md#limits).

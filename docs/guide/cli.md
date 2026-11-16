@@ -67,7 +67,7 @@ qualor upload-sbom FILE [--version LABEL] [--project-key KEY] [--config PATH]
 It uploads a CycloneDX or SPDX JSON file as a [version](./sbom-upload.md). The server, token and
 project key come from the same flags, environment and `qualor.yml` as `qualor scan`. The CLI
 gzips the file, prints what the server stored, and retries for up to 300 seconds while the server
-reads another SBOM.
+is busy (503 `UPLOADS_BUSY`).
 
 | Code | When |
 |---|---|

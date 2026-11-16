@@ -128,8 +128,9 @@ in `.*` (for example `issue.*`).
   or removed; the same three for a role on a single project. Changes made by single sign-on's group
   sync are recorded the same way, by `system`, with `managedBy` naming the connection.
 - **Projects:** created, changed or deleted; a quality profile assigned to it; a branch deleted; the
-  vulnerability-monitoring settings changed; a version's tracking changed; a project's own
-  analysis tokens created or revoked.
+  vulnerability-monitoring settings changed; a version's tracking changed
+  (`project_version.updated`); an SBOM uploaded (`project_version.sbom_uploaded`); a version
+  deleted (`project_version.deleted`); a project's own analysis tokens created or revoked.
 - **Quality gates and profiles:** created, changed, deleted, copied or made the default; a
   condition or a rule changed on one.
 - **Issues:** a status change, one event per issue even in a bulk transition of 500; a severity

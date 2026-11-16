@@ -36,11 +36,11 @@ qualor upload-sbom sbom.cdx.json --version 1.4.0 --project-key acme/shop-image
 | Option | Meaning |
 |---|---|
 | `--version LABEL` | the version label. Default: the SBOM's own version |
-| `--project-key KEY` | the Qualor project. Default: `project.key` in `qualor.yml` |
+| `--project-key KEY` | the Qualor project. Without it: `QUALOR_PROJECT_KEY`, then `project.key` in `qualor.yml`, then the CI project path (GitLab `CI_PROJECT_PATH`, GitHub `GITHUB_REPOSITORY`). For an image, set the image's project |
 | `--server-url`, `--token-file`, `--ca-file`, `--config` | as in [`qualor scan`](./cli.md#qualor-scan) |
 
-The CLI gzips the file, prints what the server stored, and retries for up to 300 seconds while the
-server is busy ([Refusals](#refusals)). [Exit codes](./cli.md#qualor-upload-sbom).
+The CLI gzips the file and prints what the server stored. It tries again while the server is busy
+([`qualor upload-sbom`](./cli.md#qualor-upload-sbom): for how long, and the exit codes).
 
 ### With the API
 
@@ -107,9 +107,8 @@ docker run --rm -v "$PWD":/work -w /work \
 ```
 
 - `QUALOR_TOKEN` is the analysis token of the `shop-image` project.
-- Syft can also write SPDX (`-o spdx-json`). Trivy can (`--format spdx-json`).
-- A version label that is not a version number, such as `sha-1a2b3c`, is tracked by upload time
-  ([Which versions are tracked](#which-versions-are-tracked)).
+- Syft can also write SPDX (`-o spdx-json`). Trivy can (`--format spdx-json`). For a large image,
+  export CycloneDX: Syft's SPDX fits about 29 000 packages in 64 MiB.
 
 ## What is read
 
@@ -159,10 +158,10 @@ advisories of the image's distribution.
 - Red Hat-family packages (`rpm`) are checked with their architecture and modularity label,
   from the purl's `arch` and `modularitylabel` qualifiers. Where an rpm repeats with two
   architectures, the first is kept.
-- RHEL 10 content sets are not used.
 
-An OS package is stored but **not checked** when the SBOM names no distribution or one Trivy does
-not know. The answer then warns `SBOM_OS_PACKAGES_UNCHECKED` with the count and the reason.
+An OS package is stored but **not checked** when the SBOM names no distribution, one Trivy does
+not know, or a release it cannot check ([Limits](#limits)). The answer then warns
+`SBOM_OS_PACKAGES_UNCHECKED` with the count and the reason.
 
 ### Packages the re-check gives up
 
@@ -192,12 +191,9 @@ An upload creates a version, or replaces the one with that label.
   unsupported mark.
 - An upload makes a re-check when [vulnerability monitoring](./vulnerability-database.md) is on for
   the instance and the project.
-
-### Which versions are tracked
-
-The rules of [Which versions are tracked](./releases.md#which-versions-are-tracked) apply. Image
-labels often are not version numbers, such as `shop-2026-11-16`. The default rule then tracks the
-N most recently uploaded. A pre-release such as `1.4.0-image` is never tracked.
+- The version is tracked by the project's rule, as any version
+  ([Versions from an SBOM](./releases.md#versions-from-an-sbom)).
+- An upload under a mistyped label: [delete the version](./releases.md#delete-a-version).
 
 ### Precedence
 
@@ -215,20 +211,6 @@ keeps it: **tag scan, then SBOM, then branch label**.
 If you tag-scan a repository and also upload its image SBOM, put the image in a project of its own,
 such as `shop-image`, with the same label. Another label in the same project does not work:
 `1.4.0-image` is a pre-release, and `1.4.0+image` competes with the tag version.
-
-## Delete a version
-
-**Delete version** is in the row menu of the version on the **Vulnerabilities** tab. It asks you
-to confirm, naming the label. Use it for an upload under a mistyped label.
-
-- It needs the right to change the project's settings (Project admin and above). A personal token
-  needs the **Admin** scope.
-- The API is `DELETE /api/v0/projects/{id}/versions/{versionId}`. It answers 204.
-- The version's packages, results, checks, alert items and decisions scoped to it go. Analyses and compliance reports stay,
-  without the version.
-- A tag scan of the same tag later creates the version again.
-- With vulnerability monitoring off, the tab is hidden. Use the API.
-- With `audit-log`, it is recorded as `project_version.deleted`.
 
 ## Decisions
 
@@ -254,18 +236,18 @@ Errors are `application/problem+json` with a `code`.
 | 403 | `FORBIDDEN`, `INSUFFICIENT_SCOPE` | the permission or the token scope is missing |
 | 404 | `PROJECT_NOT_FOUND` | no such project, or you cannot see it |
 | 409 | `VERSION_LABEL_TAKEN` | the label belongs to a tag-scan version. The detail suggests a project of its own |
-| 413 | `SBOM_TOO_LARGE` | the file is over 32 MiB, or over 64 MiB after gunzip, or holds over 2 000 000 JSON objects and arrays, over 6 000 000 JSON keys and values, or over 10 000 distinct keys |
+| 413 | `SBOM_TOO_LARGE` | the file is over a size or JSON limit of [What is read](#what-is-read). The detail says which |
 | 415 | `UNSUPPORTED_MEDIA_TYPE`, `UNSUPPORTED_ENCODING` | another content type, or an encoding other than gzip |
 | 422 | `VERSION_LABEL_INVALID` | no label, a blank one, or one over 100 characters |
 | 422 | `VALIDATION_FAILED` | the label holds a NUL or a lone surrogate |
-| 422 | `SBOM_INVALID` | not JSON, not CycloneDX or SPDX, or a field has the wrong shape. The detail names the JSON path |
-| 422 | `SBOM_FORMAT_UNSUPPORTED` | a refused format, or a CycloneDX or SPDX version outside the table above. The detail says what to export |
+| 422 | `SBOM_INVALID` | not JSON (SPDX tag-value and XML other than CycloneDX included), neither CycloneDX nor SPDX, or a field has the wrong shape. The detail names the JSON path, or what to export |
+| 422 | `SBOM_FORMAT_UNSUPPORTED` | CycloneDX XML, SPDX 3.0, an attestation, or a CycloneDX or SPDX version outside [Formats](#formats). The detail says what to export |
 | 422 | `SBOM_TOO_MANY_PACKAGES` | over 50 000 packages |
 | 422 | `SBOM_MULTIPLE_OS` | more than one distribution. The message names them |
 | 503 | `UPLOADS_BUSY` | the server reads one SBOM at a time, or its upload slots are in use |
 
-On `UPLOADS_BUSY` the CLI waits and tries again for up to 300 seconds. The UI asks you to try
-again.
+On `UPLOADS_BUSY` the CLI tries again ([`qualor upload-sbom`](./cli.md#qualor-upload-sbom)). The UI
+asks you to try again.
 
 The server refuses a declared `Content-Length` over 32 MiB before it reads the body. The CLI and
 the UI always declare it. A proxy that re-chunks the body hides the length, and a body that grows
@@ -275,9 +257,5 @@ over the limit then ends in a reset connection, not a 413.
 
 | Limit | What happens |
 |---|---|
-| One distribution per SBOM | `SBOM_MULTIPLE_OS` |
-| Only the families Trivy 0.74.0 detects | other OS packages are stored, not checked |
-| A component without a purl | skipped and counted |
-| SPDX 3.0, CycloneDX XML, SPDX tag-value | refused |
-| No new project on upload | `PROJECT_NOT_FOUND` |
+| OS packages of RHEL 10 and CentOS 10 images are not checked: Trivy 0.74.0 needs the image's content sets, which Qualor does not keep | the upload warns `SBOM_OS_PACKAGES_UNCHECKED` |
 | No vulnerability ranges or ids in [the package search](./dependency-vulnerabilities.md#where-used) | search by package |
