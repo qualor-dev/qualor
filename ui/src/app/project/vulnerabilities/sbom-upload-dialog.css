@@ -1,0 +1,26 @@
+.sbom-result:focus {
+  outline: none;
+}
+.sbom-lead {
+  margin: 0 0 12px;
+}
+.sbom-facts {
+  margin: 0 0 12px;
+  padding-left: 18px;
+}
+.sbom-key {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+li > .sbom-key {
+  margin-right: 8px;
+}
+.sbom-subject,
+.sbom-warnings li {
+  overflow-wrap: anywhere;
+}
+.sbom-monitoring {
+  margin: 0 0 12px;
+}

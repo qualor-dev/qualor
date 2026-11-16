@@ -351,6 +351,56 @@ describe('DependenciesPage (6M §8)', () => {
     ).toBe('100');
   });
 
+  it('marks an SBOM version and names its distribution in the select', async () => {
+    server.on('GET', `/api/v0/projects/${PROJECT}/versions`, {
+      body: page([
+        version({ id: VERSION_ID, label: '2.1.0', tracked: true }),
+        {
+          ...version({ id: OLD_VERSION_ID, label: '1.4.0', tracked: true }),
+          source: 'sbom',
+          tag: null,
+          sbomFormat: 'CycloneDX 1.6',
+          sbomSubject: 'shop',
+          distribution: { family: 'debian', version: '12.15' },
+        },
+        {
+          ...version({
+            id: '0190a6c2-0000-7000-8000-0000000000c3',
+            label: '1.3.0',
+            tracked: false,
+          }),
+          source: 'sbom',
+          tag: null,
+        },
+      ]),
+    });
+    const { root } = await render();
+    const options = [...root.querySelectorAll('#deps-branch optgroup option')].map((o) => text(o));
+    expect(options).toEqual([
+      '2.1.0 (tracked)',
+      '1.4.0 (SBOM, debian 12.15, tracked)',
+      '1.3.0 (SBOM)',
+    ]);
+  });
+
+  it('shows a dash and no code link for a row without a path', async () => {
+    fake.rows = [dependency({ name: 'libssl3', ecosystem: 'deb', path: '', line: null })];
+    const { root } = await render();
+    const cell = root.querySelector('tbody tr td.lockfile-cell')!;
+    expect(text(cell)).toBe('—');
+    expect(cell.querySelector('a, code')).toBeNull();
+  });
+
+  it('suggests deb, rpm and apk from the rows', async () => {
+    fake.rows = ['deb', 'rpm', 'apk'].map((ecosystem) =>
+      dependency({ name: 'p-' + ecosystem, ecosystem, path: '', line: null }),
+    );
+    const { root } = await render();
+    expect(
+      [...root.querySelectorAll<HTMLOptionElement>('#deps-ecosystems option')].map((o) => o.value),
+    ).toEqual(['apk', 'deb', 'rpm']);
+  });
+
   it('shows no Versions group when the project has no versions', async () => {
     server.on('GET', `/api/v0/projects/${PROJECT}/versions`, { body: page([]) });
     const { root } = await render();

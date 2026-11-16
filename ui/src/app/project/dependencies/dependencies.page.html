@@ -189,7 +189,9 @@
                 </td>
                 <td>{{ row.ecosystem }}</td>
                 <td class="lockfile-cell">
-                  @if (urlVersion()) {
+                  @if (row.path === '') {
+                    —
+                  } @else if (urlVersion()) {
                     <code>{{ row.path }}{{ row.line ? ':' + row.line : '' }}</code>
                   } @else {
                     @let f = fileLink(row);

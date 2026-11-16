@@ -181,3 +181,16 @@
   font-size: 14px;
   font-weight: 500;
 }
+.sbom-subject {
+  display: inline-block;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+.row-menu-panel .menu-danger {
+  margin-top: 4px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}

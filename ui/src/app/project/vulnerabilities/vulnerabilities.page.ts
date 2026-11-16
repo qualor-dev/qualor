@@ -17,11 +17,13 @@ import { Api, ok } from '../../api/api';
 import { problemMessage } from '../../api/errors';
 import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
+import { closeModal, openAfterRender } from '../../shared/dialog';
 import { keepFocus, rowByKey } from '../../shared/focus';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { Icon } from '../../shared/icon';
 import { menuIndex } from '../../shared/menu-keys';
 import { closePopover } from '../../shared/popover';
+import { SbomUploadDialog } from './sbom-upload-dialog';
 import { SeverityChips } from './severity-chips';
 import { type SeverityFilter, type StatusFilter, VulnerabilityList } from './vulnerability-list';
 import { CurrentProject } from '../current-project';
@@ -61,6 +63,7 @@ function one(params: Params, key: string): string {
     Icon,
     NgTemplateOutlet,
     RouterLink,
+    SbomUploadDialog,
     SeverityChips,
     VulnerabilityList,
   ],
@@ -154,6 +157,11 @@ export class VulnerabilitiesPage {
     this.project.canChange(this.projectId(), 'project.settings'),
   );
 
+  /** Whether the caller may upload an SBOM (`project.analyze`). */
+  protected readonly canUpload = computed(() =>
+    this.project.canChange(this.projectId(), 'project.analyze'),
+  );
+
   protected readonly expanded = signal(false);
   protected readonly untracked = computed(() => this.answer()?.untracked ?? []);
   protected readonly foldLabels = computed(() =>
@@ -179,6 +187,12 @@ export class VulnerabilitiesPage {
   protected readonly table = viewChild<ElementRef<HTMLElement>>('table');
   private readonly foldButton = viewChild<ElementRef<HTMLElement>>('foldButton');
   private readonly panelScroll = viewChild<ElementRef<HTMLElement>>('panelScroll');
+  protected readonly uploadDialog = viewChild(SbomUploadDialog);
+  private readonly deleteDialog = viewChild<ElementRef<HTMLDialogElement>>('deleteDialog');
+  /** The version the delete confirmation is about; null while the dialog is closed. */
+  protected readonly toDelete = signal<{ id: string; name: string } | null>(null);
+  protected readonly deleting = signal(false);
+  protected readonly deleteError = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
 
   protected readonly gitlabSnippet = '- if: $CI_COMMIT_TAG';
@@ -226,6 +240,59 @@ export class VulnerabilitiesPage {
         () => this.panelScroll()?.nativeElement,
       );
     });
+  }
+
+  protected openUpload(): void {
+    this.uploadDialog()?.open();
+  }
+
+  /** An SBOM was stored: the summary has a new or replaced version. */
+  protected uploaded(): void {
+    this.summary.reload();
+  }
+
+  /** `debian 12.15`; the text of a distribution the SBOM names. */
+  protected distributionLabel(d: { family: string; version: string }): string {
+    return `${d.family} ${d.version}`;
+  }
+
+  protected askDelete(menu: HTMLElement, row: { id: string; name: string }): void {
+    if (this.deleting()) return;
+    this.close(menu);
+    this.toDelete.set({ id: row.id, name: row.name });
+    this.deleteError.set(null);
+    openAfterRender(
+      this.injector,
+      () => this.deleteDialog()?.nativeElement,
+      () => this.toDelete() !== null,
+    );
+  }
+
+  protected closeDelete(): void {
+    const dialog = this.deleteDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.toDelete.set(null);
+  }
+
+  protected async confirmDelete(): Promise<void> {
+    const version = this.toDelete();
+    if (!version || this.deleting()) return;
+    this.deleting.set(true);
+    this.deleteError.set(null);
+    try {
+      await ok(
+        this.api.client.DELETE('/api/v0/projects/{id}/versions/{versionId}', {
+          params: { path: { id: this.projectId(), versionId: version.id } },
+        }),
+      );
+      this.closeDelete();
+      this.pendingFocus.set(`version:${version.id}`);
+      this.summary.reload();
+    } catch (err) {
+      this.deleteError.set(problemMessage(err));
+    } finally {
+      this.deleting.set(false);
+    }
   }
 
   /** The kinds of export the tab offers: none without the feature or without a target to export. */

@@ -330,6 +330,51 @@ describe('BranchOverviewPage', () => {
     expect(server.requestsTo('GET', `/api/v0/projects/${PROJECT}/branches`)).toHaveLength(0);
   });
 
+  describe('a project with uploaded SBOMs and no analysis', () => {
+    const NEVER = { lastAnalysisId: null, lastAnalyzedAt: null, gateStatus: null };
+    const version = (source: 'tag' | 'sbom') => ({
+      id: 'v-' + source,
+      label: '1.0.0',
+      source,
+      tag: null,
+      analyzedAt: '2026-09-10T09:00:00.000Z',
+      tracking: 'auto',
+      trackingReason: 'newest_in_line',
+      tracked: true,
+      prerelease: false,
+      packages: 7,
+      sbomFormat: source === 'sbom' ? 'CycloneDX 1.6' : null,
+      sbomSubject: null,
+      distribution: null,
+    });
+
+    it('says it holds uploaded SBOMs and links the Vulnerabilities and Dependencies tabs', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, { body: projectWithMain(NEVER) });
+      server.on('GET', `/api/v0/projects/${PROJECT}/versions`, {
+        body: page([version('tag'), version('sbom')]),
+      });
+      const { root } = await render();
+      expect(root.textContent).not.toContain('This branch has no analysis yet.');
+      const message = root.querySelector('.gate-meta');
+      expect(text(message)).toContain('uploaded SBOMs');
+      const links = [...(message?.querySelectorAll('a') ?? [])];
+      expect(links.map((a) => [text(a), a.getAttribute('href')])).toEqual([
+        ['Vulnerabilities', `/projects/${PROJECT}/vulnerabilities`],
+        ['Dependencies', `/projects/${PROJECT}/dependencies`],
+      ]);
+      expect(
+        server.requestsTo('GET', `/api/v0/projects/${PROJECT}/versions`).at(-1)?.query.get('limit'),
+      ).toBe('100');
+    });
+
+    it('keeps the old text when no version is an SBOM', async () => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, { body: projectWithMain(NEVER) });
+      server.on('GET', `/api/v0/projects/${PROJECT}/versions`, { body: page([version('tag')]) });
+      const { root } = await render();
+      expect(root.textContent).toContain('This branch has no analysis yet.');
+    });
+  });
+
   it('titles a merge request by its number and branches, and says when nothing ran', async () => {
     const { fixture, root } = await render('b-mr');
     expect(text(root.querySelector('.branch-name'))).toBe('!42 feature/refund-limits → main');

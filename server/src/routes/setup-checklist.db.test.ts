@@ -16,6 +16,7 @@ import {
   branches,
   memberships,
   projects,
+  projectVersions,
   repositorySetupItems,
   repositorySetupRuns,
   scmConnections,
@@ -229,6 +230,28 @@ describe('The setup checklist', () => {
     await analysis(p.id, 'queued');
     expect(step(await checklist(), 'analysis').done).toBe(false);
     await analysis(p.id);
+    expect(step(await checklist(), 'analysis')).toMatchObject({ done: true, hint: null });
+  });
+
+  it('ticks analysis with an uploaded SBOM version and no analysis (R13)', async () => {
+    const p = await newProject();
+    const o = await newProject(other);
+    const sbomVersion = (projectId: string, source: 'sbom' | 'label') =>
+      ctx.db.insert(projectVersions).values({
+        projectId,
+        label: '1.0.0',
+        source,
+        analyzedAt: new Date(),
+        hasInventory: true,
+      });
+    // Another organization's SBOM, and a label version of this one, do not count.
+    await sbomVersion(o.id, 'sbom');
+    await sbomVersion(p.id, 'label');
+    expect(step(await checklist(), 'analysis').done).toBe(false);
+    await ctx.db
+      .insert(projectVersions)
+      .values({ projectId: p.id, label: '2.0.0', source: 'sbom', analyzedAt: new Date() });
+    await mergeRequestItem(p.id);
     expect(step(await checklist(), 'analysis')).toMatchObject({ done: true, hint: null });
   });
 

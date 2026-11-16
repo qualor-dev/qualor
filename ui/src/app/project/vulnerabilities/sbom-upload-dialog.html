@@ -1,0 +1,159 @@
+<dialog #dialog class="dialog" aria-labelledby="sbom-title">
+  <form novalidate (submit)="submit($event)">
+    <div class="dialog-head">
+      <h2 id="sbom-title" i18n="@@sbom.upload.title">Upload SBOM</h2>
+    </div>
+    <div class="dialog-body">
+      @if (result(); as r) {
+        <div #resultBox class="sbom-result" tabindex="-1" role="status">
+          <p class="sbom-lead">
+            <strong i18n="@@sbom.result.stored">Stored as version</strong>
+            <code>{{ r.version.label }}</code>
+          </p>
+          <ul class="sbom-facts">
+            <li>
+              <span class="sbom-key" i18n="@@sbom.result.format">Format</span>
+              {{ r.format }}
+            </li>
+            @if (r.subject) {
+              <li>
+                <span class="sbom-key" i18n="@@sbom.result.subject">Describes</span>
+                <span class="sbom-subject">{{ r.subject }}</span>
+              </li>
+            }
+            <li>
+              <span i18n="@@sbom.result.packages">{r.packages, plural,
+                =1 {1 package}
+                other {{{ r.packages }} packages}
+              }</span>
+            </li>
+            @if (r.osPackages > 0) {
+              <li>
+                <span i18n="@@sbom.result.osPackages">{r.osPackages, plural,
+                  =1 {1 OS package}
+                  other {{{ r.osPackages }} OS packages}
+                }</span
+                >&ngsp;
+                @if (r.distribution; as d) {
+                  <span>({{ d.family }} {{ d.version }})</span>
+                }
+              </li>
+            }
+          </ul>
+          @if (skippedTotal() > 0) {
+            <p class="sbom-key" i18n="@@sbom.result.skipped">Not stored</p>
+            <ul class="sbom-facts">
+              @if (r.skipped.noPurl > 0) {
+                <li i18n="@@sbom.result.noPurl">{{ r.skipped.noPurl }} without a purl</li>
+              }
+              @if (r.skipped.unsupportedType > 0) {
+                <li i18n="@@sbom.result.unsupported">
+                  {{ r.skipped.unsupportedType }} of an unsupported type
+                </li>
+              }
+              @if (r.skipped.duplicate > 0) {
+                <li>
+                  <span i18n="@@sbom.result.duplicates">{r.skipped.duplicate, plural,
+                    =1 {1 duplicate}
+                    other {{{ r.skipped.duplicate }} duplicates}
+                  }</span>
+                </li>
+              }
+            </ul>
+          }
+          @if (r.warnings.length > 0) {
+            <p class="sbom-key" i18n="@@sbom.result.warnings">Warnings</p>
+            <ul class="sbom-facts sbom-warnings">
+              @for (w of r.warnings; track $index) {
+                <li>{{ w.message }}</li>
+              }
+            </ul>
+          }
+          <p class="sbom-monitoring">
+            @if (!r.monitoring.enabled) {
+              <span i18n="@@sbom.result.monitoringOff"
+                >Monitoring is off, so the packages are stored but not checked for
+                vulnerabilities.</span
+              >
+            } @else if (r.monitoring.recheckQueued) {
+              <span i18n="@@sbom.result.monitoringQueued"
+                >Monitoring is on. The new version is being checked for vulnerabilities.</span
+              >
+            } @else {
+              <span i18n="@@sbom.result.monitoringOn">Monitoring is on.</span>
+            }
+          </p>
+        </div>
+      } @else {
+        @if (error(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (proxyRefused()) {
+          <p class="alert alert-error" role="alert">
+            <span i18n="@@vulndb.upload.proxyRefused"
+              >The proxy in front of Qualor refused the file. Raise its body size limit for this
+              path.</span
+            >&ngsp;<a
+              routerLink="/docs/install-server"
+              fragment="reverse-proxy-and-tls"
+              i18n="@@vulndb.upload.proxyHelp"
+              >Reverse proxy and TLS</a
+            >
+          </p>
+        }
+        <p class="hint" i18n="@@sbom.upload.intro">
+          A CycloneDX (1.2 to 1.7) or SPDX (2.2, 2.3) JSON file, for example from Syft, Trivy or
+          your build.
+        </p>
+        <div class="field">
+          <label for="sbom-file" i18n="@@sbom.upload.file">SBOM file</label>
+          <input
+            #fileField
+            id="sbom-file"
+            type="file"
+            accept=".json,application/json"
+            [attr.aria-invalid]="fileError() ? true : null"
+            [attr.aria-describedby]="fileError() ? 'sbom-file-error' : null"
+            (change)="chooseFile($event)"
+          />
+          @if (fileError(); as message) {
+            <span id="sbom-file-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="sbom-label" i18n="@@sbom.upload.label">Version label</label>
+          <input
+            id="sbom-label"
+            type="text"
+            maxlength="100"
+            autocomplete="off"
+            aria-describedby="sbom-label-hint"
+            [value]="label()"
+            (input)="setLabel($event)"
+          />
+          <span id="sbom-label-hint" class="hint" i18n="@@sbom.upload.labelHint"
+            >Optional when the file names its version. An existing SBOM version with this label is
+            replaced.</span
+          >
+        </div>
+      }
+    </div>
+    <div class="dialog-actions">
+      @if (result()) {
+        <button type="button" class="btn btn-primary" (click)="close()" i18n="@@sbom.upload.done">
+          Done
+        </button>
+      } @else {
+        <button type="button" class="btn" (click)="close()" i18n="@@dialog.cancel">Cancel</button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [disabled]="busy()"
+          i18n="@@sbom.upload.submit"
+        >
+          Upload
+        </button>
+      }
+    </div>
+  </form>
+</dialog>

@@ -220,6 +220,26 @@ export class BranchOverviewPage {
   protected readonly latest = computed(() =>
     this.analysis.hasValue() ? this.analysis.value() : undefined,
   );
+  /**
+   * The project's versions, read only for a main branch that was never analysed: a project that
+   * holds uploaded SBOMs has data to look at without a scan (0.16 SBOM). A failed read leaves it
+   * at the plain message.
+   */
+  private readonly versions = resource({
+    params: () => (this.latest() === null && this.current()?.isMain ? this.projectId() : undefined),
+    loader: async ({ params }) =>
+      (
+        await ok(
+          this.api.client.GET('/api/v0/projects/{id}/versions', {
+            params: { path: { id: params }, query: { limit: 100 } },
+          }),
+        )
+      ).items,
+  });
+  /** Whether an uploaded SBOM is a version of the project. */
+  protected readonly holdsSbom = computed(
+    () => this.versions.hasValue() && this.versions.value().some((v) => v.source === 'sbom'),
+  );
   protected readonly gate = computed(() => readGateResult(this.latest()?.gateResult));
   /** The gate status to explain: the result's own, else the branch's. */
   protected readonly gateStatus = computed(

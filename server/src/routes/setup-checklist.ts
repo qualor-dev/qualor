@@ -8,6 +8,7 @@ import {
   analyses,
   memberships,
   projects,
+  projectVersions,
   repositorySetupItems,
   repositorySetupRuns,
   scmConnections,
@@ -48,9 +49,13 @@ export const setupChecklistRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = 
 ) => {
   const { db } = deps;
 
-  /** A project (column) with a succeeded analysis. */
+  /**
+   * A project (column) with a succeeded analysis or an uploaded SBOM version (R13): either is
+   * data to look at, and an SBOM project needs no CI scan.
+   */
   const analysed = (projectId: unknown) =>
-    sql`exists (select 1 from ${analyses} where ${analyses.projectId} = ${projectId} and ${analyses.status} = 'succeeded')`;
+    sql`(exists (select 1 from ${analyses} where ${analyses.projectId} = ${projectId} and ${analyses.status} = 'succeeded')
+      or exists (select 1 from ${projectVersions} where ${projectVersions.projectId} = ${projectId} and ${projectVersions.source} = 'sbom'))`;
 
   async function checklistOf(
     organizationId: string,

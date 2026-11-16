@@ -305,8 +305,8 @@ describe('VulnerabilitiesPage', () => {
       expect(body[0]?.querySelector('.row-menu')).toBeNull();
       const items = (row: Element | undefined) =>
         [...(row?.querySelectorAll('.row-menu-panel button') ?? [])].map((b) => text(b));
-      expect(items(body[1])).toEqual(['Unpin', 'Mark as unsupported']);
-      expect(items(body[2])).toEqual(['Pin', 'Mark as unsupported']);
+      expect(items(body[1])).toEqual(['Unpin', 'Mark as unsupported', 'Delete version']);
+      expect(items(body[2])).toEqual(['Pin', 'Mark as unsupported', 'Delete version']);
     });
 
     it('names the trigger and the group after the version, as attributes', async () => {
@@ -340,6 +340,7 @@ describe('VulnerabilitiesPage', () => {
       expect([...root.querySelectorAll('.row-menu-panel button')].map((b) => text(b))).toEqual([
         'Track automatically',
         'Pin',
+        'Delete version',
       ]);
     });
 
@@ -365,7 +366,7 @@ describe('VulnerabilitiesPage', () => {
       expect(row?.querySelector('.row-menu-panel')?.getAttribute('role')).toBe('menu');
       expect(row?.querySelector('.menu-trigger')?.getAttribute('aria-haspopup')).toBe('menu');
       const items = [...(row?.querySelectorAll('.row-menu-panel button') ?? [])];
-      expect(items).toHaveLength(2);
+      expect(items).toHaveLength(3);
       for (const item of items) {
         expect(item.getAttribute('role')).toBe('menuitem');
         expect(item.getAttribute('tabindex')).toBe('-1');
@@ -404,9 +405,9 @@ describe('VulnerabilitiesPage', () => {
         const steps: [string, number][] = [
           ['ArrowDown', 1],
           ['ArrowUp', 0],
-          ['ArrowUp', 1],
+          ['ArrowUp', 2],
           ['Home', 0],
-          ['End', 1],
+          ['End', 2],
         ];
         for (const [name, index] of steps) {
           const event = key(document.activeElement as Element, name);
@@ -554,8 +555,8 @@ describe('VulnerabilitiesPage', () => {
       const items = (row: Element | undefined) =>
         [...(row?.querySelectorAll('.row-menu-panel button') ?? [])].map((b) => text(b));
       const fold = rows(root).filter((r) => text(r)?.includes('Not tracked'));
-      expect(items(fold[0])).toEqual(['Pin', 'Mark as unsupported']);
-      expect(items(fold[1])).toEqual(['Track automatically', 'Pin']);
+      expect(items(fold[0])).toEqual(['Pin', 'Mark as unsupported', 'Delete version']);
+      expect(items(fold[1])).toEqual(['Track automatically', 'Pin', 'Delete version']);
     });
 
     describe('focus after a change', () => {
@@ -695,6 +696,132 @@ describe('VulnerabilitiesPage', () => {
         'main',
         '1.0.0Not tracked',
       ]);
+    });
+  });
+
+  describe('SBOM versions', () => {
+    const SBOM = '0190a6c2-0000-7000-8000-0000000000d9';
+    const sbomTarget = () =>
+      vulnerabilityTarget({
+        kind: 'version',
+        id: SBOM,
+        name: '1.4.0',
+        tracking: 'auto',
+        source: 'sbom',
+        sbomSubject: 'ghcr.io/acme/shop:1.4.0',
+        distribution: { family: 'debian', version: '12.15' },
+      });
+    // A clean table is replaced by the empty state: one open vulnerability keeps the row.
+    const withCounts = (t: ReturnType<typeof vulnerabilityTarget>) => ({
+      ...t,
+      counts: { critical: 0, high: 1, medium: 0, low: 0, unknown: 0 },
+    });
+    const deleteItem = (root: HTMLElement) =>
+      [...root.querySelectorAll<HTMLButtonElement>('.row-menu-panel button')].find(
+        (b) => text(b) === 'Delete version',
+      );
+    const inDialog = (dialog: Element, label: string) =>
+      [...dialog.querySelectorAll('button')].find((b) => text(b) === label)!;
+
+    it('shows the SBOM badge, the subject and the distribution of an SBOM target', async () => {
+      const root = await render({ targets: [withCounts(sbomTarget())] });
+      const row = text(rows(root)[0])!;
+      expect(row).toContain('SBOM');
+      expect(row).toContain('ghcr.io/acme/shop:1.4.0');
+      expect(row).toContain('debian 12.15');
+    });
+
+    it('shows it on an untracked SBOM version too, and nothing on a tag version', async () => {
+      const root = await render({
+        targets: [vulnerabilityTarget({ id: MAIN, name: 'main', isMain: true })],
+        untracked: [
+          untrackedVersion({
+            id: 'u-sbom',
+            name: '0.9.0',
+            source: 'sbom',
+            sbomSubject: 'old-image',
+            distribution: { family: 'alpine', version: '3.20.3' },
+          }),
+          untrackedVersion({ id: 'u-tag', name: '0.8.0' }),
+        ],
+      });
+      button(root, 'Show')?.click();
+      await settle();
+      const fold = rows(root).filter((r) => text(r)?.includes('Not tracked'));
+      expect(text(fold[0])).toContain('SBOM');
+      expect(text(fold[0])).toContain('alpine 3.20.3');
+      expect(text(fold[1])).not.toContain('SBOM');
+    });
+
+    it('offers no Delete version without project.settings', async () => {
+      const root = await render({ targets: [withCounts(sbomTarget())] });
+      expect(deleteItem(root)).toBeUndefined();
+    });
+
+    it('names the label in the confirmation, and Cancel sends nothing', async () => {
+      const root = await render({ targets: [withCounts(sbomTarget())] }, { permissions: SETTINGS });
+      deleteItem(root)!.click();
+      await settle();
+      const dialog = root.querySelector('dialog.delete-version-dialog')!;
+      expect(dialog.hasAttribute('open')).toBe(true);
+      expect(text(dialog)).toContain('1.4.0');
+      inDialog(dialog, 'Cancel').click();
+      await settle();
+      expect(server.requests.filter((r) => r.method === 'DELETE')).toHaveLength(0);
+      expect(dialog.hasAttribute('open')).toBe(false);
+    });
+
+    it('deletes the version after the confirmation and reads the summary again', async () => {
+      const path = `/api/v0/projects/${PROJECT}/versions/${SBOM}`;
+      server.on('DELETE', path, { status: 204 });
+      const root = await render({ targets: [withCounts(sbomTarget())] }, { permissions: SETTINGS });
+      deleteItem(root)!.click();
+      await settle();
+      const dialog = root.querySelector('dialog.delete-version-dialog')!;
+      inDialog(dialog, 'Delete').click();
+      await settle();
+      expect(server.requestsTo('DELETE', path)).toHaveLength(1);
+      expect(server.requestsTo('GET', TARGETS_URL)).toHaveLength(2);
+      expect(dialog.hasAttribute('open')).toBe(false);
+    });
+
+    it('shows the refusal in the dialog and keeps it open', async () => {
+      server.on('DELETE', `/api/v0/projects/${PROJECT}/versions/${SBOM}`, {
+        status: 403,
+        body: problem(403, 'FORBIDDEN'),
+      });
+      const root = await render({ targets: [withCounts(sbomTarget())] }, { permissions: SETTINGS });
+      deleteItem(root)!.click();
+      await settle();
+      const dialog = root.querySelector('dialog.delete-version-dialog')!;
+      inDialog(dialog, 'Delete').click();
+      await settle();
+      expect(dialog.querySelector('[role=alert]')).not.toBeNull();
+      expect(dialog.hasAttribute('open')).toBe(true);
+    });
+  });
+
+  describe('Upload SBOM', () => {
+    const UPLOAD = [...MEMBER_PROJECT_PERMISSIONS, 'project.analyze'];
+
+    it('is offered to a user with project.analyze', async () => {
+      const root = await render({ targets: TARGETS }, { permissions: UPLOAD });
+      expect(button(root, 'Upload SBOM')).toBeDefined();
+      expect(root.querySelector('q-sbom-upload-dialog')).not.toBeNull();
+    });
+
+    it('is not offered to a viewer', async () => {
+      const root = await render({ targets: TARGETS });
+      expect(button(root, 'Upload SBOM')).toBeUndefined();
+      expect(root.querySelector('q-sbom-upload-dialog')).toBeNull();
+    });
+
+    it('is offered in the empty state of a project without versions', async () => {
+      const root = await render({ versionCount: 0, targets: TARGETS }, { permissions: UPLOAD });
+      const hint = root.querySelector('.tag-hint');
+      expect(
+        [...(hint?.querySelectorAll('button') ?? [])].some((b) => text(b) === 'Upload SBOM'),
+      ).toBe(true);
     });
   });
 
@@ -1100,6 +1227,8 @@ describe('VulnerabilitiesPage export menus', () => {
     const root = await renderExport({ sbom: false, targets, untracked: old });
     expect(button(root, 'Export SBOM')).toBeUndefined();
     expect(button(root, 'Export VEX')).toBeUndefined();
-    expect(text(root)).not.toMatch(/SBOM|VEX/);
+    expect(root.querySelector('q-export-menu')).toBeNull();
+    // The export is the feature; Upload SBOM is a Community action of project.analyze.
+    expect(text(root)).not.toMatch(/VEX|Export SBOM/);
   });
 });

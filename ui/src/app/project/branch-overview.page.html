@@ -25,6 +25,13 @@
               >Analyzed {{ a.analysisDate | dateTime }}, revision
               <code>{{ a.revision | slice: 0 : 8 }}</code></span
             >
+          } @else if (latest() === null && holdsSbom()) {
+            <span i18n="@@overview.sbomOnly"
+              >This project holds uploaded SBOMs. See their
+              <a [routerLink]="['/projects', projectId(), 'vulnerabilities']">Vulnerabilities</a>
+              and
+              <a [routerLink]="['/projects', projectId(), 'dependencies']">Dependencies</a>.</span
+            >
           } @else if (latest() === null) {
             <span i18n="@@overview.neverAnalyzed"
               >This branch has no analysis yet. Run qualor scan in its CI pipeline.</span

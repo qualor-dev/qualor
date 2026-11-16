@@ -49,6 +49,29 @@ const VERSION_PAGE = 100;
 /** A version's value in the selector, apart from the branch ids. */
 const VERSION_PREFIX = 'version:';
 const Q_MAX_LENGTH = 200;
+/**
+ * A version in the select: its label, and in brackets what sets it apart, an SBOM with its
+ * distribution and a tracked one, as in `1.4.0 (SBOM, debian 12.15, tracked)`.
+ */
+function versionTitle(v: {
+  label: string;
+  source: string;
+  tracked: boolean;
+  distribution: { family: string; version: string } | null;
+}): string {
+  const notes = [
+    ...(v.source === 'sbom' ? [$localize`:@@deps.versionSbom:SBOM`] : []),
+    ...(v.source === 'sbom' && v.distribution
+      ? [`${v.distribution.family} ${v.distribution.version}`]
+      : []),
+    ...(v.tracked ? [$localize`:@@deps.versionTrackedNote:tracked`] : []),
+  ];
+  const all = notes.join(', ');
+  return notes.length === 0
+    ? v.label
+    : $localize`:@@deps.versionNotes:${v.label}:label: (${all}:notes:)`;
+}
+
 /** api.md: what `ecosystem` may be (the report format's rule). */
 const ECOSYSTEM = /^[a-z0-9-]{1,32}$/;
 /** The server's limits: a licence string of at most 256 characters, at most 100 000 pages. */
@@ -186,10 +209,7 @@ export class DependenciesPage {
   );
   /** The versions the selector offers, newest first; the URL's own when it is not among them. */
   protected readonly versionOptions = computed(() => {
-    const options = this.versionList().map((v) => ({
-      id: v.id,
-      title: v.tracked ? $localize`:@@deps.versionTracked:${v.label}:label: (tracked)` : v.label,
-    }));
+    const options = this.versionList().map((v) => ({ id: v.id, title: versionTitle(v) }));
     const wanted = this.urlVersion();
     return wanted && !options.some((o) => o.id === wanted)
       ? [...options, { id: wanted, title: wanted }]

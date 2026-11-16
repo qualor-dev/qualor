@@ -63,7 +63,15 @@
           [preferred]="target()"
         />
       }
+      @if (canUpload()) {
+        <button type="button" class="btn" (click)="openUpload()" i18n="@@sbom.upload.open">
+          Upload SBOM
+        </button>
+      }
     </div>
+    @if (canUpload()) {
+      <q-sbom-upload-dialog [projectKey]="projectKey()" (uploaded)="uploaded()" />
+    }
     <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
       <a
         routerLink="."
@@ -187,6 +195,7 @@
                       @if (t.tracking === 'pinned') {
                         <span class="chip" i18n="@@vuln.pinned">Pinned</span>
                       }
+                      <ng-container *ngTemplateOutlet="sbomInfo; context: { $implicit: t }" />
                       @if (!t.hasInventory) {
                         <span class="hint" i18n="@@vuln.noInventory">No dependency list</span>
                       }
@@ -240,6 +249,7 @@
                           >{{ v.name }}</a
                         >
                         <span class="hint" i18n="@@vuln.notTracked">Not tracked</span>
+                        <ng-container *ngTemplateOutlet="sbomInfo; context: { $implicit: v }" />
                       </th>
                       <td class="num">{{ v.counts.critical }}</td>
                       <td class="num">{{ v.counts.high }}</td>
@@ -296,6 +306,14 @@
           <pre>{{ gitlabSnippet }}</pre>
           <p class="hint" i18n="@@vuln.tags.github">GitHub Actions</p>
           <pre>{{ githubSnippet }}</pre>
+          @if (canUpload()) {
+            <p class="hint" i18n="@@vuln.tags.sbom">Or upload an SBOM of an image or a release:</p>
+            <p>
+              <button type="button" class="btn" (click)="openUpload()" i18n="@@sbom.upload.open">
+                Upload SBOM
+              </button>
+            </p>
+          }
         </section>
       }
     }
@@ -356,7 +374,69 @@
             {{ choiceLabel(c, row.tracking) }}
           </button>
         }
+        <button
+          type="button"
+          role="menuitem"
+          tabindex="-1"
+          class="menu-danger"
+          [disabled]="busy()"
+          (click)="askDelete(menu, row)"
+          i18n="@@vuln.menu.delete"
+        >
+          Delete version
+        </button>
       </div>
     </span>
   }
 </ng-template>
+
+<!-- An SBOM version: its badge, what it describes and its distribution (spec §6.9). -->
+<ng-template #sbomInfo let-row>
+  @if (row.source === 'sbom') {
+    <span class="badge badge-tag" i18n="@@vuln.sbom">SBOM</span>
+    @if (row.sbomSubject) {
+      <span class="hint sbom-subject" [attr.title]="row.sbomSubject">{{ row.sbomSubject }}</span>
+    }
+    @if (row.distribution; as d) {
+      <span class="hint">{{ distributionLabel(d) }}</span>
+    }
+  }
+</ng-template>
+
+@if (canPin()) {
+  <dialog
+    #deleteDialog
+    class="dialog delete-version-dialog"
+    aria-labelledby="delete-version-title"
+    aria-describedby="delete-version-text"
+  >
+    <div class="dialog-head">
+      <h2 id="delete-version-title" i18n="@@vuln.delete.title">Delete version</h2>
+    </div>
+    <div class="dialog-body">
+      @if (deleteError(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+      @if (toDelete(); as v) {
+        <p id="delete-version-text" i18n="@@vuln.delete.text">
+          <strong class="mono">{{ v.name }}</strong> is deleted with its dependency list and its
+          vulnerability results. This cannot be undone.
+        </p>
+      }
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" autofocus (click)="closeDelete()" i18n="@@dialog.cancel">
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-danger-solid"
+        [attr.aria-disabled]="deleting() ? true : null"
+        (click)="confirmDelete()"
+        i18n="@@vuln.delete.confirm"
+      >
+        Delete
+      </button>
+    </div>
+  </dialog>
+}
