@@ -66,6 +66,14 @@ export const TRIVY_DATABASE = 'trivy-db';
 const TRIVY_DATABASE_FILE = '/opt/qualor/share/trivy/db/trivy.db';
 
 /**
+ * A pseudo-tool: the filtered trivy-checks bundle in the scanner image's place (0.16 IaC). Its
+ * absence is a normal skip, not a configuration problem, and the scan environment of a fixture
+ * drops QUALOR_TRIVY_CHECKS_DIR, so only the default path is ever checked here.
+ */
+export const TRIVY_IAC_CHECKS = 'trivy-iac-checks';
+const TRIVY_IAC_CHECKS_DIR = '/opt/qualor/share/trivy-iac/policy/content';
+
+/**
  * A pseudo-tool: Qualor's own sonarjs pass in the scanner image's place (config.md §6). Like
  * Trivy's database above, its absence is a normal skip (a plain host without the qualor/scanner
  * image), not a configuration problem, and the scan environment of a fixture drops every QUALOR_
@@ -187,6 +195,8 @@ const ENGINE_TOOLS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   // 6M: the licence pass reads the packages' own metadata and needs no database, so a fixture
   // that expects only it runs wherever the binary does.
   'trivy-licenses': [['trivy']],
+  // 0.16: the misconfiguration pass needs the binary and the image's pinned checks; no database.
+  'trivy-iac': [['trivy'], [TRIVY_IAC_CHECKS]],
   // Plan 2D: a real build writes the MSBuild hook into the user profile. Linux only (ruling R8):
   // the harness isolates it there with XDG_DATA_HOME (probe P6). Never on Windows, where it would
   // land in the developer's real profile; never on macOS either, since .NET 8 (ruling R6) moved
@@ -235,6 +245,7 @@ export function findTool(name: string, env: Record<string, string | undefined> =
 
 export function toolOnPath(name: string, env: Record<string, string | undefined> = process.env): boolean {
   if (name === TRIVY_DATABASE) return existsSync(TRIVY_DATABASE_FILE);
+  if (name === TRIVY_IAC_CHECKS) return existsSync(TRIVY_IAC_CHECKS_DIR);
   if (name === SONARJS_PASS) return existsSync(SONARJS_PASS_FILE);
   if (name === DETEKT_JAR) return existsSync(DETEKT_JAR_FILE);
   if (name === PHPSTAN_PHAR) return existsSync(PHPSTAN_PHAR_FILE);
