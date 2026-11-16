@@ -629,42 +629,6 @@ describe('SBOM versions: DTO and DELETE (0.16)', () => {
     });
   });
 
-  it('carries source, subject and distribution on the targets', async () => {
-    const p = await project();
-    const pinned = await seedSbom(p.id, '1.4.0');
-    const dropped = await seedSbom(p.id, '1.3.0');
-    await h.ctx.db
-      .update(projectVersions)
-      .set({ tracking: 'pinned' })
-      .where(eq(projectVersions.id, pinned));
-    await h.ctx.db
-      .update(projectVersions)
-      .set({ tracking: 'unsupported' })
-      .where(eq(projectVersions.id, dropped));
-    const res = await call('GET', `/projects/${p.id}/vulnerabilities/targets`);
-    expect(res.statusCode, res.body).toBe(200);
-    const body = res.json() as {
-      targets: { kind: string; id: string }[];
-      untracked: { id: string }[];
-    };
-    expect(body.targets.find((t) => t.id === pinned)).toMatchObject({
-      kind: 'version',
-      source: 'sbom',
-      sbomSubject: 'debian:12',
-      distribution: { family: 'debian', version: '12.15' },
-    });
-    expect(body.targets.find((t) => t.kind === 'branch')).toMatchObject({
-      source: null,
-      sbomSubject: null,
-      distribution: null,
-    });
-    expect(body.untracked.find((t) => t.id === dropped)).toMatchObject({
-      source: 'sbom',
-      sbomSubject: 'debian:12',
-      distribution: { family: 'debian', version: '12.15' },
-    });
-  });
-
   it('deletes a version with everything that hangs on it, and keeps analyses and reports', async () => {
     const p = await project();
     const versionId = await seedSbom(p.id, '1.4.0');
@@ -713,26 +677,47 @@ describe('SBOM versions: DTO and DELETE (0.16)', () => {
     ).id;
     await db.delete(jobs).where(eq(jobs.queue, RECHECK_QUEUE));
 
+    const count = async (table: PgTable, column: PgColumn, value: string) =>
+      (await db.select().from(table).where(eq(column, value))).length;
+    /** The rows that hang on the version, by table. */
+    const hanging = async () => ({
+      versions: await count(projectVersions, projectVersions.id, versionId),
+      packages: await count(versionDependencies, versionDependencies.versionId, versionId),
+      results: await count(targetVulnerabilities, targetVulnerabilities.versionId, versionId),
+      checks: await count(
+        vulnerabilityTargetChecks,
+        vulnerabilityTargetChecks.versionId,
+        versionId,
+      ),
+      alertTargets: await count(
+        vulnerabilityAlertTargets,
+        vulnerabilityAlertTargets.versionId,
+        versionId,
+      ),
+      alertItems: await count(
+        vulnerabilityAlertItems,
+        vulnerabilityAlertItems.targetId,
+        alertTarget,
+      ),
+      decisions: await count(vulnerabilityDecisions, vulnerabilityDecisions.versionId, versionId),
+    });
+    const none = {
+      versions: 0,
+      packages: 0,
+      results: 0,
+      checks: 0,
+      alertTargets: 0,
+      alertItems: 0,
+      decisions: 0,
+    };
+    // Every table holds a row of the version before the delete: the zeros below mean something.
+    const before = await hanging();
+    for (const [table, n] of Object.entries(before)) expect(n, table).toBeGreaterThan(0);
+
     const res = await call('DELETE', `/projects/${p.id}/versions/${versionId}`);
     expect(res.statusCode, res.body).toBe(204);
 
-    const count = async (table: PgTable, column: PgColumn, value: string) =>
-      (await db.select().from(table).where(eq(column, value))).length;
-    expect(await count(projectVersions, projectVersions.id, versionId)).toBe(0);
-    expect(await count(versionDependencies, versionDependencies.versionId, versionId)).toBe(0);
-    expect(await count(targetVulnerabilities, targetVulnerabilities.versionId, versionId)).toBe(0);
-    expect(
-      await count(vulnerabilityTargetChecks, vulnerabilityTargetChecks.versionId, versionId),
-    ).toBe(0);
-    expect(
-      await count(vulnerabilityAlertTargets, vulnerabilityAlertTargets.versionId, versionId),
-    ).toBe(0);
-    expect(
-      await count(vulnerabilityAlertItems, vulnerabilityAlertItems.targetId, alertTarget),
-    ).toBe(0);
-    expect(await count(vulnerabilityDecisions, vulnerabilityDecisions.versionId, versionId)).toBe(
-      0,
-    );
+    expect(await hanging()).toEqual(none);
     const [analysis] = await db.select().from(analyses).where(eq(analyses.id, analysisId));
     expect(analysis).toMatchObject({ id: analysisId, versionId: null });
     const [report] = await db

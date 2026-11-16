@@ -127,7 +127,7 @@ describe('GET /packages/usages (0.16 where used)', () => {
   const version = async (
     projectId: string,
     label: string,
-    options: { source: 'tag' | 'sbom'; os?: { family: string; version: string } },
+    options: { source: 'tag' | 'label' | 'sbom'; os?: { family: string; version: string } },
     pkgs: Pkg[],
   ) => {
     const row = first(
@@ -668,6 +668,14 @@ describe('GET /packages/usages (0.16 where used)', () => {
       );
     }
     expect((await search(q('libfoo'))).rows[0]!.distribution).toBeNull();
+  });
+
+  it('names a version taken from a branch label as label (R24)', async () => {
+    const org = await organizationId(ctx, 'default');
+    const p = (await createProject(ctx, admin, { organizationId: org, key: 'labelled' })).id;
+    const labelled = await version(p, '3.1.0', { source: 'label' }, [{ name: 'label-only-pkg' }]);
+    const [row] = (await search(q('label-only-pkg'))).rows;
+    expect(row?.target).toMatchObject({ kind: 'version', id: labelled, source: 'label' });
   });
 
   it('names the source of a version row: sbom, tag, or null on a branch', async () => {
