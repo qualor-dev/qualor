@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseConfig } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
@@ -80,6 +80,8 @@ describe('trivyIacAnalyzer.prepare', () => {
     expect(run.command).toBe('/opt/qualor/bin/trivy');
     expect(run.args).toEqual([
       'fs',
+      '--config',
+      work('trivy.yaml'),
       '--cache-dir',
       dir,
       '--cache-backend',
@@ -87,6 +89,9 @@ describe('trivyIacAnalyzer.prepare', () => {
       '--skip-check-update',
       '--skip-version-check',
       '--disable-telemetry',
+      '--offline-scan',
+      '--module-dir',
+      work('modules'),
       '--scanners',
       'misconfig',
       '--misconfig-scanners',
@@ -125,7 +130,28 @@ describe('trivyIacAnalyzer.prepare', () => {
     expect(run.env).toEqual({ ...deadProxyEnv(), GIT_ALLOW_PROTOCOL: 'file' });
     expect(run.dropEnv?.('TRIVY_FOO')).toBe(true);
     expect(run.dropEnv?.('TF_TOKEN_app_terraform_io')).toBe(true);
+    for (const name of [
+      'AWS_ACCESS_KEY_ID',
+      'GOOGLE_APPLICATION_CREDENTIALS',
+      'AZURE_CLIENT_SECRET',
+      'ARM_CLIENT_SECRET',
+    ]) {
+      expect(run.dropEnv?.(name), name).toBe(true);
+    }
     expect(run.dropEnv?.('PATH')).toBe(false);
+  });
+
+  it('names an empty config in workDir, never the repository trivy.yaml', async () => {
+    const { root, ctx } = setup();
+    writeFileSync(path.join(root, 'trivy.yaml'), 'severity:\n  - CRITICAL\n');
+    const run = runOf(await createTrivyIacAnalyzer(checks()).prepare(ctx));
+    const config = run.args[run.args.indexOf('--config') + 1] ?? '';
+    expect(config).toBe(path.join(ctx.workDir, 'trivy.yaml'));
+    expect(config).not.toBe(path.join(root, 'trivy.yaml'));
+    expect(readFileSync(config, 'utf8')).toBe('');
+    const modules = run.args[run.args.indexOf('--module-dir') + 1] ?? '';
+    expect(path.dirname(modules)).toBe(ctx.workDir);
+    expect(readdirSync(modules)).toEqual([]);
   });
 
   it('passes the timeout in seconds', async () => {
@@ -312,6 +338,23 @@ describeWithTools(['trivy'])('Trivy IaC on real trees (real Trivy, offline)', ()
         console.info(`json-only tree: ${seconds.toFixed(1)} s`);
       },
     );
+
+    it('never reads a trivy.yaml of the repository', { timeout: 120_000 }, async () => {
+      const plain = tmp();
+      cpSync(path.join(FIXTURES_DIR, 'iac-basic'), plain, { recursive: true });
+      const before = await scanTree(plain);
+      const root = tmp();
+      cpSync(path.join(FIXTURES_DIR, 'iac-basic'), root, { recursive: true });
+      // Read from the working directory, this would keep only the critical findings.
+      writeFileSync(
+        path.join(root, 'trivy.yaml'),
+        'severity:\n  - CRITICAL\nscan:\n  skip-dirs:\n    - terraform\n',
+      );
+      const after = await scanTree(root);
+      expect(after.capture.status, after.capture.reason ?? '').toBe('ok');
+      expect(before.keys.length).toBeGreaterThan(0);
+      expect(after.keys.filter((k) => !k.includes(' trivy.yaml:'))).toEqual(before.keys);
+    });
 
     it(
       'honours a .trivyignore that mixes vulnerability and check ids, and an expired entry',

@@ -46,9 +46,12 @@ export function isIacCandidate(repoPath: string): boolean {
   );
 }
 
-/** `TF_TOKEN_*` hold Terraform registry credentials; Trivy gets no token (and `TRIVY_*` configure it). */
+/**
+ * `TRIVY_*` configure Trivy behind the command line's back; `TF_TOKEN_*` and the cloud providers'
+ * credentials would authenticate a module or provider fetch: the pass gets none of them.
+ */
 const isIacDroppedVariable = (name: string): boolean =>
-  isTrivyVariable(name) || /^TF_TOKEN_/i.test(name);
+  isTrivyVariable(name) || /^(?:TF_TOKEN_|AWS_|GOOGLE_|AZURE_|ARM_)/i.test(name);
 
 /**
  * The directory holding `policy/content`: the one the CI names (`QUALOR_TRIVY_CHECKS_DIR`, only
@@ -112,6 +115,12 @@ export function createTrivyIacAnalyzer(defaultDir = DEFAULT_IAC_CHECKS_DIR): Ana
       pinned === null
         ? [{ code: 'IAC_CHECKS_EMBEDDED', message: IAC_CHECKS_EMBEDDED_MESSAGE, count: 1 }]
         : [];
+    // Trivy reads `trivy.yaml` from the working directory and loads WebAssembly modules from its
+    // default module directory: an empty config and module directory are named explicitly.
+    const emptyConfig = path.join(ctx.workDir, 'trivy.yaml');
+    const modules = path.join(ctx.workDir, 'modules');
+    writeFileSync(emptyConfig, '');
+    mkdirSync(modules, { recursive: true });
     // `.trivyignore` is named explicitly, as for the vulnerability pass (config.md §6).
     let ignoreFile = path.join(ctx.root, '.trivyignore');
     if (!exists(ignoreFile)) {
@@ -126,6 +135,8 @@ export function createTrivyIacAnalyzer(defaultDir = DEFAULT_IAC_CHECKS_DIR): Ana
         command: trivy,
         args: [
           'fs',
+          '--config',
+          emptyConfig,
           '--cache-dir',
           dir,
           '--cache-backend',
@@ -133,6 +144,9 @@ export function createTrivyIacAnalyzer(defaultDir = DEFAULT_IAC_CHECKS_DIR): Ana
           '--skip-check-update',
           '--skip-version-check',
           '--disable-telemetry',
+          '--offline-scan',
+          '--module-dir',
+          modules,
           '--scanners',
           'misconfig',
           '--misconfig-scanners',
