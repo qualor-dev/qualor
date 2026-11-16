@@ -3,14 +3,21 @@
 // scanner only reads library packages, and some operating-system and vendor sources may not be
 // redistributed. deploy/scanner/NOTICE.md lists the sources it keeps.
 //
-//	trivy-db-filter <trivy.db>         filters the file in place
-//	trivy-db-filter -check <trivy.db>  exits 1 with the first rule the file breaks
+//	trivy-db-filter <trivy.db>                            filters the file in place
+//	trivy-db-filter -check <trivy.db>                     exits 1 with the first rule the file breaks
+//	trivy-db-filter -fixture <allowlist.json> <trivy.db>  cuts the file down to a test fixture in place
 //
 // The kept data goes into a fresh file, which also compacts it (bbolt never shrinks a file): each
 // top-level bucket whose data-source ID is in KEEP, with its nested buckets; their data-source
 // entries; and the vulnerability details their advisories reference, with VendorSeverity and CVSS
 // reduced to the kept sources and nvd, every other byte as it was. Then the file replaces the input.
 // tools/analyzers/filter-trivy-db.sh runs both.
+//
+// The -fixture mode (0.16 SBOM, ruling R12) makes the small database that
+// server/test/fixtures/trivy-db-os commits, the same way: the top-level buckets the allowlist names,
+// and in them only the keys it lists; the data-source entries of those buckets; and the vulnerability
+// details their advisories reference, without Title and Description, and with VendorSeverity and
+// CVSS reduced to the kept buckets' sources and nvd. tools/analyzers/make-trivy-db-fixture.sh runs it.
 package main
 
 import (
@@ -20,8 +27,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
@@ -60,14 +70,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("trivy-db-filter", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	checkOnly := flags.Bool("check", false, "check a filtered database instead of filtering it")
+	allowlist := flags.String("fixture", "", "cut the database down to what this allowlist names")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
-	if flags.NArg() != 1 {
-		fmt.Fprintln(stderr, "usage: trivy-db-filter [-check] <trivy.db>")
+	if flags.NArg() != 1 || (*checkOnly && *allowlist != "") {
+		fmt.Fprintln(stderr, "usage: trivy-db-filter [-check | -fixture <allowlist.json>] <trivy.db>")
 		return 2
 	}
 	path := flags.Arg(0)
+	if *allowlist != "" {
+		if err := fixture(*allowlist, path, stdout); err != nil {
+			fmt.Fprintf(stderr, "trivy-db-filter: %s: %v\n", path, err)
+			return 1
+		}
+		return 0
+	}
 	if *checkOnly {
 		if err := check(path); err != nil {
 			fmt.Fprintf(stderr, "%s: %v\n", path, err)
@@ -114,23 +132,25 @@ func isMetadata(name string) bool {
 	return name == vulnerabilityBucket || name == dataSourceBucket
 }
 
-func filter(path string, out io.Writer) (err error) {
+// rewrite writes what fill copies from the database at path into a fresh file, which then replaces
+// it, and answers both sizes. On an error the input stays as it was and the fresh file goes.
+func rewrite(path string, fill func(src, dst *bolt.DB) error) (before, after int64, err error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	src, err := bolt.Open(path, 0, &bolt.Options{ReadOnly: true, Timeout: time.Second})
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer src.Close()
 	tmp := path + ".tmp-filter"
 	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
+		return 0, 0, err
 	}
 	dst, err := bolt.Open(tmp, info.Mode().Perm(), &bolt.Options{NoSync: true, NoGrowSync: true, Timeout: time.Second})
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	// The file grows to what its pages need, without bbolt's 16 MiB of headroom.
 	dst.AllocSize = 0
@@ -140,27 +160,38 @@ func filter(path string, out io.Writer) (err error) {
 			_ = os.Remove(tmp)
 		}
 	}()
-	s, err := copyKept(src, dst)
-	if err != nil {
-		return err
+	if err := fill(src, dst); err != nil {
+		return 0, 0, err
 	}
 	if err := dst.Sync(); err != nil {
-		return err
+		return 0, 0, err
 	}
 	if err := dst.Close(); err != nil {
-		return err
+		return 0, 0, err
 	}
 	if err := src.Close(); err != nil {
-		return err
+		return 0, 0, err
 	}
 	if err := os.Chmod(tmp, info.Mode().Perm()); err != nil {
-		return err
+		return 0, 0, err
 	}
-	after, err := os.Stat(tmp)
+	fresh, err := os.Stat(tmp)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	if err := os.Rename(tmp, path); err != nil {
+		return 0, 0, err
+	}
+	return info.Size(), fresh.Size(), nil
+}
+
+func filter(path string, out io.Writer) error {
+	var s summary
+	before, after, err := rewrite(path, func(src, dst *bolt.DB) (err error) {
+		s, err = copyKept(src, dst)
+		return err
+	})
+	if err != nil {
 		return err
 	}
 	ids := make([]string, 0, len(s.dropped))
@@ -176,7 +207,7 @@ func filter(path string, out io.Writer) (err error) {
 		fmt.Fprintf(out, "dropped %s: %d buckets\n", label, s.dropped[id])
 	}
 	fmt.Fprintf(out, "kept %d buckets, and %d of %d vulnerability details\n", s.kept, s.detailsKept, s.details)
-	fmt.Fprintf(out, "%d bytes before, %d bytes after\n", info.Size(), after.Size())
+	fmt.Fprintf(out, "%d bytes before, %d bytes after\n", before, after)
 	return nil
 }
 
@@ -274,7 +305,7 @@ func copyKept(src, dst *bolt.DB) (summary, error) {
 				if !ids[string(k)] {
 					continue
 				}
-				trimmed, err := keepVendors(v, vendors)
+				trimmed, err := trimDetail(v, vendors, nil)
 				if err != nil {
 					return fmt.Errorf("the detail of %q: %w", k, err)
 				}
@@ -390,16 +421,19 @@ func isVendorMap(name string) bool {
 	return name == "VendorSeverity" || name == "CVSS"
 }
 
-// keepVendors reduces a vulnerability detail's VendorSeverity and CVSS to the vendors' keys, in
-// their order, and leaves either out when nothing is left (trivy-db's omitempty); every other
-// member keeps its bytes.
-func keepVendors(detail []byte, vendors map[string]bool) ([]byte, error) {
+// trimDetail reduces a vulnerability detail's VendorSeverity and CVSS to the vendors' keys, in
+// their order, and leaves either out when nothing is left (trivy-db's omitempty); it drops the
+// members that drop names, and every other member keeps its bytes.
+func trimDetail(detail []byte, vendors, drop map[string]bool) ([]byte, error) {
 	members, err := fields(detail)
 	if err != nil {
 		return nil, err
 	}
 	out := members[:0]
 	for _, m := range members {
+		if drop[m.name] {
+			continue
+		}
 		if isVendorMap(m.name) && !bytes.Equal(m.value, []byte("null")) {
 			inner, err := fields(m.value)
 			if err != nil {
@@ -414,6 +448,291 @@ func keepVendors(detail []byte, vendors map[string]bool) ([]byte, error) {
 		out = append(out, m)
 	}
 	return join(out), nil
+}
+
+// texts are the members of a vulnerability detail that the -fixture mode drops (ruling R12).
+var texts = map[string]bool{"Title": true, "Description": true}
+
+// allowlist says what the -fixture mode keeps of a bucket: a JSON list of keys that stay whole (a
+// value, or a nested bucket with everything in it), or a JSON object of nested buckets, each with
+// its own allowlist. The file is an object of top-level buckets.
+type allowlist struct {
+	keys   []string
+	nested map[string]*allowlist // nil for a list
+}
+
+var errNotAllowlist = errors.New("not a list of keys or an object of nested buckets")
+
+func (a *allowlist) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	switch {
+	case bytes.HasPrefix(data, []byte("[")):
+		return json.Unmarshal(data, &a.keys)
+	case bytes.HasPrefix(data, []byte("{")):
+		a.nested = map[string]*allowlist{}
+		return json.Unmarshal(data, &a.nested)
+	}
+	return errNotAllowlist
+}
+
+func readAllowlist(path string) (map[string]*allowlist, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, err
+	}
+	var top map[string]*allowlist
+	if err := json.Unmarshal(data, &top); err != nil {
+		return nil, fmt.Errorf("the allowlist %s: %w", path, err)
+	}
+	if len(top) == 0 {
+		return nil, fmt.Errorf("the allowlist %s names no bucket", path)
+	}
+	for name := range top {
+		if isMetadata(name) {
+			return nil, fmt.Errorf("the allowlist %s names %q, which the fixture fills itself", path, name)
+		}
+	}
+	return top, nil
+}
+
+func fixture(allowlistPath, path string, out io.Writer) error {
+	top, err := readAllowlist(allowlistPath)
+	if err != nil {
+		return err
+	}
+	var kept, details int
+	before, after, err := rewrite(path, func(src, dst *bolt.DB) (err error) {
+		kept, details, err = copyListed(src, dst, top)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "kept %d buckets, and %d vulnerability details\n", kept, details)
+	fmt.Fprintf(out, "%d bytes before, %d bytes after\n", before, after)
+	return nil
+}
+
+// copyListed copies the buckets of the allowlist, as much of each as it lists; their data-source
+// entries; and the vulnerability details they reference, without texts, with VendorSeverity and
+// CVSS reduced to their sources and nvd. It answers the counts of buckets and details.
+func copyListed(src, dst *bolt.DB, top map[string]*allowlist) (kept, details int, err error) {
+	names := slices.Sorted(maps.Keys(top))
+	entries := map[string][]byte{}
+	vendors := map[string]bool{nvd: true}
+	err = src.View(func(tx *bolt.Tx) error {
+		sources := tx.Bucket([]byte(dataSourceBucket))
+		if sources == nil || tx.Bucket([]byte(vulnerabilityBucket)) == nil {
+			return fmt.Errorf("the %s or %s bucket is missing", dataSourceBucket, vulnerabilityBucket)
+		}
+		for _, name := range names {
+			if tx.Bucket([]byte(name)) == nil {
+				return fmt.Errorf("no bucket %q", name)
+			}
+			entry := sources.Get([]byte(name))
+			if entry == nil {
+				continue
+			}
+			id, err := sourceID(entry)
+			if err != nil {
+				return fmt.Errorf("the data-source entry of %q: %w", name, err)
+			}
+			vendors[id] = true
+			entries[name] = bytes.Clone(entry)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	err = src.View(func(stx *bolt.Tx) error {
+		for _, name := range names {
+			path := [][]byte{[]byte(name)}
+			if err := copyAllowed(stx.Bucket(path[0]), dst, path, top[name], strconv.Quote(name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	ids := map[string]bool{}
+	err = dst.View(func(dtx *bolt.Tx) error {
+		for _, name := range names {
+			referenced(dtx.Bucket([]byte(name)), 1, ids)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	err = dst.Update(func(dtx *bolt.Tx) error {
+		to, err := dtx.CreateBucket([]byte(dataSourceBucket))
+		if err != nil {
+			return err
+		}
+		to.FillPercent = 1.0
+		for _, name := range names {
+			if entry, ok := entries[name]; ok {
+				if err := to.Put([]byte(name), entry); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	err = src.View(func(stx *bolt.Tx) error {
+		from := stx.Bucket([]byte(vulnerabilityBucket))
+		return dst.Update(func(dtx *bolt.Tx) error {
+			to, err := dtx.CreateBucket([]byte(vulnerabilityBucket))
+			if err != nil {
+				return err
+			}
+			to.FillPercent = 1.0
+			for _, id := range slices.Sorted(maps.Keys(ids)) {
+				// An RHSA id or a Red Hat CPE key has no detail.
+				v := from.Get([]byte(id))
+				if v == nil {
+					continue
+				}
+				trimmed, err := trimDetail(v, vendors, texts)
+				if err != nil {
+					return fmt.Errorf("the detail of %q: %w", id, err)
+				}
+				if err := to.Put([]byte(id), trimmed); err != nil {
+					return err
+				}
+				details++
+			}
+			return nil
+		})
+	})
+	return len(names), details, err
+}
+
+// whole is the allowlist of a bucket that a list keeps with everything in it.
+var whole = &allowlist{}
+
+// copyAllowed creates the bucket at path in dst and copies into it what the allowlist keeps of the
+// source bucket `from`, which `at` names in errors. Each bucket gets its own write transaction:
+// bbolt writes the buckets a transaction changed in Go's map order, so two in one transaction would
+// land on pages in a random order, and the same input would not give the same file.
+func copyAllowed(from *bolt.Bucket, dst *bolt.DB, path [][]byte, list *allowlist, at string) error {
+	if list == nil {
+		return fmt.Errorf("the allowlist of %s: %w", at, errNotAllowlist)
+	}
+	// The source's keys and values stay valid while the caller's read transaction is open.
+	var values [][2][]byte
+	var children []string
+	lists := map[string]*allowlist{}
+	switch {
+	case list == whole:
+		c := from.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			if v == nil && from.Bucket(k) != nil {
+				children = append(children, string(k))
+				lists[string(k)] = whole
+			} else {
+				values = append(values, [2][]byte{k, v})
+			}
+		}
+	case list.nested != nil:
+		for _, name := range slices.Sorted(maps.Keys(list.nested)) {
+			if from.Bucket([]byte(name)) == nil {
+				return fmt.Errorf("%s / %q is not a bucket", at, name)
+			}
+			children = append(children, name)
+			lists[name] = list.nested[name]
+		}
+	default:
+		for _, key := range slices.Sorted(slices.Values(list.keys)) {
+			if from.Bucket([]byte(key)) != nil {
+				children = append(children, key)
+				lists[key] = whole
+				continue
+			}
+			v := from.Get([]byte(key))
+			if v == nil {
+				return fmt.Errorf("%s has no key %q", at, key)
+			}
+			values = append(values, [2][]byte{[]byte(key), v})
+		}
+	}
+	err := dst.Update(func(tx *bolt.Tx) error {
+		var to *bolt.Bucket
+		var err error
+		if len(path) == 1 {
+			to, err = tx.CreateBucket(path[0])
+		} else {
+			parent := tx.Bucket(path[0])
+			for _, name := range path[1 : len(path)-1] {
+				parent = parent.Bucket(name)
+			}
+			to, err = parent.CreateBucket(path[len(path)-1])
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", at, err)
+		}
+		to.FillPercent = 1.0
+		if err := to.SetSequence(from.Sequence()); err != nil {
+			return err
+		}
+		for _, kv := range values {
+			if err := to.Put(kv[0], kv[1]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, name := range children {
+		where := at + " / " + strconv.Quote(name)
+		nested := append(slices.Clip(path), []byte(name))
+		if err := copyAllowed(from.Bucket([]byte(name)), dst, nested, lists[name], where); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// referenced collects the vulnerability ids that a kept bucket's advisories reference: every key
+// at depth 2 or more below a top-level bucket, as collect does, and the CVE IDs that a Red Hat
+// advisory lists in Entries[].Cves, since an RHSA advisory's key is not a vulnerability id.
+func referenced(b *bolt.Bucket, depth int, ids map[string]bool) {
+	c := b.Cursor()
+	for k, v := c.First(); k != nil; k, v = c.Next() {
+		if v == nil {
+			if nested := b.Bucket(k); nested != nil {
+				referenced(nested, depth+1, ids)
+				continue
+			}
+		}
+		if depth < 2 {
+			continue
+		}
+		ids[string(k)] = true
+		var advisory struct {
+			Entries []struct{ Cves []struct{ ID string } }
+		}
+		// Other advisories, and Red Hat CPE's lists of indices, name no CVE there.
+		if json.Unmarshal(v, &advisory) != nil {
+			continue
+		}
+		for _, entry := range advisory.Entries {
+			for _, cve := range entry.Cves {
+				if cve.ID != "" {
+					ids[cve.ID] = true
+				}
+			}
+		}
+	}
 }
 
 // check applies the filter's rules to a database and returns the first one it breaks.

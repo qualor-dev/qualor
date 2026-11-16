@@ -2,15 +2,20 @@ import { closeSync, openSync, readSync } from 'node:fs';
 
 /**
  * A read-only reader of a bbolt file (go.etcd.io/bbolt's format), as much as the checks of
- * trivy-db-filter.test.ts need (0.16 debts D31-1): the top-level bucket names and the entries of a
- * top-level bucket. It takes the meta page with the higher transaction id and walks branch and
- * leaf pages, inline buckets included.
+ * trivy-db-filter.test.ts (0.16 debts D31-1) and trivy-db-fixture.test.ts (0.16 SBOM) need: the
+ * top-level bucket names, and the entries and nested buckets of a bucket. It takes the meta page
+ * with the higher transaction id and walks branch and leaf pages, inline buckets included.
  */
 export interface BoltFile {
   /** The top-level buckets, in key order. */
   readonly topLevel: readonly string[];
-  /** The key/value entries of a top-level bucket (its nested buckets left out). */
-  entries(bucket: string): Map<string, Buffer>;
+  /**
+   * The key/value entries of a top-level bucket (its nested buckets left out), or of the bucket
+   * that `nested` names below it, one level per name.
+   */
+  entries(bucket: string, ...nested: string[]): Map<string, Buffer>;
+  /** The nested buckets of a bucket named as for {@link entries}, in key order. */
+  buckets(bucket: string, ...nested: string[]): string[];
   close(): void;
 }
 
@@ -80,16 +85,29 @@ export function openBolt(file: string): BoltFile {
     };
 
     const top = [...elements(page(meta.readBigUInt64LE(META.root)))].filter((e) => e.bucket);
+    /** The elements of the bucket at a path of names, the first one top-level. */
+    const at = (path: readonly string[]): Element[] => {
+      let level: Element[] = top;
+      path.forEach((name, i) => {
+        const found = level.find((e) => e.bucket && e.key.toString('utf8') === name);
+        if (found === undefined)
+          throw new Error(`${file}: no bucket ${path.slice(0, i + 1).join(' / ')}`);
+        level = [...bucketElements(found.value)];
+      });
+      return level;
+    };
     return {
       topLevel: top.map((e) => e.key.toString('utf8')),
-      entries(bucket) {
-        const found = top.find((e) => e.key.toString('utf8') === bucket);
-        if (found === undefined) throw new Error(`${file}: no bucket ${bucket}`);
+      entries(bucket, ...nested) {
         const out = new Map<string, Buffer>();
-        for (const e of bucketElements(found.value))
+        for (const e of at([bucket, ...nested]))
           if (!e.bucket) out.set(e.key.toString('utf8'), e.value);
         return out;
       },
+      buckets: (bucket, ...nested) =>
+        at([bucket, ...nested])
+          .filter((e) => e.bucket)
+          .map((e) => e.key.toString('utf8')),
       close: () => closeSync(fd),
     };
   } catch (err) {

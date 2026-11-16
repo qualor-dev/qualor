@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -296,5 +297,296 @@ func TestCheckFailsWithTheFirstRuleTheFileBreaks(t *testing.T) {
 				t.Errorf("check: %v, want an error naming %s", err, tc.message)
 			}
 		})
+	}
+}
+
+// tree is a bbolt database as nested maps: a string is a value, a tree a nested bucket.
+type tree = map[string]any
+
+// writeTree writes a database that holds exactly the tree's buckets and values.
+func writeTree(t *testing.T, top tree) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "trivy.db")
+	db, err := bolt.Open(path, 0o644, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var fill func(b *bolt.Bucket, content tree) error
+	fill = func(b *bolt.Bucket, content tree) error {
+		for name, value := range content {
+			switch v := value.(type) {
+			case string:
+				if err := b.Put([]byte(name), []byte(v)); err != nil {
+					return err
+				}
+			case tree:
+				child, err := b.CreateBucket([]byte(name))
+				if err != nil {
+					return err
+				}
+				if err := fill(child, v); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	err = db.Update(func(tx *bolt.Tx) error {
+		for name, content := range top {
+			b, err := tx.CreateBucket([]byte(name))
+			if err != nil {
+				return err
+			}
+			if err := fill(b, content.(tree)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// readTree reads a whole database back as a tree.
+func readTree(t *testing.T, path string) tree {
+	t.Helper()
+	db, err := bolt.Open(path, 0, &bolt.Options{ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var walk func(b *bolt.Bucket) tree
+	walk = func(b *bolt.Bucket) tree {
+		out := tree{}
+		_ = b.ForEach(func(k, v []byte) error {
+			if v == nil {
+				out[string(k)] = walk(b.Bucket(k))
+			} else {
+				out[string(k)] = string(v)
+			}
+			return nil
+		})
+		return out
+	}
+	top := tree{}
+	err = db.View(func(tx *bolt.Tx) error {
+		return tx.ForEach(func(name []byte, b *bolt.Bucket) error {
+			top[string(name)] = walk(b)
+			return nil
+		})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return top
+}
+
+// withoutTexts is a detail of detail() as the -fixture mode leaves it: no Title, no Description.
+func withoutTexts(id string, vendors ...string) string {
+	texts := fmt.Sprintf(`{"Title":"%s: <script> & café","Description":"a > b && c < d",`, id)
+	return "{" + strings.TrimPrefix(detail(id, vendors...), texts)
+}
+
+func writeAllowlist(t *testing.T, text string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "allowlist.json")
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const (
+	alpine         = "alpine 3.20"
+	alpineSource   = `{"ID":"alpine","Name":"Alpine Secdb","URL":"https://secdb.alpinelinux.org/"}`
+	redHat         = "Red Hat"
+	redHatSource   = `{"ID":"redhat-oval","Name":"Red Hat OVAL v2","URL":"https://www.redhat.com/security/data/oval/v2/"}`
+	debianAdvisory = `{"FixedVersion":"1:4.13+dfsg1-1+deb12u1"}`
+)
+
+// osFixture is a database with two OS buckets of two packages each, shaped as the full trivy-db
+// holds them, and the details of their advisories.
+func osFixture() tree {
+	return tree{
+		dataSourceBucket: tree{debian: fixtureSources[debian], alpine: alpineSource},
+		debian: tree{
+			"openssl": tree{"CVE-2025-27587": `{"Severity":1}`},
+			"shadow":  tree{"CVE-2023-29383": debianAdvisory, "CVE-2024-56433": `{"Status":2}`},
+		},
+		alpine: tree{
+			"openssl": tree{"CVE-2024-9143": `{"FixedVersion":"3.3.2-r1"}`},
+			"musl":    tree{"CVE-2025-26519": `{"FixedVersion":"1.2.5-r1"}`},
+		},
+		vulnerabilityBucket: tree{
+			"CVE-2025-27587": detail("CVE-2025-27587", "nvd"),
+			"CVE-2023-29383": detail("CVE-2023-29383", "ubuntu", "debian", "nvd"),
+			"CVE-2024-56433": detail("CVE-2024-56433"),
+			"CVE-2024-9143":  detail("CVE-2024-9143", "nvd", "alpine"),
+			"CVE-2025-26519": detail("CVE-2025-26519", "nvd"),
+		},
+	}
+}
+
+func TestFixtureKeepsTheListedPackagesWithTheirSourcesAndDetailsWithoutTexts(t *testing.T) {
+	path := writeTree(t, osFixture())
+	before := size(t, path)
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"-fixture", writeAllowlist(t, `{"debian 12": ["shadow"]}`), path}, &stdout, &stderr); code != 0 {
+		t.Fatalf("-fixture: exit %d, %s", code, stderr.String())
+	}
+
+	// The texts go (ruling R12); VendorSeverity and CVSS keep the kept source and nvd; every other
+	// byte of a detail stays.
+	want := tree{
+		dataSourceBucket: tree{debian: fixtureSources[debian]},
+		debian:           tree{"shadow": tree{"CVE-2023-29383": debianAdvisory, "CVE-2024-56433": `{"Status":2}`}},
+		vulnerabilityBucket: tree{
+			"CVE-2023-29383": withoutTexts("CVE-2023-29383", "debian", "nvd"),
+			"CVE-2024-56433": withoutTexts("CVE-2024-56433"),
+		},
+	}
+	if got := readTree(t, path); !reflect.DeepEqual(got, want) {
+		t.Errorf("the fixture\n%q\nwant\n%q", got, want)
+	}
+	if after := size(t, path); after >= before {
+		t.Errorf("the fixture has %d bytes, the input %d", after, before)
+	}
+	if !strings.Contains(stdout.String(), "kept 1 buckets, and 2 vulnerability details") {
+		t.Errorf("output %q lacks the summary", stdout.String())
+	}
+	if _, err := os.Stat(path + ".tmp-filter"); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the temporary file is left: %v", err)
+	}
+}
+
+func TestFixtureFollowsNestedListsAndTheCVEsOfRedHatAdvisories(t *testing.T) {
+	full := osFixture()
+	full[dataSourceBucket].(tree)[redHat] = redHatSource
+	// An RHSA advisory names its CVEs in Entries; an unfixed one is keyed by its CVE.
+	rhsa := `{"Entries":[{"FixedVersion":"1:1.1.1k-12.el8_9","Affected":[2129],"Cves":[{"ID":"CVE-2024-0727","Severity":2}]}]}`
+	unfixed := `{"Entries":[{"Affected":[557,2129],"Cves":[{"Severity":1}],"Status":5}]}`
+	full[redHat] = tree{
+		"openssl-libs": tree{"RHSA-2024:1234": rhsa, "CVE-2024-41996": unfixed},
+		"curl":         tree{"CVE-2023-38545": unfixed},
+	}
+	// Red Hat CPE has no data-source entry, as in the real database.
+	full[redHatCPE] = tree{
+		"repository": tree{"rhel-8-for-x86_64-baseos-rpms": "[2129]", "rhel-9-for-x86_64-baseos-rpms": "[2200]"},
+		"nvr":        tree{"ubi8-container-8.10-1-x86_64": "[2129]"},
+		"cpe":        tree{"2129": `"cpe:/o:redhat:enterprise_linux:8::baseos"`},
+	}
+	vulns := full[vulnerabilityBucket].(tree)
+	for _, id := range []string{"CVE-2024-0727", "CVE-2024-41996", "CVE-2023-38545"} {
+		vulns[id] = detail(id, "nvd", "redhat", "redhat-oval")
+	}
+	path := writeTree(t, full)
+	allowlist := `{"Red Hat": ["openssl-libs"], "Red Hat CPE": {"repository": ["rhel-8-for-x86_64-baseos-rpms"]}}`
+	if err := fixture(writeAllowlist(t, allowlist), path, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+
+	want := tree{
+		dataSourceBucket: tree{redHat: redHatSource},
+		redHat:           tree{"openssl-libs": tree{"RHSA-2024:1234": rhsa, "CVE-2024-41996": unfixed}},
+		redHatCPE:        tree{"repository": tree{"rhel-8-for-x86_64-baseos-rpms": "[2129]"}},
+		vulnerabilityBucket: tree{
+			"CVE-2024-0727":  withoutTexts("CVE-2024-0727", "nvd", "redhat-oval"),
+			"CVE-2024-41996": withoutTexts("CVE-2024-41996", "nvd", "redhat-oval"),
+		},
+	}
+	if got := readTree(t, path); !reflect.DeepEqual(got, want) {
+		t.Errorf("the fixture\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestFixtureRefusesAnAllowlistTheDatabaseDoesNotMatch(t *testing.T) {
+	for _, tc := range []struct{ allowlist, message string }{
+		{`{"debian 12": ["openssl", "zlib"]}`, `"zlib"`},
+		{`{"debian 11": ["openssl"]}`, `"debian 11"`},
+		{`{"debian 12": {"openssl": {"CVE-2025-27587": []}}}`, `"CVE-2025-27587"`},
+		{`{"vulnerability": ["CVE-2025-27587"]}`, `"vulnerability"`},
+		{`{"debian 12": "openssl"}`, "allowlist"},
+		{`{}`, "allowlist"},
+	} {
+		t.Run(tc.allowlist, func(t *testing.T) {
+			path := writeTree(t, osFixture())
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture(writeAllowlist(t, tc.allowlist), path, io.Discard); err == nil || !strings.Contains(err.Error(), tc.message) {
+				t.Errorf("fixture: %v, want an error naming %s", err, tc.message)
+			}
+			if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
+				t.Error("the input changed")
+			}
+			if _, err := os.Stat(path + ".tmp-filter"); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("the temporary file is left: %v", err)
+			}
+		})
+	}
+}
+
+func TestFixtureWritesTheSameFileForTheSameInput(t *testing.T) {
+	// Ten packages too large to be inlined in their parent: each has pages of its own, which
+	// bbolt places in the order it writes the buckets of a transaction.
+	packages := tree{}
+	vulns := tree{}
+	var listed []string
+	for i := range 10 {
+		name := fmt.Sprintf("package-%02d", i)
+		listed = append(listed, `"`+name+`"`)
+		advisories := tree{}
+		for j := range 20 {
+			id := fmt.Sprintf("CVE-2024-%02d%03d", i, j)
+			advisories[id] = advisory
+			vulns[id] = detail(id, "nvd", "ubuntu")
+		}
+		packages[name] = advisories
+	}
+	input := writeTree(t, tree{
+		dataSourceBucket:    tree{debian: fixtureSources[debian]},
+		debian:              packages,
+		vulnerabilityBucket: vulns,
+	})
+	data, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowlist := writeAllowlist(t, `{"debian 12": [`+strings.Join(listed, ",")+`]}`)
+	var outputs [][]byte
+	for range 2 {
+		path := filepath.Join(t.TempDir(), "trivy.db")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := fixture(allowlist, path, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, out)
+	}
+	if !bytes.Equal(outputs[0], outputs[1]) {
+		t.Error("two runs over the same input wrote different files")
+	}
+}
+
+func TestFixtureTakesOneAllowlistAndOneDatabase(t *testing.T) {
+	path := writeTree(t, osFixture())
+	allowlist := writeAllowlist(t, `{"debian 12": ["shadow"]}`)
+	for _, args := range [][]string{
+		{"-fixture", allowlist},
+		{"-fixture", allowlist, "-check", path},
+		{"-check", "-fixture", allowlist, path},
+	} {
+		if code := run(args, io.Discard, io.Discard); code != 2 {
+			t.Errorf("%q: exit %d, want 2", args, code)
+		}
 	}
 }
