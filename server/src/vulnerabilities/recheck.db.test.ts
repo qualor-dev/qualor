@@ -87,12 +87,27 @@ const BUSYBOX = osDep('apk', 'busybox', '1.36.1-r29');
 const DEBIAN = { family: 'debian', version: '12.15' };
 const ALPINE = { family: 'alpine', version: '3.20.3' };
 const keyOf = (d: VersionDependencyEntry, os: { family: string; version: string }): string =>
-  osMatchKey(d.ecosystem as OsPackageType, os.family, os.version, d.name, d.version, {
-    name: d.sourceName ?? d.name,
-    version: d.sourceVersion ?? d.version,
-  });
+  osMatchKey(
+    d.ecosystem as OsPackageType,
+    os.family,
+    os.version,
+    d.name,
+    d.version,
+    { name: d.sourceName ?? d.name, version: d.sourceVersion ?? d.version },
+    { arch: d.arch ?? null, modularityLabel: d.modularityLabel ?? null },
+  );
 const PSSL = keyOf(LIBSSL3, DEBIAN);
 const PCRYPTO = keyOf(LIBCRYPTO3, ALPINE);
+/** Red Hat 8.10, and one rpm built for two arches (Task 9b). */
+const REDHAT = { family: 'redhat', version: '8.10' };
+const OPENSSL_LIBS = osDep('rpm', 'openssl-libs', '1:1.1.1k-5.el8_5', 'openssl');
+const OPENSSL_X86 = { ...OPENSSL_LIBS, arch: 'x86_64' };
+const OPENSSL_ARM = { ...OPENSSL_LIBS, arch: 'aarch64' };
+const NODEJS = {
+  ...osDep('rpm', 'nodejs', '1:18.19.0-1.module+el8.9.0+20473+c4e3d824'),
+  arch: 'x86_64',
+  modularityLabel: 'nodejs:18:8090020240112121244:a75119d5',
+};
 
 /** What the fake Trivy finds, per purl. */
 const FINDS: Record<string, string[]> = {
@@ -102,6 +117,8 @@ const FINDS: Record<string, string[]> = {
   [PSSL]: ['CVE-2025-27587'],
   [keyOf(LIBSSL3, { family: 'debian', version: '12.16' })]: ['CVE-2026-1216'],
   [PCRYPTO]: ['CVE-2024-12797'],
+  // A fixed Red Hat advisory lists its arches: this one names x86_64 only.
+  [keyOf(OPENSSL_X86, REDHAT)]: ['CVE-2023-0286'],
 };
 
 /** The GHSA id the fake Trivy gives a CVE as its vendor id. */
@@ -1133,6 +1150,72 @@ describe('vulnerability re-checks', () => {
       expect(await osRows(q)).toEqual([
         `shop-2 deb libssl3@3.0.22-1~deb12u2 ${keyOf(LIBSSL3, debian1216)} CVE-2026-1216`,
       ]);
+    });
+
+    it('keys two rpm rows apart by arch, and gives Trivy the arch and label; deb rows share a key (Task 9b)', async () => {
+      const x86 = await project();
+      const arm = await project();
+      const debAmd = await project();
+      const debArm = await project();
+      await sbomVersion(x86, 'ubi-x86', REDHAT, [OPENSSL_X86, NODEJS]);
+      await sbomVersion(arm, 'ubi-arm', REDHAT, [OPENSSL_ARM]);
+      await sbomVersion(debAmd, 'deb-amd64', DEBIAN, [{ ...LIBSSL3, arch: 'amd64' }]);
+      await sbomVersion(debArm, 'deb-arm64', DEBIAN, [{ ...LIBSSL3, arch: 'arm64' }]);
+
+      const result = await recheck({ projectIds: [x86.id, arm.id, debAmd.id, debArm.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { projects: 4, packages: 4, unchecked: 0 },
+      });
+      const PX86 = keyOf(OPENSSL_X86, REDHAT);
+      const PARM = keyOf(OPENSSL_ARM, REDHAT);
+      const PNODE = keyOf(NODEJS, REDHAT);
+      expect(PX86).toBe(
+        'pkg:rpm/redhat/openssl-libs@1.1.1k-5.el8_5?arch=x86_64&epoch=1&distro=redhat-8.10&upstream=openssl@1%3A1.1.1k-5.el8_5',
+      );
+      expect(PNODE).toContain(
+        '?arch=x86_64&epoch=1&distro=redhat-8.10&modularitylabel=nodejs%3A18%3A',
+      );
+      // One Red Hat SBOM holding both arches and the label, and one Debian key for two arches.
+      expect(runsByGroup().sort()).toEqual(
+        [`redhat 8.10: ${[PX86, PARM, PNODE].sort().join(' ')}`, `debian 12.15: ${PSSL}`].sort(),
+      );
+      const marks = await db().select({ purl: matchedPackages.purl }).from(matchedPackages);
+      expect(marks.map((m) => m.purl).sort()).toEqual([PX86, PARM, PNODE, PSSL].sort());
+      // Each arch gets its own answer: the x86_64 advisory never reaches the aarch64 image.
+      expect(await osRows(x86)).toEqual([
+        `ubi-x86 rpm openssl-libs@1:1.1.1k-5.el8_5 ${PX86} CVE-2023-0286`,
+      ]);
+      expect(await osRows(arm)).toEqual([]);
+      expect(await osRows(debAmd)).toEqual([
+        `deb-amd64 deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+      ]);
+      expect(await osRows(debArm)).toEqual([
+        `deb-arm64 deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+      ]);
+    });
+
+    it('leaves an rpm with a stored arch Trivy must not get unchecked (Task 9b)', async () => {
+      const p = await project();
+      await sbomVersion(p, 'ubi', REDHAT, [
+        OPENSSL_X86,
+        { ...osDep('rpm', 'bad-arch', '1-1'), arch: 'x86 64' },
+        { ...osDep('rpm', 'bad-label', '1-1'), modularityLabel: 'm:s\n' },
+      ]);
+      // A deb's arch is never sent, so it never matters.
+      const unused = { ...osDep('deb', 'unused', '1-1'), arch: 'x 86' };
+      await sbomVersion(p, 'deb', DEBIAN, [unused]);
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: { packages: 2, unchecked: 2, givenUp: { invalid: 2 } },
+      });
+      expect(runsByGroup().sort()).toEqual(
+        [
+          `redhat 8.10: ${keyOf(OPENSSL_X86, REDHAT)}`,
+          `debian 12.15: ${keyOf(osDep('deb', 'unused', '1-1'), DEBIAN)}`,
+        ].sort(),
+      );
     });
 
     it('counts OS packages without a known distribution as unchecked and matches the rest', async () => {

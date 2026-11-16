@@ -231,6 +231,8 @@ describe('osMatchKey (0.16 SBOM, Trivy’s own form, R15: with the source packag
           osVersion,
           sourceName,
           sourceVersion,
+          arch: null,
+          modularityLabel: null,
         }),
       ).toBe(key);
     },
@@ -246,6 +248,8 @@ describe('matchKeyOf', () => {
     osVersion: '12.15',
     sourceName: 'openssl',
     sourceVersion: '3.0.22-1~deb12u2',
+    arch: null,
+    modularityLabel: null,
   };
   const LIBSSL3 =
     'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.22-1~deb12u2';
@@ -281,7 +285,14 @@ describe('matchKeyOf', () => {
   });
 
   it('gives a library its purl, with or without a distribution on the version', () => {
-    const npm = { ecosystem: 'npm', name: 'lodash', version: '4.17.20', sourceName: null };
+    const npm = {
+      ecosystem: 'npm',
+      name: 'lodash',
+      version: '4.17.20',
+      sourceName: null,
+      arch: null,
+      modularityLabel: null,
+    };
     expect(
       matchKeyOf({ ...npm, osFamily: 'debian', osVersion: '12.15', sourceVersion: null }),
     ).toBe(purlOf('npm', 'lodash', '4.17.20'));
@@ -297,6 +308,8 @@ describe('matchKeyOf', () => {
         osVersion: null,
         sourceName: null,
         sourceVersion: null,
+        arch: null,
+        modularityLabel: null,
       }),
     ).toBeNull();
   });
@@ -311,6 +324,8 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
     osVersion: '8.10',
     sourceName: 'openssl',
     sourceVersion: '1:1.1.1k-18.el8_6',
+    arch: null,
+    modularityLabel: null,
   };
 
   it('takes well-formed rows, and leaves absent values to the key rules', () => {
@@ -359,6 +374,8 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
       osVersion: null,
       sourceName: null,
       sourceVersion: null,
+      arch: null,
+      modularityLabel: null,
     };
     // 300 CJK characters encode to 2 700 bytes; 200 to 1 800.
     expect(matchKeyOf({ ...npm, name: '丁'.repeat(300), version: '1' })).toBeNull();
@@ -381,6 +398,8 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
       osVersion: null,
       sourceName: null,
       sourceVersion: null,
+      arch: null,
+      modularityLabel: null,
     };
     expect(validStoredValues(npm)).toBe(true);
     expect(validStoredValues({ ...npm, name: 'left\u0000pad' })).toBe(false);
@@ -397,6 +416,226 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
     expect(validStoredValues({ ...rpm, sourceName: '\u0001'.repeat(200_000) })).toBe(false);
     expect(performance.now() - started).toBeLessThan(500);
   });
+});
+
+describe('arch and modularity label (Task 9b: Red Hat-family matching, R15)', () => {
+  const LABEL = 'nodejs:18:8090020240112121244:a75119d5';
+  const NODEJS = '1:18.19.0-1.module+el8.9.0+20473+c4e3d824';
+  const rpm: MatchKeyInput = {
+    ecosystem: 'rpm',
+    name: 'openssl-libs',
+    version: '1:1.1.1k-12.el8_9',
+    osFamily: 'redhat',
+    osVersion: '8.10',
+    sourceName: 'openssl',
+    sourceVersion: '1:1.1.1k-12.el8_9',
+    arch: 'x86_64',
+    modularityLabel: null,
+  };
+  const OPENSSL_LIBS =
+    'pkg:rpm/redhat/openssl-libs@1.1.1k-12.el8_9?arch=x86_64&epoch=1&distro=redhat-8.10&upstream=openssl@1%3A1.1.1k-12.el8_9';
+
+  it.each([
+    [
+      'arch, epoch and source',
+      ['openssl-libs', '1:1.1.1k-12.el8_9', 'openssl', 'x86_64', null],
+      OPENSSL_LIBS,
+    ],
+    [
+      'arch, epoch, modularity label and source',
+      ['nodejs', NODEJS, 'nodejs', 'x86_64', LABEL],
+      'pkg:rpm/redhat/nodejs@18.19.0-1.module%2Bel8.9.0%2B20473%2Bc4e3d824?arch=x86_64&epoch=1&distro=redhat-8.10&modularitylabel=nodejs%3A18%3A8090020240112121244%3Aa75119d5&upstream=nodejs@1%3A18.19.0-1.module%2Bel8.9.0%2B20473%2Bc4e3d824',
+    ],
+    [
+      'arch without an epoch',
+      ['tzdata', '2026f-1.el8_10', 'tzdata', 'noarch', null],
+      'pkg:rpm/redhat/tzdata@2026f-1.el8_10?arch=noarch&distro=redhat-8.10&upstream=tzdata@2026f-1.el8_10',
+    ],
+    [
+      'a modularity label without an arch',
+      ['x', '1-1', 'x', null, 'm:s:1:c'],
+      'pkg:rpm/redhat/x@1-1?distro=redhat-8.10&modularitylabel=m%3As%3A1%3Ac&upstream=x@1-1',
+    ],
+    [
+      'neither: Task 9’s key',
+      ['openssl-libs', '1:1.1.1k-12.el8_9', 'openssl', null, null],
+      'pkg:rpm/redhat/openssl-libs@1.1.1k-12.el8_9?epoch=1&distro=redhat-8.10&upstream=openssl@1%3A1.1.1k-12.el8_9',
+    ],
+    [
+      'an encoded arch',
+      ['x', '1-1', 'x', 'a+b', null],
+      'pkg:rpm/redhat/x@1-1?arch=a%2Bb&distro=redhat-8.10&upstream=x@1-1',
+    ],
+  ] as const)(
+    'rpm, %s: qualifiers in the order arch, epoch, distro, modularitylabel, upstream',
+    (_why, [name, version, sourceName, arch, modularityLabel], expected) => {
+      const key = osMatchKey(
+        'rpm',
+        'redhat',
+        '8.10',
+        name,
+        version,
+        { name: sourceName, version },
+        { arch, modularityLabel },
+      );
+      expect(key).toBe(expected);
+      expect(
+        matchKeyOf({
+          ...rpm,
+          name,
+          version,
+          sourceName,
+          sourceVersion: version,
+          arch,
+          modularityLabel,
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it('writes no qualifier for an empty arch or label, as for none', () => {
+    const none = matchKeyOf({ ...rpm, arch: null });
+    expect(matchKeyOf({ ...rpm, arch: '', modularityLabel: '' })).toBe(none);
+    expect(none).not.toContain('arch=');
+  });
+
+  it('gives two keys to two rpm rows that differ only in arch, or only in label', () => {
+    const keys = new Set([
+      matchKeyOf(rpm),
+      matchKeyOf({ ...rpm, arch: 'aarch64' }),
+      matchKeyOf({ ...rpm, arch: null }),
+      matchKeyOf({ ...rpm, modularityLabel: LABEL }),
+    ]);
+    expect(keys.size).toBe(4);
+  });
+
+  it('leaves deb and apk keys as they are: their Trivy detectors do not read the arch', () => {
+    const deb = {
+      ...rpm,
+      ecosystem: 'deb',
+      name: 'libssl3',
+      version: '3.0.22-1~deb12u2',
+      osFamily: 'debian',
+      osVersion: '12.15',
+      sourceVersion: '3.0.22-1~deb12u2',
+    };
+    const libssl3 =
+      'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.22-1~deb12u2';
+    expect(matchKeyOf({ ...deb, arch: 'amd64', modularityLabel: LABEL })).toBe(libssl3);
+    expect(matchKeyOf({ ...deb, arch: 'arm64' })).toBe(libssl3);
+    expect(matchKeyOf({ ...deb, arch: null })).toBe(libssl3);
+    // Not even a bad stored value makes them unchecked: it is never sent.
+    expect(matchKeyOf({ ...deb, arch: 'x 86\n', modularityLabel: '\u0001' })).toBe(libssl3);
+    const apk = {
+      ...deb,
+      ecosystem: 'apk',
+      name: 'libcrypto3',
+      version: '3.3.2-r0',
+      osFamily: 'alpine',
+      osVersion: '3.20.3',
+      sourceVersion: '3.3.2-r0',
+    };
+    const libcrypto3 = 'pkg:apk/alpine/libcrypto3@3.3.2-r0?distro=3.20.3&upstream=openssl@3.3.2-r0';
+    expect(matchKeyOf({ ...apk, arch: 'x86_64' })).toBe(libcrypto3);
+    expect(matchKeyOf({ ...apk, arch: 'aarch64' })).toBe(libcrypto3);
+    expect(
+      osMatchKey(
+        'deb',
+        'debian',
+        '12.15',
+        'libssl3',
+        '3.0.22-1~deb12u2',
+        { name: 'openssl', version: '3.0.22-1~deb12u2' },
+        { arch: 'amd64', modularityLabel: LABEL },
+      ),
+    ).toBe(libssl3);
+  });
+
+  it.each([
+    ['an arch with a space', { arch: 'x86 64' }],
+    ['an arch with a slash', { arch: 'x86/64' }],
+    ['an arch with a control character', { arch: 'x86_64\n' }],
+    ['a non-ASCII arch', { arch: 'x86_é' }],
+    ['an arch of 65 characters', { arch: 'a'.repeat(65) }],
+    ['a label with a control character', { modularityLabel: `${LABEL}\t` }],
+    ['a label with a C1 control character', { modularityLabel: `${LABEL}\u0085` }],
+    ['a label of 257 characters', { modularityLabel: 'l'.repeat(257) }],
+  ] as const)('leaves an rpm with %s unchecked', (_why, change) => {
+    const row = { ...rpm, ...change };
+    expect(validStoredValues(row)).toBe(false);
+    expect(matchKeyOf(row)).toBeNull();
+    expect(invalidStoredPackage(row)).toBe(true);
+  });
+
+  it('takes an arch of 64 characters and a label of 256', () => {
+    const row = { ...rpm, arch: `${'a'.repeat(58)}_.+-Z9`, modularityLabel: 'l'.repeat(256) };
+    expect(validStoredValues(row)).toBe(true);
+    expect(matchKeyOf(row)).toContain('&modularitylabel=llll');
+  });
+
+  it('keeps the 2 000-byte bound: a long non-ASCII label gives no key', () => {
+    const row = { ...rpm, modularityLabel: '模'.repeat(256) };
+    expect(validStoredValues(row)).toBe(true);
+    expect(matchKeyOf(row)).toBeNull();
+    expect(invalidStoredPackage(row)).toBe(true);
+  });
+
+  /** The entry `parseSbom` stores for an uploaded package whose purl is this key. */
+  const reread = (key: string) => {
+    const result = parseSbom(
+      JSON.stringify({
+        bomFormat: 'CycloneDX',
+        specVersion: '1.6',
+        components: [
+          { type: 'operating-system', name: 'redhat', version: '8.10' },
+          { type: 'library', name: 'x', purl: key },
+        ],
+      }),
+    );
+    if (!('inventory' in result)) throw new Error(JSON.stringify(result.refusal));
+    return result.inventory.entries[0]!;
+  };
+
+  it.each([
+    ['openssl-libs', '1:1.1.1k-12.el8_9', 'openssl', 'x86_64', null],
+    ['nodejs', NODEJS, 'nodejs', 'x86_64', LABEL],
+    ['x', '1-1', 'x', null, 'm:s:1:c'],
+    ['libstdc++', '8.5.0-31.el8_10', 'gcc', 'aarch64', null],
+  ] as const)(
+    'round trip: %s %s, its key re-imported, keeps its arch and label and keys the same',
+    (name, version, sourceName, arch, modularityLabel) => {
+      const key = osMatchKey(
+        'rpm',
+        'redhat',
+        '8.10',
+        name,
+        version,
+        { name: sourceName, version },
+        { arch, modularityLabel },
+      );
+      const e = reread(key);
+      expect(e).toMatchObject({
+        name,
+        version,
+        source: { name: sourceName, version },
+        arch,
+        modularityLabel,
+      });
+      expect(
+        matchKeyOf({
+          ecosystem: e.ecosystem,
+          name: e.name,
+          version: e.version,
+          osFamily: 'redhat',
+          osVersion: '8.10',
+          sourceName: e.source?.name ?? null,
+          sourceVersion: e.source?.version ?? null,
+          arch: e.arch,
+          modularityLabel: e.modularityLabel,
+        }),
+      ).toBe(key);
+    },
+  );
 });
 
 describe('ecosystemsOfType', () => {

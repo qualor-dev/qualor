@@ -298,6 +298,15 @@ describe('migration 0020_versions', () => {
       });
     expect(await sqlStateOf(dep({ sourceName: 's'.repeat(513) }))).toBe(PG_CHECK_VIOLATION);
     expect(await sqlStateOf(dep({ sourceVersion: 'v'.repeat(257) }))).toBe(PG_CHECK_VIOLATION);
+    // The package arch and the RPM modularity label (Task 9b): at most 64 and 256 characters.
+    expect(await sqlStateOf(dep({ arch: 'a'.repeat(65) }))).toBe(PG_CHECK_VIOLATION);
+    expect(await sqlStateOf(dep({ modularityLabel: 'l'.repeat(257) }))).toBe(PG_CHECK_VIOLATION);
+    await dep({ name: 'at-bounds', arch: 'a'.repeat(64), modularityLabel: 'l'.repeat(256) });
+    const [kept] = await t.db
+      .select({ arch: versionDependencies.arch, label: versionDependencies.modularityLabel })
+      .from(versionDependencies)
+      .where(eq(versionDependencies.name, 'at-bounds'));
+    expect(kept).toEqual({ arch: 'a'.repeat(64), label: 'l'.repeat(256) });
   });
 
   it("still refuses source 'other'", async () => {

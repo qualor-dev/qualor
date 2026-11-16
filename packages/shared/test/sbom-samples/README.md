@@ -36,24 +36,25 @@ cdxgen moved to the `cdxgen` organisation: `ghcr.io/cyclonedx/cdxgen` stops at 1
 
 ## Files
 
-| File                       | Tool                | Source                     | Format             | Trimmed                                                     |
-| -------------------------- | ------------------- | -------------------------- | ------------------ | ----------------------------------------------------------- |
-| `trivy-debian.cdx.json`    | Trivy               | Debian image               | CycloneDX 1.7      | to the 22 Debian packages below                             |
-| `syft-debian.cdx.json`     | Syft                | Debian image               | CycloneDX 1.6      | to the same 22 packages; `file` components dropped          |
-| `trivy-alpine.cdx.json`    | Trivy               | Alpine image               | CycloneDX 1.7      | no (14 packages)                                            |
-| `trivy-ubi8.cdx.json`      | Trivy               | UBI 8 image                | CycloneDX 1.7      | to the 21 Red Hat packages below                            |
-| `syft-ubi8.cdx.json`       | Syft                | UBI 8 image                | CycloneDX 1.5      | to the same 21 packages; `file` components dropped          |
-| `syft-node.cdx-1.4.json`   | Syft                | Node project               | CycloneDX 1.4      | no                                                          |
-| `trivy-debian.spdx.json`   | Trivy               | Debian image               | SPDX 2.3           | to the same 22 packages, the OS package and the image root  |
-| `syft-debian.spdx.json`    | Syft                | Debian image               | SPDX 2.3           | to the same 22 packages and the image root; `files` dropped |
-| `syft-node.spdx-2.2.json`  | Syft                | Node project               | SPDX 2.2           | no                                                          |
-| `spdx-3.0.json`            | Syft                | Node project               | SPDX 3.0.1 JSON-LD | no                                                          |
-| `spdx.tag-value.spdx`      | Syft                | Node project               | SPDX 2.3 tag-value | no (byte for byte)                                          |
-| `cyclonedx.xml`            | Syft                | Node project               | CycloneDX 1.7 XML  | no (byte for byte)                                          |
-| `cdxgen-node.cdx-1.7.json` | cdxgen              | Node project               | CycloneDX 1.7      | no                                                          |
-| `cdxgen-node.cdx-1.5.json` | cdxgen `convert.js` | `cdxgen-node.cdx-1.7.json` | CycloneDX 1.5      | no                                                          |
-| `vendor-nested.cdx.json`   | by hand             | none                       | CycloneDX 1.6      | not applicable                                              |
-| `in-toto.json`             | by hand             | none                       | DSSE envelope      | not applicable                                              |
+| File                           | Tool                | Source                     | Format             | Trimmed                                                     |
+| ------------------------------ | ------------------- | -------------------------- | ------------------ | ----------------------------------------------------------- |
+| `trivy-debian.cdx.json`        | Trivy               | Debian image               | CycloneDX 1.7      | to the 22 Debian packages below                             |
+| `syft-debian.cdx.json`         | Syft                | Debian image               | CycloneDX 1.6      | to the same 22 packages; `file` components dropped          |
+| `trivy-alpine.cdx.json`        | Trivy               | Alpine image               | CycloneDX 1.7      | no (14 packages)                                            |
+| `trivy-ubi8.cdx.json`          | Trivy               | UBI 8 image                | CycloneDX 1.7      | to the 21 Red Hat packages below                            |
+| `trivy-ubi8-outdated.cdx.json` | derived             | `trivy-ubi8.cdx.json`      | CycloneDX 1.7      | no; `openssl-libs` made older (below)                       |
+| `syft-ubi8.cdx.json`           | Syft                | UBI 8 image                | CycloneDX 1.5      | to the same 21 packages; `file` components dropped          |
+| `syft-node.cdx-1.4.json`       | Syft                | Node project               | CycloneDX 1.4      | no                                                          |
+| `trivy-debian.spdx.json`       | Trivy               | Debian image               | SPDX 2.3           | to the same 22 packages, the OS package and the image root  |
+| `syft-debian.spdx.json`        | Syft                | Debian image               | SPDX 2.3           | to the same 22 packages and the image root; `files` dropped |
+| `syft-node.spdx-2.2.json`      | Syft                | Node project               | SPDX 2.2           | no                                                          |
+| `spdx-3.0.json`                | Syft                | Node project               | SPDX 3.0.1 JSON-LD | no                                                          |
+| `spdx.tag-value.spdx`          | Syft                | Node project               | SPDX 2.3 tag-value | no (byte for byte)                                          |
+| `cyclonedx.xml`                | Syft                | Node project               | CycloneDX 1.7 XML  | no (byte for byte)                                          |
+| `cdxgen-node.cdx-1.7.json`     | cdxgen              | Node project               | CycloneDX 1.7      | no                                                          |
+| `cdxgen-node.cdx-1.5.json`     | cdxgen `convert.js` | `cdxgen-node.cdx-1.7.json` | CycloneDX 1.5      | no                                                          |
+| `vendor-nested.cdx.json`       | by hand             | none                       | CycloneDX 1.6      | not applicable                                              |
+| `in-toto.json`                 | by hand             | none                       | DSSE envelope      | not applicable                                              |
 
 SPDX trimming keeps the packages of the same list, the OS package (Trivy), the root package and the relationships whose two ends are kept, plus the `hasExtractedLicensingInfos` that the kept packages reference. Syft's `files` and every relationship to a file are dropped. The SPDX files were pretty-printed by Prettier like the others.
 
@@ -103,6 +104,22 @@ docker run --rm --network none -v "$SRC:/app" -v "$OUT:/out" <cdxgen image> \
 docker run --rm --network none -v "$OUT:/out" --entrypoint node <cdxgen image> \
   /opt/cdxgen/bin/convert.js -i /out/cdxgen-node.cdx-1.7.json --to 1.5 -o /out/cdxgen-node.cdx-1.5.json --json-pretty
 ```
+
+## Derived file
+
+`trivy-ubi8-outdated.cdx.json` is `trivy-ubi8.cdx.json` with an older `openssl-libs`, so that fixed Red Hat advisories apply. Those advisories list their arches, and Trivy matches them only by the package's arch. The server's real test (`server/test/sbom-os-matching.db.test.ts`, case (f)) reads it.
+
+Only the `openssl-libs` component and the references to it change: `1.1.1k-18.el8_6` becomes `1.1.1k-5.el8_5`, a real earlier build of RHEL 8. Eleven lines differ:
+
+| Where                                                                       | Before                                                                               | After                                |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------ |
+| `version`                                                                   | `1:1.1.1k-18.el8_6`                                                                  | `1:1.1.1k-5.el8_5`                   |
+| `purl` and `bom-ref`                                                        | `pkg:rpm/redhat/openssl-libs@1.1.1k-18.el8_6?arch=x86_64&distro=redhat-8.10&epoch=1` | the same with `@1.1.1k-5.el8_5`      |
+| property `aquasecurity:trivy:PkgID`                                         | `openssl-libs@1.1.1k-18.el8_6.x86_64`                                                | `openssl-libs@1.1.1k-5.el8_5.x86_64` |
+| property `aquasecurity:trivy:SrcRelease`                                    | `18.el8_6`                                                                           | `5.el8_5`                            |
+| the six `dependencies` references to the purl (one `ref`, five `dependsOn`) | old purl                                                                             | new purl                             |
+
+The `hashes`, licences, layer properties and `SrcVersion` (`1.1.1k`) and `SrcEpoch` (`1`) are kept. The file was written with `JSON.stringify(doc, null, 2)` and then Prettier.
 
 ## Hand-written files
 

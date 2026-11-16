@@ -172,6 +172,11 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
   const SYFT_DEBIAN = sample('syft-debian.spdx.json');
   const TRIVY_ALPINE = sample('trivy-alpine.cdx.json');
   const TRIVY_UBI8 = sample('trivy-ubi8.cdx.json');
+  /**
+   * The UBI 8 file with an older openssl-libs (1:1.1.1k-5.el8_5, sample README): fixed Red Hat
+   * advisories apply, and they match only by the package's arch (Task 9b).
+   */
+  const TRIVY_UBI8_OUTDATED = sample('trivy-ubi8-outdated.cdx.json');
   const CDX = 'application/vnd.cyclonedx+json';
   /**
    * A Red Hat release no Trivy database has content sets for: Trivy 0.74.0 exits 1 on it
@@ -186,6 +191,7 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
   let syft: { projectId: string; versionId: string };
   let alpine: { projectId: string; versionId: string };
   let ubi8: { projectId: string; versionId: string };
+  let ubi8Outdated: { projectId: string; versionId: string };
   let odd: { projectId: string; versionId: string };
   /** The Syft file's findings from a re-check of its project alone (nothing to borrow from). */
   let syftAlone: Findings;
@@ -235,6 +241,11 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
     debian = await upload({ name: 'trivy debian', text: TRIVY_DEBIAN, contentType: CDX });
     alpine = await upload({ name: 'trivy alpine', text: TRIVY_ALPINE, contentType: CDX });
     ubi8 = await upload({ name: 'trivy ubi8', text: TRIVY_UBI8, contentType: CDX });
+    ubi8Outdated = await upload({
+      name: 'trivy ubi8 outdated',
+      text: TRIVY_UBI8_OUTDATED,
+      contentType: CDX,
+    });
     syft = await upload({
       name: 'syft debian',
       text: SYFT_DEBIAN,
@@ -259,7 +270,7 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
   it('the full re-check is done, with the odd distribution left unchecked', async () => {
     expect(full).toMatchObject({ kind: 'done' });
     if (full.kind !== 'done') return;
-    expect(full.summary.projects).toBe(5);
+    expect(full.summary.projects).toBe(6);
     expect(full.summary.unchecked).toBeGreaterThanOrEqual(1);
     // Given up as a distribution Trivy cannot scan, and shown so (R16).
     expect(full.summary.givenUp).toEqual({
@@ -328,5 +339,22 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
     expect(qualor.size).toBeGreaterThan(0);
     expect(sorted(qualor)).toEqual(sorted(trivy.findings));
     console.info(`(d) trivy-ubi8.cdx.json: ${qualor.size} findings`);
+  });
+
+  it('(f) an outdated UBI 8 SBOM: the fixed Red Hat advisories match by arch, as in trivy sbom', async () => {
+    const trivy = await direct('ubi8-outdated', TRIVY_UBI8_OUTDATED);
+    expect(trivy.status, trivy.stderr).toBe(0);
+    const qualor = await qualorFindings(ubi8Outdated.projectId);
+    expect(qualor.size).toBeGreaterThan(0);
+    expect(sorted(qualor)).toEqual(sorted(trivy.findings));
+    // Fixed advisories (RHSAs list their arches): missed without the arch.
+    expect(qualor).toContain('openssl-libs@1:1.1.1k-5.el8_5 CVE-2022-0778');
+    expect(qualor).toContain('openssl-libs@1:1.1.1k-5.el8_5 CVE-2023-0286');
+    const rpms = await ctx.db
+      .select({ arch: versionDependencies.arch })
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, ubi8Outdated.versionId));
+    expect(new Set(rpms.map((r) => r.arch))).toEqual(new Set(['x86_64', 'noarch']));
+    console.info(`(f) trivy-ubi8-outdated.cdx.json: ${qualor.size} findings`);
   });
 });

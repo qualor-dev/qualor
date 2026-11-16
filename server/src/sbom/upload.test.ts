@@ -146,6 +146,8 @@ describe('toVersionEntries', () => {
     licenses: ['MIT'],
     direct: null,
     source: null,
+    arch: null,
+    modularityLabel: null,
     ...over,
   });
 
@@ -195,6 +197,44 @@ describe('toVersionEntries', () => {
         licenses: ['MIT'],
         sourceName: 'openssl',
         sourceVersion: '3.0.15-1~deb12u1',
+      },
+    ]);
+  });
+
+  it('carries the arch and the modularity label an OS package names (0.16, Task 9b)', () => {
+    const source = { name: 'nodejs', version: '1:18.19.0-1.module+el8' };
+    expect(
+      toVersionEntries([
+        entry({
+          ecosystem: 'rpm',
+          name: 'nodejs',
+          version: source.version,
+          path: '',
+          source,
+          arch: 'x86_64',
+          modularityLabel: 'nodejs:18:8090020240112121244:a75119d5',
+        }),
+        entry({ ecosystem: 'deb', name: 'bash', version: '5.2', path: '', arch: 'amd64' }),
+      ]),
+    ).toEqual([
+      {
+        ecosystem: 'rpm',
+        name: 'nodejs',
+        version: source.version,
+        path: '',
+        licenses: ['MIT'],
+        sourceName: 'nodejs',
+        sourceVersion: source.version,
+        arch: 'x86_64',
+        modularityLabel: 'nodejs:18:8090020240112121244:a75119d5',
+      },
+      {
+        ecosystem: 'deb',
+        name: 'bash',
+        version: '5.2',
+        path: '',
+        licenses: ['MIT'],
+        arch: 'amd64',
       },
     ]);
   });

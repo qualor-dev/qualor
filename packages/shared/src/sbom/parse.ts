@@ -7,7 +7,7 @@
 import { REPORT_BOUNDS } from '../report/schema';
 import { readCycloneDx } from './cyclonedx';
 import { cutText, mergeLicenses, SBOM_BOUNDS } from './fields';
-import { isOsPackageType, osFamilyOf, sameOsVersion } from './os';
+import { isModularityLabel, isOsPackageType, isPackageArch, osFamilyOf, sameOsVersion } from './os';
 import { inventoryName, inventoryVersion, type Purl } from './purl';
 import { readSpdx } from './spdx';
 import {
@@ -244,6 +244,25 @@ function fits(source: SbomEntry['source']): source is NonNullable<SbomEntry['sou
   );
 }
 
+/**
+ * The purl's `arch` qualifier (Trivy and Syft write it), when it is one {@link isPackageArch}
+ * takes; null otherwise.
+ */
+function archOf(purl: Purl): string | null {
+  const arch = purl.qualifiers.arch;
+  return arch !== undefined && isPackageArch(arch) ? arch : null;
+}
+
+/**
+ * The purl's `modularitylabel` qualifier (Trivy writes it for a modular RPM), when it is one
+ * {@link isModularityLabel} takes; null otherwise. The purl parser already refused NUL and lone
+ * surrogates.
+ */
+function modularityLabelOf(purl: Purl): string | null {
+  const label = purl.qualifiers.modularitylabel;
+  return label !== undefined && isModularityLabel(label) ? label : null;
+}
+
 /** The SBOM's source package, else the `upstream` qualifier's, else the binary itself. */
 function sourceOf(c: SbomComponent, name: string, version: string): SbomEntry['source'] {
   if (fits(c.source)) return c.source;
@@ -307,6 +326,10 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
       licenses: c.licenses,
       direct: c.direct,
       source: os ? sourceOf(c, name, version) : null,
+      // A duplicate keeps the first entry's: of `glibc.i686` and `glibc.x86_64` (multilib, same
+      // name and version), the one listed first.
+      arch: os ? archOf(c.purl) : null,
+      modularityLabel: os ? modularityLabelOf(c.purl) : null,
     });
   }
 

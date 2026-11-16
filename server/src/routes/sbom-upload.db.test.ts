@@ -174,6 +174,9 @@ describe('PUT /projects/sbom', () => {
       ecosystem: 'deb',
       sourceName: 'openssl',
       analysisId: null,
+      // Stored for every OS package; only an rpm's goes to Trivy (Task 9b).
+      arch: 'amd64',
+      modularityLabel: null,
     });
     // An upload is not an analysis.
     expect(await ctx.db.select().from(analyses).where(eq(analyses.projectId, projectId))).toEqual(

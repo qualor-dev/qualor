@@ -79,6 +79,48 @@ export function osFamilyOf(raw: string): { family: string; known: boolean } {
   return { family, known: TRIVY_OS_FAMILIES.has(family) };
 }
 
+/** The database's bounds on `version_dependencies.arch` and `modularity_label` (migration 0031). */
+export const PACKAGE_ARCH_MAX_CHARS = 64;
+export const MODULARITY_LABEL_MAX_CHARS = 256;
+
+/** `[A-Za-z0-9_.+-]`, by character code. */
+function isArchChar(c: number): boolean {
+  return (
+    (c >= 0x30 && c <= 0x39) ||
+    (c >= 0x41 && c <= 0x5a) ||
+    (c >= 0x61 && c <= 0x7a) ||
+    c === 0x5f ||
+    c === 0x2e ||
+    c === 0x2b ||
+    c === 0x2d
+  );
+}
+
+/**
+ * A package arch as stored and sent to Trivy (`x86_64`, `noarch`, `amd64`): 1 to 64 characters of
+ * `[A-Za-z0-9_.+-]`. One pass over the characters.
+ */
+export function isPackageArch(value: string): boolean {
+  if (value.length === 0 || value.length > PACKAGE_ARCH_MAX_CHARS) return false;
+  for (let i = 0; i < value.length; i++) {
+    if (!isArchChar(value.charCodeAt(i))) return false;
+  }
+  return true;
+}
+
+/**
+ * An RPM modularity label as stored and sent to Trivy (`nodejs:18:8090020240112121244:a75119d5`):
+ * 1 to 256 characters, none a control character (C0, DEL or C1). One pass over the characters.
+ */
+export function isModularityLabel(value: string): boolean {
+  if (value.length === 0 || value.length > MODULARITY_LABEL_MAX_CHARS) return false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) return false;
+  }
+  return true;
+}
+
 /** Equal, or one is the other plus more dot-separated parts (`12` and `12.15`; not `12.1` and `12.15`). */
 export function sameOsVersion(a: string, b: string): boolean {
   if (a === b) return true;

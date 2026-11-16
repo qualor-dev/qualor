@@ -129,8 +129,9 @@ export function sbomLabel(query: string | undefined, subjectVersion: string | nu
 }
 
 /**
- * The entries a version stores: an unknown `direct` is left out, and the source package an OS
- * package was built from becomes `sourceName` and `sourceVersion`.
+ * The entries a version stores: an unknown `direct` is left out, the source package an OS package
+ * was built from becomes `sourceName` and `sourceVersion`, and its arch and modularity label are
+ * kept when the SBOM names them.
  */
 export function toVersionEntries(entries: readonly SbomEntry[]): VersionDependencyEntry[] {
   return entries.map((e) => ({
@@ -141,5 +142,7 @@ export function toVersionEntries(entries: readonly SbomEntry[]): VersionDependen
     licenses: e.licenses,
     ...(e.direct !== null && { direct: e.direct }),
     ...(e.source !== null && { sourceName: e.source.name, sourceVersion: e.source.version }),
+    ...(e.arch !== null && { arch: e.arch }),
+    ...(e.modularityLabel !== null && { modularityLabel: e.modularityLabel }),
   }));
 }

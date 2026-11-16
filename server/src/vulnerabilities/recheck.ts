@@ -170,6 +170,12 @@ interface Package {
   /** The source package an SBOM named; null on a branch and for libraries. */
   sourceName: string | null;
   sourceVersion: string | null;
+  /**
+   * The arch and modularity label an SBOM named for an rpm (Task 9b): Trivy matches Red Hat-family
+   * advisories by them. Null for every other package, so deb and apk rows stay one per key.
+   */
+  arch: string | null;
+  modularityLabel: string | null;
   /** The organisation of the project holding it (first pass only), for R17 and R19. */
   organizationId?: string | null;
 }
@@ -254,21 +260,28 @@ const OS_TYPES = sql`(${sql.join(
   sql`, `,
 )})`;
 
+/** Of the OS package types, the one whose key holds the arch and the modularity label (Task 9b). */
+const RPM = 'rpm';
+
 /**
  * The columns of {@link Package} from `version_dependencies d` joined to its `project_versions v`:
  * the distribution and the source only for OS packages, so a library stays one row per
- * (ecosystem, name, version) across the targets.
+ * (ecosystem, name, version) across the targets; the arch and the modularity label only for rpm,
+ * so a deb or apk package stays one row whatever its arch.
  */
 const VERSION_PACKAGE = sql`d.ecosystem, d.name, d.version,
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN v.os_family END AS "osFamily",
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN v.os_version END AS "osVersion",
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_name END AS "sourceName",
-  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_version END AS "sourceVersion"`;
+  CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_version END AS "sourceVersion",
+  CASE WHEN d.ecosystem = ${RPM} THEN d.arch END AS arch,
+  CASE WHEN d.ecosystem = ${RPM} THEN d.modularity_label END AS "modularityLabel"`;
 /** The organisation of the package's project (`projects p`). */
 const OWNER = sql`p.organization_id::text AS "organizationId"`;
-/** A branch has no distribution and no source packages. */
+/** A branch has no distribution, no source packages, no arch and no modularity label. */
 const BRANCH_PACKAGE = sql`d.ecosystem, d.name, d.version, NULL::text AS "osFamily",
-  NULL::text AS "osVersion", NULL::text AS "sourceName", NULL::text AS "sourceVersion"`;
+  NULL::text AS "osVersion", NULL::text AS "sourceName", NULL::text AS "sourceVersion",
+  NULL::text AS arch, NULL::text AS "modularityLabel"`;
 
 /** The distinct packages of these targets' inventories. */
 async function distinctPackages(db: Db, targets: readonly Target[]): Promise<Package[]> {
@@ -292,10 +305,11 @@ async function distinctPackages(db: Db, targets: readonly Target[]): Promise<Pac
 }
 
 /**
- * What Trivy is given for a package: its match key and, for an OS package, its distribution and
- * source package ({@link osSourceOf}, the one the key holds). Null when it is not checked: no
- * match key ({@link matchKeyOf}: values that fail validation, no purl type, an OS package without
- * a known distribution).
+ * What Trivy is given for a package: its match key (for an rpm, with its arch and modularity label,
+ * which Trivy reads from the purl) and, for an OS package, its distribution and source package
+ * ({@link osSourceOf}, the one the key holds). Null when it is not checked: no match key
+ * ({@link matchKeyOf}: values that fail validation, no purl type, an OS package without a known
+ * distribution).
  */
 function sbomPackageOf(p: Package): SbomPackage | null {
   const purl = matchKeyOf(p);

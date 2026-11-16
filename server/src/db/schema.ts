@@ -705,6 +705,10 @@ export const versionDependencies = pgTable(
     // The source package of a binary one, from an uploaded SBOM (0.16).
     sourceName: text('source_name'),
     sourceVersion: text('source_version'),
+    // An OS package's arch and an RPM's modularity label, from the purl of an uploaded SBOM
+    // (0.16): Trivy matches Red Hat-family advisories by them.
+    arch: text('arch'),
+    modularityLabel: text('modularity_label'),
   },
   (t) => [
     primaryKey({ columns: [t.versionId, t.path, t.ecosystem, t.name, t.version] }),
@@ -713,6 +717,11 @@ export const versionDependencies = pgTable(
     check(
       'version_dependencies_source_check',
       sql`(source_name IS NULL OR char_length(source_name) <= 512) AND (source_version IS NULL OR char_length(source_version) <= 256)`,
+    ),
+    check('version_dependencies_arch_check', sql`arch IS NULL OR char_length(arch) <= 64`),
+    check(
+      'version_dependencies_modularity_label_check',
+      sql`modularity_label IS NULL OR char_length(modularity_label) <= 256`,
     ),
     // Supporting index for the analyses foreign key (set null).
     index('version_dependencies_analysis_idx').on(t.analysisId),

@@ -207,4 +207,41 @@ describe('buildOsSbom', () => {
     expect(bom.components).toHaveLength(2);
     expect(bom.components[1]!.name).toBe('a"b');
   });
+
+  it('gives Trivy an rpm’s arch and modularity label in the purl, its key (Task 9b)', () => {
+    const version = '1:18.19.0-1.module+el8.9.0+20473+c4e3d824';
+    const label = 'nodejs:18:8090020240112121244:a75119d5';
+    const nodejs = {
+      purl: osMatchKey(
+        'rpm',
+        'redhat',
+        '8.10',
+        'nodejs',
+        version,
+        { name: 'nodejs', version },
+        { arch: 'x86_64', modularityLabel: label },
+      ),
+      name: 'nodejs',
+      version,
+      os: {
+        type: 'rpm',
+        family: 'redhat',
+        osVersion: '8.10',
+        sourceName: 'nodejs',
+        sourceVersion: version,
+      },
+    } satisfies SbomPackage;
+    const bom = JSON.parse(buildOsSbom([nodejs])) as {
+      components: { type: string; purl?: string; 'bom-ref'?: string }[];
+    };
+    const component = bom.components.find((c) => c.type !== 'operating-system')!;
+    expect(component.purl).toBe(nodejs.purl);
+    expect(component['bom-ref']).toBe(nodejs.purl);
+    // Trivy 0.74.0 reads only `arch`, `modularitylabel` and `epoch` from a purl.
+    expect(parsePurl(component.purl!)?.qualifiers).toMatchObject({
+      arch: 'x86_64',
+      epoch: '1',
+      modularitylabel: label,
+    });
+  });
 });

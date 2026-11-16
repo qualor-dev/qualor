@@ -316,11 +316,13 @@ const MAX_DEPENDENCY_LICENSES = 16;
 
 /**
  * An inventory entry of a version: a report's, or an uploaded SBOM's, whose OS packages name the
- * source package they were built from (0.16).
+ * source package they were built from, their arch and an RPM's modularity label (0.16).
  */
 export type VersionDependencyEntry = DependencyEntry & {
   sourceName?: string;
   sourceVersion?: string;
+  arch?: string;
+  modularityLabel?: string;
 };
 
 /** One stored inventory row before it gets its branch or version and its analysis. */
@@ -335,6 +337,12 @@ export interface DependencyRowInput {
   /** The source package; null unless an SBOM named one. Stored for versions only. */
   sourceName: string | null;
   sourceVersion: string | null;
+  /**
+   * An OS package's arch and an RPM's modularity label; null unless an SBOM named them. Stored for
+   * versions only.
+   */
+  arch: string | null;
+  modularityLabel: string | null;
 }
 
 /**
@@ -343,8 +351,8 @@ export interface DependencyRowInput {
  * a duplicate (spec §2), but nothing in the report schema forbids one, and a primary-key violation
  * would fail the whole ingestion. Duplicates are merged: the sorted union of their licences (at
  * most {@link MAX_DEPENDENCY_LICENSES}), `direct` true if any says so, else false if any says
- * so, the first known line, and the first known source package. An entry without a duplicate is
- * kept as given.
+ * so, the first known line, the first known source package, the first known arch and the first
+ * known modularity label. An entry without a duplicate is kept as given.
  */
 export function mergeDependencyEntries(
   entries: readonly VersionDependencyEntry[],
@@ -361,6 +369,8 @@ export function mergeDependencyEntries(
       line: e.line ?? null,
       sourceName: e.sourceName ?? null,
       sourceVersion: e.sourceVersion ?? null,
+      arch: e.arch ?? null,
+      modularityLabel: e.modularityLabel ?? null,
     };
     const key = JSON.stringify([row.path, row.ecosystem, row.name, row.version]);
     const seen = rows.get(key);
@@ -378,6 +388,8 @@ export function mergeDependencyEntries(
       seen.sourceName = row.sourceName;
       seen.sourceVersion = row.sourceVersion;
     }
+    seen.arch ??= row.arch;
+    seen.modularityLabel ??= row.modularityLabel;
   }
   return [...rows.values()];
 }
@@ -385,7 +397,8 @@ export function mergeDependencyEntries(
 /**
  * Inserts an inventory's merged rows into `branch_dependencies` or `version_dependencies` (the
  * two tables share their columns; the owner key differs, and only a version stores the source
- * package), in {@link DEPENDENCY_BATCH} chunks. `analysisId` is null for an uploaded SBOM.
+ * package, the arch and the modularity label), in {@link DEPENDENCY_BATCH} chunks. `analysisId`
+ * is null for an uploaded SBOM.
  */
 export async function insertDependencyRows(
   tx: Executor,
@@ -398,9 +411,9 @@ export async function insertDependencyRows(
   const owner = sql.identifier(versions ? 'version_id' : 'branch_id');
   const source = versions
     ? {
-        columns: sql`, source_name, source_version`,
-        values: sql`, r."sourceName", r."sourceVersion"`,
-        record: sql`, "sourceName" text, "sourceVersion" text`,
+        columns: sql`, source_name, source_version, arch, modularity_label`,
+        values: sql`, r."sourceName", r."sourceVersion", r.arch, r."modularityLabel"`,
+        record: sql`, "sourceName" text, "sourceVersion" text, arch text, "modularityLabel" text`,
       }
     : { columns: sql``, values: sql``, record: sql`` };
   const rows = mergeDependencyEntries(entries);

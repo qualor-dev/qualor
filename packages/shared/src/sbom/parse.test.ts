@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { budgetMs } from '../../test/perf';
-import { bom, inventory, lib, os, refusal, sample } from '../../test/sbom';
+import { bom, entry, inventory, lib, os, refusal, sample } from '../../test/sbom';
 import { parseSbom } from './parse';
 
 describe('refusals', () => {
@@ -306,6 +306,134 @@ describe('no distribution', () => {
     const started = performance.now();
     sources(os('redhat', '8.10'), [`pkg:rpm/redhat/a@1-1?upstream=x${at}-1-1.src.rpm`]);
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe('arch and modularity label (Red Hat-family matching)', () => {
+  const LABEL = 'nodejs:18:8090020240112121244:a75119d5';
+  /** The one entry of one purl under one distribution. */
+  const one = (system: ReturnType<typeof os>, purl: string) =>
+    inventory(bom([system, lib(purl)])).entries[0]!;
+
+  it('reads the arch and modularitylabel qualifiers of an rpm', () => {
+    const e = one(
+      os('redhat', '8.10'),
+      `pkg:rpm/redhat/openssl-libs@1.1.1k-12.el8_9?arch=x86_64&epoch=1&modularitylabel=${encodeURIComponent(LABEL)}`,
+    );
+    expect(e).toMatchObject({
+      name: 'openssl-libs',
+      version: '1:1.1.1k-12.el8_9',
+      arch: 'x86_64',
+      modularityLabel: LABEL,
+    });
+    const plain = one(os('redhat', '8.10'), 'pkg:rpm/redhat/bash@4.4.20-6.el8_10');
+    expect([plain.arch, plain.modularityLabel]).toEqual([null, null]);
+  });
+
+  it('reads the arch of deb and apk packages too (unused downstream)', () => {
+    expect(one(os('debian', '12.15'), 'pkg:deb/debian/libssl3@3.0.22-1?arch=amd64')).toMatchObject({
+      arch: 'amd64',
+      modularityLabel: null,
+    });
+    expect(
+      one(os('alpine', '3.20.3'), 'pkg:apk/alpine/busybox@1.36.1-r29?arch=x86_64'),
+    ).toMatchObject({ arch: 'x86_64', modularityLabel: null });
+  });
+
+  it('sets neither for a library, whatever its purl carries', () => {
+    expect(
+      one(os('debian', '12'), `pkg:npm/a@1?arch=x86_64&modularitylabel=${LABEL}`),
+    ).toMatchObject({ arch: null, modularityLabel: null });
+  });
+
+  it.each([
+    ['a space', 'x86%2064'],
+    ['a slash', 'x86%2F64'],
+    ['a newline', 'x86_64%0A'],
+    ['a colon', 'x86:64'],
+    ['a non-ASCII letter', 'x86_%C3%A9'],
+    ['65 characters', 'a'.repeat(65)],
+  ])('drops an arch with %s to null', (_why, arch) => {
+    expect(one(os('redhat', '8.10'), `pkg:rpm/redhat/a@1-1?arch=${arch}`).arch).toBeNull();
+  });
+
+  it('keeps an arch of 64 characters from [A-Za-z0-9_.+-]', () => {
+    const arch = `${'a'.repeat(58)}_.+-Z9`;
+    expect(arch).toHaveLength(64);
+    expect(
+      one(os('redhat', '8.10'), `pkg:rpm/redhat/a@1-1?arch=${encodeURIComponent(arch)}`).arch,
+    ).toBe(arch);
+  });
+
+  it.each([
+    ['a control character', `${LABEL}%0A`],
+    ['a C1 control character', `${LABEL}%C2%85`],
+    ['DEL', `${LABEL}%7F`],
+    ['257 characters', 'l'.repeat(257)],
+  ])('drops a modularity label with %s to null', (_why, label) => {
+    expect(
+      one(os('redhat', '8.10'), `pkg:rpm/redhat/a@1-1?modularitylabel=${label}`).modularityLabel,
+    ).toBeNull();
+  });
+
+  it('keeps a modularity label of 256 characters', () => {
+    const label = 'l'.repeat(256);
+    expect(
+      one(os('redhat', '8.10'), `pkg:rpm/redhat/a@1-1?modularitylabel=${label}`).modularityLabel,
+    ).toBe(label);
+  });
+
+  it('keeps the first arch when one package is listed twice (multilib, a known limit)', () => {
+    const inv = inventory(
+      bom([
+        os('redhat', '8.10'),
+        lib('pkg:rpm/redhat/glibc@2.28-251.el8?arch=x86_64'),
+        lib('pkg:rpm/redhat/glibc@2.28-251.el8?arch=i686'),
+      ]),
+    );
+    expect(inv.entries).toHaveLength(1);
+    expect(inv.entries[0]!.arch).toBe('x86_64');
+    expect(inv.skipped.duplicate).toBe(1);
+  });
+
+  it('reads them back from a re-imported export: the OS match key is the purl', () => {
+    // osMatchKey's rpm form (server/src/vulnerabilities/purl.ts): arch, epoch, distro,
+    // modularitylabel, upstream, each part percent-encoded.
+    const key =
+      'pkg:rpm/redhat/nodejs@18.19.0-1.module%2Bel8.9.0%2B20473%2Bc4e3d824?arch=x86_64&epoch=1&distro=redhat-8.10&modularitylabel=nodejs%3A18%3A8090020240112121244%3Aa75119d5&upstream=nodejs@1%3A18.19.0-1.module%2Bel8.9.0%2B20473%2Bc4e3d824';
+    expect(one(os('redhat', '8.10'), key)).toEqual({
+      ecosystem: 'rpm',
+      name: 'nodejs',
+      version: '1:18.19.0-1.module+el8.9.0+20473+c4e3d824',
+      path: '',
+      licenses: [],
+      direct: null,
+      source: { name: 'nodejs', version: '1:18.19.0-1.module+el8.9.0+20473+c4e3d824' },
+      arch: 'x86_64',
+      modularityLabel: LABEL,
+    });
+  });
+
+  it('reads the arch of every package of the Trivy and Syft UBI 8 samples', () => {
+    for (const file of ['trivy-ubi8.cdx.json', 'syft-ubi8.cdx.json']) {
+      const inv = inventory(sample(file));
+      expect(inv.entries.length, file).toBeGreaterThan(10);
+      for (const e of inv.entries) {
+        expect(['x86_64', 'noarch'], `${file} ${e.name}`).toContain(e.arch);
+      }
+      expect(entry(inv, 'openssl-libs').arch).toBe('x86_64');
+      expect(entry(inv, 'tzdata').arch).toBe('noarch');
+    }
+  });
+
+  it('reads a long hostile arch and label in linear time', () => {
+    const started = performance.now();
+    const e = one(
+      os('redhat', '8.10'),
+      `pkg:rpm/redhat/a@1-1?arch=${'a'.repeat(300_000)}&modularitylabel=${'l'.repeat(300_000)}`,
+    );
+    expect([e.arch, e.modularityLabel]).toEqual([null, null]);
+    expect(performance.now() - started).toBeLessThan(budgetMs(500));
   });
 });
 

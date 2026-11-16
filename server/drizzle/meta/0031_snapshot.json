@@ -1,5 +1,5 @@
 {
-  "id": "151b2499-70cd-4904-afa8-248937a9fad5",
+  "id": "ebd03d01-9871-4492-a6f8-1def7338497f",
   "prevId": "d9bd9a8e-cdd3-4a90-93f8-b742d1585ca5",
   "version": "7",
   "dialect": "postgresql",
@@ -8548,6 +8548,18 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "arch": {
+          "name": "arch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modularity_label": {
+          "name": "modularity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -8629,6 +8641,14 @@
         "version_dependencies_source_check": {
           "name": "version_dependencies_source_check",
           "value": "(source_name IS NULL OR char_length(source_name) <= 512) AND (source_version IS NULL OR char_length(source_version) <= 256)"
+        },
+        "version_dependencies_arch_check": {
+          "name": "version_dependencies_arch_check",
+          "value": "arch IS NULL OR char_length(arch) <= 64"
+        },
+        "version_dependencies_modularity_label_check": {
+          "name": "version_dependencies_modularity_label_check",
+          "value": "modularity_label IS NULL OR char_length(modularity_label) <= 256"
         }
       },
       "isRLSEnabled": false

@@ -10,8 +10,8 @@ const dep = (overrides: Partial<VersionDependencyEntry> = {}): VersionDependency
   ...overrides,
 });
 
-/** What a row without a source package carries. */
-const NO_SOURCE = { sourceName: null, sourceVersion: null };
+/** What a row without a source package, an arch or a modularity label carries. */
+const NO_SOURCE = { sourceName: null, sourceVersion: null, arch: null, modularityLabel: null };
 
 describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and version)', () => {
   it('keeps entries without a duplicate as given, in report order', () => {
@@ -107,6 +107,20 @@ describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and 
     ]);
     expect(rows.map((r) => [r.name, r.sourceName, r.sourceVersion])).toEqual([
       ['libssl3', 'openssl', '3.0.15-1~deb12u1'],
+      ['plain', null, null],
+    ]);
+  });
+
+  it('carries the arch and modularity label, the first known of duplicates (0.16, Task 9b)', () => {
+    const glibc = { ecosystem: 'rpm', path: '', name: 'glibc', version: '2.28-251.el8' };
+    const rows = mergeDependencyEntries([
+      dep({ ...glibc }),
+      dep({ ...glibc, arch: 'x86_64', modularityLabel: 'm:1:2:3' }),
+      dep({ ...glibc, arch: 'i686', modularityLabel: 'n:1:2:3' }),
+      dep({ name: 'plain' }),
+    ]);
+    expect(rows.map((r) => [r.name, r.arch, r.modularityLabel])).toEqual([
+      ['glibc', 'x86_64', 'm:1:2:3'],
       ['plain', null, null],
     ]);
   });

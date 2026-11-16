@@ -29,6 +29,8 @@ describe('trivy debian image', () => {
       // Trivy's graph names the image and the OS under it, not the packages.
       direct: false,
       source: { name: 'openssl', version: '3.0.22-1~deb12u2' },
+      arch: 'amd64',
+      modularityLabel: null,
     });
   });
 
@@ -97,7 +99,8 @@ describe('syft ubi8 rpm', () => {
   });
 
   it("agrees with Trivy's file of the same image", () => {
-    const key = (e: SbomEntry) => `${e.name} ${e.version} ${e.source?.name} ${e.source?.version}`;
+    const key = (e: SbomEntry) =>
+      `${e.name} ${e.version} ${e.source?.name} ${e.source?.version} ${e.arch}`;
     const trivy = inventory(sample('trivy-ubi8.cdx.json'));
     expect(trivy.distribution).toEqual({ family: 'redhat', version: '8.10' });
     expect(inv.entries.map(key).sort()).toEqual(trivy.entries.map(key).sort());

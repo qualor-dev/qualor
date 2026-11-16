@@ -27,6 +27,17 @@ export interface SbomEntry {
   direct: boolean | null;
   /** The source package; set for OS packages (deb, rpm, apk) only. */
   source: { name: string; version: string } | null;
+  /**
+   * The purl's `arch` qualifier (`x86_64`, `noarch`, `amd64`), for OS packages only: 1 to 64
+   * characters of `[A-Za-z0-9_.+-]`, else null. Trivy matches Red Hat-family advisories by it.
+   */
+  arch: string | null;
+  /**
+   * The purl's `modularitylabel` qualifier of a modular RPM
+   * (`nodejs:18:8090020240112121244:a75119d5`), for OS packages only: at most 256 characters, none
+   * a control character, else null.
+   */
+  modularityLabel: string | null;
 }
 
 export interface SbomSkipped {

@@ -56,6 +56,7 @@ describe('trivy debian spdx', () => {
     expect(e.ecosystem).toBe('deb');
     expect(e.version).toBe('3.0.22-1~deb12u2');
     expect(e.source).toEqual({ name: 'openssl', version: '3.0.22-1~deb12u2' });
+    expect([e.arch, e.modularityLabel]).toEqual(['amd64', null]);
     // An SPDX expression stays one string (Trivy's CycloneDX file lists its terms one by one).
     expect(e.licenses).toEqual([
       'Apache-2.0 AND Artistic-2.0 AND GPL-1.0-or-later AND GPL-1.0-only',
