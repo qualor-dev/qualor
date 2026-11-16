@@ -66,8 +66,9 @@ export function isIacCandidate(
   const lower = name.toLowerCase();
   const dot = name.lastIndexOf('.');
   const ext = dot > 0 ? lower.slice(dot) : '';
-  if (NAMED_EXTENSIONS.has(ext) || NAMED_FILES.has(lower) || DOCKERFILE_NAME.test(name))
+  if (NAMED_EXTENSIONS.has(ext) || NAMED_FILES.has(lower) || lower.endsWith('.tf.json'))
     return true;
+  if (DOCKERFILE_NAME.test(name)) return true;
   if (ext === '.yaml' || ext === '.yml') {
     const text = readText(repoPath);
     return text !== null && yamlLooksLikeIac(text);

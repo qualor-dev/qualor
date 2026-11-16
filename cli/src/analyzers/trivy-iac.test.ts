@@ -256,7 +256,7 @@ describe('trivyIacAnalyzer.prepare', () => {
       'main.tf': '',
       'x.tfvars': '',
       'prod.auto.tfvars': '',
-      'x.tf.json': '{"apiVersion":"v1","kind":"Pod"}',
+      'x.tf.json': '{}',
       'a/tfplan': '',
       'a/b.tfplan': '',
       'Chart.yaml': 'name: a\n',
