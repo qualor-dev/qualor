@@ -24,3 +24,22 @@
 .packages-none {
   margin: 0;
 }
+/* The pager, as on the Dependencies tab; the hint sits between the range and the buttons. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.pager-range {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.pager-more {
+  font-weight: 400;
+}
+.pager-buttons {
+  display: flex;
+  gap: 8px;
+}

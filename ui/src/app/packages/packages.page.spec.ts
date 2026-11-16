@@ -1,14 +1,28 @@
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { FakeServer, me, problem, provideFakeServer, settle } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
+import { isUuid } from '../shared/ids';
 import { PackagesPage } from './packages.page';
 
 const USAGES = '/api/v0/packages/usages';
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim();
 
 const PROJECT = { id: '11111111-1111-4111-8111-111111111111', key: 'shop', name: 'Shop <b>x</b>' };
+/** A branch that is not the main one: the Dependencies tab reads `?branch=` as its id. */
+const RELEASE = {
+  kind: 'branch',
+  id: '22222222-2222-4222-8222-222222222222',
+  name: 'release/1',
+  main: false,
+  source: null,
+};
+
+/** Stands in for the Dependencies tab: only the URL it is opened with matters here. */
+@Component({ template: '' })
+class DependenciesTab {}
 
 function row(over: Record<string, unknown> = {}) {
   return {
@@ -39,7 +53,13 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
     server.on('GET', USAGES, reply);
     TestBed.configureTestingModule({
       providers: [
-        provideRouter([{ path: 'packages', component: PackagesPage }], withComponentInputBinding()),
+        provideRouter(
+          [
+            { path: 'packages', component: PackagesPage },
+            { path: 'projects/:projectId/dependencies', component: DependenciesTab },
+          ],
+          withComponentInputBinding(),
+        ),
         provideFakeServer(server),
       ],
     });
@@ -129,7 +149,7 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
       body: answer([
         row(),
         row({
-          target: { kind: 'branch', id: 'b2', name: 'release/1', main: false, source: null },
+          target: RELEASE,
           path: '',
           direct: false,
           vulnerabilities: null,
@@ -171,8 +191,26 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
     const href = (i: number) => rows[i]!.querySelector('a')!.getAttribute('href');
     const base = `/projects/${PROJECT.id}/dependencies`;
     expect(href(0)).toBe(`${base}?q=lodash`);
-    expect(href(1)).toBe(`${base}?branch=release%2F1&q=lodash`);
+    expect(href(1)).toBe(`${base}?branch=${RELEASE.id}&q=lodash`);
     expect(href(2)).toBe(`${base}?version=v1&q=lodash`);
+  });
+
+  it('follows a branch row to the Dependencies tab with that branch asked for by its id', async () => {
+    await setup({ body: answer([row({ target: RELEASE })]) });
+    const root = await open('/packages?q=lodash');
+    root.querySelector<HTMLAnchorElement>('tbody a')!.click();
+    await refresh();
+    const router = TestBed.inject(Router);
+    const url = router.parseUrl(router.url);
+    expect(url.root.children['primary']?.segments.map((s) => s.path)).toEqual([
+      'projects',
+      PROJECT.id,
+      'dependencies',
+    ]);
+    expect(url.queryParams).toEqual({ branch: RELEASE.id, q: 'lodash' });
+    // The Dependencies tab takes `?branch=` only as an id (dependencies.page.ts): a name would
+    // open the main branch.
+    expect(isUuid(url.queryParams['branch'])).toBe(true);
   });
 
   it('marks a version SBOM by its source, not by its distribution', async () => {
@@ -220,6 +258,44 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
     expect(calls().at(-1)!.query.get('page')).toBe('2');
     expect(text(root.querySelector('.pager-range'))).toBe('51–100 of 120');
     expect(harness.fixture.nativeElement.querySelector('.pager button')!.disabled).toBe(false);
+  });
+
+  /** The server's answer to a page of `total` rows: rows only on the pages that have some. */
+  const pages =
+    (total: number, capped = false) =>
+    (req: { query: URLSearchParams }) => {
+      const page = Number(req.query.get('page'));
+      const size = Number(req.query.get('pageSize'));
+      const rows = (page - 1) * size < total ? [row()] : [];
+      return { body: answer(rows, { page, pageSize: size, total, totalCapped: capped }) };
+    };
+
+  it('never offers a page past 100, which the server refuses', async () => {
+    await setup(pages(10_000, true));
+    const root = await open('/packages?q=lodash&page=100');
+    expect(calls().at(-1)!.query.get('page')).toBe('100');
+    expect(text(root.querySelector('.pager-range'))).toBe('4951–5000 of 10 000+');
+    const [previous, next] = [...root.querySelectorAll<HTMLButtonElement>('.pager button')];
+    expect(previous!.disabled).toBe(false);
+    expect(next!.disabled).toBe(true);
+    expect(text(root.querySelector('.pager-more'))).toBe('Narrow the search to see the rest.');
+  });
+
+  it('asks for page 100 at most, whatever the URL says', async () => {
+    await setup(pages(10_000, true));
+    await open('/packages?q=lodash&page=150');
+    expect(calls().map((c) => c.query.get('page'))).toEqual(['100']);
+  });
+
+  it('opens the last page for a page past the last one, never "201–120 of 120"', async () => {
+    await setup(pages(120));
+    const root = await open('/packages?q=lodash&page=5');
+    await refresh();
+    expect(calls().map((c) => c.query.get('page'))).toEqual(['5', '3']);
+    expect(TestBed.inject(Router).url).toBe('/packages?q=lodash&page=3');
+    expect(text(root.querySelector('.pager-range'))).toBe('101–120 of 120');
+    expect(text(root)).not.toContain('201–120');
+    expect(root.querySelector('.pager-more')).toBeNull();
   });
 
   it('shows the problem of a refused query', async () => {

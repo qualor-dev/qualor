@@ -149,11 +149,13 @@
                 </td>
               </tr>
             } @empty {
-              <tr>
-                <td colspan="8">
-                  <p class="packages-none" i18n="@@packages.none">No package matches.</p>
-                </td>
-              </tr>
+              @if (answer.total === 0) {
+                <tr>
+                  <td colspan="8">
+                    <p class="packages-none" i18n="@@packages.none">No package matches.</p>
+                  </td>
+                </tr>
+              }
             }
           </tbody>
         </table>
@@ -167,6 +169,11 @@
           } @else {
             <span class="pager-range" i18n="@@packages.range"
               >{{ range.first }}–{{ range.last }} of {{ range.total }}</span
+            >
+          }
+          @if (range.beyond) {
+            <span class="pager-more muted" i18n="@@packages.beyond"
+              >Narrow the search to see the rest.</span
             >
           }
           @if (range.pages) {

@@ -648,6 +648,7 @@
     "packages.pages": "Pages",
     "packages.rangeCapped": "{$INTERPOLATION}–{$INTERPOLATION_1} of 10 000+",
     "packages.range": "{$INTERPOLATION}–{$INTERPOLATION_1} of {$INTERPOLATION_2}",
+    "packages.beyond": "Narrow the search to see the rest.",
     "packages.previous": " Previous ",
     "packages.next": " Next ",
     "packages.search.empty": "Search needs at least one character",

@@ -11,7 +11,10 @@ import { PageHeader } from '../shared/page-header';
 type UsageAnswer = ResponseBody<'/api/v0/packages/usages', 'get'>;
 export type UsageRow = UsageAnswer['rows'][number];
 
+/** Rows a page, as on the app's other tables. */
 const PAGE_SIZE = 50;
+/** The server's last page (`page` is at most 100): with 50 rows a page, the first 5 000 rows. */
+const MAX_PAGE = 100;
 /** The server's limit for `q` (a longer text would only be refused). */
 const Q_MAX_LENGTH = 300;
 /** The purl types an SBOM or a scan stores (the ecosystem filter's choices). */
@@ -65,7 +68,7 @@ export class PackagesPage {
       q: one(p, 'q').trim(),
       ecosystem: one(p, 'ecosystem'),
       version: one(p, 'version').trim(),
-      page: Number.isInteger(page) && page >= 1 ? Math.min(page, 100_000) : 1,
+      page: Number.isInteger(page) && page >= 1 ? Math.min(page, MAX_PAGE) : 1,
     };
   });
 
@@ -124,13 +127,18 @@ export class PackagesPage {
     const answer = this.current();
     if (!answer || answer.total === 0) return null;
     const first = (answer.page - 1) * answer.pageSize + 1;
+    // A page past the last one: no range (the page then moves to the last one).
+    if (first > answer.total) return null;
     const last = Math.min(answer.total, answer.page * answer.pageSize);
+    const rest = last < answer.total;
     return {
       first,
       last,
       total: answer.total,
       capped: answer.totalCapped,
-      more: last < answer.total,
+      more: rest && answer.page < MAX_PAGE,
+      /** Rows past the server's last page: only a narrower search shows them. */
+      beyond: rest && answer.page >= MAX_PAGE,
       pages: answer.total > answer.pageSize,
     };
   });
@@ -140,6 +148,13 @@ export class PackagesPage {
     effect(() => {
       this.query();
       this.searchError.set(null);
+    });
+    // A page past the last one (an old link, rows that have gone): the last page instead.
+    effect(() => {
+      const answer = this.current();
+      if (!answer || answer.total === 0 || answer.rows.length > 0) return;
+      const last = Math.min(MAX_PAGE, Math.ceil(answer.total / answer.pageSize));
+      if (answer.page > last) this.goTo(last, true);
     });
   }
 
@@ -161,14 +176,18 @@ export class PackagesPage {
     });
   }
 
-  protected goTo(page: number): void {
+  protected goTo(page: number, replaceUrl = false): void {
     void this.router.navigate([], {
       queryParams: { page: page > 1 ? page : null },
       queryParamsHandling: 'merge',
+      replaceUrl,
     });
   }
 
-  /** The Dependencies tab of the row's branch or version, filtered to its package. */
+  /**
+   * The Dependencies tab of the row's branch or version, filtered to its package. The tab takes
+   * `?branch=` and `?version=` as ids.
+   */
   protected link(row: UsageRow): { commands: string[]; queryParams: Params } {
     const commands = ['/projects', row.project.id, 'dependencies'];
     if (row.target.kind === 'version') {
@@ -176,7 +195,7 @@ export class PackagesPage {
     }
     return {
       commands,
-      queryParams: row.target.main ? { q: row.name } : { branch: row.target.name, q: row.name },
+      queryParams: row.target.main ? { q: row.name } : { branch: row.target.id, q: row.name },
     };
   }
 }
