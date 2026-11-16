@@ -255,7 +255,7 @@ async function trackedTargetsOf(
  * Vulnerabilities tab counts them). Null, never a stale 0 (R22), for a row without a key (not
  * checked), and for a target that the re-check does not check now ({@link trackedTargetsOf}) or
  * whose check is stale: no check row, or one against another basis than the target's current one
- * (the branch was analysed again, the version uploaded again). Three queries for the page,
+ * (the branch was analysed again, the version uploaded again). At most six queries for the page,
  * whatever its size.
  */
 async function vulnerabilitiesOf(
