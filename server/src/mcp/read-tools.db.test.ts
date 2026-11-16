@@ -13,6 +13,7 @@ import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
 import { callTool, mcpCall } from '../../test/mcp';
 import { oauthTokens as runOAuth } from '../../test/oauth';
 import { seedAiIssue } from '../../test/review';
+import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import { analyses, branchFiles, branches, measures, reviewFindings } from '../db/schema';
 
 const DONE = 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111';
@@ -564,6 +565,56 @@ describe('MCP read tools', () => {
         SELECT ${branchId}, 'svc-' || lpad(g::text, 2, '0') || '/package-lock.json', 'npm',
                'mcp-left-pad', '1.3.0', '{}', ${analysis?.id ?? ''}
           FROM generate_series(1, 60) AS g`);
+      // Another project, whose main branch the re-check has checked as of its last analysis
+      // (R22): two packages with open vulnerabilities.
+      const checked = await createProject(ctx, admin, {
+        organizationId: org,
+        key: 'pkg-checked',
+        name: 'Package checked',
+      });
+      const checkedMain = await mainBranchId(ctx.db, checked.id);
+      const [checkedAnalysis] = await ctx.db
+        .insert(analyses)
+        .values({ projectId: checked.id, branchId: checkedMain, status: 'queued' })
+        .returning({ id: analyses.id });
+      const analysisId = checkedAnalysis?.id ?? '';
+      await ctx.db.execute(sql`
+        INSERT INTO branch_dependencies (branch_id, path, ecosystem, name, version, licenses, analysis_id)
+        VALUES (${checkedMain}, 'package-lock.json', 'npm', 'mcp-one-vuln', '1.0.0', '{}', ${analysisId}),
+               (${checkedMain}, 'package-lock.json', 'npm', 'mcp-two-vulns', '1.0.0', '{}', ${analysisId})`);
+      await ctx.db
+        .update(branches)
+        .set({ lastAnalysisId: analysisId })
+        .where(eq(branches.id, checkedMain));
+      await seedCheck(ctx.db, {
+        projectId: checked.id,
+        branchId: checkedMain,
+        baselineAt: new Date(Date.UTC(2026, 10, 1)),
+        basis: analysisId,
+      });
+      for (const [packageName, vulnerabilityId] of [
+        ['mcp-one-vuln', 'CVE-2026-1001'],
+        ['mcp-two-vulns', 'CVE-2026-1002'],
+        ['mcp-two-vulns', 'CVE-2026-1003'],
+      ] as const) {
+        await seedTargetRow(ctx.db, {
+          projectId: checked.id,
+          branchId: checkedMain,
+          packageName,
+          vulnerabilityId,
+        });
+      }
+    });
+
+    it('qualor_package_usages: one open vulnerability, two open vulnerabilities', async () => {
+      const one = await callTool(ctx, token, 'qualor_package_usages', { query: 'mcp-one-vuln' });
+      expect(one.text).toBe(
+        'mcp-one-vuln@1.0.0 (npm) in pkg-checked, branch main (main), package-lock.json: 1 open vulnerability',
+      );
+      const two = await callTool(ctx, token, 'qualor_package_usages', { query: 'mcp-two-vulns' });
+      expect(two.text).toBe(
+        'mcp-two-vulns@1.0.0 (npm) in pkg-checked, branch main (main), package-lock.json: 2 open vulnerabilities',
+      );
     });
 
     it('qualor_package_usages: the first 50 rows with the total', async () => {

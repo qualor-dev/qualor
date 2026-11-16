@@ -23,12 +23,18 @@ const input = z.object({
   version: z.string().min(1).max(256).optional().describe('An exact version'),
 });
 
-/** `log4j-core@2.14.1 (pom) in shop, branch main (main), pom.xml: 3 open vulnerabilities`. */
+/**
+ * `log4j-core@2.14.1 (pom) in shop, branch main (main), pom.xml: 3 open vulnerabilities`, or
+ * `…: not checked`.
+ */
 function usageLine(r: UsageRow): string {
   const main = r.target.main ? ' (main)' : '';
   const path = r.path === '' ? '' : `, ${r.path}`;
+  // Null: not known now (R22: not checked, monitoring off, not tracked, or a stale check).
   const vulnerabilities =
-    r.vulnerabilities === null ? 'not checked' : `${r.vulnerabilities} open vulnerabilities`;
+    r.vulnerabilities === null
+      ? 'not checked'
+      : `${r.vulnerabilities} open ${r.vulnerabilities === 1 ? 'vulnerability' : 'vulnerabilities'}`;
   return `${r.name}@${r.version} (${r.ecosystem}) in ${r.project.key}, ${r.target.kind} ${r.target.name}${main}${path}: ${vulnerabilities}`;
 }
 

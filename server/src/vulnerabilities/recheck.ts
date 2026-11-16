@@ -16,6 +16,7 @@ import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
 import { enqueueVulnerabilityAlerts } from './alerts/enqueue';
+import { branchBasis, versionBasis } from './basis';
 import { invalidStoredPackage, matchKeyOf, osMatchKey, osSourceOf } from './purl';
 import { buildOsSbom, buildSbom, sbomGroupKey, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';
@@ -762,14 +763,14 @@ async function basesOf(
   const result = new Map<string, string>();
   for (const part of slices(branchIds, LIST_CHUNK)) {
     const got = await db.execute<{ id: string; basis: string }>(sql`
-      SELECT id, coalesce(last_analysis_id::text, '') AS basis
-        FROM branches WHERE id IN ${uuidList(part)}`);
+      SELECT b.id, ${branchBasis('b')} AS basis
+        FROM branches b WHERE b.id IN ${uuidList(part)}`);
     for (const row of got.rows) result.set(row.id, row.basis);
   }
   for (const part of slices(versionIds, LIST_CHUNK)) {
     const got = await db.execute<{ id: string; basis: string }>(sql`
-      SELECT id, coalesce(to_char(analyzed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), '') AS basis
-        FROM project_versions WHERE id IN ${uuidList(part)}`);
+      SELECT v.id, ${versionBasis('v')} AS basis
+        FROM project_versions v WHERE v.id IN ${uuidList(part)}`);
     for (const row of got.rows) result.set(row.id, row.basis);
   }
   return result;

@@ -36,7 +36,7 @@ const usageRowSchema = z.object({
     .int()
     .nullable()
     .describe(
-      'Open vulnerabilities of the package in this branch or version, as the Vulnerabilities tab counts them; null when the package is not checked or the branch or version has no re-check result',
+      'Open vulnerabilities of the package in this branch or version, as the Vulnerabilities tab counts them; null when not known now: the package is not checked, monitoring is off for the instance or the project, the branch or version is not tracked now, or it has no re-check since its last analysis or upload',
     ),
 });
 

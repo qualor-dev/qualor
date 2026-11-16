@@ -411,10 +411,10 @@ A row has:
 | **Package**, **Version**, **Path** | the package, with the file it came from. The name links to the **Dependencies** tab of that branch or version |
 | **Dependency** | **Direct**, **Transitive**, or "–" when the file does not say |
 | **Distribution** | the distribution of an SBOM version with OS packages |
-| **Vulnerabilities** | the package's open vulnerabilities, counted as the **Vulnerabilities** tab counts them. "not checked" when Qualor has no current check for the package in that branch or version, for example while monitoring is off for its project |
+| **Vulnerabilities** | the package's open vulnerabilities, counted as the **Vulnerabilities** tab counts them. "not checked" when there is no current count: Qualor cannot check the package, monitoring is off for the instance or the project, the branch or version is not tracked, or it was analysed or uploaded again since its last check |
 
-Rows are ordered by name, version, project, then branches before versions. The page shows 50 rows
-(`pageSize` up to 100). The total stops at "10 000+".
+Rows are ordered by name, version, project, then branches before versions. A page shows 50 rows.
+The pages stop at the 100th: narrow the search to see the rest. The total stops at "10 000+".
 
 An agent asks the same question with `qualor_package_usages` in the [MCP server](./mcp.md).
 
@@ -432,7 +432,7 @@ A refused or failed decision costs nothing.
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
 | `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`, tracked or not; a merge request is not a target (404)), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
-| `GET /api/v0/packages/usages` | the `read` scope; not a project token | where a package is used ([Where used](#where-used)). Query: `q` (required), `ecosystem`, `version`, `page`, `pageSize` (50 by default, at most 100). Each row has `project`, `target`, `ecosystem`, `name`, `version`, `path`, `direct`, `distribution` and `vulnerabilities`; the answer has `total` and `totalCapped` |
+| `GET /api/v0/packages/usages` | the `read` scope; not a project token | where a package is used ([Where used](#where-used)). Query: `q` (required), `ecosystem`, `version`, `page` (at most 100), `pageSize` (50 by default, at most 100). Each row has `project`, `target`, `ecosystem`, `name`, `version`, `path`, `direct`, `distribution` and `vulnerabilities` (null where the page says "not checked"); the answer has `total` and `totalCapped` |
 
 A decision is a body like this:
 

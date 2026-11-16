@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ADMIN_PASSWORD,
@@ -15,12 +15,14 @@ import {
 } from '../../test/app';
 import { mainBranchId } from '../../test/issues';
 import { seedCheck, seedMatch, seedTargetRow } from '../../test/vulnerabilities';
+import { writeVulndbSettings } from '../vulndb/settings';
 import {
   analyses,
   branchDependencies,
   branches,
   organizations,
   projectVersions,
+  projectVulnerabilitySettings,
   targetVulnerabilities,
   versionDependencies,
   vulnerabilityDecisions,
@@ -71,6 +73,9 @@ const LIBSSL = { name: 'libssl3', version: '3.0.11-1~deb12u2' };
 /** The match key of the SBOM version's libssl3 (Task 9, ruling R18): distribution and source. */
 const LIBSSL_KEY =
   'pkg:deb/debian/libssl3@3.0.11-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.11-1~deb12u2';
+
+/** The basis the re-check records for a version analysed at 2026-11-01 00:00 UTC. */
+const VERSION_BASIS = '2026-11-01T00:00:00.000Z';
 
 /** 0.16 §6.8: where used, `GET /packages/usages`. */
 describe('GET /packages/usages (0.16 where used)', () => {
@@ -184,7 +189,7 @@ describe('GET /packages/usages (0.16 where used)', () => {
         .returning({ id: branches.id }),
     ).id;
 
-    await branchPackages(a1, mainA, [
+    const mainAnalysis = await branchPackages(a1, mainA, [
       { name: LOG4J_CORE, version: '2.14.1', ecosystem: 'pom', path: 'pom.xml', direct: true },
       { name: LOG4J_CORE, version: '2.14.1', ecosystem: 'pom', path: 'app/pom.xml' },
       { name: LOG4J_CORE, version: '2.17.1', ecosystem: 'pom', path: 'sub/pom.xml' },
@@ -243,9 +248,16 @@ describe('GET /packages/usages (0.16 where used)', () => {
 
     // Vulnerabilities: main of a1 and the debian SBOM version were re-checked, the others not.
     const baselineAt = new Date(Date.UTC(2026, 10, 1));
-    await seedCheck(ctx.db, { projectId: a1, branchId: mainA, baselineAt });
-    await seedCheck(ctx.db, { projectId: a1, versionId: imageVersion, baselineAt });
-    await seedCheck(ctx.db, { projectId: a1, versionId: bareVersion, baselineAt });
+    // Each check against the target's current basis (R22): the branch's last analysis, the
+    // version's analysis time.
+    await ctx.db
+      .update(branches)
+      .set({ lastAnalysisId: mainAnalysis })
+      .where(eq(branches.id, mainA));
+    await seedCheck(ctx.db, { projectId: a1, branchId: mainA, baselineAt, basis: mainAnalysis });
+    for (const versionId of [imageVersion, bareVersion]) {
+      await seedCheck(ctx.db, { projectId: a1, versionId, baselineAt, basis: VERSION_BASIS });
+    }
     const onMain = { projectId: a1, branchId: mainA } as const;
     await seedTargetRow(ctx.db, {
       ...onMain,
@@ -494,6 +506,158 @@ describe('GET /packages/usages (0.16 where used)', () => {
     expect(byTarget.get('a1 feature/x')?.vulnerabilities).toBeNull();
     expect(byTarget.get('a1 1.0.0')?.vulnerabilities).toBeNull();
     expect(byTarget.get('b1 main')?.vulnerabilities).toBeNull();
+  });
+
+  describe('R22: null, not 0, where the count would be stale', () => {
+    /** Only this project's rows hold the package. */
+    const PACKAGE = 'r22-only';
+    let project: string;
+    let main: string;
+    let mainAnalysis: string;
+    let release: string;
+
+    /** The package's count on each target of the project, by target name. */
+    const counts = async () => {
+      const rows = (await search(q(PACKAGE))).rows;
+      return Object.fromEntries(rows.map((r) => [r.target.name, r.vulnerabilities]));
+    };
+
+    beforeAll(async () => {
+      const org = await organizationId(ctx, 'default');
+      project = (await createProject(ctx, admin, { organizationId: org, key: 'r22', name: 'R22' }))
+        .id;
+      main = await mainBranchId(ctx.db, project);
+      mainAnalysis = await branchPackages(project, main, [{ name: PACKAGE }]);
+      await ctx.db
+        .update(branches)
+        .set({ lastAnalysisId: mainAnalysis })
+        .where(eq(branches.id, main));
+      release = await version(project, '2.0.0', { source: 'tag' }, [{ name: PACKAGE }]);
+      const baselineAt = new Date(Date.UTC(2026, 10, 2));
+      await seedCheck(ctx.db, {
+        projectId: project,
+        branchId: main,
+        baselineAt,
+        basis: mainAnalysis,
+      });
+      await seedCheck(ctx.db, {
+        projectId: project,
+        versionId: release,
+        baselineAt,
+        basis: VERSION_BASIS,
+      });
+      for (const target of [{ branchId: main }, { versionId: release }]) {
+        await seedTargetRow(ctx.db, {
+          projectId: project,
+          ...target,
+          packageName: PACKAGE,
+          vulnerabilityId: 'CVE-2026-0022',
+        });
+      }
+    });
+
+    it('counts a tracked target checked against its current basis', async () => {
+      expect(await counts()).toEqual({ main: 1, '2.0.0': 1 });
+    });
+
+    it('null for a branch analysed again and a version uploaded again since their check', async () => {
+      const newer = first(
+        await ctx.db
+          .insert(analyses)
+          .values({ projectId: project, branchId: main, status: 'queued' })
+          .returning({ id: analyses.id }),
+      ).id;
+      await ctx.db.update(branches).set({ lastAnalysisId: newer }).where(eq(branches.id, main));
+      await ctx.db
+        .update(projectVersions)
+        .set({ analyzedAt: new Date(Date.UTC(2026, 10, 3)) })
+        .where(eq(projectVersions.id, release));
+      try {
+        expect(await counts()).toEqual({ main: null, '2.0.0': null });
+      } finally {
+        await ctx.db
+          .update(branches)
+          .set({ lastAnalysisId: mainAnalysis })
+          .where(eq(branches.id, main));
+        await ctx.db
+          .update(projectVersions)
+          .set({ analyzedAt: new Date(VERSION_BASIS) })
+          .where(eq(projectVersions.id, release));
+      }
+      expect(await counts()).toEqual({ main: 1, '2.0.0': 1 });
+    });
+
+    it("null while the project's monitoring is off", async () => {
+      await ctx.db
+        .insert(projectVulnerabilitySettings)
+        .values({ projectId: project, enabled: false });
+      try {
+        expect(await counts()).toEqual({ main: null, '2.0.0': null });
+      } finally {
+        await ctx.db
+          .delete(projectVulnerabilitySettings)
+          .where(eq(projectVulnerabilitySettings.projectId, project));
+      }
+    });
+
+    it('null while the instance switch is off', async () => {
+      await writeVulndbSettings(ctx.db, { enabled: false }, ctx.config.secretKey);
+      try {
+        expect(await counts()).toEqual({ main: null, '2.0.0': null });
+        // Every project's rows, not only this one's.
+        expect((await search(q('lodash'))).rows[0]?.vulnerabilities).toBeNull();
+      } finally {
+        await writeVulndbSettings(ctx.db, { enabled: true }, ctx.config.secretKey);
+      }
+      expect(await counts()).toEqual({ main: 1, '2.0.0': 1 });
+    });
+
+    it('null for a version that is not tracked now: its rows are from when it was', async () => {
+      await ctx.db
+        .update(projectVersions)
+        .set({ tracking: 'unsupported' })
+        .where(eq(projectVersions.id, release));
+      try {
+        expect(await counts()).toEqual({ main: 1, '2.0.0': null });
+      } finally {
+        await ctx.db
+          .update(projectVersions)
+          .set({ tracking: 'auto' })
+          .where(eq(projectVersions.id, release));
+      }
+    });
+
+    it('null for a branch that no longer matches the tracked patterns', async () => {
+      const other = first(
+        await ctx.db
+          .insert(branches)
+          .values({ projectId: project, kind: 'branch', name: 'release/9' })
+          .returning({ id: branches.id }),
+      ).id;
+      const analysis = await branchPackages(project, other, [{ name: PACKAGE }]);
+      await ctx.db.update(branches).set({ lastAnalysisId: analysis }).where(eq(branches.id, other));
+      await seedCheck(ctx.db, {
+        projectId: project,
+        branchId: other,
+        baselineAt: new Date(Date.UTC(2026, 10, 2)),
+        basis: analysis,
+      });
+      await ctx.db
+        .insert(projectVulnerabilitySettings)
+        .values({ projectId: project, branchPatterns: ['release/*'] });
+      try {
+        expect(await counts()).toEqual({ main: 1, 'release/9': 0, '2.0.0': 1 });
+        await ctx.db
+          .update(projectVulnerabilitySettings)
+          .set({ branchPatterns: [] })
+          .where(eq(projectVulnerabilitySettings.projectId, project));
+        expect(await counts()).toEqual({ main: 1, 'release/9': null, '2.0.0': 1 });
+      } finally {
+        await ctx.db
+          .delete(projectVulnerabilitySettings)
+          .where(eq(projectVulnerabilitySettings.projectId, project));
+      }
+    });
   });
 
   it('distribution is set on SBOM version rows and null on branch rows', async () => {

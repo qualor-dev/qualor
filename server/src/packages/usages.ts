@@ -12,8 +12,11 @@ import { projects } from '../db/schema';
 import { validationFailed } from '../http/problem';
 import { containsPattern, likeLiteral } from '../issues/query';
 import { distributionOf } from '../versions/distribution';
+import { readVulndbSettings } from '../vulndb/settings';
+import { branchBasis, versionBasis } from '../vulnerabilities/basis';
 import { ecosystemsOfType, matchKeyOf, purlTypeOf } from '../vulnerabilities/purl';
 import { scopedRows } from '../vulnerabilities/summary';
+import { projectTargets } from '../vulnerabilities/targets';
 
 /** What `GET /packages/usages` asks (spec §6.8): `q` trimmed, the rest as the route checked it. */
 export interface UsagesQuery {
@@ -48,7 +51,7 @@ export interface UsageRow {
   distribution: SbomDistribution | null;
   /**
    * Open vulnerabilities of the package in the target, as the Vulnerabilities tab counts them;
-   * null when the package is not checked or the target has no re-check result.
+   * null when it is not known now ({@link vulnerabilitiesOf}).
    */
   vulnerabilities: number | null;
 }
@@ -220,10 +223,40 @@ function keyOf(row: UsageRecord): string | null {
 }
 
 /**
+ * The ids of the rows' targets that the re-check checks now (R22): none while the instance switch
+ * is off; else the tracked targets of the rows' projects ({@link projectTargets}: none while a
+ * project's switch is off; a version not tracked now, or a branch that no longer matches, is not
+ * one of them, as their rows are frozen from when it was).
+ */
+async function trackedTargetsOf(
+  db: Executor,
+  rows: readonly UsageRecord[],
+): Promise<{ branchIds: string[]; versionIds: string[] }> {
+  const none = { branchIds: [], versionIds: [] };
+  if (rows.length === 0 || !(await readVulndbSettings(db)).enabled) return none;
+  const tracked = await projectTargets(db, [...new Set(rows.map((r) => r.project_id))]);
+  const branchIds = new Set<string>();
+  const versionIds = new Set<string>();
+  for (const targets of tracked.values()) {
+    for (const t of targets) {
+      if (t.kind === 'branch') branchIds.add(t.branchId);
+      else versionIds.add(t.versionId);
+    }
+  }
+  const wanted = (kind: 'branch' | 'version', ids: Set<string>) => [
+    ...new Set(rows.filter((r) => r.kind === kind && ids.has(r.target_id)).map((r) => r.target_id)),
+  ];
+  return { branchIds: wanted('branch', branchIds), versionIds: wanted('version', versionIds) };
+}
+
+/**
  * The open vulnerabilities of each row, in order: the effective-open, not ignored rows of
  * `target_vulnerabilities` under the row's match key in its target ({@link scopedRows}, as the
- * Vulnerabilities tab counts them). Null for a row without a key (not checked) and for a target
- * without a re-check result. Two queries for the page, whatever its size.
+ * Vulnerabilities tab counts them). Null, never a stale 0 (R22), for a row without a key (not
+ * checked), and for a target that the re-check does not check now ({@link trackedTargetsOf}) or
+ * whose check is stale: no check row, or one against another basis than the target's current one
+ * (the branch was analysed again, the version uploaded again). Three queries for the page,
+ * whatever its size.
  */
 async function vulnerabilitiesOf(
   db: Executor,
@@ -232,15 +265,20 @@ async function vulnerabilitiesOf(
   const keys = rows.map(keyOf);
   const wanted = [...new Set(keys.filter((k): k is string => k !== null))];
   if (wanted.length === 0) return keys.map(() => null);
-  const ids = (kind: 'branch' | 'version') => [
-    ...new Set(rows.filter((r) => r.kind === kind).map((r) => r.target_id)),
-  ];
-  const branchIds = uuidArray(ids('branch'));
-  const versionIds = uuidArray(ids('version'));
+  const tracked = await trackedTargetsOf(db, rows);
+  if (tracked.branchIds.length === 0 && tracked.versionIds.length === 0) {
+    return keys.map(() => null);
+  }
+  const branchIds = uuidArray(tracked.branchIds);
+  const versionIds = uuidArray(tracked.versionIds);
   const [checks, counts] = await Promise.all([
     db.execute<{ branch_id: string | null; version_id: string | null }>(sql`
-      SELECT branch_id, version_id FROM vulnerability_target_checks
-       WHERE branch_id = ANY(${branchIds}) OR version_id = ANY(${versionIds})`),
+      SELECT c.branch_id, c.version_id
+        FROM vulnerability_target_checks c
+        LEFT JOIN branches b ON b.id = c.branch_id
+        LEFT JOIN project_versions v ON v.id = c.version_id
+       WHERE (c.branch_id = ANY(${branchIds}) AND c.basis = ${branchBasis('b')})
+          OR (c.version_id = ANY(${versionIds}) AND c.basis = ${versionBasis('v')})`),
     db.execute<{ branch_id: string | null; version_id: string | null; purl: string; open: number }>(
       sql`
       WITH r AS (${scopedRows(
