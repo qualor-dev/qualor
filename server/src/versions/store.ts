@@ -83,6 +83,19 @@ export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
 ): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'> {
+  return upsertOnce(tx, input, false);
+}
+
+/**
+ * {@link upsertVersion}; `reread`: this is the second read, after an upsert that returned no row.
+ * That happens once, when a concurrent writer created the version after the first read; the second
+ * read locks it, so a second miss is an error, never a loop.
+ */
+async function upsertOnce(
+  tx: Executor,
+  input: UpsertVersionInput,
+  reread: boolean,
+): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'> {
   // Locked: the version judged here is the one the write below meets.
   const [existing] = await tx
     .select({ analyzedAt: projectVersions.analyzedAt, source: projectVersions.source })
@@ -140,7 +153,14 @@ export async function upsertVersion(
         : sql`false`,
     })
     .returning();
-  if (version === undefined) return upsertVersion(tx, input);
+  if (version === undefined) {
+    if (reread) {
+      throw new Error(
+        `no row for version ${input.label} of project ${input.projectId} after a second read`,
+      );
+    }
+    return upsertOnce(tx, input, true);
+  }
   if (inventory) {
     // Duplicates merged as for a branch.
     await tx.delete(versionDependencies).where(eq(versionDependencies.versionId, version.id));
