@@ -1,4 +1,4 @@
-import { parsePurl } from '@qualor/shared';
+import { parsePurl, parseSbom } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
 import {
   ecosystemsOfType,
@@ -100,11 +100,11 @@ describe('osMatchKey (0.16 SBOM, Trivy’s own form, R15: with the source packag
   it.each([
     [
       ['deb', 'debian', '12.15', 'libssl3', '3.0.22-1~deb12u2', 'openssl', '3.0.22-1~deb12u2'],
-      'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl%403.0.22-1~deb12u2',
+      'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.22-1~deb12u2',
     ],
     [
       ['deb', 'debian', '12', 'login', '1:4.13+dfsg1-1', 'shadow', '1:4.13+dfsg1-1'],
-      'pkg:deb/debian/login@1%3A4.13%2Bdfsg1-1?distro=debian-12&upstream=shadow%401%3A4.13%2Bdfsg1-1',
+      'pkg:deb/debian/login@1%3A4.13%2Bdfsg1-1?distro=debian-12&upstream=shadow@1%3A4.13%2Bdfsg1-1',
     ],
     [
       [
@@ -116,19 +116,19 @@ describe('osMatchKey (0.16 SBOM, Trivy’s own form, R15: with the source packag
         'openssl',
         '1:1.1.1k-12.el8_9',
       ],
-      'pkg:rpm/redhat/openssl-libs@1.1.1k-12.el8_9?epoch=1&distro=redhat-8.10&upstream=openssl%401%3A1.1.1k-12.el8_9',
+      'pkg:rpm/redhat/openssl-libs@1.1.1k-12.el8_9?epoch=1&distro=redhat-8.10&upstream=openssl@1%3A1.1.1k-12.el8_9',
     ],
     [
       ['rpm', 'redhat', '8.10', 'bash', '4.4.20-5.el8', 'bash', '4.4.20-5.el8'],
-      'pkg:rpm/redhat/bash@4.4.20-5.el8?distro=redhat-8.10&upstream=bash%404.4.20-5.el8',
+      'pkg:rpm/redhat/bash@4.4.20-5.el8?distro=redhat-8.10&upstream=bash@4.4.20-5.el8',
     ],
     [
       ['apk', 'alpine', '3.20.3', 'libcrypto3', '3.3.2-r0', 'openssl', '3.3.2-r0'],
-      'pkg:apk/alpine/libcrypto3@3.3.2-r0?distro=3.20.3&upstream=openssl%403.3.2-r0',
+      'pkg:apk/alpine/libcrypto3@3.3.2-r0?distro=3.20.3&upstream=openssl@3.3.2-r0',
     ],
     [
       ['rpm', 'redhat', '8.10', 'libstdc++', '8.5.0-31.el8_10', 'gcc', '8.5.0-31.el8_10'],
-      'pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?distro=redhat-8.10&upstream=gcc%408.5.0-31.el8_10',
+      'pkg:rpm/redhat/libstdc%2B%2B@8.5.0-31.el8_10?distro=redhat-8.10&upstream=gcc@8.5.0-31.el8_10',
     ],
   ] as const)(
     '%j -> %s',
@@ -148,7 +148,7 @@ describe('osMatchKey (0.16 SBOM, Trivy’s own form, R15: with the source packag
       version: '1:2+3',
     });
     expect(key).toBe(
-      'pkg:deb/debian/a%26b@1%3A2%2B3%3F4%235%206?distro=debian-12%2Fx%26y%3Dz&upstream=s%26t%401%3A2%2B3',
+      'pkg:deb/debian/a%26b@1%3A2%2B3%3F4%235%206?distro=debian-12%2Fx%26y%3Dz&upstream=s%26t@1%3A2%2B3',
     );
     expect(parsePurl(key)).toMatchObject({
       type: 'deb',
@@ -173,6 +173,66 @@ describe('osMatchKey (0.16 SBOM, Trivy’s own form, R15: with the source packag
       osMatchKey('apk', 'alpine', '3.20', 'x\uD800', '1', { name: 'x', version: '1' }),
     ).toContain('%EF%BF%BD');
   });
+
+  it('encodes the source name and version apart, so no two sources share a key (R18)', () => {
+    const key = (name: string, version: string) =>
+      osMatchKey('deb', 'debian', '12', 'p', '1', { name, version });
+    // One `@` is literal, the separator; any `@` inside a part is encoded.
+    expect(key('a@b', 'c')).toBe('pkg:deb/debian/p@1?distro=debian-12&upstream=a%40b@c');
+    expect(key('a', 'b@c')).toBe('pkg:deb/debian/p@1?distro=debian-12&upstream=a@b%40c');
+    expect(key('a@b', 'c')).not.toBe(key('a', 'b@c'));
+  });
+
+  /** The source `parseSbom` stores for an uploaded package whose purl is this key. */
+  const reread = (family: string, osVersion: string, key: string) => {
+    const result = parseSbom(
+      JSON.stringify({
+        bomFormat: 'CycloneDX',
+        specVersion: '1.6',
+        components: [
+          { type: 'operating-system', name: family, version: osVersion },
+          { type: 'library', name: 'x', purl: key },
+        ],
+      }),
+    );
+    if (!('inventory' in result)) throw new Error(JSON.stringify(result.refusal));
+    return result.inventory.entries[0]!.source;
+  };
+
+  it.each([
+    ['deb', 'debian', '12.15', 'libssl3', '3.0.22-1~deb12u2', 'openssl', '3.0.22-1~deb12u2'],
+    [
+      'deb',
+      'debian',
+      '12.15',
+      'login',
+      '1:4.13+dfsg1-1+deb12u2',
+      'shadow',
+      '1:4.13+dfsg1-1+deb12u2',
+    ],
+    ['rpm', 'redhat', '8.10', 'openssl-libs', '1:1.1.1k-18.el8_6', 'openssl', '1:1.1.1k-18.el8_6'],
+    ['rpm', 'redhat', '8.10', 'libstdc++', '8.5.0-31.el8_10', 'gcc', '8.5.0-31.el8_10'],
+    ['apk', 'alpine', '3.20.3', 'libcrypto3', '3.3.2-r0', 'openssl', '3.3.2-r0'],
+  ] as const)(
+    'round trip: %s %s %s %s, its key read back by parseSbom, keeps its source',
+    (type, family, osVersion, name, version, sourceName, sourceVersion) => {
+      const source = { name: sourceName, version: sourceVersion };
+      const key = osMatchKey(type, family, osVersion, name, version, source);
+      expect(reread(family, osVersion, key)).toEqual(source);
+      // And the stored row keys the same way again.
+      expect(
+        matchKeyOf({
+          ecosystem: type,
+          name,
+          version,
+          osFamily: family,
+          osVersion,
+          sourceName,
+          sourceVersion,
+        }),
+      ).toBe(key);
+    },
+  );
 });
 
 describe('matchKeyOf', () => {
@@ -186,7 +246,7 @@ describe('matchKeyOf', () => {
     sourceVersion: '3.0.22-1~deb12u2',
   };
   const LIBSSL3 =
-    'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl%403.0.22-1~deb12u2';
+    'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=openssl@3.0.22-1~deb12u2';
 
   it('gives an OS package of a known distribution its OS match key, source included', () => {
     expect(matchKeyOf(deb)).toBe(LIBSSL3);
@@ -194,7 +254,7 @@ describe('matchKeyOf', () => {
 
   it('keys the binary itself as the source when the row names none (R15)', () => {
     const own =
-      'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=libssl3%403.0.22-1~deb12u2';
+      'pkg:deb/debian/libssl3@3.0.22-1~deb12u2?distro=debian-12.15&upstream=libssl3@3.0.22-1~deb12u2';
     expect(matchKeyOf({ ...deb, sourceName: null, sourceVersion: null })).toBe(own);
     expect(matchKeyOf({ ...deb, sourceName: '', sourceVersion: '' })).toBe(own);
     expect(osSourceOf({ ...deb, sourceName: null, sourceVersion: null })).toEqual({
@@ -274,6 +334,10 @@ describe('validStoredValues (R16: checked before anything goes to Trivy)', () =>
     ['an overlong source name', { sourceName: 's'.repeat(513) }],
     ['an overlong source version', { sourceVersion: `1.0-${'1'.repeat(256)}` }],
     ['an overlong OS version', { osVersion: '8'.repeat(65) }],
+    ['an @ in the source name (it separates the source in the key)', { sourceName: 'open@ssl' }],
+    ['a blank OS version', { osVersion: '   ' }],
+    ['an OS version with leading space', { osVersion: ' 8.10' }],
+    ['an OS family with trailing space', { osFamily: 'redhat ' }],
   ] as const)('refuses %s, and the row gets no key', (_why, change) => {
     const row = { ...rpm, ...change };
     expect(validStoredValues(row)).toBe(false);

@@ -169,6 +169,10 @@ const settingsDto = z.object({
             .number()
             .int()
             .meta({ description: 'Single operating-system packages Trivy failed on' }),
+          overBudget: z.number().int().meta({
+            description:
+              'Operating-system packages of organisations past their failure budget for the run',
+          }),
           unsupported: z.array(z.string()).meta({
             description:
               'Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan',

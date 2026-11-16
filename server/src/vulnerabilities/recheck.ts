@@ -175,6 +175,8 @@ interface Package {
   /** The source package an SBOM named; null on a branch and for libraries. */
   sourceName: string | null;
   sourceVersion: string | null;
+  /** The organisation of the project holding an OS package (first pass only), for R17. */
+  organizationId?: string | null;
 }
 
 /** What one run uses from start to end: one dataset (its digest and its local copy). */
@@ -190,16 +192,24 @@ interface Run {
   /** Trivy runs made so far, splits included. */
   trivyRuns: number;
   /**
-   * The {@link sbomGroupKey} of each distribution whose release Trivy cannot scan, found in this
-   * run ({@link UNSUPPORTED_RELEASE}): its packages stay unchecked, and its other chunks are not run.
+   * The {@link sbomGroupKey} of each distribution Trivy cannot scan, found in this run
+   * ({@link faultOf}): its packages stay unchecked, and its other chunks are not run.
    */
   failedGroups: Set<string>;
   /** Those distributions as `<family> <version>`, for the summary. */
   unsupported: Set<string>;
-  /** The groups whose release a probe found scannable in this run: not probed again. */
-  probedGroups: Set<string>;
+  /** Each distribution's probe verdict in this run ({@link faultOf}): not probed again. */
+  probes: Map<string, 'packages' | 'release'>;
+  /** The server's own baseline probe passed in this run. */
+  baselineOk: boolean;
   /** The match keys of the single packages Trivy failed on in this run: they stay unchecked. */
   failedKeys: Set<string>;
+  /** The match keys given up because every organisation holding them is past its budget. */
+  overBudget: Set<string>;
+  /** The organisations holding each pending OS package (ruling R17). */
+  owners: Map<string, Set<string>>;
+  /** Single OS packages Trivy failed on in this run, per organisation holding them. */
+  failuresOf: Map<string, number>;
   logger: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
 
@@ -255,6 +265,9 @@ const VERSION_PACKAGE = sql`d.ecosystem, d.name, d.version,
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN v.os_version END AS "osVersion",
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_name END AS "sourceName",
   CASE WHEN d.ecosystem IN ${OS_TYPES} THEN d.source_version END AS "sourceVersion"`;
+/** The organisation of an OS package's project (`projects p`); null for a library. */
+const VERSION_OWNER = sql`CASE WHEN d.ecosystem IN ${OS_TYPES} THEN p.organization_id::text END
+  AS "organizationId"`;
 /** A branch has no distribution and no source packages. */
 const BRANCH_PACKAGE = sql`ecosystem, name, version, NULL::text AS "osFamily",
   NULL::text AS "osVersion", NULL::text AS "sourceName", NULL::text AS "sourceVersion"`;
@@ -265,12 +278,13 @@ async function distinctPackages(db: Db, targets: readonly Target[]): Promise<Pac
   const versionIds = targets.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
   const parts: SQL[] = [];
   if (branchIds.length > 0) {
-    parts.push(sql`SELECT ${BRANCH_PACKAGE} FROM branch_dependencies
+    parts.push(sql`SELECT ${BRANCH_PACKAGE}, NULL::text AS "organizationId" FROM branch_dependencies
                     WHERE branch_id IN ${uuidList(branchIds)}`);
   }
   if (versionIds.length > 0) {
-    parts.push(sql`SELECT ${VERSION_PACKAGE}
+    parts.push(sql`SELECT ${VERSION_PACKAGE}, ${VERSION_OWNER}
                      FROM version_dependencies d JOIN project_versions v ON v.id = d.version_id
+                     JOIN projects p ON p.id = v.project_id
                     WHERE d.version_id IN ${uuidList(versionIds)}`);
   }
   if (parts.length === 0) return [];
@@ -392,7 +406,9 @@ function chunksOf(
   const groups = new Map<string, SbomPackage[]>([['', []]]);
   for (const p of packages) {
     const key = sbomGroupKey(p);
-    if (run.failedGroups.has(key) || run.failedKeys.has(p.purl)) continue;
+    if (run.failedGroups.has(key) || run.failedKeys.has(p.purl) || run.overBudget.has(p.purl)) {
+      continue;
+    }
     const group = groups.get(key);
     if (group === undefined) groups.set(key, [p]);
     else group.push(p);
@@ -405,19 +421,20 @@ function chunksOf(
 }
 
 /**
- * What Trivy 0.74.0 says when it cannot scan a release at all: its Red Hat detector finds no
- * content sets for it (it has defaults for RHEL 6 to 9 only; RHEL 10, CentOS Stream 10 and 5 fail
- * so with the full database), https://github.com/aquasecurity/trivy-db/issues/435.
+ * Single OS packages Trivy may fail on, one by one, in one run, before an organisation's other OS
+ * packages found in a failing chunk are given up for the run (unchecked, `givenUp.overBudget`)
+ * instead of bisected (ruling R17). Counted per organisation, never for the instance: a package
+ * is given up so only when every organisation that holds it is past its budget. This bounds the
+ * Trivy runs one tenant's data can cost to about this many times log2 of a chunk.
  */
-const UNSUPPORTED_RELEASE = 'unable to find CPE indices';
-/**
- * More single OS packages than this that Trivy fails on, one by one, in one run: the cause is not
- * a package (a damaged database, a broken Trivy), and the run fails rather than leave them all
- * unchecked.
- */
-export const MAX_FAILED_PACKAGES = 16;
+export const MAX_FAILED_PER_ORGANISATION = 16;
 /** The package of a probe SBOM: a name no vulnerability database holds. */
 const PROBE = 'qualor-release-probe';
+/**
+ * The baseline probe's distribution, chosen by the server alone: every Trivy database scans it
+ * (an absent bucket is no error). When even this probe fails, Trivy or its database is broken.
+ */
+const BASELINE = { type: 'deb', family: 'debian', osVersion: '12' } as const;
 
 /** A failed run that is Trivy's own answer: it ran, and exited with a non-zero code. */
 function rejected(got: TrivyRun): got is Extract<TrivyRun, { ok: false }> & { exitCode: number } {
@@ -429,77 +446,133 @@ const failedRun = (got: Extract<TrivyRun, { ok: false }>): Problem => ({
   message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
 });
 
-/**
- * Whether Trivy cannot scan the release of `first`'s distribution, whatever the packages: it said
- * so for the chunk, and says so again for a probe SBOM of that release that the server writes
- * itself (one made-up package). No stored package text can make the probe fail, so no row of one
- * organisation can give up the distribution for the others.
- */
-async function unsupportedRelease(
-  run: Run,
-  first: SbomPackage & { os: NonNullable<SbomPackage['os']> },
-  got: Extract<TrivyRun, { ok: false }>,
-): Promise<boolean | Problem | typeof STOPPED> {
-  if (!(got.stderr ?? '').includes(UNSUPPORTED_RELEASE)) return false;
-  const group = sbomGroupKey(first);
-  if (run.probedGroups.has(group)) return false;
-  const { os } = first;
+/** One made-up package of a distribution: an SBOM that holds no stored package data. */
+function probeSbom(
+  os: Pick<NonNullable<SbomPackage['os']>, 'type' | 'family' | 'osVersion'>,
+): string {
   const source = { name: PROBE, version: '0' };
-  const probe: SbomPackage = {
-    purl: osMatchKey(os.type, os.family, os.osVersion, PROBE, '0', source),
-    name: PROBE,
-    version: '0',
-    os: { ...os, sourceName: PROBE, sourceVersion: '0' },
-  };
+  return buildOsSbom([
+    {
+      purl: osMatchKey(os.type, os.family, os.osVersion, PROBE, '0', source),
+      name: PROBE,
+      version: '0',
+      os: { ...os, sourceName: PROBE, sourceVersion: '0' },
+    },
+  ]);
+}
+
+type ProbeAnswer =
+  | { kind: 'ok' }
+  | { kind: 'rejected'; message: string }
+  /** A stop, or a failure that is not Trivy's answer (no work directory, spawn error, …). */
+  | { kind: 'end'; end: Problem | typeof STOPPED };
+
+async function runProbe(run: Run, sbom: string): Promise<ProbeAnswer> {
   run.trivyRuns += 1;
-  const answer = await run.runner.run(buildOsSbom([probe]), run.cacheDir, run.shutdown);
-  if (stopping(run)) return STOPPED;
-  if (!answer.ok && !rejected(answer)) return failedRun(answer);
-  if (!answer.ok && (answer.stderr ?? '').includes(UNSUPPORTED_RELEASE)) return true;
-  run.probedGroups.add(group);
-  return false;
+  const answer = await run.runner.run(sbom, run.cacheDir, run.shutdown);
+  if (stopping(run)) return { kind: 'end', end: STOPPED };
+  if (answer.ok) return { kind: 'ok' };
+  if (rejected(answer)) return { kind: 'rejected', message: answer.message };
+  return { kind: 'end', end: failedRun(answer) };
 }
 
 /**
- * Trivy rejected a chunk of OS packages (ruling R16). A release it cannot scan gives up its whole
- * group ({@link unsupportedRelease}). Otherwise the chunk is bisected, down to single packages: a
- * package Trivy still fails on alone stays unchecked, only that one, and the others are matched.
- * Past {@link MAX_FAILED_PACKAGES} such packages the run fails. Answers `'bisect'`, null (go on)
- * or the run's end.
+ * Who is at fault when Trivy rejects a chunk of OS packages (ruling R17), decided once per
+ * distribution and run by a probe of the chunk's distribution that holds no stored package:
+ * - the probe passes: the packages are (`'packages'`);
+ * - it fails, and the server's own {@link BASELINE} probe passes: the distribution string is
+ *   (`'release'`). Trivy fails on it whatever the packages: no default content sets for a Red Hat
+ *   release ("unable to find CPE indices", RHEL and CentOS 5 and 10+), or a version it cannot
+ *   parse (it panics on an Amazon Linux version of spaces). Every row of that exact distribution
+ *   fails alike, whoever stored it;
+ * - the baseline fails too: Trivy or its database is broken, and the run fails (fail-closed).
+ * No stored package text reaches either probe, so no organisation's rows can make another's
+ * distribution, or the run, fail.
+ */
+async function faultOf(
+  run: Run,
+  first: SbomPackage & { os: NonNullable<SbomPackage['os']> },
+): Promise<'packages' | 'release' | Problem | typeof STOPPED> {
+  const group = sbomGroupKey(first);
+  const known = run.probes.get(group);
+  if (known !== undefined) return known;
+  const probe = await runProbe(run, probeSbom(first.os));
+  if (probe.kind === 'end') return probe.end;
+  if (probe.kind === 'rejected' && !run.baselineOk) {
+    const baseline = await runProbe(run, probeSbom(BASELINE));
+    if (baseline.kind === 'end') return baseline.end;
+    if (baseline.kind === 'rejected') {
+      return {
+        code: 'RECHECK_FAILED',
+        message: `The vulnerability re-check stopped: Trivy fails even on the server's own probe SBOM, so Trivy or its database is broken: ${baseline.message}`,
+      };
+    }
+    run.baselineOk = true;
+  }
+  const fault = probe.kind === 'ok' ? 'packages' : 'release';
+  run.probes.set(group, fault);
+  return fault;
+}
+
+/** Whether every organisation that holds this OS package has spent its failure budget. */
+function pastBudget(run: Run, purl: string): boolean {
+  const owners = run.owners.get(purl);
+  if (owners === undefined || owners.size === 0) return false;
+  for (const owner of owners) {
+    if ((run.failuresOf.get(owner) ?? 0) < MAX_FAILED_PER_ORGANISATION) return false;
+  }
+  return true;
+}
+
+/**
+ * Trivy rejected a chunk of OS packages (rulings R16, R17). A distribution Trivy cannot scan is
+ * given up whole ({@link faultOf}). Otherwise the packages of organisations past their budget go
+ * unchecked and the rest of the chunk runs again; or the chunk is bisected, down to single
+ * packages; a package Trivy still fails on alone stays unchecked, only that one, and counts
+ * against each organisation that holds it. Answers the chunks to run next, or the run's end.
  */
 async function osRejected(
   run: Run,
   chunk: readonly SbomPackage[],
   first: SbomPackage & { os: NonNullable<SbomPackage['os']> },
   got: Extract<TrivyRun, { ok: false }>,
-): Promise<'bisect' | null | Problem | typeof STOPPED> {
-  const release = await unsupportedRelease(run, first, got);
-  if (release === STOPPED || typeof release === 'object') return release;
+): Promise<(readonly SbomPackage[])[] | Problem | typeof STOPPED> {
+  const fault = await faultOf(run, first);
+  if (fault === STOPPED || typeof fault === 'object') return fault;
   const { os } = first;
-  const fields = { component: 'vulnerabilities', packageType: os.type };
   const distribution = `${os.family} ${os.osVersion}`;
-  if (release) {
+  const fields = { component: 'vulnerabilities', packageType: os.type, distribution };
+  if (fault === 'release') {
     run.failedGroups.add(sbomGroupKey(first));
     run.unsupported.add(distribution);
     run.logger?.warn(
-      { ...fields, distribution, message: got.message },
-      'Trivy cannot scan this release of the distribution; its OS packages stay unchecked',
+      { ...fields, message: got.message },
+      'Trivy cannot scan this distribution; its OS packages stay unchecked',
     );
-    return null;
+    return [];
   }
-  if (chunk.length > 1) return 'bisect';
-  if (run.failedKeys.size >= MAX_FAILED_PACKAGES) {
-    return {
-      code: 'RECHECK_FAILED',
-      message: `The vulnerability re-check stopped: Trivy failed on more than ${MAX_FAILED_PACKAGES} operating-system packages one by one, so the cause is not a package: ${got.message}`,
-    };
+  const kept = chunk.filter((p) => !pastBudget(run, p.purl));
+  if (kept.length < chunk.length) {
+    for (const p of chunk) if (pastBudget(run, p.purl)) run.overBudget.add(p.purl);
+    run.logger?.warn(
+      { ...fields, packages: chunk.length - kept.length },
+      'Trivy failed on OS packages whose organisations are past their failure budget; they stay unchecked',
+    );
+    return kept.length > 0 ? [kept] : [];
+  }
+  if (chunk.length > 1) {
+    const half = Math.ceil(chunk.length / 2);
+    return [chunk.slice(half), chunk.slice(0, half)];
   }
   run.failedKeys.add(first.purl);
+  for (const owner of run.owners.get(first.purl) ?? []) {
+    run.failuresOf.set(owner, (run.failuresOf.get(owner) ?? 0) + 1);
+  }
   run.logger?.warn(
-    { ...fields, distribution, purl: first.purl, message: got.message },
+    { ...fields, purl: first.purl, message: got.message },
     'Trivy failed on one OS package; it stays unchecked',
   );
-  return null;
+  return [];
 }
 
 /**
@@ -525,16 +598,16 @@ async function matchPackages(
     const got = await run.runner.run(sbom, run.cacheDir, run.shutdown);
     if (!got.ok) {
       if (stopping(run)) return STOPPED;
-      const half = Math.ceil(chunk.length / 2);
       if (got.code === 'TOO_LARGE' && chunk.length > run.chunk.floor && chunk.length > 1) {
+        const half = Math.ceil(chunk.length / 2);
         todo.push(chunk.slice(half), chunk.slice(0, half));
         continue;
       }
       const { os } = first;
       if (os === undefined || !rejected(got)) return failedRun(got);
       const next = await osRejected(run, chunk, { ...first, os }, got);
-      if (next === 'bisect') todo.push(chunk.slice(half), chunk.slice(0, half));
-      else if (next !== null) return next;
+      if (!Array.isArray(next)) return next;
+      todo.push(...next);
       continue;
     }
     await storeMatches(
@@ -1026,9 +1099,9 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Rech
 const MAX_UNSUPPORTED_NAMED = 20;
 
 /**
- * The summary's counts (ruling R16): the packages with a match key, less those this run gave up
- * (the single packages Trivy failed on, and the packages of a release it cannot scan), which count
- * as unchecked; and why packages were given up, for the operator.
+ * The summary's counts (rulings R16, R17): the packages with a match key, less those this run gave
+ * up (the single packages Trivy failed on, those of organisations past their failure budget, and
+ * those of a distribution it cannot scan), which count as unchecked; and why, for the operator.
  */
 function checkedCounts(
   counts: Counts,
@@ -1044,12 +1117,19 @@ function checkedCounts(
     failed.add(key);
     trivyFailed += 1;
   }
+  let overBudget = 0;
+  for (const key of run?.overBudget ?? []) {
+    if (!counts.packages.has(key) || failed.has(key)) continue;
+    failed.add(key);
+    overBudget += 1;
+  }
   return {
     packages: counts.packages.size - failed.size,
     unchecked: counts.unchecked.size + failed.size,
     givenUp: {
       invalid: counts.invalid.size,
       trivyFailed,
+      overBudget,
       unsupported: [...(run?.unsupported ?? [])].sort().slice(0, MAX_UNSUPPORTED_NAMED),
     },
   };
@@ -1067,38 +1147,75 @@ async function pendingPackages(
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
     if (stopping(run)) return STOPPED;
     const targets = [...(await projectTargets(run.db, batch)).values()].flat();
-    const byPurl = newSbomPackages(await distinctPackages(run.db, targets), pending);
+    const byPurl = newSbomPackages(await distinctPackages(run.db, targets), pending, run.owners);
     await dropFresh(run.db, byPurl, run.digest);
     for (const [purl, p] of byPurl) pending.set(purl, p);
   }
   return pending;
 }
 
-/** The packages with a match key that `pending` does not hold, once each, as SBOM entries. */
+/** Records that `organizationId` holds the OS package `purl` (ruling R17). */
+function addOwner(owners: Map<string, Set<string>>, purl: string, organizationId: string): void {
+  const known = owners.get(purl);
+  if (known === undefined) owners.set(purl, new Set([organizationId]));
+  else known.add(organizationId);
+}
+
+/**
+ * The packages with a match key that `pending` does not hold, once each, as SBOM entries; the
+ * organisations of every OS package go into `owners`, pending or not.
+ */
 function newSbomPackages(
   packages: readonly Package[],
   pending: ReadonlyMap<string, SbomPackage>,
+  owners: Map<string, Set<string>>,
 ): Map<string, SbomPackage> {
   const byPurl = new Map<string, SbomPackage>();
   for (const p of packages) {
     // R13: the SBOM names a package by its stored name.
     const entry = sbomPackageOf(p);
-    if (entry !== null && !pending.has(entry.purl) && !byPurl.has(entry.purl)) {
-      byPurl.set(entry.purl, entry);
+    if (entry === null) continue;
+    if (entry.os !== undefined && typeof p.organizationId === 'string') {
+      addOwner(owners, entry.purl, p.organizationId);
     }
+    if (!pending.has(entry.purl) && !byPurl.has(entry.purl)) byPurl.set(entry.purl, entry);
   }
   return byPurl;
 }
 
-/** The distinct packages of the inventories, by match key, as SBOM entries. */
-function inventoryPackages(batchInventories: readonly Inventory[]): Map<string, SbomPackage> {
+/**
+ * The distinct packages of the inventories, by match key, as SBOM entries; the organisation of
+ * each inventory's project goes into `owners` for its OS packages.
+ */
+function inventoryPackages(
+  batchInventories: readonly Inventory[],
+  owners: Map<string, Set<string>>,
+  organizationOf: ReadonlyMap<string, string>,
+): Map<string, SbomPackage> {
   const late = new Map<string, SbomPackage>();
   for (const inventory of batchInventories) {
+    const organizationId = organizationOf.get(inventory.projectId);
     for (const [purl, p] of inventory.packages) {
+      if (p.entry.os !== undefined && organizationId !== undefined) {
+        addOwner(owners, purl, organizationId);
+      }
       if (!late.has(purl)) late.set(purl, p.entry);
     }
   }
   return late;
+}
+
+/** The organisation of each project of `projectIds`. */
+async function organizationsOf(
+  db: Db,
+  projectIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (projectIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: projects.id, organizationId: projects.organizationId })
+    .from(projects)
+    .where(inArray(projects.id, uuidList(projectIds)));
+  return new Map(rows.map((r) => [r.id, r.organizationId]));
 }
 
 /** The rows the inventories' targets should have: one per package and its stored vulnerability. */
@@ -1139,7 +1256,11 @@ async function recheckBatch(
 ): Promise<Problem | typeof STOPPED | null> {
   const targetsOf = await projectTargets(run.db, batch);
   const batchInventories = await inventories(run, targetsOf, counts);
-  const late = inventoryPackages(batchInventories);
+  const late = inventoryPackages(
+    batchInventories,
+    run.owners,
+    await organizationsOf(run.db, batch),
+  );
   const purls = [...late.keys()];
   await dropFresh(run.db, late, run.digest);
   if (late.size > 0) {
@@ -1296,8 +1417,12 @@ export async function recheckProjects(
       trivyRuns: 0,
       failedGroups: new Set(),
       unsupported: new Set(),
-      probedGroups: new Set(),
+      probes: new Map(),
+      baselineOk: false,
       failedKeys: new Set(),
+      overBudget: new Set(),
+      owners: new Map(),
+      failuresOf: new Map(),
       logger: deps.logger,
     };
     return current;

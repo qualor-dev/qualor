@@ -42,12 +42,12 @@ export interface VulndbState {
     packages: number;
     unchecked: number;
     /**
-     * The packages the run gave up on purpose (0.16, ruling R16), counted in `unchecked` too:
-     * stored values that failed validation and never reached Trivy; single OS packages Trivy
-     * failed on; and the distributions (`<family> <version>`, at most 20) whose release Trivy
-     * cannot scan.
+     * The packages the run gave up on purpose (0.16, rulings R16, R17), counted in `unchecked`
+     * too: stored values that failed validation and never reached Trivy; single OS packages
+     * Trivy failed on; OS packages of organisations past their failure budget; and the
+     * distributions (`<family> <version>`, at most 20) Trivy cannot scan.
      */
-    givenUp: { invalid: number; trivyFailed: number; unsupported: string[] };
+    givenUp: { invalid: number; trivyFailed: number; overBudget: number; unsupported: string[] };
     durationMs: number;
   } | null;
   staleNotifiedDigest: string | null;
@@ -69,8 +69,13 @@ const onRead = z.object({
       unchecked: int,
       // Absent before 0.16, or damaged: none given up.
       givenUp: z
-        .object({ invalid: int, trivyFailed: int, unsupported: z.array(z.string()).max(20) })
-        .catch({ invalid: 0, trivyFailed: 0, unsupported: [] }),
+        .object({
+          invalid: int,
+          trivyFailed: int,
+          overBudget: int.catch(0),
+          unsupported: z.array(z.string()).max(20),
+        })
+        .catch({ invalid: 0, trivyFailed: 0, overBudget: 0, unsupported: [] }),
       durationMs: int,
     })
     .nullable()

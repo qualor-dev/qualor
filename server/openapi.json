@@ -28304,6 +28304,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -28315,6 +28321,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false
@@ -29078,6 +29085,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -29089,6 +29102,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false
@@ -29700,6 +29714,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -29711,6 +29731,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false
@@ -30312,6 +30333,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -30323,6 +30350,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false
@@ -30972,6 +31000,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -30983,6 +31017,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false
@@ -31632,6 +31667,12 @@
                                   "maximum": 9007199254740991,
                                   "description": "Single operating-system packages Trivy failed on"
                                 },
+                                "overBudget": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Operating-system packages of organisations past their failure budget for the run"
+                                },
                                 "unsupported": {
                                   "type": "array",
                                   "items": {
@@ -31643,6 +31684,7 @@
                               "required": [
                                 "invalid",
                                 "trivyFailed",
+                                "overBudget",
                                 "unsupported"
                               ],
                               "additionalProperties": false

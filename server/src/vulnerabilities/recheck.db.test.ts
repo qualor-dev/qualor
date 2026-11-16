@@ -15,6 +15,7 @@ import {
   instanceSettings,
   jobs,
   matchedPackages,
+  organizations,
   projects,
   projectVersions,
   projectVulnerabilitySettings,
@@ -35,6 +36,7 @@ import { buildSbom } from './sbom';
 import {
   enqueueRecheck,
   ignoreActive,
+  MAX_FAILED_PER_ORGANISATION,
   queueRematchIfCleared,
   RECHECK_QUEUE,
   recheckHandlers,
@@ -1253,7 +1255,12 @@ describe('vulnerability re-checks', () => {
       });
       // 4 → 2 + 2 → 1 + 1: three failed runs, and the good packages ran in the halves.
       expect(trivyFails.failures()).toBe(3);
-      expect(trivy.calls.flatMap((c) => c.names).sort()).toEqual(['libssl3', 'login', 'passwd']);
+      expect(
+        trivy.calls
+          .flatMap((c) => c.names)
+          .filter((name) => name !== 'qualor-release-probe')
+          .sort(),
+      ).toEqual(['libssl3', 'login', 'passwd']);
       expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
       expect(await osRows(q)).toEqual([
         `other deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
@@ -1299,6 +1306,7 @@ describe('vulnerability re-checks', () => {
       expect(result.summary.givenUp).toEqual({
         invalid: expect.any(Number) as unknown,
         trivyFailed: 0,
+        overBudget: 0,
         unsupported: ['debian 12.15'],
       });
       // Shown to the operator: the full run's summary holds it.
@@ -1387,7 +1395,7 @@ describe('vulnerability re-checks', () => {
       trivyFails.restore();
     });
 
-    it('fails the run when Trivy fails on package after package: that is no one package’s fault', async () => {
+    it('fails the run when Trivy or its database is broken: the probes fail too (R17)', async () => {
       const p = await project();
       const many = Array.from({ length: 24 }, (_, i) => osDep('deb', `pkg-${i}`, '1.0-1'));
       await sbomVersion(p, 'shop', DEBIAN, many);
@@ -1398,10 +1406,92 @@ describe('vulnerability re-checks', () => {
       );
       const result = await recheck({ projectIds: [p.id] });
       expect(result).toMatchObject({ kind: 'failed', error: { code: 'RECHECK_FAILED' } });
-      if (result.kind === 'failed')
+      if (result.kind === 'failed') {
         expect(result.error.message).toContain('failed to open the database');
-      // Bounded: it stops once more than the limit of single packages failed.
-      expect(trivyFails.failures()).toBeLessThan(2 * 24);
+      }
+      // The chunk, the probe of its release and the server's own baseline probe: no bisecting.
+      expect(trivyFails.failures()).toBe(3);
+      expect(await digests([keyOf(many[0]!, DEBIAN)])).toEqual({});
+      trivyFails.restore();
+    });
+
+    /** A project in an organisation of its own: another tenant. */
+    const otherTenant = async (): Promise<IngestProject> => {
+      n += 1;
+      const [org] = await db()
+        .insert(organizations)
+        .values({ key: `tenant-${n}`, name: `Tenant ${n}` })
+        .returning();
+      const [row] = await db()
+        .insert(projects)
+        .values({ organizationId: org!.id, key: `tenant-${n}/app`, name: 'App' })
+        .returning();
+      await db().insert(projectVulnerabilitySettings).values({ projectId: row!.id });
+      return { id: row!.id, key: row!.key } as IngestProject;
+    };
+
+    it('never lets one tenant’s failing packages stop another’s: a budget per organisation (R17)', async () => {
+      const attacker = await project();
+      const victim = await otherTenant();
+      const bad = Array.from({ length: 20 }, (_, i) => osDep('deb', `bad-${i}`, '1.0-1'));
+      await sbomVersion(attacker, 'image', DEBIAN, bad);
+      await sbomVersion(victim, 'image', DEBIAN, [LIBSSL3, LOGIN, PASSWD]);
+      warnings.length = 0;
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.name.startsWith('bad-')) ? exited('FATAL panic: bad') : null,
+      );
+
+      const result = await recheck({ projectIds: [attacker.id, victim.id] }, { logger: logged });
+      // Done: the victim's packages share the attacker's chunks and are matched all the same.
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: {
+          packages: 3,
+          unchecked: 20,
+          givenUp: {
+            invalid: 0,
+            trivyFailed: MAX_FAILED_PER_ORGANISATION,
+            overBudget: 20 - MAX_FAILED_PER_ORGANISATION,
+            unsupported: [],
+          },
+        },
+      });
+      expect(await osRows(victim)).toEqual([
+        `image deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`,
+      ]);
+      expect(
+        Object.keys(await digests([PSSL, keyOf(LOGIN, DEBIAN), keyOf(PASSWD, DEBIAN)])),
+      ).toHaveLength(3);
+      expect((await readVulndbState(db())).lastRecheckError).toBeNull();
+      // Bounded by the attacker's own budget: its last packages were dropped, not bisected.
+      expect(trivyFails.failures()).toBeLessThan(80);
+      expect(JSON.stringify(warnings)).toContain('budget');
+      trivyFails.restore();
+    });
+
+    it('gives up a distribution whose own name breaks Trivy, never the run (R17)', async () => {
+      const p = await project();
+      const odd = { family: 'debian', version: 'weird' };
+      await sbomVersion(p, 'odd', odd, [osDep('deb', 'a', '1.0-1')]);
+      await sbomVersion(p, 'shop', DEBIAN, [LIBSSL3]);
+      // Trivy 0.74.0 panics so on Amazon Linux "  " (a release string alone).
+      const trivyFails = failingWhen((components) =>
+        components.some((c) => c.type === 'operating-system' && c.version === 'weird')
+          ? exited('panic: runtime error: index out of range [0] with length 0')
+          : null,
+      );
+      const result = await recheck({ projectIds: [p.id] });
+      expect(result).toMatchObject({
+        kind: 'done',
+        summary: {
+          packages: 1,
+          unchecked: 1,
+          givenUp: { trivyFailed: 0, overBudget: 0, unsupported: ['debian weird'] },
+        },
+      });
+      // The chunk and the probe of that release failed; the baseline probe passed.
+      expect(trivyFails.failures()).toBe(2);
+      expect(await osRows(p)).toEqual([`shop deb libssl3@3.0.22-1~deb12u2 ${PSSL} CVE-2025-27587`]);
       trivyFails.restore();
     });
   });

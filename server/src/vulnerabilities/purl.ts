@@ -98,7 +98,9 @@ function rpmEpoch(version: string): { epoch: string; rest: string } {
  *   the stored `e:` prefix moved to `epoch=`, and no `epoch` without one (ruling R6);
  * - apk: `pkg:apk/<family>/<name>@<version>?distro=<osVersion>&upstream=…`.
  * `upstream` is Syft's qualifier, its version in the stored form `[epoch:]version[-release]`.
- * Every part is percent-encoded; the OS version stays as given (`12.15`).
+ * Every part is percent-encoded on its own, so an `@` inside a part is `%40`: the one literal `@`
+ * of `upstream` separates the source's name from its version, and no two sources share a key
+ * (ruling R18). The OS version stays as given (`12.15`).
  */
 export function osMatchKey(
   type: OsPackageType,
@@ -109,7 +111,8 @@ export function osMatchKey(
   source: { name: string; version: string },
 ): string {
   const path = `pkg:${type}/${segment(family)}/${segment(name)}`;
-  const upstream = `upstream=${segment(`${source.name}@${source.version}`)}`;
+  // R18: each part encoded on its own (`segment` encodes `@`), joined by the one literal `@`.
+  const upstream = `upstream=${segment(source.name)}@${segment(source.version)}`;
   if (type === 'apk') {
     return `${path}@${segment(version)}?distro=${segment(osVersion)}&${upstream}`;
   }
@@ -169,6 +172,12 @@ const readableVersion = (type: OsPackageType, version: string): boolean =>
   type === 'apk' || readableEpoch(splitOsVersion(type, version).epoch);
 
 /**
+ * An OS family or version: within its bound, no control characters, and neither blank nor padded
+ * with spaces (Trivy 0.74.0 panics on an Amazon Linux version of only spaces).
+ */
+const osField = (text: string): boolean => plain(text, MAX_OS_FIELD) && text.trim() === text;
+
+/**
  * Whether a stored package's values may be sent to Trivy (ruling R16): every string within its
  * bound and free of control characters, and, for deb and rpm, the binary's and the source's epoch
  * absent or 1 to 9 digits (Trivy fails a whole SBOM on a `SrcEpoch` it cannot read as an int).
@@ -178,10 +187,13 @@ const readableVersion = (type: OsPackageType, version: string): boolean =>
 export function validStoredValues(p: MatchKeyInput): boolean {
   if (!plain(p.name, MAX_NAME) || !plain(p.version, MAX_VERSION)) return false;
   if (!isOsPackageType(p.ecosystem)) return true;
-  if (p.osFamily !== null && !plain(p.osFamily, MAX_OS_FIELD)) return false;
-  if (p.osVersion !== null && !plain(p.osVersion, MAX_OS_FIELD)) return false;
+  if (p.osFamily !== null && !osField(p.osFamily)) return false;
+  if (p.osVersion !== null && !osField(p.osVersion)) return false;
   const source = osSourceOf(p);
-  if (!plain(source.name, MAX_NAME) || !plain(source.version, MAX_VERSION)) return false;
+  // No `@` in a source name: the parser splits `upstream` at its first `@` (no deb, rpm or apk
+  // package name holds one), so a key always reads back to the same source.
+  if (!plain(source.name, MAX_NAME) || source.name.includes('@')) return false;
+  if (!plain(source.version, MAX_VERSION)) return false;
   return readableVersion(p.ecosystem, p.version) && readableVersion(p.ecosystem, source.version);
 }
 

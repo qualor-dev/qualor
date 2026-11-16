@@ -265,6 +265,7 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
     expect(full.summary.givenUp).toEqual({
       invalid: 0,
       trivyFailed: 0,
+      overBudget: 0,
       unsupported: ['redhat 12.0'],
     });
     // Trivy really fails on that file alone: one odd SBOM must not stop every other project.

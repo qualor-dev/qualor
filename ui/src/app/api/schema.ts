@@ -12828,6 +12828,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
@@ -13000,6 +13002,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
@@ -13170,6 +13174,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
@@ -13335,6 +13341,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
@@ -13528,6 +13536,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
@@ -13721,6 +13731,8 @@ export interface paths {
                                     invalid: number;
                                     /** @description Single operating-system packages Trivy failed on */
                                     trivyFailed: number;
+                                    /** @description Operating-system packages of organisations past their failure budget for the run */
+                                    overBudget: number;
                                     /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
                                     unsupported: string[];
                                 };
