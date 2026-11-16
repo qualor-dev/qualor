@@ -20,8 +20,8 @@ stages: [check]
 
 # The pinned analyzer toolchain (tools/analyzers/install.sh) plus a JDK for PMD, SpotBugs and the
 # fixture's javac, and PHP 8.2 for PHPStan (plan 9A). QUALOR_REQUIRE_ANALYZERS=1 turns a missing tool into a failure (ruling T4).
-# Trivy's release archive and database layer are cached by the database pin (plan 2B): the
-# key is TRIVY_DB_DIGEST of install.sh without its `sha256:` (`pnpm trivy-db:pin` moves both), and
+# Trivy's release archive, database layer and checks bundle are cached by their pins (plan 2B, 0.16 IaC): the
+# key is TRIVY_DB_DIGEST and TRIVY_CHECKS_DIGEST of install.sh without their `sha256:` (`pnpm trivy-db:pin` moves the first), and
 # install.sh checks every cached file's SHA-256 before it uses it. Upstream's retention of old
 # snapshots is not documented; the cache keeps the pinned one installable while it lives.
 .analyzers:
@@ -29,11 +29,12 @@ stages: [check]
     QUALOR_REQUIRE_ANALYZERS: '1'
     QUALOR_DOWNLOAD_CACHE: .tmp/downloads
     QUALOR_TRIVY_DB_SHA256: 7d0ae3ee84ece1ecae274d9ac146c7241ae483c981f68aeb3f4953f6c2fbc6b0
+    QUALOR_TRIVY_CHECKS_SHA256: 4bf8ba41d342b378e63707561806d7784373ddd6cc04fdaf085ec7f38a19ec9d
   cache:
     - key:
         files: [pnpm-lock.yaml]
       paths: [.pnpm-store]
-    - key: trivy-db-$QUALOR_TRIVY_DB_SHA256
+    - key: trivy-db-$QUALOR_TRIVY_DB_SHA256-$QUALOR_TRIVY_CHECKS_SHA256
       paths: [.tmp/downloads]
   before_script:
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends openjdk-17-jdk-headless unzip php8.2-cli

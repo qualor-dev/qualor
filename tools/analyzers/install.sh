@@ -6,7 +6,7 @@
 # PATH for PMD, SpotBugs and detekt. The same versions are what the qualor/scanner image ships; bump them
 # here only (tools/ci.test.ts checks the pins). `pnpm trivy-db:pin` moves the database pin to
 # the newest snapshot (upstream builds one every 6 hours; how long it keeps an old one is not
-# documented). QUALOR_DOWNLOAD_CACHE (optional, CI) names a directory that keeps Trivy's
+# documented); the trivy-checks bundle (0.16 IaC) is pinned and cached the same way. QUALOR_DOWNLOAD_CACHE (optional, CI) names a directory that keeps Trivy's
 # release archive and database layer between runs, each named by its SHA-256 and checked on every
 # use like a download; it holds only the current pins, so a CI cache of it keeps the pinned
 # database installable for as long as the cache lives, whatever upstream deletes.
@@ -31,6 +31,13 @@ TRIVY_SHA256_ARM64=b94ce1976bbf3c15b514b605ee88be7c6d94a29be2302847ff01cb794d47a
 # TRIVY_DB_CREATED; architecture-independent.
 TRIVY_DB_DIGEST=sha256:7d0ae3ee84ece1ecae274d9ac146c7241ae483c981f68aeb3f4953f6c2fbc6b0
 TRIVY_DB_CREATED=2026-09-25T06:43:29Z
+# ghcr.io/aquasecurity/trivy-checks:2.3.0, the bundle layer (media type
+# application/vnd.cncf.openpolicyagent.layer.v1.tar+gzip) that Trivy 0.74.0 pulls as
+# trivy-checks:2, the misconfiguration checks of the `trivy-iac` engine (0.16 IaC). The tags 2
+# and 2.3.0 carried this same layer when it was pinned; architecture-independent.
+# filter-trivy-checks.sh removes the KCV checks and specs/ after the unpack (Q-L180).
+TRIVY_CHECKS_VERSION=2.3.0
+TRIVY_CHECKS_DIGEST=sha256:4bf8ba41d342b378e63707561806d7784373ddd6cc04fdaf085ec7f38a19ec9d
 # Ruff (plan 8C), the Python linter of the `ruff` engine: the upstream release binary for
 # glibc, checked against the release's sha256.sum (the same as GitHub's asset digests of the
 # immutable release 0.16.9). RUFF_VERSION must equal RUFF_VERSION in
@@ -188,7 +195,26 @@ rm -rf "$PREFIX/share/trivy"
 mkdir -p "$PREFIX/share/trivy/db"
 tar -xzf "$TMP/trivy-db.tar.gz" --no-same-owner -C "$PREFIX/share/trivy/db" trivy.db metadata.json
 chmod 0644 "$PREFIX/share/trivy/db/trivy.db" "$PREFIX/share/trivy/db/metadata.json"
-# Only the current pins stay in the cache.
-[ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete
 
-echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION with FindSecBugs $FINDSECBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, PHPStan $PHPSTAN_VERSION into $PREFIX/lib/phpstan, and the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy"
+# The checks bundle is an OCI artifact too: the same token, then its single layer by digest.
+if ! from_cache "${TRIVY_CHECKS_DIGEST#sha256:}" trivy-checks.tar.gz; then
+  TOKEN="$(curl -fsSL --proto '=https' --tlsv1.2 --retry 7 --retry-connrefused \
+    'https://ghcr.io/token?scope=repository:aquasecurity/trivy-checks:pull' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+  [ -n "$TOKEN" ] || { echo "no ghcr.io pull token for aquasecurity/trivy-checks" >&2; exit 1; }
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -H "Authorization: Bearer $TOKEN" \
+    -o "$TMP/trivy-checks.tar.gz" "https://ghcr.io/v2/aquasecurity/trivy-checks/blobs/$TRIVY_CHECKS_DIGEST" \
+    || { echo "the pinned trivy-checks bundle $TRIVY_CHECKS_DIGEST is gone from ghcr.io" >&2; exit 1; }
+fi
+echo "${TRIVY_CHECKS_DIGEST#sha256:}  $TMP/trivy-checks.tar.gz" | sha256sum -c - >/dev/null || { echo "checksum mismatch: trivy-checks $TRIVY_CHECKS_DIGEST" >&2; exit 1; }
+to_cache "${TRIVY_CHECKS_DIGEST#sha256:}" trivy-checks.tar.gz
+rm -rf "$PREFIX/share/trivy-iac"
+mkdir -p "$PREFIX/share/trivy-iac/policy/content"
+tar -xzf "$TMP/trivy-checks.tar.gz" --no-same-owner -C "$PREFIX/share/trivy-iac/policy/content"
+sh "$(dirname "$0")/filter-trivy-checks.sh" "$PREFIX/share/trivy-iac/policy/content"
+chmod -R u=rwX,go=rX "$PREFIX/share/trivy-iac"
+echo "$TRIVY_CHECKS_VERSION" > "$PREFIX/share/trivy-iac/version"
+chmod 0644 "$PREFIX/share/trivy-iac/version"
+# Only the current pins stay in the cache.
+[ -z "$CACHE" ] || find "$CACHE" -maxdepth 1 -type f ! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" ! -name "${TRIVY_CHECKS_DIGEST#sha256:}" -delete
+
+echo "installed PMD $PMD_VERSION, SpotBugs $SPOTBUGS_VERSION with FindSecBugs $FINDSECBUGS_VERSION, OpenGrep $OPENGREP_VERSION, Gitleaks $GITLEAKS_VERSION, Trivy $TRIVY_VERSION, Ruff $RUFF_VERSION, SwiftLint $SWIFTLINT_VERSION into $PREFIX/bin, detekt $DETEKT_VERSION into $PREFIX/lib/detekt, PHPStan $PHPSTAN_VERSION into $PREFIX/lib/phpstan, the Trivy database of $TRIVY_DB_CREATED into $PREFIX/share/trivy, and the trivy-checks $TRIVY_CHECKS_VERSION bundle into $PREFIX/share/trivy-iac"

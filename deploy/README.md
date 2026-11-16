@@ -297,6 +297,26 @@ keeps the snapshot fresh enough. To refresh it:
    `tools/analyzers/trivy-db-filter.test.ts` fails when a kept ID has no entry left.
 4. Build and release as below.
 
+**Trivy's checks bundle.** The `trivy-iac` engine runs Trivy's misconfiguration checks from a
+pinned copy in `/opt/qualor/share/trivy-iac/policy/content`, so a scan never downloads checks.
+
+| Pin (`tools/analyzers/install.sh`) | Value                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `TRIVY_CHECKS_VERSION`             | trivy-checks 2.3.0, the bundle Trivy 0.74.0 pulls as `trivy-checks:2` |
+| `TRIVY_CHECKS_DIGEST`              | SHA-256 of the bundle's OCI layer                                     |
+
+`tools/analyzers/filter-trivy-checks.sh` removes the Kubernetes cluster checks (id `KCV-…`) and
+`specs/` from the bundle: they quote text of a licensed benchmark. To move the pin:
+
+1. Find the new layer: the manifest of `ghcr.io/aquasecurity/trivy-checks:<version>` lists it
+   (anonymous token from `https://ghcr.io/token?scope=repository:aquasecurity/trivy-checks:pull`).
+2. Edit both pins in `install.sh`, `QUALOR_TRIVY_CHECKS_SHA256` in `.gitlab-ci.yml`, and the
+   version and digest in `deploy/scanner/NOTICE.md`. The tests (`tools/ci.test.ts`,
+   `tools/deploy/sources.test.ts`) fail until all agree.
+3. Check that the new bundle still passes the filter (no `KCV-` check, no `specs/`) and that no
+   check description quotes the Kubernetes documentation (grep `description:` for `kubernetes.io`);
+   if one does, add the attribution line to the NOTICE.
+
 The scanner keeps what it downloads from the server in `QUALOR_TRIVY_CACHE_DIR`, and the
 integrations persist it between jobs: the GitLab component caches `.qualor/trivy/`, and the GitHub
 templates and the scan-action restore and save it with `actions/cache`. A cache inside the
@@ -436,8 +456,8 @@ component has to be re-derived, not only its tag archive:
   `https://proxy.golang.org/<module>/@v/<version>.zip` of every MPL, LGPL, GPL or EPL one. The
   same for Gitleaks, which `deploy/scanner/Dockerfile` builds from its tag: list the modules of the
   binary in the built image (`GITLEAKS_GO_UPGRADES` moves some of them off the tag's `go.sum`). The
-  Trivy database pin (`TRIVY_DB_DIGEST`) is data, not a component, and moves on its own
-  (`pnpm trivy-db:pin`, above);
+  Trivy database pin (`TRIVY_DB_DIGEST`) and the checks pin (`TRIVY_CHECKS_DIGEST`) are data, not
+  components; the database moves on its own (`pnpm trivy-db:pin`, above), the checks by hand;
 - Ruff: `tools/analyzers/ruff-licences.mjs` regenerates `RUFF-DEPENDENCIES.txt` from the new
   release's `Cargo.lock` and fails on a licence outside its allowlist; re-derive the MPL-2.0 crate
   entries (`colored`, `option-ext`, `version-ranges`, unless the new `Cargo.lock` swaps one out) by

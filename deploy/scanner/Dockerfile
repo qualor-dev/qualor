@@ -102,7 +102,7 @@ RUN cd /src/go-tools/trivy-db-filter \
 
 FROM node:22.23.4-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384 AS tools
 RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/*
-COPY tools/analyzers/install.sh tools/analyzers/install-sonarjs.sh /tmp/
+COPY tools/analyzers/install.sh tools/analyzers/filter-trivy-checks.sh tools/analyzers/install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
 # The Gitleaks built above replaces install.sh's release binary of the same version.
 COPY --from=gitleaks /gitleaks /opt/qualor/bin/gitleaks

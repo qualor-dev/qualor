@@ -1342,11 +1342,18 @@ describe("the CI cache of Trivy's downloads (plan 2B)", () => {
     );
     expect(script.indexOf('from_cache "${TRIVY_DB_DIGEST#sha256:}"')).toBeLessThan(check);
     expect(check).toBeLessThan(script.indexOf('to_cache "${TRIVY_DB_DIGEST#sha256:}"'));
+    // The checks bundle (0.16 IaC) is cached and checked the same way.
+    expect(script).toContain('from_cache "${TRIVY_CHECKS_DIGEST#sha256:}" trivy-checks.tar.gz');
+    expect(script.indexOf('from_cache "${TRIVY_CHECKS_DIGEST#sha256:}"')).toBeLessThan(
+      script.indexOf('"${TRIVY_CHECKS_DIGEST#sha256:}  $TMP/trivy-checks.tar.gz" | sha256sum -c -'),
+    );
     // Only the current pins stay in the cache.
-    expect(script).toContain('! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" -delete');
+    expect(script).toContain(
+      '! -name "$TV_SHA" ! -name "${TRIVY_DB_DIGEST#sha256:}" ! -name "${TRIVY_CHECKS_DIGEST#sha256:}" -delete',
+    );
   });
 
-  it('keys the GitLab cache on TRIVY_DB_DIGEST, next to the pnpm store', () => {
+  it('keys the GitLab cache on TRIVY_DB_DIGEST and TRIVY_CHECKS_DIGEST, next to the pnpm store', () => {
     const gitlab = parse(readFileSync('.gitlab-ci.yml', 'utf8')) as Record<
       string,
       { variables?: Record<string, string>; cache?: unknown }
@@ -1355,14 +1362,20 @@ describe("the CI cache of Trivy's downloads (plan 2B)", () => {
     expect(`sha256:${analyzers?.variables?.['QUALOR_TRIVY_DB_SHA256'] ?? ''}`).toBe(
       pin('TRIVY_DB_DIGEST'),
     );
+    expect(`sha256:${analyzers?.variables?.['QUALOR_TRIVY_CHECKS_SHA256'] ?? ''}`).toBe(
+      pin('TRIVY_CHECKS_DIGEST'),
+    );
     expect(analyzers?.variables?.['QUALOR_DOWNLOAD_CACHE']).toBe('.tmp/downloads');
     expect(analyzers?.cache).toEqual([
       gitlab['default']?.cache,
-      { key: 'trivy-db-$QUALOR_TRIVY_DB_SHA256', paths: ['.tmp/downloads'] },
+      {
+        key: 'trivy-db-$QUALOR_TRIVY_DB_SHA256-$QUALOR_TRIVY_CHECKS_SHA256',
+        paths: ['.tmp/downloads'],
+      },
     ]);
   });
 
-  it('keys the GitHub cache on the Trivy version and TRIVY_DB_DIGEST, read from install.sh', () => {
+  it('keys the GitHub cache on the Trivy version, TRIVY_DB_DIGEST and TRIVY_CHECKS_DIGEST, read from install.sh', () => {
     const github = parse(readFileSync('.github/workflows/ci.yml', 'utf8')) as Workflow;
     const dir = '${{ runner.temp }}/qualor-downloads';
     for (const job of ['test', 'fixtures', 'cli-binary']) {
@@ -1371,6 +1384,7 @@ describe("the CI cache of Trivy's downloads (plan 2B)", () => {
       const pins = at((s) => s.id === 'trivy-pins');
       expect(steps[pins]?.run, job).toContain('s/^TRIVY_VERSION=//p');
       expect(steps[pins]?.run, job).toContain('s/^TRIVY_DB_DIGEST=sha256://p');
+      expect(steps[pins]?.run, job).toContain('s/^TRIVY_CHECKS_DIGEST=sha256://p');
       const cache = at((s) => s.uses?.startsWith('actions/cache@') === true);
       expect(steps[cache]?.uses, job).toMatch(PINNED);
       expect(steps[cache]?.with, job).toEqual({

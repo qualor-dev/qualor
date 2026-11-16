@@ -4,8 +4,8 @@ The `qualor/scanner` image bundles the Qualor CLI (MIT, `/opt/qualor/licenses/qu
 with third-party programs, each under its own licence. The programs are unmodified upstream
 releases, installed by `tools/analyzers/install.sh` (pinned versions, SHA-256 checked), compiled
 into the `qualor` binary from the pinned lockfile, or copied from the pinned base images named in
-`deploy/scanner/Dockerfile`. Trivy's vulnerability database is the exception: `install.sh` pins
-the snapshot by digest, and Qualor filtered it (see below). The licence texts are in
+`deploy/scanner/Dockerfile`. Trivy's vulnerability database and the trivy-checks bundle are the exceptions: `install.sh` pins
+each by digest, and Qualor filtered both (see below). The licence texts are in
 `/opt/qualor/licenses/` of the image (`deploy/scanner/licenses/` in the repository) unless the
 table names another place.
 
@@ -29,6 +29,7 @@ table names another place.
 | Gitleaks                                                                              | 8.30.1                                         | MIT (`GITLEAKS-LICENSE.txt`); its MPL-2.0 Go modules: see below                                                                                                                                | https://github.com/gitleaks/gitleaks/tree/v8.30.1                                                     |
 | Trivy                                                                                 | 0.74.0                                         | Apache-2.0 (`TRIVY-LICENSE.txt`, `TRIVY-NOTICE.txt`); its MPL-2.0 Go modules: see below                                                                                                        | https://github.com/aquasecurity/trivy/tree/v0.74.0                                                    |
 | Trivy vulnerability database (a filtered snapshot: library packages only)             | see `/opt/qualor/share/trivy/db/metadata.json` | each source's own terms: see below                                                                                                                                                             | https://github.com/aquasecurity/trivy-db                                                              |
+| trivy-checks 2.3.0 (a filtered bundle: the checks of the `trivy-iac` engine)          | 2.3.0 (`/opt/qualor/share/trivy-iac/version`)  | MIT (text below)                                                                                                                                                                               | https://github.com/aquasecurity/trivy-checks                                                          |
 | eslint-plugin-sonarjs (Qualor's own `sonarjs` pass)                                   | 2.0.4                                          | LGPL-3.0 (`ESLINT-PLUGIN-SONARJS-LICENSE.txt`); its npm dependency tree, axe-core (MPL-2.0) included: see below (`SONARJS-DEPENDENCIES.txt`)                                                   | https://github.com/SonarSource/SonarJS/tree/273825f98b35b29b409fbf4f89efce075c651d96                  |
 | Ruff (the ruff engine)                                                                | 0.16.9                                         | MIT (`RUFF-LICENSE.txt`, which also carries the licences of the projects Ruff derives from); the Rust crates it compiles in: see below (`RUFF-DEPENDENCIES.txt`)                               | https://github.com/astral-sh/ruff/tree/0.16.9                                                         |
 | stylelint and HTMLHint (Qualor's HTML and CSS linters, `/opt/qualor/weblint`)         | 17.15.0 and 1.9.2                              | MIT; their npm dependency tree (MIT, ISC, BSD, MIT-0, BlueOak-1.0.0, CC0-1.0, Python-2.0): see below (`WEBLINT-DEPENDENCIES.txt`)                                                              | https://github.com/stylelint/stylelint/tree/17.15.0, https://github.com/htmlhint/HTMLHint/tree/v1.9.2 |
@@ -116,6 +117,42 @@ their source in `qualor/scanner-sources`: hashicorp's `aws-sdk-go-base/v2` v2.0.
 `hcl/v2` 2.24.0, and `cyphar/filepath-securejoin` 0.6.1 (BSD-3-Clause with MPL-2.0 files).
 `spdx/tools-golang` is Apache-2.0 or GPL-2.0-or-later at the recipient's choice, taken as
 Apache-2.0; the rest is Apache-2.0, MIT, BSD or ISC.
+
+trivy-checks 2.3.0 (`/opt/qualor/share/trivy-iac/`) is the set of misconfiguration checks that
+Trivy runs for the `trivy-iac` engine: the layer
+`sha256:4bf8ba41d342b378e63707561806d7784373ddd6cc04fdaf085ec7f38a19ec9d` of
+`ghcr.io/aquasecurity/trivy-checks:2.3.0` (`TRIVY_CHECKS_VERSION` and `TRIVY_CHECKS_DIGEST` in
+`tools/analyzers/install.sh`). Qualor modified the bundle when it built this image
+(`tools/analyzers/filter-trivy-checks.sh`): it removed the Kubernetes cluster checks (the ones
+with an id that starts with `KCV-`) and the `specs/` directory. Everything else is as upstream.
+
+Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. CIS Benchmark references in check descriptions are references only.
+
+trivy-checks is licensed under the MIT licence:
+
+```text
+MIT License
+
+Copyright (c) 2024 Aqua Security
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 Trivy's vulnerability database (`/opt/qualor/share/trivy/db/`) is a filtered snapshot of
 `ghcr.io/aquasecurity/trivy-db:2`: the layer

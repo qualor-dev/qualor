@@ -464,6 +464,22 @@ describe('the notices (rulings L1 and L2)', () => {
     expect(notice).toMatch(/courtesy/);
   });
 
+  it('names the pinned trivy-checks bundle, its MIT text and the CIS line (0.16 IaC, Q-L180)', () => {
+    const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8');
+    const flat = notice.replace(/\s+/g, ' ');
+    expect(flat).toContain('trivy-checks 2.3.0');
+    for (const pin of ['TRIVY_CHECKS_VERSION', 'TRIVY_CHECKS_DIGEST']) {
+      const value = new RegExp(`^${pin}=(\\S+)$`, 'm').exec(installSh)?.[1] ?? pin;
+      expect(flat, `${pin} of install.sh`).toContain(value);
+    }
+    expect(flat).toContain('MIT License Copyright (c) 2024 Aqua Security');
+    expect(flat).toContain(
+      'Qualor is an independent product and has not been authorized, sponsored or otherwise approved by CIS. CIS Benchmark references in check descriptions are references only.',
+    );
+    // No feature is labelled after the benchmark.
+    expect(flat).not.toMatch(/CIS (compliance|scanning)/i);
+  });
+
   it('lists the sources of the filtered Trivy database snapshot (D31)', () => {
     const notice = readFileSync('deploy/scanner/NOTICE.md', 'utf8');
     const from = notice.indexOf("Trivy's vulnerability database (`/opt/qualor/share/trivy/db/`)");

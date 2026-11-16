@@ -16,13 +16,13 @@ FROM node:22.23.4-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205a
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip php8.2-cli \
   && rm -rf /var/lib/apt/lists/*
-COPY install.sh install-sonarjs.sh /tmp/
+COPY install.sh filter-trivy-checks.sh install-sonarjs.sh /tmp/
 RUN sh /tmp/install.sh
 ENV PATH=/opt/qualor/bin:$PATH
 # Qualor's sonarjs pass into /opt/qualor/sonarjs, as deploy/scanner/Dockerfile and CI install it
 # (plan 8A/8B; tools/analyzers/install-sonarjs.sh, tools/ci.test.ts).
 COPY --chmod=0644 sonarjs/package.json sonarjs/package-lock.json sonarjs/run.mjs sonarjs/categories.mjs /tmp/sonarjs/
-RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh /tmp/install.sh
+RUN sh /tmp/install-sonarjs.sh && rm -rf /tmp/sonarjs /tmp/install-sonarjs.sh /tmp/install.sh /tmp/filter-trivy-checks.sh
 # Qualor's HTML and CSS linters into /opt/qualor/weblint, as deploy/scanner/Dockerfile and CI
 # install them (plan 8D; tools/analyzers/install-weblint.sh, tools/ci.test.ts).
 COPY install-weblint.sh /tmp/
