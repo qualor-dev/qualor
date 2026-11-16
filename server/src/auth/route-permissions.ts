@@ -117,6 +117,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /projects/:id/versions': 'project.read',
   'PATCH /projects/:id/versions/:versionId': 'project.settings',
   'DELETE /projects/:id/versions/:versionId': 'project.settings',
+  'GET /packages/usages': 'list:project.read',
   'GET /projects/:id/vulnerabilities/targets': 'project.read',
   'GET /projects/:id/vulnerabilities': 'project.read',
   'GET /projects/:id/vulnerability-monitoring': 'project.read',

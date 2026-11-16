@@ -4,6 +4,7 @@ import { gateStatusTool } from './gate-status';
 import { issueTool } from './issue';
 import { issuesTool } from './issues';
 import { measuresTool } from './measures';
+import { packageUsagesTool } from './package-usages';
 import { projectsTool } from './projects';
 import { ruleTool } from './rule';
 import { transitionTool } from './transition';
@@ -19,4 +20,5 @@ export const MCP_TOOLS: readonly McpTool[] = [
   explainTool,
   suggestFixTool,
   transitionTool,
+  packageUsagesTool,
 ] as readonly McpTool[];

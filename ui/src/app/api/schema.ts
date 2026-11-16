@@ -5774,6 +5774,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/packages/usages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Where a package is used: its rows in every branch and version of the projects you can see */
+        get: {
+            parameters: {
+                query: {
+                    /** @description A package URL when it starts with pkg: (its type covers every ecosystem that maps to it; name and version exact; for deb, rpm and apk the namespace is the OS family), else a name: 3 or more characters match anywhere in a name, 1–2 a whole name, ignoring case */
+                    q: string;
+                    /** @description A purl type; it keeps every ecosystem that maps to it (pypi also keeps pip, poetry, uv, …) */
+                    ecosystem?: string;
+                    /** @description An exact version */
+                    version?: string;
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            rows: {
+                                project: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    key: string;
+                                    name: string;
+                                };
+                                target: {
+                                    /** @enum {string} */
+                                    kind: "branch" | "version";
+                                    /** Format: uuid */
+                                    id: string;
+                                    name: string;
+                                    main: boolean;
+                                };
+                                ecosystem: string;
+                                purlType: string | null;
+                                name: string;
+                                version: string;
+                                path: string;
+                                direct: boolean | null;
+                                distribution: {
+                                    family: string;
+                                    version: string;
+                                } | null;
+                                /** @description Open vulnerabilities of the package in this branch or version, as the Vulnerabilities tab counts them; null when the package is not checked or the branch or version has no re-check result */
+                                vulnerabilities: number | null;
+                            }[];
+                            page: number;
+                            pageSize: number;
+                            /** @description The matching rows, at most 10 000 */
+                            total: number;
+                            /** @description More than 10 000 rows match ("10 000+") */
+                            totalCapped: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/projects/sbom": {
         parameters: {
             query?: never;

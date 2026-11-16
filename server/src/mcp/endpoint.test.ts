@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { missingScope, scopeCovers } from './endpoint';
+import { requiredScope } from './tool';
+import { MCP_TOOLS } from './tools';
 
 describe('missingScope (the tools/call check before the SDK runs)', () => {
   const scopes = new Map([
     ['qualor_projects', 'mcp:read' as const],
+    ['qualor_package_usages', 'mcp:read' as const],
     ['qualor_transition', 'mcp:write' as const],
   ]);
   const call = (name: string, extra: Record<string, unknown> = {}) => ({
@@ -17,6 +20,13 @@ describe('missingScope (the tools/call check before the SDK runs)', () => {
     expect(missingScope(call('qualor_transition'), scopes, ['mcp:read'])).toBe('mcp:write');
     expect(missingScope(call('qualor_transition'), scopes, ['mcp:read', 'mcp:write'])).toBeNull();
     expect(missingScope(call('qualor_projects'), scopes, ['mcp:read'])).toBeNull();
+  });
+
+  it('needs only mcp:read for qualor_package_usages, as the tool table says (0.16)', () => {
+    const table = new Map(MCP_TOOLS.map((t) => [t.name, requiredScope(t.access)]));
+    expect(table.get('qualor_package_usages')).toBe('mcp:read');
+    expect(missingScope(call('qualor_package_usages'), scopes, ['mcp:read'])).toBeNull();
+    expect(missingScope(call('qualor_package_usages'), scopes, [])).toBe('mcp:read');
   });
 
   it('checks every request of a 2025-era batch', () => {

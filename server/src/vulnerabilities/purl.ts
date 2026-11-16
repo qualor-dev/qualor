@@ -287,6 +287,15 @@ export function invalidStoredPackage(p: MatchKeyInput): boolean {
   return keyCheck(p).invalid;
 }
 
+/**
+ * The purl type of a stored ecosystem: an OS package's is its ecosystem (deb, rpm, apk), a
+ * library's the one {@link purlOf} writes. Null for an ecosystem with no purl type.
+ */
+export function purlTypeOf(ecosystem: string): string | null {
+  if (isOsPackageType(ecosystem)) return ecosystem;
+  return Object.hasOwn(TYPE_OF, ecosystem) ? (TYPE_OF[ecosystem] ?? null) : null;
+}
+
 /** The ecosystems stored for a purl type: the type itself and every one that maps to it. */
 export function ecosystemsOfType(type: string): string[] {
   const ecosystems = [type];

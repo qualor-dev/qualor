@@ -25,6 +25,7 @@ import { exportRoutes } from './exports';
 import { newCodeRoutes } from './newcode';
 import { notificationRoutes, unsubscribeRoutes } from './notifications';
 import { organizationRoutes } from './organizations';
+import { packageRoutes } from './packages';
 import { profileRoutes } from './profiles';
 import { projectMemberRoutes } from './project-members';
 import { projectRoutes } from './projects';
@@ -67,6 +68,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(measureRoutes, { prefix: '/api/v0', deps });
   await app.register(dependencyRoutes, { prefix: '/api/v0', deps });
   await app.register(versionRoutes, { prefix: '/api/v0', deps });
+  await app.register(packageRoutes, { prefix: '/api/v0', deps });
   await app.register(exportRoutes, { prefix: '/api/v0', deps });
   // Its own plugin: its raw-stream body parsers stay in its encapsulation context (0.16 SBOM).
   await app.register(sbomUploadRoutes, { prefix: '/api/v0', deps, uploadSlots });

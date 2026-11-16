@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   addMember,
@@ -543,5 +543,60 @@ describe('MCP read tools', () => {
       mergeRequest: '42',
     });
     expect(r.text).toBe('shop merge request 42 has no measures yet.');
+  });
+
+  describe('qualor_package_usages (0.16 where used)', () => {
+    beforeAll(async () => {
+      const admin = await login(ctx, 'admin', 'correct horse battery staple');
+      const org = await organizationId(ctx, 'default');
+      const project = await createProject(ctx, admin, {
+        organizationId: org,
+        key: 'pkg-shop',
+        name: 'Package shop',
+      });
+      const branchId = await mainBranchId(ctx.db, project.id);
+      const [analysis] = await ctx.db
+        .insert(analyses)
+        .values({ projectId: project.id, branchId, status: 'queued' })
+        .returning({ id: analyses.id });
+      await ctx.db.execute(sql`
+        INSERT INTO branch_dependencies (branch_id, path, ecosystem, name, version, licenses, analysis_id)
+        SELECT ${branchId}, 'svc-' || lpad(g::text, 2, '0') || '/package-lock.json', 'npm',
+               'mcp-left-pad', '1.3.0', '{}', ${analysis?.id ?? ''}
+          FROM generate_series(1, 60) AS g`);
+    });
+
+    it('qualor_package_usages: the first 50 rows with the total', async () => {
+      const r = await callTool(ctx, token, 'qualor_package_usages', { query: 'mcp-left-pad' });
+      expect(r.isError).toBe(false);
+      const lines = r.text.split('\n');
+      expect(lines).toHaveLength(51);
+      expect(lines[0]).toBe(
+        'mcp-left-pad@1.3.0 (npm) in pkg-shop, branch main (main), svc-01/package-lock.json: not checked',
+      );
+      expect(lines[50]).toContain('10 more');
+      expect(r.structured).toMatchObject({ total: 60, totalCapped: false });
+      expect(r.structured?.rows).toHaveLength(50);
+      expect((r.structured?.rows as { project: { key: string } }[])[0]?.project.key).toBe(
+        'pkg-shop',
+      );
+    });
+
+    it('qualor_package_usages: a purl, and nothing the user cannot see', async () => {
+      const purl = await callTool(ctx, token, 'qualor_package_usages', {
+        query: 'pkg:npm/mcp-left-pad@1.3.0',
+        ecosystem: 'npm',
+        version: '1.3.0',
+      });
+      expect(purl.structured).toMatchObject({ total: 60 });
+      const none = await callTool(ctx, outsiderToken, 'qualor_package_usages', {
+        query: 'mcp-left-pad',
+      });
+      expect(none.text).toBe('No package you can see matches.');
+      expect(none.structured).toEqual({ rows: [], total: 0, totalCapped: false });
+      const bad = await callTool(ctx, token, 'qualor_package_usages', { query: 'pkg:npm/' });
+      expect(bad.isError).toBe(true);
+      expect(bad.text).toContain('VALIDATION_FAILED');
+    });
   });
 });
