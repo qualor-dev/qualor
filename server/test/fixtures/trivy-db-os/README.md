@@ -68,6 +68,13 @@ The fixture is a modified extract of the advisory data below: filtered to the pa
 | Red Hat Security Data (OVAL v2, CPE map)                         | Red Hat, Inc.      | CC BY 4.0, https://creativecommons.org/licenses/by/4.0/       | https://access.redhat.com/security/data , https://www.redhat.com/security/data/oval/v2/ |
 | NVD (the details' severity, CVSS, CWE ids, references and dates) | NIST               | public domain                                                 | https://nvd.nist.gov/                                                                   |
 
-- The Alpine secdb data in this fixture is shared under CC BY-SA 4.0, with no other terms.
+- `db.tar.gz` as a whole is offered under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), with no other terms: it is a modified database that includes Alpine secdb data, which is ShareAlike (CC BY-SA 4.0 §4(b)). Each source's own terms above still apply to its data.
 - This product uses data from the NVD API but is not endorsed or certified by the NVD.
-- The database was built by Aqua Security's trivy-db (https://github.com/aquasecurity/trivy-db, Apache-2.0).
+- The database was built by Aqua Security's trivy-db (https://github.com/aquasecurity/trivy-db, Apache-2.0). Its NOTICE:
+
+```
+Trivy-db
+Copyright 2019-2020 Aqua Security Software Ltd.
+
+This product includes software developed by Aqua Security (https://aquasec.com).
+```
