@@ -4,6 +4,7 @@ import {
   TRIVY_OS_FAMILIES,
   type OsPackageType,
 } from '@qualor/shared';
+import { readableEpoch, splitOsVersion } from './sbom';
 
 /**
  * The purl type of each ecosystem a scan or an SBOM stores: a scan's is Trivy's `Result.Type`, an
@@ -87,12 +88,16 @@ function rpmEpoch(version: string): { epoch: string; rest: string } {
 }
 
 /**
- * The key an OS package is matched and stored under (spec §6.5, Trivy's own purl form): the
- * distribution is in it, so two distributions, or two releases of one, never share matches.
- * - deb: `pkg:deb/<family>/<name>@<version>?distro=<family>-<osVersion>`;
- * - rpm: `pkg:rpm/<family>/<name>@<version-release>?epoch=<e>&distro=<family>-<osVersion>`, the
- *   stored `e:` prefix moved to `epoch=`, and no `epoch` without one (ruling R6);
- * - apk: `pkg:apk/<family>/<name>@<version>?distro=<osVersion>`.
+ * The key an OS package is matched and stored under (spec §6.5, Trivy's own purl form). It holds
+ * everything the re-check sends Trivy for the package (ruling R15): the distribution, so two
+ * distributions or two releases of one never share matches, and the source package, so that one
+ * row's claimed source never answers for another row's package (the match cache is shared by
+ * every project of the instance).
+ * - deb: `pkg:deb/<family>/<name>@<version>?distro=<family>-<osVersion>&upstream=<src>@<srcVersion>`;
+ * - rpm: `pkg:rpm/<family>/<name>@<version-release>?epoch=<e>&distro=<family>-<osVersion>&upstream=…`,
+ *   the stored `e:` prefix moved to `epoch=`, and no `epoch` without one (ruling R6);
+ * - apk: `pkg:apk/<family>/<name>@<version>?distro=<osVersion>&upstream=…`.
+ * `upstream` is Syft's qualifier, its version in the stored form `[epoch:]version[-release]`.
  * Every part is percent-encoded; the OS version stays as given (`12.15`).
  */
 export function osMatchKey(
@@ -101,10 +106,14 @@ export function osMatchKey(
   osVersion: string,
   name: string,
   version: string,
+  source: { name: string; version: string },
 ): string {
   const path = `pkg:${type}/${segment(family)}/${segment(name)}`;
-  if (type === 'apk') return `${path}@${segment(version)}?distro=${segment(osVersion)}`;
-  const distro = `distro=${segment(`${family}-${osVersion}`)}`;
+  const upstream = `upstream=${segment(`${source.name}@${source.version}`)}`;
+  if (type === 'apk') {
+    return `${path}@${segment(version)}?distro=${segment(osVersion)}&${upstream}`;
+  }
+  const distro = `distro=${segment(`${family}-${osVersion}`)}&${upstream}`;
   if (type === 'deb') return `${path}@${segment(version)}?${distro}`;
   const { epoch, rest } = rpmEpoch(version);
   const qualifiers = epoch === '' ? distro : `epoch=${segment(epoch)}&${distro}`;
@@ -119,18 +128,75 @@ export interface MatchKeyInput {
   /** The distribution of the row's version (SBOM versions only); null on a branch. */
   osFamily: string | null;
   osVersion: string | null;
+  /** The source package an SBOM named for an OS package; null otherwise. */
+  sourceName: string | null;
+  sourceVersion: string | null;
+}
+
+/**
+ * The source package an OS package is matched by: the one its row names, else the binary itself,
+ * as Trivy takes it for an SBOM that names none. The key and the SBOM both use this one.
+ */
+export function osSourceOf(
+  p: Pick<MatchKeyInput, 'name' | 'version' | 'sourceName' | 'sourceVersion'>,
+): { name: string; version: string } {
+  return {
+    name: p.sourceName === null || p.sourceName === '' ? p.name : p.sourceName,
+    version: p.sourceVersion === null || p.sourceVersion === '' ? p.version : p.sourceVersion,
+  };
+}
+
+/** The bounds of a stored package's strings: the report schema's, and migration 0031's. */
+const MAX_NAME = 512;
+const MAX_VERSION = 256;
+const MAX_OS_FIELD = 64;
+
+/**
+ * At most `max` characters, none of them a control character (C0, DEL or C1): a stored string
+ * Trivy may be given. Empty passes (the key rules decide about absent values). One linear pass.
+ */
+function plain(text: string, max: number): boolean {
+  if (text.length > max) return false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) return false;
+  }
+  return true;
+}
+
+/** The epoch of a deb or rpm version is absent or one Trivy reads as an int (1 to 9 digits). */
+const readableVersion = (type: OsPackageType, version: string): boolean =>
+  type === 'apk' || readableEpoch(splitOsVersion(type, version).epoch);
+
+/**
+ * Whether a stored package's values may be sent to Trivy (ruling R16): every string within its
+ * bound and free of control characters, and, for deb and rpm, the binary's and the source's epoch
+ * absent or 1 to 9 digits (Trivy fails a whole SBOM on a `SrcEpoch` it cannot read as an int).
+ * Values stored by an upload, which any organisation controls, pass here before they reach the
+ * SBOM that every project's packages share. A row that fails has no key: it is unchecked.
+ */
+export function validStoredValues(p: MatchKeyInput): boolean {
+  if (!plain(p.name, MAX_NAME) || !plain(p.version, MAX_VERSION)) return false;
+  if (!isOsPackageType(p.ecosystem)) return true;
+  if (p.osFamily !== null && !plain(p.osFamily, MAX_OS_FIELD)) return false;
+  if (p.osVersion !== null && !plain(p.osVersion, MAX_OS_FIELD)) return false;
+  const source = osSourceOf(p);
+  if (!plain(source.name, MAX_NAME) || !plain(source.version, MAX_VERSION)) return false;
+  return readableVersion(p.ecosystem, p.version) && readableVersion(p.ecosystem, source.version);
 }
 
 /**
  * The key a stored package is matched under: an OS package's {@link osMatchKey} when its version
- * names a distribution Trivy knows, a library's {@link purlOf}. Null, "not checked", for an OS
- * package without a distribution or of an unknown family, and for anything without a purl type.
+ * names a distribution Trivy knows, a library's {@link purlOf}. Null, "not checked", for values
+ * that fail {@link validStoredValues}, an OS package without a distribution or of an unknown
+ * family, and anything without a purl type.
  */
 export function matchKeyOf(p: MatchKeyInput): string | null {
+  if (!validStoredValues(p)) return null;
   if (!isOsPackageType(p.ecosystem)) return purlOf(p.ecosystem, p.name, p.version);
   if (p.osFamily === null || p.osVersion === null || p.osVersion === '') return null;
   if (!TRIVY_OS_FAMILIES.has(p.osFamily) || p.name === '' || p.version === '') return null;
-  return osMatchKey(p.ecosystem, p.osFamily, p.osVersion, p.name, p.version);
+  return osMatchKey(p.ecosystem, p.osFamily, p.osVersion, p.name, p.version, osSourceOf(p));
 }
 
 /** The ecosystems stored for a purl type: the type itself and every one that maps to it. */

@@ -126,7 +126,10 @@ describe('splitOsVersion', () => {
 
 /** An OS package of Debian 12.15 as the re-check hands it over. */
 const debPackage = (name: string, version: string, sourceName: string, sourceVersion: string) => {
-  const purl = osMatchKey('deb', 'debian', '12.15', name, version);
+  const purl = osMatchKey('deb', 'debian', '12.15', name, version, {
+    name: sourceName,
+    version: sourceVersion,
+  });
   return {
     purl,
     name,

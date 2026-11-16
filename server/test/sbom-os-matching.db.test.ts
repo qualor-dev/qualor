@@ -261,6 +261,12 @@ describeWithTools(['trivy'])('OS packages against real Trivy (0.16 SBOM)', () =>
     if (full.kind !== 'done') return;
     expect(full.summary.projects).toBe(5);
     expect(full.summary.unchecked).toBeGreaterThanOrEqual(1);
+    // Given up as a distribution Trivy cannot scan, and shown so (R16).
+    expect(full.summary.givenUp).toEqual({
+      invalid: 0,
+      trivyFailed: 0,
+      unsupported: ['redhat 12.0'],
+    });
     // Trivy really fails on that file alone: one odd SBOM must not stop every other project.
     const alone = await direct('odd', ODD_REDHAT);
     expect(alone.status).not.toBe(0);

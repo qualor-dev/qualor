@@ -28288,6 +28288,37 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
                             },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
+                            },
                             "durationMs": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -29031,6 +29062,37 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
                             },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
+                            },
                             "durationMs": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -29622,6 +29684,37 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
                             },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
+                            },
                             "durationMs": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -30202,6 +30295,37 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
                             },
                             "durationMs": {
                               "type": "integer",
@@ -30832,6 +30956,37 @@
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
                             },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
+                            },
                             "durationMs": {
                               "type": "integer",
                               "minimum": -9007199254740991,
@@ -31460,6 +31615,37 @@
                               "type": "integer",
                               "minimum": -9007199254740991,
                               "maximum": 9007199254740991
+                            },
+                            "givenUp": {
+                              "description": "Of `unchecked`, the packages the re-check gave up, by reason",
+                              "type": "object",
+                              "properties": {
+                                "invalid": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Packages whose stored values failed validation and never reached Trivy"
+                                },
+                                "trivyFailed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991,
+                                  "description": "Single operating-system packages Trivy failed on"
+                                },
+                                "unsupported": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan"
+                                }
+                              },
+                              "required": [
+                                "invalid",
+                                "trivyFailed",
+                                "unsupported"
+                              ],
+                              "additionalProperties": false
                             },
                             "durationMs": {
                               "type": "integer",

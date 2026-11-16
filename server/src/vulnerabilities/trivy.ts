@@ -24,6 +24,13 @@ export type TrivyRun =
       ok: false;
       code: 'NOT_INSTALLED' | 'TIMEOUT' | 'FAILED' | 'BAD_OUTPUT' | 'TOO_LARGE' | 'ABORTED';
       message: string;
+      /**
+       * Set only when Trivy itself ran and exited non-zero (null: killed by a signal), with what
+       * it wrote to stderr (about 4 000 characters at most). Every other failure (no work
+       * directory, a spawn error, a timeout, no output) leaves both out: Trivy gave no answer.
+       */
+      exitCode?: number | null;
+      stderr?: string;
     };
 
 export interface TrivyRunner {
@@ -301,6 +308,8 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
             ok: false,
             code: 'FAILED',
             message: `Trivy exited with ${String(exit.code)}: ${exit.stderr.trim().slice(0, 500)}`,
+            exitCode: exit.code,
+            stderr: exit.stderr,
           };
         }
         let size: number;

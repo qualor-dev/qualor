@@ -160,6 +160,22 @@ const settingsDto = z.object({
       projects: z.number().int(),
       packages: z.number().int(),
       unchecked: z.number().int(),
+      givenUp: z
+        .object({
+          invalid: z.number().int().meta({
+            description: 'Packages whose stored values failed validation and never reached Trivy',
+          }),
+          trivyFailed: z
+            .number()
+            .int()
+            .meta({ description: 'Single operating-system packages Trivy failed on' }),
+          unsupported: z.array(z.string()).meta({
+            description:
+              'Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan',
+          }),
+        })
+        .optional()
+        .meta({ description: 'Of `unchecked`, the packages the re-check gave up, by reason' }),
       durationMs: z.number().int(),
     })
     .nullable(),

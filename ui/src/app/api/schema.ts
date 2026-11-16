@@ -12822,6 +12822,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };
@@ -12985,6 +12994,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };
@@ -13146,6 +13164,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };
@@ -13302,6 +13329,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };
@@ -13486,6 +13522,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };
@@ -13670,6 +13715,15 @@ export interface paths {
                                 projects: number;
                                 packages: number;
                                 unchecked: number;
+                                /** @description Of `unchecked`, the packages the re-check gave up, by reason */
+                                givenUp?: {
+                                    /** @description Packages whose stored values failed validation and never reached Trivy */
+                                    invalid: number;
+                                    /** @description Single operating-system packages Trivy failed on */
+                                    trivyFailed: number;
+                                    /** @description Distributions (`<family> <version>`, at most 20) whose release Trivy cannot scan */
+                                    unsupported: string[];
+                                };
                                 durationMs: number;
                             } | null;
                         };

@@ -41,6 +41,13 @@ export interface VulndbState {
     projects: number;
     packages: number;
     unchecked: number;
+    /**
+     * The packages the run gave up on purpose (0.16, ruling R16), counted in `unchecked` too:
+     * stored values that failed validation and never reached Trivy; single OS packages Trivy
+     * failed on; and the distributions (`<family> <version>`, at most 20) whose release Trivy
+     * cannot scan.
+     */
+    givenUp: { invalid: number; trivyFailed: number; unsupported: string[] };
     durationMs: number;
   } | null;
   staleNotifiedDigest: string | null;
@@ -60,6 +67,10 @@ const onRead = z.object({
       projects: int,
       packages: int,
       unchecked: int,
+      // Absent before 0.16, or damaged: none given up.
+      givenUp: z
+        .object({ invalid: int, trivyFailed: int, unsupported: z.array(z.string()).max(20) })
+        .catch({ invalid: 0, trivyFailed: 0, unsupported: [] }),
       durationMs: int,
     })
     .nullable()

@@ -208,7 +208,11 @@ describe('createTrivyRunner', () => {
       maxOutputBytes: 1024 * 1024,
     }).run(sbom, os.tmpdir());
     expect(r).toMatchObject({ ok: false, code: 'FAILED' });
-    if (!r.ok) expect(r.message).toMatch(/work directory/);
+    if (!r.ok) {
+      expect(r.message).toMatch(/work directory/);
+      // Not Trivy's answer: the re-check never takes it for a package's fault (R16).
+      expect(r.exitCode).toBeUndefined();
+    }
     rmSync(file);
   });
 
@@ -271,6 +275,9 @@ describe('createTrivyRunner', () => {
     expect(await runner('fail').run(sbom, os.tmpdir())).toMatchObject({
       ok: false,
       code: 'FAILED',
+      // Trivy itself ran and failed: what the re-check may judge by its stderr (R16).
+      exitCode: 1,
+      stderr: expect.stringContaining('FATAL fake failure') as unknown,
     });
   });
 

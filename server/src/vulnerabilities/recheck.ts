@@ -16,15 +16,8 @@ import { readVulndbSettings } from '../vulndb/settings';
 import { readVulndbState, updateVulndbState, type VulndbState } from '../vulndb/state';
 import { currentDataset } from '../vulndb/store';
 import { enqueueVulnerabilityAlerts } from './alerts/enqueue';
-import { matchKeyOf } from './purl';
-import {
-  buildOsSbom,
-  buildSbom,
-  readableEpoch,
-  sbomGroupKey,
-  splitOsVersion,
-  type SbomPackage,
-} from './sbom';
+import { matchKeyOf, osMatchKey, osSourceOf, validStoredValues } from './purl';
+import { buildOsSbom, buildSbom, sbomGroupKey, type SbomPackage } from './sbom';
 import { projectTargets, type Target } from './targets';
 import {
   createTrivyRunner,
@@ -197,10 +190,16 @@ interface Run {
   /** Trivy runs made so far, splits included. */
   trivyRuns: number;
   /**
-   * The {@link sbomGroupKey} of each distribution Trivy failed on in this run: its packages stay
-   * unchecked, and its other chunks are not run.
+   * The {@link sbomGroupKey} of each distribution whose release Trivy cannot scan, found in this
+   * run ({@link UNSUPPORTED_RELEASE}): its packages stay unchecked, and its other chunks are not run.
    */
   failedGroups: Set<string>;
+  /** Those distributions as `<family> <version>`, for the summary. */
+  unsupported: Set<string>;
+  /** The groups whose release a probe found scannable in this run: not probed again. */
+  probedGroups: Set<string>;
+  /** The match keys of the single packages Trivy failed on in this run: they stay unchecked. */
+  failedKeys: Set<string>;
   logger: Pick<FastifyBaseLogger, 'info' | 'warn'> | undefined;
 }
 
@@ -214,7 +213,9 @@ interface Counts {
   /** The match keys of the inventories' packages. */
   packages: Set<string>;
   unchecked: Set<string>;
-  /** The keys of OS packages, by {@link sbomGroupKey}: a group Trivy fails on is unchecked. */
+  /** Of `unchecked`, the packages whose stored values failed {@link validStoredValues}. */
+  invalid: Set<string>;
+  /** The keys of OS packages, by {@link sbomGroupKey}: a group Trivy cannot scan is unchecked. */
   osGroups: Map<string, Set<string>>;
 }
 
@@ -278,19 +279,16 @@ async function distinctPackages(db: Db, targets: readonly Target[]): Promise<Pac
 
 /**
  * What Trivy is given for a package: its match key and, for an OS package, its distribution and
- * source package (the binary's own when the SBOM named none). Null when it is not checked: no
- * match key ({@link matchKeyOf}: no purl type, an OS package without a known distribution), or a
- * source version whose epoch Trivy cannot read (it would fail the whole SBOM, spec §4).
+ * source package ({@link osSourceOf}, the one the key holds). Null when it is not checked: no
+ * match key ({@link matchKeyOf}: values that fail validation, no purl type, an OS package without
+ * a known distribution).
  */
 function sbomPackageOf(p: Package): SbomPackage | null {
   const purl = matchKeyOf(p);
   if (purl === null) return null;
   if (!isOsPackageType(p.ecosystem)) return { purl, name: p.name, version: p.version };
   if (p.osFamily === null || p.osVersion === null) return null;
-  const sourceName = p.sourceName === null || p.sourceName === '' ? p.name : p.sourceName;
-  const sourceVersion =
-    p.sourceVersion === null || p.sourceVersion === '' ? p.version : p.sourceVersion;
-  if (!readableEpoch(splitOsVersion(p.ecosystem, sourceVersion).epoch)) return null;
+  const source = osSourceOf(p);
   return {
     purl,
     name: p.name,
@@ -299,8 +297,8 @@ function sbomPackageOf(p: Package): SbomPackage | null {
       type: p.ecosystem,
       family: p.osFamily,
       osVersion: p.osVersion,
-      sourceName,
-      sourceVersion,
+      sourceName: source.name,
+      sourceVersion: source.version,
     },
   };
 }
@@ -383,18 +381,18 @@ async function storeMatches(
 
 /**
  * The chunks of `packages` in the order they run: one {@link sbomGroupKey} group after another
- * (libraries first), each cut into SBOMs of at most `size`; the groups Trivy failed on are left
- * out. Reversed, so that `pop()` takes them in order.
+ * (libraries first), each cut into SBOMs of at most `size`. The groups and single packages Trivy
+ * failed on in this run are left out. Reversed, so that `pop()` takes them in order.
  */
 function chunksOf(
+  run: Run,
   packages: readonly SbomPackage[],
   size: number,
-  failedGroups: ReadonlySet<string>,
 ): (readonly SbomPackage[])[] {
   const groups = new Map<string, SbomPackage[]>([['', []]]);
   for (const p of packages) {
     const key = sbomGroupKey(p);
-    if (failedGroups.has(key)) continue;
+    if (run.failedGroups.has(key) || run.failedKeys.has(p.purl)) continue;
     const group = groups.get(key);
     if (group === undefined) groups.set(key, [p]);
     else group.push(p);
@@ -407,39 +405,117 @@ function chunksOf(
 }
 
 /**
- * Trivy failed (exited non-zero) on a chunk of OS packages: their distribution is one it cannot
- * scan (Trivy 0.74.0 exits 1 on a Red Hat release its database has no content sets for, spec §4).
- * The group's packages stay unchecked for this run, and its other chunks are not run; the
- * re-check goes on. Any other failure, and any failure on libraries, stops the re-check (R12).
+ * What Trivy 0.74.0 says when it cannot scan a release at all: its Red Hat detector finds no
+ * content sets for it (it has defaults for RHEL 6 to 9 only; RHEL 10, CentOS Stream 10 and 5 fail
+ * so with the full database), https://github.com/aquasecurity/trivy-db/issues/435.
  */
-function givesUpGroup(run: Run, first: SbomPackage, got: TrivyRun): boolean {
+const UNSUPPORTED_RELEASE = 'unable to find CPE indices';
+/**
+ * More single OS packages than this that Trivy fails on, one by one, in one run: the cause is not
+ * a package (a damaged database, a broken Trivy), and the run fails rather than leave them all
+ * unchecked.
+ */
+export const MAX_FAILED_PACKAGES = 16;
+/** The package of a probe SBOM: a name no vulnerability database holds. */
+const PROBE = 'qualor-release-probe';
+
+/** A failed run that is Trivy's own answer: it ran, and exited with a non-zero code. */
+function rejected(got: TrivyRun): got is Extract<TrivyRun, { ok: false }> & { exitCode: number } {
+  return !got.ok && got.code === 'FAILED' && typeof got.exitCode === 'number';
+}
+
+const failedRun = (got: Extract<TrivyRun, { ok: false }>): Problem => ({
+  code: 'RECHECK_FAILED',
+  message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
+});
+
+/**
+ * Whether Trivy cannot scan the release of `first`'s distribution, whatever the packages: it said
+ * so for the chunk, and says so again for a probe SBOM of that release that the server writes
+ * itself (one made-up package). No stored package text can make the probe fail, so no row of one
+ * organisation can give up the distribution for the others.
+ */
+async function unsupportedRelease(
+  run: Run,
+  first: SbomPackage & { os: NonNullable<SbomPackage['os']> },
+  got: Extract<TrivyRun, { ok: false }>,
+): Promise<boolean | Problem | typeof STOPPED> {
+  if (!(got.stderr ?? '').includes(UNSUPPORTED_RELEASE)) return false;
+  const group = sbomGroupKey(first);
+  if (run.probedGroups.has(group)) return false;
   const { os } = first;
-  if (os === undefined || got.ok || got.code !== 'FAILED') return false;
-  run.failedGroups.add(sbomGroupKey(first));
+  const source = { name: PROBE, version: '0' };
+  const probe: SbomPackage = {
+    purl: osMatchKey(os.type, os.family, os.osVersion, PROBE, '0', source),
+    name: PROBE,
+    version: '0',
+    os: { ...os, sourceName: PROBE, sourceVersion: '0' },
+  };
+  run.trivyRuns += 1;
+  const answer = await run.runner.run(buildOsSbom([probe]), run.cacheDir, run.shutdown);
+  if (stopping(run)) return STOPPED;
+  if (!answer.ok && !rejected(answer)) return failedRun(answer);
+  if (!answer.ok && (answer.stderr ?? '').includes(UNSUPPORTED_RELEASE)) return true;
+  run.probedGroups.add(group);
+  return false;
+}
+
+/**
+ * Trivy rejected a chunk of OS packages (ruling R16). A release it cannot scan gives up its whole
+ * group ({@link unsupportedRelease}). Otherwise the chunk is bisected, down to single packages: a
+ * package Trivy still fails on alone stays unchecked, only that one, and the others are matched.
+ * Past {@link MAX_FAILED_PACKAGES} such packages the run fails. Answers `'bisect'`, null (go on)
+ * or the run's end.
+ */
+async function osRejected(
+  run: Run,
+  chunk: readonly SbomPackage[],
+  first: SbomPackage & { os: NonNullable<SbomPackage['os']> },
+  got: Extract<TrivyRun, { ok: false }>,
+): Promise<'bisect' | null | Problem | typeof STOPPED> {
+  const release = await unsupportedRelease(run, first, got);
+  if (release === STOPPED || typeof release === 'object') return release;
+  const { os } = first;
+  const fields = { component: 'vulnerabilities', packageType: os.type };
+  const distribution = `${os.family} ${os.osVersion}`;
+  if (release) {
+    run.failedGroups.add(sbomGroupKey(first));
+    run.unsupported.add(distribution);
+    run.logger?.warn(
+      { ...fields, distribution, message: got.message },
+      'Trivy cannot scan this release of the distribution; its OS packages stay unchecked',
+    );
+    return null;
+  }
+  if (chunk.length > 1) return 'bisect';
+  if (run.failedKeys.size >= MAX_FAILED_PACKAGES) {
+    return {
+      code: 'RECHECK_FAILED',
+      message: `The vulnerability re-check stopped: Trivy failed on more than ${MAX_FAILED_PACKAGES} operating-system packages one by one, so the cause is not a package: ${got.message}`,
+    };
+  }
+  run.failedKeys.add(first.purl);
   run.logger?.warn(
-    {
-      component: 'vulnerabilities',
-      packageType: os.type,
-      distribution: `${os.family} ${os.osVersion}`,
-      message: got.message,
-    },
-    'Trivy failed on the OS packages of a distribution; they stay unchecked',
+    { ...fields, distribution, purl: first.purl, message: got.message },
+    'Trivy failed on one OS package; it stays unchecked',
   );
-  return true;
+  return null;
 }
 
 /**
  * Runs Trivy on `packages` in SBOMs of at most `run.chunk.components`, one distribution (or the
  * libraries) per SBOM, storing each chunk's matches as it comes. A chunk whose output is over the
  * budget (TOO_LARGE) is split in half and both halves run, down to `run.chunk.floor`. A chunk of
- * OS packages Trivy fails on gives up its group ({@link givesUpGroup}). Any other failed run
- * stops there, its chunk untouched and the later ones never started (R12); so does a stop.
+ * OS packages that Trivy rejects goes to {@link osRejected}. Any other failure (one on libraries,
+ * and every failure that is not Trivy's own answer: no work directory, a spawn error, a signal, a
+ * timeout, no output) stops the run there, its chunk untouched and the later ones never started
+ * (R12); so does a stop.
  */
 async function matchPackages(
   run: Run,
   packages: readonly SbomPackage[],
 ): Promise<Problem | typeof STOPPED | null> {
-  const todo = chunksOf(packages, run.chunk.components, run.failedGroups);
+  const todo = chunksOf(run, packages, run.chunk.components);
   for (let chunk = todo.pop(); chunk !== undefined; chunk = todo.pop()) {
     if (stopping(run)) return STOPPED;
     const first = chunk[0];
@@ -449,16 +525,17 @@ async function matchPackages(
     const got = await run.runner.run(sbom, run.cacheDir, run.shutdown);
     if (!got.ok) {
       if (stopping(run)) return STOPPED;
+      const half = Math.ceil(chunk.length / 2);
       if (got.code === 'TOO_LARGE' && chunk.length > run.chunk.floor && chunk.length > 1) {
-        const half = Math.ceil(chunk.length / 2);
         todo.push(chunk.slice(half), chunk.slice(0, half));
         continue;
       }
-      if (givesUpGroup(run, first, got)) continue;
-      return {
-        code: 'RECHECK_FAILED',
-        message: `The vulnerability re-check stopped: Trivy failed (${got.code}): ${got.message}`,
-      };
+      const { os } = first;
+      if (os === undefined || !rejected(got)) return failedRun(got);
+      const next = await osRejected(run, chunk, { ...first, os }, got);
+      if (next === 'bisect') todo.push(chunk.slice(half), chunk.slice(0, half));
+      else if (next !== null) return next;
+      continue;
     }
     await storeMatches(
       run.db,
@@ -571,7 +648,9 @@ function emptyInventories(targetsOf: ReadonlyMap<string, Target[]>): {
 function addPackage(counts: Counts, inventory: Inventory | undefined, p: Package): void {
   const entry = sbomPackageOf(p);
   if (entry === null) {
-    counts.unchecked.add(`${p.ecosystem}\u0000${p.name}\u0000${p.version}`);
+    const key = `${p.ecosystem}\u0000${p.name}\u0000${p.version}`;
+    counts.unchecked.add(key);
+    if (!validStoredValues(p)) counts.invalid.add(key);
     return;
   }
   const { purl } = entry;
@@ -932,6 +1011,7 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Rech
     projects: 0,
     packages: new Set(),
     unchecked: new Set(),
+    invalid: new Set(),
     osGroups: new Map(),
   };
   for (const batch of slices(projectIds, PROJECT_BATCH)) {
@@ -942,17 +1022,37 @@ async function recheckAll(run: Run, projectIds: readonly string[]): Promise<Rech
   return counts;
 }
 
+/** At most this many distributions are named in a summary's `givenUp.unsupported`. */
+const MAX_UNSUPPORTED_NAMED = 20;
+
 /**
- * The summary's counts: the packages with a match key, less those of the distributions Trivy
- * failed on in this run ({@link givesUpGroup}), which count as unchecked.
+ * The summary's counts (ruling R16): the packages with a match key, less those this run gave up
+ * (the single packages Trivy failed on, and the packages of a release it cannot scan), which count
+ * as unchecked; and why packages were given up, for the operator.
  */
 function checkedCounts(
   counts: Counts,
-  failedGroups: ReadonlySet<string>,
-): { packages: number; unchecked: number } {
-  let failed = 0;
-  for (const group of failedGroups) failed += counts.osGroups.get(group)?.size ?? 0;
-  return { packages: counts.packages.size - failed, unchecked: counts.unchecked.size + failed };
+  run: Run | undefined,
+): Pick<RecheckSummary, 'packages' | 'unchecked' | 'givenUp'> {
+  const failed = new Set<string>();
+  let trivyFailed = 0;
+  for (const group of run?.failedGroups ?? []) {
+    for (const key of counts.osGroups.get(group) ?? []) failed.add(key);
+  }
+  for (const key of run?.failedKeys ?? []) {
+    if (!counts.packages.has(key) || failed.has(key)) continue;
+    failed.add(key);
+    trivyFailed += 1;
+  }
+  return {
+    packages: counts.packages.size - failed.size,
+    unchecked: counts.unchecked.size + failed.size,
+    givenUp: {
+      invalid: counts.invalid.size,
+      trivyFailed,
+      unsupported: [...(run?.unsupported ?? [])].sort().slice(0, MAX_UNSUPPORTED_NAMED),
+    },
+  };
 }
 
 /**
@@ -1195,6 +1295,9 @@ export async function recheckProjects(
       },
       trivyRuns: 0,
       failedGroups: new Set(),
+      unsupported: new Set(),
+      probedGroups: new Set(),
+      failedKeys: new Set(),
       logger: deps.logger,
     };
     return current;
@@ -1234,7 +1337,7 @@ export async function recheckProjects(
   const summary: RecheckSummary = {
     at: now().toISOString(),
     projects: outcome.projects,
-    ...checkedCounts(outcome, current?.failedGroups ?? new Set()),
+    ...checkedCounts(outcome, current),
     durationMs: Math.round(performance.now() - started),
   };
   await updateVulndbState(deps.db, (state) => ({
