@@ -7,6 +7,7 @@ import {
   linkedSignal,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, type Params, Router, RouterLink } from '@angular/router';
@@ -25,6 +26,7 @@ import { type Branch, branchTitle, findBranch } from '../branches';
 import { codeFileLink } from '../code-links';
 import { CurrentProject } from '../current-project';
 import { ExportMenu, type ExportOption } from '../export-menu';
+import { SbomUploadDialog } from '../vulnerabilities/sbom-upload-dialog';
 
 type DependencyQuery = NonNullable<
   paths['/api/v0/projects/{id}/dependencies']['get']['parameters']['query']
@@ -168,7 +170,7 @@ function isShown(branch: Branch, wanted: string | null): boolean {
  */
 @Component({
   selector: 'q-dependencies-page',
-  imports: [ExportMenu, Icon, LabelPipe, RouterLink],
+  imports: [ExportMenu, Icon, LabelPipe, RouterLink, SbomUploadDialog],
   templateUrl: './dependencies.page.html',
   styleUrl: './dependencies.page.css',
 })
@@ -329,6 +331,11 @@ export class DependenciesPage {
     computation: (target, previous) => target ?? previous?.value ?? null,
   });
   protected readonly loading = computed(() => this.answer.isLoading());
+  /** Whether the caller may upload an SBOM (project.analyze). */
+  protected readonly canUpload = computed(() =>
+    this.project.canChange(this.projectId(), 'project.analyze'),
+  );
+  protected readonly uploadDialog = viewChild(SbomUploadDialog);
   /** The project's key, which the export route takes. */
   protected readonly projectKey = computed(() => this.project.current()?.key ?? '');
   /**
@@ -459,6 +466,20 @@ export class DependenciesPage {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: filterParams(scope, { ...this.filters(), page: 1 }),
+      replaceUrl: true,
+    });
+  }
+
+  protected openUpload(): void {
+    this.uploadDialog()?.open();
+  }
+
+  /** An SBOM was stored: read the versions again and show the new one. */
+  protected uploaded(version: { versionId: string }): void {
+    this.versions.reload();
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: filterParams({ version: version.versionId }, { ...this.filters(), page: 1 }),
       replaceUrl: true,
     });
   }

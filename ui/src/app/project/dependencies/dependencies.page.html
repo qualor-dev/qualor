@@ -59,6 +59,12 @@
       <span id="deps-ecosystem-error" class="field-error" role="alert">{{ message }}</span>
     }
   </form>
+  @if (canUpload()) {
+    <button type="button" class="btn" (click)="openUpload()" i18n="@@sbom.upload.open">
+      Upload SBOM
+    </button>
+    <q-sbom-upload-dialog [projectKey]="projectKey()" (uploaded)="uploaded($event)" />
+  }
   @if (sbomOption(); as option) {
     <q-export-menu
       kind="sbom"

@@ -31,6 +31,20 @@
           </p>
         }
       }
+      @if (canUpload()) {
+        <p>
+          <button type="button" class="btn" (click)="openUpload()" i18n="@@sbom.upload.open">
+            Upload SBOM
+          </button>
+        </p>
+        <p class="hint">
+          <span i18n="@@vuln.sbomListed">Uploaded SBOMs are listed under</span>&ngsp;<a
+            [routerLink]="['/projects', projectId(), 'dependencies']"
+            i18n="@@vuln.sbomListedLink"
+            >Dependencies</a
+          >.
+        </p>
+      }
     </div>
   } @else if (a.data; as data) {
     <div class="vuln-top">
@@ -69,9 +83,6 @@
         </button>
       }
     </div>
-    @if (canUpload()) {
-      <q-sbom-upload-dialog [projectKey]="projectKey()" (uploaded)="uploaded()" />
-    }
     <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
       <a
         routerLink="."
@@ -332,8 +343,26 @@
           An instance admin sets it up in Settings → Vulnerability database.
         </p>
       }
+      @if (canUpload()) {
+        <p>
+          <button type="button" class="btn" (click)="openUpload()" i18n="@@sbom.upload.open">
+            Upload SBOM
+          </button>
+        </p>
+        <p class="hint">
+          <span i18n="@@vuln.sbomListed">Uploaded SBOMs are listed under</span>&ngsp;<a
+            [routerLink]="['/projects', projectId(), 'dependencies']"
+            i18n="@@vuln.sbomListedLink"
+            >Dependencies</a
+          >.
+        </p>
+      }
     </div>
   }
+}
+
+@if (canUpload()) {
+  <q-sbom-upload-dialog [projectKey]="projectKey()" (uploaded)="uploaded()" />
 }
 
 <!-- The version's tracking menu: a native popover, for whoever holds project.settings. -->

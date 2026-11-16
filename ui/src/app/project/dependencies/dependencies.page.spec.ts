@@ -530,6 +530,60 @@ describe('DependenciesPage (6M §8)', () => {
     );
   });
 
+  describe('Upload SBOM', () => {
+    const NEW_ID = '0190a6c2-0000-7000-8000-0000000000c9';
+    const asUser = (permissions: string[]) => {
+      server.on('GET', `/api/v0/projects/${PROJECT}`, {
+        body: { id: PROJECT, organizationId: ORG_ID, key: 'acme/x', name: 'X', permissions },
+      });
+      TestBed.inject(CurrentProject).use(PROJECT);
+    };
+    const uploadButton = (root: HTMLElement) =>
+      [...root.querySelectorAll('button')].find((b) => text(b) === 'Upload SBOM');
+
+    it('is offered with project.analyze only', async () => {
+      asUser([...VIEWER_PROJECT_PERMISSIONS]);
+      const viewer = await render();
+      expect(uploadButton(viewer.root)).toBeUndefined();
+      expect(viewer.root.querySelector('q-sbom-upload-dialog')).toBeNull();
+    });
+
+    it('reads the versions again and selects the uploaded one', async () => {
+      asUser(['project.read', 'project.analyze']);
+      server.on('PUT', '/api/v0/projects/sbom', {
+        status: 201,
+        body: {
+          version: { id: NEW_ID, label: '9.0.0', source: 'sbom' },
+          format: 'CycloneDX 1.6',
+          subject: null,
+          distribution: null,
+          packages: 1,
+          osPackages: 0,
+          skipped: { noPurl: 0, unsupportedType: 0, duplicate: 0 },
+          warnings: [],
+          monitoring: { enabled: false, recheckQueued: false },
+        },
+      });
+      const { fixture, root } = await render();
+      expect(uploadButton(root)).toBeDefined();
+      const before = server.requestsTo('GET', `/api/v0/projects/${PROJECT}/versions`).length;
+      const input = root.querySelector<HTMLInputElement>('#sbom-file')!;
+      Object.defineProperty(input, 'files', {
+        value: [new File(['{}'], 'bom.json')],
+        configurable: true,
+      });
+      input.dispatchEvent(new Event('change'));
+      await settle(fixture);
+      root.querySelector('q-sbom-upload-dialog form')!.dispatchEvent(new Event('submit'));
+      await settle(fixture);
+      expect(server.requestsTo('PUT', '/api/v0/projects/sbom')).toHaveLength(1);
+      expect(
+        server.requestsTo('GET', `/api/v0/projects/${PROJECT}/versions`).length,
+      ).toBeGreaterThan(before);
+      expect(TestBed.inject(Router).url).toBe(`/?version=${NEW_ID}`);
+    });
+  });
+
   describe('Export SBOM (D26-1)', () => {
     const systemInfo = (features: string[]) =>
       server.on('GET', '/api/v0/system/info', {

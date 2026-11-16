@@ -810,6 +810,68 @@ describe('VulnerabilitiesPage', () => {
       expect(root.querySelector('q-sbom-upload-dialog')).not.toBeNull();
     });
 
+    const answer = {
+      version: { id: '0190a6c2-0000-7000-8000-0000000000c9', label: '1.0.0', source: 'sbom' },
+      format: 'CycloneDX 1.6',
+      subject: null,
+      distribution: null,
+      packages: 3,
+      osPackages: 0,
+      skipped: { noPurl: 0, unsupportedType: 0, duplicate: 0 },
+      warnings: [],
+      monitoring: { enabled: false, recheckQueued: false },
+    };
+
+    async function uploadFrom(root: HTMLElement) {
+      expect(button(root, 'Upload SBOM')).toBeDefined();
+      button(root, 'Upload SBOM')!.click();
+      await settle();
+      const input = root.querySelector<HTMLInputElement>('#sbom-file')!;
+      Object.defineProperty(input, 'files', {
+        value: [new File(['{}'], 'bom.json')],
+        configurable: true,
+      });
+      input.dispatchEvent(new Event('change'));
+      await settle();
+      root.querySelector('q-sbom-upload-dialog form')!.dispatchEvent(new Event('submit'));
+      await settle();
+    }
+
+    it.each([
+      [
+        'monitoring is off for the project',
+        { monitoring: 'off' as const, offBy: 'project' as const },
+      ],
+      [
+        'monitoring is off for the server',
+        { monitoring: 'off' as const, offBy: 'instance' as const },
+      ],
+      ['there is no vulnerability data', { data: null }],
+    ])('is offered when %s, and says that monitoring is off', async (_name, state) => {
+      server.on('PUT', '/api/v0/projects/sbom', { status: 201, body: answer });
+      const root = await render(state, { permissions: UPLOAD });
+      await uploadFrom(root);
+      expect(server.requestsTo('PUT', '/api/v0/projects/sbom')).toHaveLength(1);
+      expect(text(root.querySelector('.sbom-result'))).toContain('Monitoring is off');
+      expect(text(root)).toContain('Uploaded SBOMs are listed under Dependencies');
+    });
+
+    it('is not offered to a viewer when monitoring is off or there is no data', async () => {
+      for (const state of [
+        { monitoring: 'off' as const, offBy: 'project' as const },
+        { data: null },
+      ]) {
+        TestBed.resetTestingModule();
+        TestBed.configureTestingModule({
+          imports: [VulnerabilitiesPage],
+          providers: [provideRouter([]), provideFakeServer(server)],
+        });
+        const root = await render(state);
+        expect(button(root, 'Upload SBOM')).toBeUndefined();
+        expect(root.querySelector('q-sbom-upload-dialog')).toBeNull();
+      }
+    });
+
     it('is not offered to a viewer', async () => {
       const root = await render({ targets: TARGETS });
       expect(button(root, 'Upload SBOM')).toBeUndefined();
@@ -840,7 +902,8 @@ describe('VulnerabilitiesPage', () => {
       const empty = text(root.querySelector('.empty-state'));
       expect(empty).toContain('No vulnerability data yet.');
       expect(empty).toContain('An instance admin sets it up in Settings → Vulnerability database.');
-      expect(root.querySelector('.empty-state a')).toBeNull();
+      // The Dependencies link of the SBOM upload is the only link (SETTINGS holds project.analyze).
+      expect(root.querySelector('.empty-state a[href="/settings/vulnerability-db"]')).toBeNull();
     });
 
     it('says nothing is open when every tracked target is clean', async () => {
@@ -917,7 +980,7 @@ describe('VulnerabilitiesPage', () => {
       const admin = await render(off, { admin: true, permissions: SETTINGS });
       expect(text(admin.querySelector('.empty-state'))).toContain(sentence);
       expect(text(admin.querySelector('.empty-state'))).not.toContain('for this project');
-      const links = admin.querySelectorAll('.empty-state a');
+      const links = admin.querySelectorAll('.empty-state a[href^="/settings"]');
       expect(links.length).toBe(1);
       expect(text(links[0])).toBe('Settings → Vulnerability database');
       expect(links[0]?.getAttribute('href')).toBe('/settings/vulnerability-db');
@@ -934,7 +997,7 @@ describe('VulnerabilitiesPage', () => {
       expect(empty).toContain(
         'Ask an instance admin to turn it on in Settings → Vulnerability database.',
       );
-      expect(projectAdmin.querySelector('.empty-state a')).toBeNull();
+      expect(projectAdmin.querySelector('.empty-state a[href^="/settings"]')).toBeNull();
     });
 
     it('shows the alert when the summary fails', async () => {
