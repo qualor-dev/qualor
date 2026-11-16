@@ -57,6 +57,7 @@ describe('Shell', () => {
     const nav = root.querySelector('nav[aria-label="Main"]');
     expect([...(nav?.querySelectorAll('a') ?? [])].map((a) => a.textContent?.trim())).toEqual([
       'Projects',
+      'Packages',
       'Quality gates',
       'Quality profiles',
       'Rules',
@@ -142,12 +143,13 @@ describe('Shell', () => {
 
     it('shows Portfolio after Quality gates while the feature and its entry are there', async () => {
       const links = await navWith(['portfolio'], [PORTFOLIO]);
-      expect(links.slice(0, 3)).toEqual([
+      expect(links.slice(0, 4)).toEqual([
         ['Projects', '/projects'],
+        ['Packages', '/packages'],
         ['Quality gates', '/gates'],
         ['Portfolio', '/portfolio'],
       ]);
-      expect(links).toHaveLength(7);
+      expect(links).toHaveLength(8);
     });
 
     it('shows no Portfolio without the feature, without the entry, or for an unknown entry', async () => {
@@ -159,7 +161,7 @@ describe('Shell', () => {
       configure();
       const other = { point: 'main.nav', id: 'other', label: 'Other', path: '/other' };
       const settings = { ...PORTFOLIO, point: 'settings.nav' };
-      expect(await navWith(['portfolio'], [other, settings])).toHaveLength(6);
+      expect(await navWith(['portfolio'], [other, settings])).toHaveLength(7);
     });
   });
 
@@ -250,7 +252,7 @@ describe('Shell', () => {
       const root = fixture.nativeElement as HTMLElement;
       expect(root.querySelector('#org-switch')).toBeNull();
       expect(root.querySelector('.user-menu')?.textContent).toContain('Alice');
-      expect(root.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(6);
+      expect(root.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(7);
       const org = TestBed.inject(OrgContext);
       expect(org.orgs()).toEqual([]);
       expect(org.current()).toBeNull();

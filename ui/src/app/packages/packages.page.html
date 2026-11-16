@@ -1,0 +1,198 @@
+<q-page-header [compact]="true">
+  <h1 pageTitle i18n="@@packages.title">Packages</h1>
+</q-page-header>
+
+<div class="page-body">
+  <form class="card panel packages-search" role="search" novalidate (submit)="submit($event)">
+    <div class="field packages-q">
+      <label for="packages-q" i18n="@@packages.search.label">Package name or purl</label>
+      <input
+        id="packages-q"
+        type="search"
+        autocomplete="off"
+        placeholder="log4j-core or pkg:maven/org.apache.logging.log4j/log4j-core"
+        i18n-placeholder="@@packages.search.placeholder"
+        [attr.maxlength]="qMax"
+        [value]="search()"
+        [attr.aria-invalid]="searchError() ? true : null"
+        [attr.aria-describedby]="searchError() ? 'packages-q-error' : null"
+        (input)="search.set(inputValue($event))"
+      />
+    </div>
+    <div class="field">
+      <label for="packages-ecosystem" i18n="@@packages.ecosystem.label">Ecosystem</label>
+      <select
+        id="packages-ecosystem"
+        [value]="ecosystem()"
+        (change)="ecosystem.set(inputValue($event))"
+      >
+        <option value="" [selected]="ecosystem() === ''" i18n="@@packages.ecosystem.any">
+          Any
+        </option>
+        @for (e of ecosystems(); track e) {
+          <option [value]="e" [selected]="ecosystem() === e">{{ e }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="packages-version" i18n="@@packages.version.label">Version</label>
+      <input
+        id="packages-version"
+        type="text"
+        autocomplete="off"
+        maxlength="256"
+        [value]="version()"
+        (input)="version.set(inputValue($event))"
+      />
+    </div>
+    <button type="submit" class="btn btn-primary" i18n="@@packages.search.submit">Search</button>
+    @if (searchError(); as message) {
+      <span id="packages-q-error" class="field-error packages-error" role="alert">{{
+        message
+      }}</span>
+    }
+  </form>
+
+  @if (loadError(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  @if (!searched()) {
+    <section class="card panel" aria-labelledby="packages-heading">
+      <h2 id="packages-heading" class="visually-hidden" i18n="@@packages.heading">Results</h2>
+      <div class="empty-state">
+        <p i18n="@@packages.start">
+          Search a package by name or purl to see every project, branch and version that uses it.
+        </p>
+      </div>
+    </section>
+  } @else if (current(); as answer) {
+    <section class="card panel" aria-labelledby="packages-heading">
+      <div class="panel-head">
+        <h2 id="packages-heading" i18n="@@packages.heading">Results</h2>
+      </div>
+      <div class="panel-scroll" tabindex="0" role="group" aria-labelledby="packages-heading">
+        <table [attr.aria-busy]="loading()">
+          <caption class="visually-hidden" i18n="@@packages.caption">
+            Where the package is used
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" i18n="@@packages.col.project">Project</th>
+              <th scope="col" i18n="@@packages.col.target">Branch or version</th>
+              <th scope="col" i18n="@@packages.col.package">Package</th>
+              <th scope="col" i18n="@@packages.col.version">Version</th>
+              <th scope="col" i18n="@@packages.col.path">Path</th>
+              <th scope="col" i18n="@@packages.col.direct">Dependency</th>
+              <th scope="col" i18n="@@packages.col.distribution">Distribution</th>
+              <th scope="col" i18n="@@packages.col.vulnerabilities">Vulnerabilities</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of answer.rows; track $index) {
+              <tr>
+                <td>{{ row.project.name }}</td>
+                <td>
+                  {{ row.target.name }}
+                  @if (row.target.main) {
+                    &ngsp;<span class="badge badge-tag" i18n="@@packages.main">main</span>
+                  }
+                  @if (row.target.kind === 'version' && row.distribution) {
+                    &ngsp;<span class="badge badge-tag" i18n="@@packages.sbom">SBOM</span>
+                  }
+                </td>
+                <th scope="row" class="package">
+                  @let l = link(row);
+                  <a [routerLink]="l.commands" [queryParams]="l.queryParams">{{ row.name }}</a>
+                </th>
+                <td>
+                  <code>{{ row.version }}</code>
+                </td>
+                <td>
+                  @if (row.path === '') {
+                    —
+                  } @else {
+                    <code>{{ row.path }}</code>
+                  }
+                </td>
+                <td class="nowrap">
+                  @switch (row.direct) {
+                    @case (true) {
+                      <ng-container i18n="@@packages.direct">Direct</ng-container>
+                    }
+                    @case (false) {
+                      <ng-container i18n="@@packages.transitive">Transitive</ng-container>
+                    }
+                    @default {
+                      <span
+                        class="muted"
+                        aria-label="Not known"
+                        i18n-aria-label="@@packages.directUnknown"
+                        >–</span
+                      >
+                    }
+                  }
+                </td>
+                <td>
+                  @if (row.distribution; as d) {
+                    {{ d.family }} {{ d.version }}
+                  } @else {
+                    —
+                  }
+                </td>
+                <td class="nowrap">
+                  @if (row.vulnerabilities === null) {
+                    <span class="muted" i18n="@@packages.notChecked">not checked</span>
+                  } @else {
+                    {{ row.vulnerabilities }}
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="8">
+                  <p class="packages-none" i18n="@@packages.none">No package matches.</p>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      @if (pageRange(); as range) {
+        <nav class="panel-foot pager" aria-label="Pages" i18n-aria-label="@@packages.pages">
+          @if (range.capped) {
+            <span class="pager-range" i18n="@@packages.rangeCapped"
+              >{{ range.first }}–{{ range.last }} of 10 000+</span
+            >
+          } @else {
+            <span class="pager-range" i18n="@@packages.range"
+              >{{ range.first }}–{{ range.last }} of {{ range.total }}</span
+            >
+          }
+          @if (range.pages) {
+            <span class="pager-buttons">
+              <button
+                type="button"
+                class="btn"
+                [disabled]="answer.page <= 1"
+                (click)="goTo(answer.page - 1)"
+                i18n="@@packages.previous"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                class="btn"
+                [disabled]="!range.more"
+                (click)="goTo(answer.page + 1)"
+                i18n="@@packages.next"
+              >
+                Next
+              </button>
+            </span>
+          }
+        </nav>
+      }
+    </section>
+  }
+</div>

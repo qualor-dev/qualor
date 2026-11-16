@@ -12,6 +12,7 @@
   </a>
   <nav class="app-nav" aria-label="Main" i18n-aria-label="@@shell.mainNav">
     <a routerLink="/projects" routerLinkActive="active" i18n="@@shell.nav.projects">Projects</a>
+    <a routerLink="/packages" routerLinkActive="active" i18n="@@shell.nav.packages">Packages</a>
     <a routerLink="/gates" routerLinkActive="active" i18n="@@shell.nav.gates">Quality gates</a>
     @for (e of mainNav(); track e.id) {
       <a [routerLink]="e.path" routerLinkActive="active">{{ e.label }}</a>

@@ -122,7 +122,11 @@ test('the row menu works from the keyboard', async ({ page }) => {
   await trigger.focus();
   await page.keyboard.press('Enter');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('menuitem')).toHaveText(['Track automatically', 'Pin']);
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    'Track automatically',
+    'Pin',
+    'Delete version',
+  ]);
   await expect(automatic).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(pin).toBeFocused();

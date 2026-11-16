@@ -1,0 +1,26 @@
+/* The Packages page: the search card above the results panel. */
+.packages-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.packages-search .field {
+  margin: 0;
+}
+.packages-q {
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+.packages-q input {
+  width: 100%;
+  min-width: 0;
+}
+.packages-error {
+  flex-basis: 100%;
+}
+.packages-none {
+  margin: 0;
+}
