@@ -1,64 +1,117 @@
-import { and, eq, sql } from 'drizzle-orm';
-import type { DependencyEntry, DependencyIgnore } from '@qualor/shared';
+import { and, eq, sql, type SQLWrapper } from 'drizzle-orm';
+import type { DependencyIgnore, SbomDistribution } from '@qualor/shared';
 import type { Executor } from '../db/client';
-import { projectVersions, versionDependencies, type ProjectVersionRow } from '../db/schema';
-import { insertDependencyRows } from '../measures/store';
+import {
+  projectVersions,
+  versionDependencies,
+  type ProjectVersionRow,
+  type VersionSource,
+} from '../db/schema';
+import { insertDependencyRows, type VersionDependencyEntry } from '../measures/store';
+
+export type { VersionDependencyEntry } from '../measures/store';
 
 export interface UpsertVersionInput {
   projectId: string;
   label: string;
-  source: 'tag' | 'label';
+  source: VersionSource;
   tag: string | null;
-  analysisId: string;
+  /** Null only for an uploaded SBOM (`source: 'sbom'`), which has no analysis. */
+  analysisId: string | null;
   analyzedAt: Date;
   /**
    * The report's dependency inventory and `.trivyignore` ids (null when it carried none). Left
    * out when the report carried no inventory: an existing version then keeps its packages and its
-   * ids, and its analysis and date unless a tag scan takes it over from a label.
+   * ids, and its analysis and date unless a higher-ranked write takes it over.
    */
-  inventory?: { dependencies: readonly DependencyEntry[]; ignores: DependencyIgnore[] | null };
+  inventory?: {
+    dependencies: readonly VersionDependencyEntry[];
+    ignores: DependencyIgnore[] | null;
+  };
+  /** An uploaded SBOM's origin and distribution; stored with `source: 'sbom'` only. */
+  sbom?: { format: string; subject: string | null; distribution: SbomDistribution | null };
+}
+
+/** The version as written, and the source it had before (null: this write created it). */
+export interface UpsertVersionResult {
+  version: ProjectVersionRow;
+  previous: VersionSource | null;
 }
 
 /**
- * Creates the version of `label`, or points the existing one at this analysis (its source and tag
- * follow, so a tag scan turns a version taken from a label into a tag version). With an inventory,
- * the version's packages and `.trivyignore` ids are replaced by the analysis's. The `tracking`
- * override is the user's and stays.
+ * Precedence between the sources of a version (spec §6.6): a tag scan is the release, an uploaded
+ * SBOM is the user's explicit act, and a branch's `project.version` only a hint.
+ */
+const RANK: Record<VersionSource, number> = { tag: 3, sbom: 2, label: 1 };
+
+/** {@link RANK} in SQL, for the source column or `excluded.source`. */
+const rankOf = (source: SQLWrapper) =>
+  sql`(CASE ${source} WHEN 'tag' THEN 3 WHEN 'sbom' THEN 2 ELSE 1 END)`;
+
+/**
+ * Creates the version of `label`, or points the existing one at this write (its source and tag
+ * follow, so a tag scan turns a version taken from a label or an SBOM into a tag version). With an
+ * inventory, the version's packages and `.trivyignore` ids are replaced by the write's. The
+ * `tracking` override is the user's and stays. An SBOM write stores its origin and distribution;
+ * any other write clears them, with or without an inventory (ruling R5).
  *
- * Returns `'kept'`, changing nothing, when a `label` write meets a version a tag scan made: the
- * tag is the release and a branch's `project.version` never replaces it.
+ * Precedence is tag > sbom > label. A lower-ranked write meeting a higher-ranked version changes
+ * nothing and returns `'kept'` (a label write) or `'taken'` (an SBOM write); a higher-ranked write
+ * takes the version over.
  *
- * Returns `'stale'`, changing nothing, when the stored version was analysed later than
- * `analyzedAt`: an older scan never replaces a newer inventory. A tag scan of a version taken from
- * a label is never stale: the tag is the release, whenever its job ran.
+ * Returns `'stale'`, changing nothing, when a write of the version's own source (tag or label)
+ * was analysed earlier than the stored one: an older scan never replaces a newer inventory. A
+ * takeover is never stale, and neither is an SBOM write: the upload is the user's act, dated by
+ * the server (ruling R5).
  *
- * A tag write is never `'kept'` (only a label write meets a tag version), hence its overload.
+ * The overloads say what each source can meet: a tag write is never `'kept'` or `'taken'`, an SBOM
+ * write never `'stale'` or `'kept'`.
  */
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput & { source: 'tag' },
-): Promise<ProjectVersionRow | 'stale'>;
+): Promise<UpsertVersionResult | 'stale'>;
+export async function upsertVersion(
+  tx: Executor,
+  input: UpsertVersionInput & { source: 'sbom' },
+): Promise<UpsertVersionResult | 'taken'>;
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
-): Promise<ProjectVersionRow | 'stale' | 'kept'>;
+): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'>;
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
-): Promise<ProjectVersionRow | 'stale' | 'kept'> {
+): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'> {
+  // Locked: the version judged here is the one the write below meets.
   const [existing] = await tx
     .select({ analyzedAt: projectVersions.analyzedAt, source: projectVersions.source })
     .from(projectVersions)
     .where(
       and(eq(projectVersions.projectId, input.projectId), eq(projectVersions.label, input.label)),
-    );
-  if (existing?.source === 'tag' && input.source === 'label') return 'kept';
-  const takesOver = input.source === 'tag' && existing?.source === 'label';
-  if (existing && !takesOver && existing.analyzedAt.getTime() > input.analyzedAt.getTime()) {
+    )
+    .for('no key update');
+  if (existing && RANK[existing.source] > RANK[input.source]) {
+    return input.source === 'sbom' ? 'taken' : 'kept';
+  }
+  const takesOver = existing !== undefined && RANK[input.source] > RANK[existing.source];
+  if (
+    existing?.source === input.source &&
+    input.source !== 'sbom' &&
+    existing.analyzedAt.getTime() > input.analyzedAt.getTime()
+  ) {
     return 'stale';
   }
   const { inventory } = input;
-  const owner = { source: input.source, tag: input.tag };
+  const sbom = input.source === 'sbom' ? input.sbom : undefined;
+  const owner = {
+    source: input.source,
+    tag: input.tag,
+    osFamily: sbom?.distribution?.family ?? null,
+    osVersion: sbom?.distribution?.version ?? null,
+    sbomFormat: sbom?.format ?? null,
+    sbomSubject: sbom?.subject ?? null,
+  };
   const snapshot = {
     analysisId: input.analysisId,
     analyzedAt: input.analyzedAt,
@@ -73,18 +126,21 @@ export async function upsertVersion(
       target: [projectVersions.projectId, projectVersions.label],
       set: {
         ...owner,
-        // Without an inventory a takeover still dates the version by its tag scan; the version
+        // Without an inventory a takeover still dates the version by its write; the version
         // keeps its packages and ids, and so its has_inventory.
         ...(takesOver && { analysisId: input.analysisId, analyzedAt: input.analyzedAt }),
         ...(inventory && snapshot),
         updatedAt: sql`now()`,
       },
-      // The 'kept' rule again, under the row's lock: a tag scan's version that committed after
-      // the read above is not replaced either.
-      setWhere: sql`${projectVersions.source} <> 'tag' OR excluded.source = 'tag'`,
+      // Under the row's lock. The version judged above passes the precedence rule again. One
+      // that a concurrent writer created and committed after the read is left as it is (though
+      // locked now) and judged below, so that no rank, staleness or previous source is missed.
+      setWhere: existing
+        ? sql`${rankOf(projectVersions.source)} <= ${rankOf(sql`excluded.source`)}`
+        : sql`false`,
     })
     .returning();
-  if (version === undefined) return 'kept';
+  if (version === undefined) return upsertVersion(tx, input);
   if (inventory) {
     // Duplicates merged as for a branch.
     await tx.delete(versionDependencies).where(eq(versionDependencies.versionId, version.id));
@@ -96,5 +152,5 @@ export async function upsertVersion(
       inventory.dependencies,
     );
   }
-  return version;
+  return { version, previous: existing?.source ?? null };
 }

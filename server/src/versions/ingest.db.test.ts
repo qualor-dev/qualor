@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bearer } from '../../test/app';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { reportWith, sampleReport } from '../../test/reports';
+import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import {
   analyses,
   branches,
@@ -10,10 +11,12 @@ import {
   measures,
   projects,
   projectVersions,
+  targetVulnerabilities,
   versionDependencies,
 } from '../db/schema';
 import { resolveBaseline } from '../newcode/baseline';
 import { versionLabelOf } from './ingest';
+import { upsertVersion } from './store';
 
 const DEPS = [
   {
@@ -32,6 +35,13 @@ const DEPS = [
   },
   { path: 'package-lock.json', ecosystem: 'npm', name: 'zod', version: '4.0.0', licenses: ['MIT'] },
 ];
+const LODASH = {
+  path: 'package-lock.json',
+  ecosystem: 'npm',
+  name: 'lodash',
+  version: '4.17.20',
+  licenses: ['MIT'],
+};
 
 describe('tag scans as versions', () => {
   let h: IngestHarness;
@@ -189,6 +199,73 @@ describe('tag scans as versions', () => {
     expect(row.warnings.map((w) => w.code)).toContain('VERSION_WITHOUT_INVENTORY');
     expect(version).toMatchObject({ analysisId: first, dependencyIgnores: ignores });
     expect(version!.analyzedAt.toISOString()).toBe('2026-10-01T10:00:00.000Z');
+  });
+
+  it('a tag scan over an SBOM version keeps the version and its open vulnerabilities (Review Focus 3)', async () => {
+    const p = await project();
+    // An uploaded SBOM, dated by the server clock: later than the scan's analysisDate.
+    const uploaded = await upsertVersion(h.ctx.db, {
+      projectId: p.id,
+      label: '1.4.0',
+      source: 'sbom',
+      tag: null,
+      analysisId: null,
+      analyzedAt: new Date(),
+      inventory: {
+        dependencies: [
+          LODASH,
+          {
+            path: '',
+            ecosystem: 'deb',
+            name: 'libssl3',
+            version: '3.0.15-1~deb12u1',
+            licenses: [],
+            sourceName: 'openssl',
+            sourceVersion: '3.0.15-1~deb12u1',
+          },
+        ],
+        ignores: null,
+      },
+      sbom: {
+        format: 'CycloneDX 1.6',
+        subject: 'shop',
+        distribution: { family: 'debian', version: '12.15' },
+      },
+    });
+    if (uploaded === 'taken') throw new Error('the label is free');
+    const versionId = uploaded.version.id;
+    const firstSeenAt = new Date('2026-11-01T08:00:00Z');
+    await seedCheck(h.ctx.db, { projectId: p.id, versionId, baselineAt: firstSeenAt });
+    await seedTargetRow(h.ctx.db, {
+      projectId: p.id,
+      versionId,
+      packageName: 'lodash',
+      packageVersion: '4.17.20',
+      vulnerabilityId: 'CVE-2021-23337',
+      firstSeenAt,
+    });
+
+    const id = await p.ingestOk(tagReport(p, { version: '1.4.0', dependencies: [LODASH] }));
+
+    const stored = await versions(p);
+    expect(stored.map((v) => [v.id, v.label, v.source])).toEqual([[versionId, '1.4.0', 'tag']]);
+    const row = await analysis(id);
+    expect(row.versionId).toBe(versionId);
+    expect(row.warnings.map((w) => w.code)).toContain('VERSION_SBOM_REPLACED');
+    const targets = await h.ctx.db
+      .select()
+      .from(targetVulnerabilities)
+      .where(eq(targetVulnerabilities.versionId, versionId));
+    expect(targets.map((t) => [t.packageName, t.vulnerabilityId, t.firstSeenAt])).toEqual([
+      ['lodash', 'CVE-2021-23337', firstSeenAt],
+    ]);
+    const packages = await h.ctx.db
+      .select()
+      .from(versionDependencies)
+      .where(eq(versionDependencies.versionId, versionId));
+    expect(packages.map((d) => [d.name, d.analysisId, d.sourceName])).toEqual([
+      ['lodash', id, null],
+    ]);
   });
 
   it('fails a tag scan whose label is longer than 100 characters', async () => {

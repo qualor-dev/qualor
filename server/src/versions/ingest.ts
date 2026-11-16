@@ -79,7 +79,7 @@ export async function ingestVersion(
     if (!current || current.status !== 'processing') return;
 
     // Without an inventory, an existing version keeps the one it has (its packages and ids).
-    const version = await upsertVersion(tx, {
+    const written = await upsertVersion(tx, {
       projectId: project.id,
       label,
       source: 'tag',
@@ -90,7 +90,7 @@ export async function ingestVersion(
         inventory: { dependencies: report.dependencies, ignores: report.dependencyIgnores ?? null },
       }),
     });
-    if (version === 'stale') {
+    if (written === 'stale') {
       await markFailed(
         tx,
         analysisId,
@@ -110,11 +110,17 @@ export async function ingestVersion(
           'The report carries no dependency inventory; the version keeps the packages it had, if any',
       });
     }
+    if (written.previous === 'sbom') {
+      warnings.push({
+        code: 'VERSION_SBOM_REPLACED',
+        message: 'The version came from an uploaded SBOM; this tag scan takes it over',
+      });
+    }
     await tx
       .update(analyses)
       .set({
         ...fields,
-        versionId: version.id,
+        versionId: written.version.id,
         versionLabel: label,
         warnings: capWarnings(warnings),
         gateStatus: 'none',

@@ -314,7 +314,16 @@ const DEPENDENCY_BATCH = 1_000;
 /** At most this many licences per stored entry (the report's own bound per entry). */
 const MAX_DEPENDENCY_LICENSES = 16;
 
-/** One stored inventory row before it gets its branch and analysis. */
+/**
+ * An inventory entry of a version: a report's, or an uploaded SBOM's, whose OS packages name the
+ * source package they were built from (0.16).
+ */
+export type VersionDependencyEntry = DependencyEntry & {
+  sourceName?: string;
+  sourceVersion?: string;
+};
+
+/** One stored inventory row before it gets its branch or version and its analysis. */
 export interface DependencyRowInput {
   path: string;
   ecosystem: string;
@@ -323,6 +332,9 @@ export interface DependencyRowInput {
   licenses: string[];
   direct: boolean | null;
   line: number | null;
+  /** The source package; null unless an SBOM named one. Stored for versions only. */
+  sourceName: string | null;
+  sourceVersion: string | null;
 }
 
 /**
@@ -331,9 +343,12 @@ export interface DependencyRowInput {
  * a duplicate (spec §2), but nothing in the report schema forbids one, and a primary-key violation
  * would fail the whole ingestion. Duplicates are merged: the sorted union of their licences (at
  * most {@link MAX_DEPENDENCY_LICENSES}), `direct` true if any says so, else false if any says
- * so, and the first known line. An entry without a duplicate is kept as given.
+ * so, the first known line, and the first known source package. An entry without a duplicate is
+ * kept as given.
  */
-export function mergeDependencyEntries(entries: readonly DependencyEntry[]): DependencyRowInput[] {
+export function mergeDependencyEntries(
+  entries: readonly VersionDependencyEntry[],
+): DependencyRowInput[] {
   const rows = new Map<string, DependencyRowInput>();
   for (const e of entries) {
     const row = {
@@ -344,6 +359,8 @@ export function mergeDependencyEntries(entries: readonly DependencyEntry[]): Dep
       licenses: e.licenses.map(withoutNul),
       direct: e.direct ?? null,
       line: e.line ?? null,
+      sourceName: e.sourceName ?? null,
+      sourceVersion: e.sourceVersion ?? null,
     };
     const key = JSON.stringify([row.path, row.ecosystem, row.name, row.version]);
     const seen = rows.get(key);
@@ -357,31 +374,44 @@ export function mergeDependencyEntries(entries: readonly DependencyEntry[]): Dep
     if (row.direct === true) seen.direct = true;
     else if (row.direct === false && seen.direct === null) seen.direct = false;
     seen.line ??= row.line;
+    if (seen.sourceName === null) {
+      seen.sourceName = row.sourceName;
+      seen.sourceVersion = row.sourceVersion;
+    }
   }
   return [...rows.values()];
 }
 
 /**
  * Inserts an inventory's merged rows into `branch_dependencies` or `version_dependencies` (the
- * two tables share their columns; only the owner key differs), in {@link DEPENDENCY_BATCH} chunks.
+ * two tables share their columns; the owner key differs, and only a version stores the source
+ * package), in {@link DEPENDENCY_BATCH} chunks. `analysisId` is null for an uploaded SBOM.
  */
 export async function insertDependencyRows(
   tx: Executor,
   table: 'branch_dependencies' | 'version_dependencies',
   ownerId: string,
-  analysisId: string,
-  entries: readonly DependencyEntry[],
+  analysisId: string | null,
+  entries: readonly VersionDependencyEntry[],
 ): Promise<void> {
-  const owner = sql.identifier(table === 'branch_dependencies' ? 'branch_id' : 'version_id');
+  const versions = table === 'version_dependencies';
+  const owner = sql.identifier(versions ? 'version_id' : 'branch_id');
+  const source = versions
+    ? {
+        columns: sql`, source_name, source_version`,
+        values: sql`, r."sourceName", r."sourceVersion"`,
+        record: sql`, "sourceName" text, "sourceVersion" text`,
+      }
+    : { columns: sql``, values: sql``, record: sql`` };
   const rows = mergeDependencyEntries(entries);
   for (const chunk of jsonChunks(rows, { maxRows: DEPENDENCY_BATCH })) {
     await tx.execute(sql`
       INSERT INTO ${sql.identifier(table)} (${owner}, path, ecosystem, name, version, licenses,
-        direct, line, analysis_id)
+        direct, line, analysis_id${source.columns})
       SELECT ${ownerId}, r.path, r.ecosystem, r.name, r.version, r.licenses, r.direct, r.line,
-        ${analysisId}
+        ${analysisId}${source.values}
       FROM jsonb_to_recordset(${chunk}::jsonb) AS r(path text, ecosystem text, name text,
-        version text, licenses text[], direct boolean, line integer)`);
+        version text, licenses text[], direct boolean, line integer${source.record})`);
   }
 }
 

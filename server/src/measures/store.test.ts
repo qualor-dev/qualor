@@ -1,8 +1,7 @@
-import type { DependencyEntry } from '@qualor/shared';
 import { describe, expect, it } from 'vitest';
-import { mergeDependencyEntries } from './store';
+import { mergeDependencyEntries, type VersionDependencyEntry } from './store';
 
-const dep = (overrides: Partial<DependencyEntry> = {}): DependencyEntry => ({
+const dep = (overrides: Partial<VersionDependencyEntry> = {}): VersionDependencyEntry => ({
   ecosystem: 'npm',
   path: 'package-lock.json',
   name: 'pkg',
@@ -10,6 +9,9 @@ const dep = (overrides: Partial<DependencyEntry> = {}): DependencyEntry => ({
   licenses: ['MIT'],
   ...overrides,
 });
+
+/** What a row without a source package carries. */
+const NO_SOURCE = { sourceName: null, sourceVersion: null };
 
 describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and version)', () => {
   it('keeps entries without a duplicate as given, in report order', () => {
@@ -29,11 +31,12 @@ describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and 
         licenses: ['MIT', 'Apache-2.0'],
         direct: true,
         line: 4,
+        ...NO_SOURCE,
       },
-      { ...entries[1], direct: null, line: null },
-      { ...entries[2], direct: null, line: null },
-      { ...entries[3], direct: null, line: null },
-      { ...entries[4], direct: null, line: null },
+      { ...entries[1], direct: null, line: null, ...NO_SOURCE },
+      { ...entries[2], direct: null, line: null, ...NO_SOURCE },
+      { ...entries[3], direct: null, line: null, ...NO_SOURCE },
+      { ...entries[4], direct: null, line: null, ...NO_SOURCE },
     ]);
   });
 
@@ -54,6 +57,7 @@ describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and 
         licenses: ['Apache-2.0', 'ISC', 'MIT'],
         direct: true,
         line: 7,
+        ...NO_SOURCE,
       },
     ]);
     expect(
@@ -89,7 +93,21 @@ describe('mergeDependencyEntries (6M §2: one row per path, ecosystem, name and 
         licenses: ['ISC', 'MIT'],
         direct: null,
         line: null,
+        ...NO_SOURCE,
       },
+    ]);
+  });
+
+  it('keeps the first source package of duplicates; an entry without one has nulls (0.16)', () => {
+    const libssl = { ecosystem: 'deb', path: '', name: 'libssl3', version: '3.0.15-1~deb12u1' };
+    const rows = mergeDependencyEntries([
+      dep({ ...libssl, sourceName: 'openssl', sourceVersion: '3.0.15-1~deb12u1' }),
+      dep({ ...libssl, sourceName: 'other', sourceVersion: '1.0' }),
+      dep({ name: 'plain' }),
+    ]);
+    expect(rows.map((r) => [r.name, r.sourceName, r.sourceVersion])).toEqual([
+      ['libssl3', 'openssl', '3.0.15-1~deb12u1'],
+      ['plain', null, null],
     ]);
   });
 });

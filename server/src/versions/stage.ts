@@ -22,7 +22,8 @@ export const versionLabelStage: IngestionStage = {
     if (parseVersionLabel(label)?.prerelease) return;
     const settings = await vulnerabilitySettings(tx, ctx.project.id);
     if (!settings.labelVersions || !isTrackedBranch(settings, ctx.branch)) return;
-    // A tag version of the label (`'kept'`) or a newer analysis of it (`'stale'`) changes nothing.
+    // A tag or SBOM version of the label (`'kept'`) or a newer analysis of it (`'stale'`) changes
+    // nothing.
     await upsertVersion(tx, {
       projectId: ctx.project.id,
       label,
