@@ -246,9 +246,9 @@ describe('trivyIacAnalyzer.prepare', () => {
         },
       ],
     };
-    const result = (run.transform?.(output) as SarifLog).runs[0]?.results?.[0];
+    const result = (run.transform?.(output, '') as SarifLog).runs[0]?.results?.[0];
     expect(result?.locations?.[0]?.physicalLocation?.region).toBeUndefined();
-    expect(result?.message.text).toContain('line not mapped');
+    expect(result?.message?.text).toContain('line not mapped');
   });
 
   it('decides a 1 MiB file of blank lines at once', () => {
