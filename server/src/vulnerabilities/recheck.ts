@@ -205,8 +205,9 @@ interface Run {
   /** Those distributions as `<family> <version>`, for the summary. */
   unsupported: Set<string>;
   /**
-   * The match keys of the single packages Trivy failed on, or answered too much for, in this run:
-   * they stay unchecked.
+   * The match keys of the single packages Trivy rejected, or gave no answer for (output over the
+   * cap, a timeout, a signal death: R21), in this run, after a probe cleared Trivy and the
+   * distribution: they stay unchecked (`givenUp.trivyFailed`).
    */
   failedKeys: Set<string>;
   /** The match keys given up because every organisation holding them is past its budget. */
@@ -530,11 +531,18 @@ function probeSbom(os: OsRelease): string {
   ]);
 }
 
+/** What a probe SBOM (no stored package in it) got from Trivy ({@link faultOf}). */
 type ProbeAnswer =
   | { kind: 'ok' }
-  /** Trivy rejected it, or answered too much for it: Trivy, not the data, is at fault. */
+  /**
+   * Trivy rejected it, or gave no answer for it (output over the cap, a timeout, a signal death:
+   * R21). No stored package is at fault: Trivy, its database or the probe's release is.
+   */
   | { kind: 'failed'; message: string }
-  /** A stop, or a failure that is not Trivy's answer (no work directory, spawn error, …). */
+  /**
+   * A stop, or a failure that is not Trivy's answer ({@link failureOf} `'infrastructure'`: not
+   * installed or not startable, no work directory, no readable output): the run ends.
+   */
   | { kind: 'end'; end: Problem | typeof STOPPED };
 
 async function runProbe(run: Run, sbom: string): Promise<ProbeAnswer> {
@@ -670,10 +678,11 @@ async function chunkFailed(
 /**
  * Runs Trivy on `packages` in SBOMs of at most `run.chunk.components`, one distribution (or the
  * libraries) per SBOM, storing each chunk's matches as it comes. A failed chunk goes to
- * {@link chunkFailed}, which isolates whatever data is at fault; a failure that is not Trivy's
- * answer (no work directory, a spawn error, a signal, a timeout, no output), or a probe that
- * shows Trivy itself broken, stops the run there, its chunk untouched and the later ones never
- * started (R12); so does a stop.
+ * {@link chunkFailed}, which isolates whatever data is at fault: a timeout or a signal death is
+ * handled like an output over the cap (R21). A failure that is not Trivy's answer (not installed
+ * or not startable, no work directory, no readable output), or a probe that shows Trivy itself
+ * broken, stops the run there, its chunk untouched and the later ones never started (R12); so does
+ * a stop.
  */
 async function matchPackages(
   run: Run,

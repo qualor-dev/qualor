@@ -11,8 +11,9 @@ import type { ExportDocument } from './types';
 
 const mit = [{ license: { id: 'MIT' } }];
 
-/** Spec §6.11 and ruling R9: what an uploaded version's export gives back when it is uploaded. */
 /**
+ * Spec §6.11 and ruling R9: the SBOMs whose upload is exported and uploaded again.
+ *
  * `licences: false` for the real files: their free-text licences (`permissive`, `public-domain`, an
  * unknown exception) and licences made of several SPDX expressions are rewritten by the 0.15 licence
  * writer (`LicenseRef-…`, AND-joined), which this task does not change. The hand-made files use
