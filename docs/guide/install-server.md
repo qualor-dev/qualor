@@ -564,6 +564,11 @@ thousand memberships, that takes a moment. On a large external database it takes
 Meanwhile, servers of the previous version wait on nearly every request, since permission checks
 read those tables. Run that upgrade at a quiet time.
 
+**Migration `0031`** (SBOM upload) adds two search indexes on the package inventories, for
+[Where used](./dependency-vulnerabilities.md#where-used). They take about 25 MB per million
+inventory rows. On 2.4 million rows they were built in 3 seconds, and the upgraded server was ready
+7 seconds after it started.
+
 The server's own PostgreSQL follows the image within 18.x and needs nothing. A new major version
 will come with steps in its release notes: back up with the old release, restore with the new one.
 
