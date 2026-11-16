@@ -251,6 +251,20 @@ describe('trivyIacAnalyzer.prepare', () => {
     expect(result?.message.text).toContain('line not mapped');
   });
 
+  it('decides a 1 MiB file of blank lines at once', () => {
+    const mib = 1024 * 1024;
+    for (const text of ['\n'.repeat(mib), ' \n'.repeat(mib / 2), '\t\n  '.repeat(mib / 4)]) {
+      for (const p of ['a.yaml', 'a.json']) {
+        const started = performance.now();
+        expect(
+          isIacCandidate(p, () => text),
+          p,
+        ).toBe(false);
+        expect(performance.now() - started).toBeLessThan(500);
+      }
+    }
+  });
+
   it('knows the candidates by name and by content', () => {
     const yes: Record<string, string> = {
       'main.tf': '',

@@ -40,17 +40,18 @@ const NAMED_FILES = new Set(['chart.yaml', 'chart.yml', 'tfplan']);
 
 /** Kubernetes, CloudFormation: a YAML file counts only when it looks like one of them. */
 const yamlLooksLikeIac = (text: string): boolean =>
-  (/^\s*apiVersion\s*:/m.test(text) && /^\s*kind\s*:/m.test(text)) ||
-  /^AWSTemplateFormatVersion\s*:/m.test(text) ||
-  (/^Resources\s*:/m.test(text) && /^\s+Type\s*:\s*['"]?AWS::/m.test(text));
+  (/^[ \t]*apiVersion[ \t]*:/m.test(text) && /^[ \t]*kind[ \t]*:/m.test(text)) ||
+  /^AWSTemplateFormatVersion[ \t]*:/m.test(text) ||
+  (/^Resources[ \t]*:/m.test(text) && /^[ \t]+Type[ \t]*:[ \t]*['"]?AWS::/m.test(text));
 
 /** Kubernetes, CloudFormation, ARM and Terraform plan JSON. */
 const jsonLooksLikeIac = (text: string): boolean =>
-  (/"apiVersion"\s*:/.test(text) && /"kind"\s*:/.test(text)) ||
-  /"AWSTemplateFormatVersion"\s*:/.test(text) ||
-  /"Type"\s*:\s*"AWS::/.test(text) ||
+  (/"apiVersion"[ \t]*:/.test(text) && /"kind"[ \t]*:/.test(text)) ||
+  /"AWSTemplateFormatVersion"[ \t]*:/.test(text) ||
+  /"Type"[ \t]*:[ \t]*"AWS::/.test(text) ||
   /deploymentTemplate\.json#/.test(text) ||
-  (/"format_version"\s*:/.test(text) && /"(?:planned_values|resource_changes)"\s*:/.test(text));
+  (/"format_version"[ \t]*:/.test(text) &&
+    /"(?:planned_values|resource_changes)"[ \t]*:/.test(text));
 
 /**
  * True for a file the pass can read as infrastructure code. Terraform, plan snapshots, Helm charts
