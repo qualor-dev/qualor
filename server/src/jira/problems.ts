@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { jiraConnections, type JiraProblemValue } from '../db/schema';
 import type { JiraError } from './client';
@@ -188,10 +188,26 @@ async function storedProblem(db: Executor, connectionId: string): Promise<JiraPr
 }
 
 /**
+ * When `code` may be written over the stored problem: while it is still the one the writer saw;
+ * a credential code also over any transient one (creates must be refused at once, spec §6.1), and
+ * a transient code never over a credential one.
+ */
+function writable(seen: string | null, code: BackgroundProblemCode | null): SQL {
+  const unchanged = sql`${jiraConnections.problem} IS NOT DISTINCT FROM ${seen}::jsonb`;
+  if (code === null) return unchanged;
+  const stored = sql`${jiraConnections.problem} ->> 'code'`;
+  if (isCredentialCode(code)) {
+    return sql`(${unchanged} OR ${inArray(stored, [...TRANSIENT_PROBLEM_CODES])})`;
+  }
+  return sql`(${unchanged} AND (${jiraConnections.problem} IS NULL OR ${notInArray(stored, [...CREDENTIAL_PROBLEM_CODES])}))`;
+}
+
+/**
  * Sets the background problem to `code` (null clears it) only while the stored one is still
  * `view.problem`, so a job or a Test never overwrites what another writer stored since it read the
- * row (a fresher problem, or an admin's clear). The view follows the stored value either way, read
- * again when another writer came first; true when this call wrote.
+ * row (a fresher problem, or an admin's clear). A credential code also replaces a transient one
+ * another job stored meanwhile; a transient code never replaces a credential one. The view
+ * follows the stored value either way, read again when this call did not write; true when it did.
  */
 export async function replaceConnectionProblem(
   db: Executor,
@@ -202,12 +218,7 @@ export async function replaceConnectionProblem(
   const [written] = await db
     .update(jiraConnections)
     .set({ problem: problemValue(code), updatedAt: sql`now()` })
-    .where(
-      and(
-        eq(jiraConnections.id, view.id),
-        sql`${jiraConnections.problem} IS NOT DISTINCT FROM ${seen}::jsonb`,
-      ),
-    )
+    .where(and(eq(jiraConnections.id, view.id), writable(seen, code)))
     .returning({ problem: jiraConnections.problem });
   if (written) {
     view.problem = written.problem;

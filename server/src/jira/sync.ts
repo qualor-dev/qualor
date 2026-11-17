@@ -105,17 +105,24 @@ async function call<T>(pass: Pass, request: () => Promise<T>): Promise<T | null>
 // ─── Probe (spec §6.1) ──────────────────────────────────────────────────────────────────────────
 
 /**
- * A failed probe ends the pass. A credential answer is recorded again, so a captcha's hour runs
- * from this probe; a timeout says nothing of the credential, whose problem stays.
+ * A failed probe ends the pass. A credential answer is recorded (again), with a fresh `at`. Any
+ * other failure (a timeout, a 429, a bad answer such as a sign-in page) says nothing of the
+ * credential, whose problem stays; a captcha lockout is still recorded again, so its hour runs
+ * from this probe whatever it got: each attempt may extend the lockout (spec §6.1).
  */
 async function probeFailed(pass: Pass, err: unknown): Promise<Stop> {
   if (!(err instanceof JiraError)) throw err;
-  if (err.code === 'rate_limited') return 'rate_limited';
+  const { db } = pass.ctx.deps;
+  const { connection } = pass.ctx;
   const code = backgroundCodeOf(err);
   if (code !== null && isCredentialCode(code)) {
-    await replaceConnectionProblem(pass.ctx.deps.db, pass.ctx.connection, code);
+    await replaceConnectionProblem(db, connection, code);
     return 'credential';
   }
+  if (connection.problem?.code === 'captcha') {
+    await replaceConnectionProblem(db, connection, 'captcha');
+  }
+  if (err.code === 'rate_limited') return 'rate_limited';
   return code === null ? 'credential' : 'transient';
 }
 

@@ -127,6 +127,13 @@ describe('presence as the sync pass judges it (spec §6.5 "gone", T6d)', () => {
       .where(eq(projectVersions.id, versionId));
   });
 
+  it('triage is not gone (anti-goal 6, spec §11.9): a pair whose only tracked row is ignored is present', async () => {
+    const ignored = freshPair();
+    await seedTargetRow(db(), { projectId, branchId: main, ...ignored, ignored: true });
+    const presence = await vulnerabilityPresence(db(), projectId, [ignored]);
+    expect(presence?.get(pairKey(ignored.packageName, ignored.vulnerabilityId))).toBe(true);
+  });
+
   it('monitoring off for the project or the instance: null, nothing is judged', async () => {
     const pair = freshPair();
     await seedTargetRow(db(), { projectId, branchId: main, ...pair });

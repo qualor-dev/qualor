@@ -25,7 +25,7 @@ import type { WorkerLogger } from '../queue/worker';
 import { createPending } from './create';
 import { JIRA_QUEUE, jiraSyncKey } from './jobs';
 import { insertPendingLinks, JIRA_FAILURE_TEXT, type LinkTarget } from './links';
-import { JIRA_PROBLEM_TEXT } from './problems';
+import { JIRA_PROBLEM_TEXT, replaceConnectionProblem, setConnectionProblem } from './problems';
 import { openRun, type JiraJobDeps } from './run';
 import { runSyncPass, STATUS_PER_PASS, type PassOutcome } from './sync';
 
@@ -591,6 +591,63 @@ describe('the Jira sync pass (spec §6.5, §11.2, §11.6–11.9)', () => {
     expect(sent()).toEqual(['GET /rest/api/2/myself', 'POST /rest/api/2/search']);
     expect((await connection())?.problem).toBeNull();
     expect(outcome).toMatchObject({ statuses: 1, stop: null });
+  });
+
+  it('captcha (F1): a probe that hangs or gets an HTML page still starts the hour', async () => {
+    await createdIssue();
+    const answers = [
+      { hang: true },
+      { status: 200, headers: { 'content-type': 'text/html' }, body: '<html>Sign in</html>' },
+    ];
+    for (const answer of answers) {
+      await setProblem('captcha', 61);
+      const old = (await connection())!.problem!.at;
+      fake.inject('GET', /\/myself$/, answer);
+      fake.clearRequests();
+      await runPass();
+      expect(sent()).toEqual(['GET /rest/api/2/myself']);
+      const fresh = (await connection())!.problem!;
+      expect(fresh.code).toBe('captcha');
+      expect(Date.parse(fresh.at)).toBeGreaterThan(Date.parse(old) + 60 * MINUTE);
+      // The next pass, 15 minutes on, makes no request.
+      await db()
+        .update(jiraConnections)
+        .set({
+          problem: sql`jsonb_set(problem, '{at}', to_jsonb(${ago(15)}))`,
+        })
+        .where(eq(jiraConnections.id, connectionId));
+      fake.clearRequests();
+      expect((await runPass()).stop).toBe('captcha_wait');
+      expect(sent()).toEqual([]);
+    }
+  });
+
+  it('credential over transient (F2): a 401 is recorded over a timeout a create job stored meanwhile', async () => {
+    await createdIssue();
+    const other = await seedIssue(db(), { projectId, branchId: main, ruleId: codeRule });
+    fake.inject('POST', SEARCH, {
+      status: 401,
+      before: () => setConnectionProblem(db(), connectionId, 'timeout'),
+    });
+    expect((await runPass()).stop).toBe('credential');
+    expect((await connection())?.problem?.code).toBe('token_refused');
+    const refused = await h.ctx.app.inject({
+      method: 'POST',
+      url: `/api/v0/projects/${projectId}/jira/links`,
+      headers: h.orgAdmin.headers,
+      payload: { issueIds: [other] },
+    });
+    expect([refused.statusCode, refused.json().code]).toEqual([409, 'JIRA_CONNECTION_BROKEN']);
+
+    // Never the reverse: a transient code does not replace a credential one.
+    const view = { id: connectionId, problem: null };
+    expect(await replaceConnectionProblem(db(), view, 'timeout')).toBe(false);
+    const stored = (await connection())!.problem!;
+    expect(stored.code).toBe('token_refused');
+    expect(
+      await replaceConnectionProblem(db(), { id: connectionId, problem: stored }, 'unreachable'),
+    ).toBe(false);
+    expect((await connection())?.problem?.code).toBe('token_refused');
   });
 
   it('transient: a hang on status records timeout and ends the pass; the next pass clears it', async () => {
