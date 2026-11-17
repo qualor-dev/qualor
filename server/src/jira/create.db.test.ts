@@ -549,6 +549,39 @@ describe('the Jira create job (spec §6.4, §11.2–11.5)', () => {
     expect(lines.filter(([level]) => level !== 'info')).toEqual([]);
   });
 
+  it('moved (M1): a run that outlived an address change sends nothing more and records no problem', async () => {
+    // The PUT that moves a connection keeps its id; the rows left stand for the new site's.
+    const move = async (siteUrl: string) => {
+      await db()
+        .update(jiraConnections)
+        .set({ siteUrl })
+        .where(eq(jiraConnections.id, connectionId));
+    };
+    const [linkId] = await requestIssues([await issue()]);
+    const stale = (await openRun(deps, h.organizationId))!;
+    await move(`${fake.url}/moved`);
+    expect(await createPending(stale)).toEqual({
+      created: 0,
+      failed: 0,
+      unanswered: 0,
+      stop: null,
+    });
+    expect(fake.requests).toHaveLength(0);
+    expect(await row(linkId!)).toMatchObject({ state: 'pending', attemptedAt: null });
+
+    // Moved while its call is out: the old site's 401 is not the new address's problem.
+    await move(fake.url);
+    const inFlight = (await openRun(deps, h.organizationId))!;
+    fake.inject('POST', /\/rest\/api\/2\/issue$/, {
+      status: 401,
+      before: () => move(`${fake.url}/moved`),
+    });
+    expect((await createPending(inFlight)).stop).toBe('credential');
+    expect(creates()).toHaveLength(1);
+    expect((await connection())?.problem).toBeNull();
+    expect((await row(linkId!)).state).toBe('pending');
+  });
+
   it('one row, one send (R1, spec §11.4): two runs of the organisation at once send each row once', async () => {
     const ids = await pendingLinks(60);
     const [a, b] = await Promise.all([

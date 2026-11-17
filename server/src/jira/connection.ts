@@ -3,7 +3,12 @@ import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Executor } from '../db/client';
 import { jiraConnections } from '../db/schema';
 import { JiraClient, JiraError, type JiraClientOptions } from './client';
-import { JIRA_PROBLEM_TEXT, problemCodeOf, type JiraProblemCode } from './problems';
+import {
+  JIRA_PROBLEM_TEXT,
+  problemCodeOf,
+  type AddressView,
+  type JiraProblemCode,
+} from './problems';
 import { jiraApiUrlProblem, jiraHostAllowed, jiraSiteUrlProblem } from './url';
 
 /** data-model.md §2: the AAD binding an encrypted token to its column. */
@@ -14,7 +19,7 @@ export const JIRA_TOKEN_PATTERN = /^[\x21-\x7e]{1,1024}$/;
 export type JiraConnectionRow = typeof jiraConnections.$inferSelect;
 
 /** Where a connection's calls go: a change of any of these is a new site (spec §6.1). */
-export type JiraAddress = Pick<JiraConnectionRow, 'deployment' | 'siteUrl' | 'apiUrl'>;
+export type JiraAddress = Omit<AddressView, 'id'>;
 
 /** Whether two connections have one address. */
 export function sameAddress(a: JiraAddress, b: JiraAddress): boolean {

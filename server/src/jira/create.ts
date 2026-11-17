@@ -27,6 +27,7 @@ import type { VulnerabilityPair } from './presence';
 import {
   backgroundCodeOf,
   clearAfterAnswer,
+  connectionUnmoved,
   isCredentialCode,
   isCredentialProblem,
   replaceConnectionProblem,
@@ -86,15 +87,17 @@ const LATE_CREATED = sql.raw(
  * R1: up to `n` of the connection's never-attempted pending rows, oldest first, stamped with
  * `attempted_at` by one statement that commits before the call. `SKIP LOCKED` and the condition
  * on `attempted_at` let a create job and a sync pass of the organisation never take one row twice.
+ * None once the connection has another address than the run's client (M1).
  */
-async function claim(db: Db, connectionId: string, n: number): Promise<JiraLinkRow[]> {
-  const rows = await db
+async function claim(ctx: JiraRunContext, n: number): Promise<JiraLinkRow[]> {
+  const rows = await ctx.deps.db
     .update(jiraLinks)
     .set({ attemptedAt: sql`now()`, updatedAt: sql`now()` })
     .where(
       sql`${jiraLinks.id} IN (
         SELECT id FROM jira_links
-         WHERE connection_id = ${connectionId} AND state = 'pending' AND attempted_at IS NULL
+         WHERE connection_id = ${ctx.connection.id} AND state = 'pending' AND attempted_at IS NULL
+           AND ${connectionUnmoved(ctx.connection)}
          ORDER BY created_at, id
          LIMIT ${n}
          FOR UPDATE SKIP LOCKED)`,
@@ -104,12 +107,13 @@ async function claim(db: Db, connectionId: string, n: number): Promise<JiraLinkR
 }
 
 /** Rows whose call never reached Jira: never attempted again, so the next run sends them. */
-export async function release(db: Db, rows: readonly JiraLinkRow[]): Promise<void> {
+export async function release(ctx: JiraRunContext, rows: readonly JiraLinkRow[]): Promise<void> {
   if (rows.length === 0) return;
-  await db.execute(sql`
+  await ctx.deps.db.execute(sql`
     UPDATE jira_links l SET attempted_at = NULL, updated_at = now()
       FROM jsonb_to_recordset(${recordset(rows.map(fenceOf))}::jsonb) AS c(id uuid, generation int)
-     WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'`);
+     WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'
+       AND ${connectionUnmoved(ctx.connection)}`);
 }
 
 /**
@@ -117,14 +121,16 @@ export async function release(db: Db, rows: readonly JiraLinkRow[]): Promise<voi
  * meanwhile is another create's. The state changes only from `pending` (R19): a row dismissed
  * while its create was in flight keeps the key and id Jira gave, and fails nothing. A created
  * answer also takes a row the pass failed `outcome_unknown` meanwhile: the issue is known now.
+ * Nothing is written once the connection has another address than the run's (M1).
  */
 async function record(
-  db: Db,
+  ctx: JiraRunContext,
   created: readonly Created[],
   failed: readonly Failed[],
 ): Promise<{ created: number; failed: number }> {
   if (created.length === 0 && failed.length === 0) return { created: 0, failed: 0 };
-  return db.transaction(async (tx) => {
+  const unmoved = connectionUnmoved(ctx.connection);
+  return ctx.deps.db.transaction(async (tx) => {
     let made = 0;
     let refused = 0;
     if (created.length > 0) {
@@ -138,7 +144,7 @@ async function record(
                jira_issue_id = c.issue_id, jira_key = c.key, updated_at = now()
           FROM jsonb_to_recordset(${json}::jsonb)
                AS c(id uuid, generation int, issue_id text, key text)
-         WHERE l.id = c.id AND l.generation = c.generation`);
+         WHERE l.id = c.id AND l.generation = c.generation AND ${unmoved}`);
       made = result.rowCount ?? 0;
     }
     if (failed.length > 0) {
@@ -151,7 +157,8 @@ async function record(
                updated_at = now()
           FROM jsonb_to_recordset(${json}::jsonb)
                AS c(id uuid, generation int, code text, message text)
-         WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'`);
+         WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'
+           AND ${unmoved}`);
       refused = result.rowCount ?? 0;
     }
     return { created: made, failed: refused };
@@ -331,7 +338,8 @@ async function readStatus(ctx: JiraRunContext, created: readonly Created[]): Pro
            status_checked_at = now(), updated_at = now()
       FROM jsonb_to_recordset(${recordset(rows)}::jsonb)
            AS c(id uuid, generation int, issue_id text, key text, name text, category text)
-     WHERE l.id = c.id AND l.generation = c.generation AND l.jira_issue_id = c.issue_id`);
+     WHERE l.id = c.id AND l.generation = c.generation AND l.jira_issue_id = c.issue_id
+       AND ${connectionUnmoved(ctx.connection)}`);
 }
 
 /** Whether the connection still has never-attempted pending rows. */
@@ -382,7 +390,7 @@ export async function createPending(
   const { db } = ctx.deps;
   let taken = 0;
   while (outcome.stop === null && taken < limit) {
-    const rows = await claim(db, ctx.connection.id, Math.min(JIRA_BULK_MAX, limit - taken));
+    const rows = await claim(ctx, Math.min(JIRA_BULK_MAX, limit - taken));
     if (rows.length === 0) break;
     taken += rows.length;
     await createCall(run, rows);
@@ -436,7 +444,7 @@ async function send(run: CreateRun, prepared: Prepared): Promise<BulkOutcome | n
   } catch (err) {
     run.outcome.stop = await stopOn(run, err);
     const sent = prepared.send.map((s) => s.row);
-    if (RELEASING.has(run.outcome.stop)) await release(run.ctx.deps.db, sent);
+    if (RELEASING.has(run.outcome.stop)) await release(run.ctx, sent);
     else run.outcome.unanswered += sent.length;
     return null;
   }
@@ -466,13 +474,12 @@ function sortAnswers(
 
 /** One call: the claimed rows prepared, sent, and their answers written. */
 async function createCall(run: CreateRun, rows: readonly JiraLinkRow[]): Promise<void> {
-  const { db } = run.ctx.deps;
   let prepared: Prepared;
   try {
     prepared = await prepare(run.ctx.deps, rows, run.priority);
   } catch (err) {
     // Nothing was sent: the rows go back for the next run.
-    await release(db, rows);
+    await release(run.ctx, rows);
     throw err;
   }
   const answers = await send(run, prepared);
@@ -484,7 +491,7 @@ async function createCall(run: CreateRun, rows: readonly JiraLinkRow[]): Promise
           prepared.send.map((s) => s.row),
           answers,
         );
-  const written = await record(db, sorted.created, [...prepared.failed, ...sorted.failed]);
+  const written = await record(run.ctx, sorted.created, [...prepared.failed, ...sorted.failed]);
   run.outcome.created += written.created;
   run.outcome.failed += written.failed;
   run.made.push(...sorted.created);

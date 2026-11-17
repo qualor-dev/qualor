@@ -29,6 +29,7 @@ import { goneIssueIds, pairKey, pairPlaces, presenceScopes, type PresenceScope }
 import {
   backgroundCodeOf,
   clearAfterAnswer,
+  connectionUnmoved,
   isCredentialCode,
   isCredentialProblem,
   replaceConnectionProblem,
@@ -177,6 +178,7 @@ function attemptedRows(ctx: JiraRunContext, after: string | null): Promise<Attem
         eq(jiraLinks.state, 'pending'),
         sql`${jiraLinks.attemptedAt} < ${ago(RECONCILE_AFTER_SECONDS)}`,
         after === null ? undefined : gt(jiraLinks.id, after),
+        connectionUnmoved(ctx.connection),
       ),
     )
     .orderBy(asc(jiraLinks.id))
@@ -187,9 +189,9 @@ function attemptedRows(ctx: JiraRunContext, after: string | null): Promise<Attem
  * Rows whose create may or may not have made an issue, with no way to find out: `failed`,
  * `outcome_unknown`, never sent again by themselves (the member may retry).
  */
-async function failUnknown(db: Db, rows: readonly JiraLinkRow[]): Promise<void> {
+async function failUnknown(ctx: JiraRunContext, rows: readonly JiraLinkRow[]): Promise<void> {
   if (rows.length === 0) return;
-  await db.execute(sql`
+  await ctx.deps.db.execute(sql`
     UPDATE jira_links l
        SET state = 'failed',
            failure = jsonb_build_object('code', 'outcome_unknown',
@@ -197,7 +199,7 @@ async function failUnknown(db: Db, rows: readonly JiraLinkRow[]): Promise<void> 
            updated_at = now()
       FROM jsonb_to_recordset(${recordset(rows.map(fenceOf))}::jsonb) AS c(id uuid, generation int)
      WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'
-       AND l.attempted_at IS NOT NULL`);
+       AND l.attempted_at IS NOT NULL AND ${connectionUnmoved(ctx.connection)}`);
 }
 
 /**
@@ -205,7 +207,7 @@ async function failUnknown(db: Db, rows: readonly JiraLinkRow[]): Promise<void> 
  * have made them (a row dismissed meanwhile keeps the key and id, R19). Returns how many.
  */
 async function recordFound(
-  db: Db,
+  ctx: JiraRunContext,
   found: readonly { row: JiraLinkRow; issue: JiraIssueState }[],
 ): Promise<number> {
   if (found.length === 0) return 0;
@@ -218,7 +220,7 @@ async function recordFound(
       category: issue.statusCategory,
     })),
   );
-  const result = await db.execute(sql`
+  const result = await ctx.deps.db.execute(sql`
     UPDATE jira_links l
        SET state = CASE WHEN l.state = 'pending' THEN 'created' ELSE l.state END,
            jira_issue_id = c.issue_id, jira_key = c.key, status_name = c.name,
@@ -226,7 +228,7 @@ async function recordFound(
            updated_at = now()
       FROM jsonb_to_recordset(${json}::jsonb)
            AS c(id uuid, generation int, issue_id text, key text, name text, category text)
-     WHERE l.id = c.id AND l.generation = c.generation`);
+     WHERE l.id = c.id AND l.generation = c.generation AND ${connectionUnmoved(ctx.connection)}`);
   return result.rowCount ?? 0;
 }
 
@@ -260,10 +262,10 @@ function sortSearched(
 }
 
 async function reconcileChunk(pass: Pass, rows: readonly Attempted[]): Promise<void> {
-  const { db } = pass.ctx.deps;
+  const { ctx } = pass;
   // The screen has no labels: the row cannot be looked for.
   await failUnknown(
-    db,
+    ctx,
     rows.filter((r) => r.labels === false).map((r) => r.row),
   );
   const searched = rows.filter((r) => r.labels !== false);
@@ -273,9 +275,9 @@ async function reconcileChunk(pass: Pass, rows: readonly Attempted[]): Promise<v
   );
   if (found === null) return;
   const sorted = sortSearched(searched, found);
-  pass.outcome.reconciled += await recordFound(db, sorted.found);
-  await release(db, sorted.resend);
-  await failUnknown(db, sorted.lost);
+  pass.outcome.reconciled += await recordFound(ctx, sorted.found);
+  await release(ctx, sorted.resend);
+  await failUnknown(ctx, sorted.lost);
 }
 
 /**
@@ -328,6 +330,7 @@ async function writeStatuses(
   result: { found: ReadonlyMap<string, JiraIssueState>; missing: readonly string[] },
 ): Promise<void> {
   const { db } = pass.ctx.deps;
+  const unmoved = connectionUnmoved(pass.ctx.connection);
   const read = batch.flatMap((r) => {
     const state = result.found.get(r.jiraIssueId);
     // T6b: a key not of Jira's form is a bad answer of its own; the row is read again next pass.
@@ -350,7 +353,7 @@ async function writeStatuses(
         FROM jsonb_to_recordset(${recordset(read)}::jsonb)
              AS c(id uuid, generation int, issue_id text, key text, name text, category text)
        WHERE l.id = c.id AND l.generation = c.generation AND l.jira_issue_id = c.issue_id
-         AND l.state = 'created'`);
+         AND l.state = 'created' AND ${unmoved}`);
     pass.outcome.statuses += written.rowCount ?? 0;
   }
   const gone = new Set(result.missing);
@@ -368,7 +371,7 @@ async function writeStatuses(
       FROM jsonb_to_recordset(${recordset(missed)}::jsonb)
            AS c(id uuid, generation int, issue_id text)
      WHERE l.id = c.id AND l.generation = c.generation AND l.jira_issue_id = c.issue_id
-       AND l.state = 'created'
+       AND l.state = 'created' AND ${unmoved}
     RETURNING l.state`);
   pass.outcome.missing += marked.rows.filter((r) => r.state === 'missing').length;
 }
@@ -387,7 +390,13 @@ async function readStatuses(pass: Pass): Promise<void> {
       jiraIssueId: jiraLinks.jiraIssueId,
     })
     .from(jiraLinks)
-    .where(and(eq(jiraLinks.connectionId, pass.ctx.connection.id), eq(jiraLinks.state, 'created')))
+    .where(
+      and(
+        eq(jiraLinks.connectionId, pass.ctx.connection.id),
+        eq(jiraLinks.state, 'created'),
+        connectionUnmoved(pass.ctx.connection),
+      ),
+    )
     .orderBy(sql`${jiraLinks.statusCheckedAt} ASC NULLS FIRST`, asc(jiraLinks.id))
     .limit(STATUS_PER_PASS);
   const readable = rows.filter(
@@ -444,7 +453,13 @@ function createdRows(ctx: JiraRunContext): Promise<CreatedRow[]> {
       reportedFixedAt: jiraLinks.reportedFixedAt,
     })
     .from(jiraLinks)
-    .where(and(eq(jiraLinks.connectionId, ctx.connection.id), eq(jiraLinks.state, 'created')))
+    .where(
+      and(
+        eq(jiraLinks.connectionId, ctx.connection.id),
+        eq(jiraLinks.state, 'created'),
+        connectionUnmoved(ctx.connection),
+      ),
+    )
     .orderBy(asc(jiraLinks.createdAt), asc(jiraLinks.id));
 }
 
@@ -607,8 +622,8 @@ async function dueComments(pass: Pass): Promise<DueComment[]> {
 }
 
 /** The transition, written whether Jira took the comment or refused it (R14). */
-async function recordTransition(db: Db, d: DueComment): Promise<void> {
-  await db
+async function recordTransition(ctx: JiraRunContext, d: DueComment): Promise<void> {
+  await ctx.deps.db
     .update(jiraLinks)
     .set({ reportedFixedAt: d.fixed ? sql`now()` : null, updatedAt: sql`now()` })
     .where(
@@ -617,6 +632,7 @@ async function recordTransition(db: Db, d: DueComment): Promise<void> {
         eq(jiraLinks.generation, d.row.generation),
         eq(jiraLinks.state, 'created'),
         d.fixed ? isNull(jiraLinks.reportedFixedAt) : isNotNull(jiraLinks.reportedFixedAt),
+        connectionUnmoved(ctx.connection),
       ),
     );
 }
@@ -649,7 +665,7 @@ async function postComment(pass: Pass, d: DueComment): Promise<'posted' | 'refus
 async function comment(pass: Pass): Promise<void> {
   for (const d of await dueComments(pass)) {
     const posted = await postComment(pass, d);
-    if (posted !== null) await recordTransition(pass.ctx.deps.db, d);
+    if (posted !== null) await recordTransition(pass.ctx, d);
     if (posted === 'posted') pass.outcome.comments += 1;
     if (pass.outcome.stop !== null) return;
   }

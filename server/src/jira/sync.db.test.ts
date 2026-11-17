@@ -640,12 +640,16 @@ describe('the Jira sync pass (spec §6.5, §11.2, §11.6–11.9)', () => {
     expect([refused.statusCode, refused.json().code]).toEqual([409, 'JIRA_CONNECTION_BROKEN']);
 
     // Never the reverse: a transient code does not replace a credential one.
-    const view = { id: connectionId, problem: null };
+    const view = { ...(await connection())!, problem: null };
     expect(await replaceConnectionProblem(db(), view, 'timeout')).toBe(false);
     const stored = (await connection())!.problem!;
     expect(stored.code).toBe('token_refused');
     expect(
-      await replaceConnectionProblem(db(), { id: connectionId, problem: stored }, 'unreachable'),
+      await replaceConnectionProblem(
+        db(),
+        { ...(await connection())!, problem: stored },
+        'unreachable',
+      ),
     ).toBe(false);
     expect((await connection())?.problem?.code).toBe('token_refused');
   });
@@ -714,6 +718,28 @@ describe('the Jira sync pass (spec §6.5, §11.2, §11.6–11.9)', () => {
       stop: null,
     });
     expect(inspect(lines, { depth: 10 })).not.toContain(fake.token);
+  });
+
+  it('moved (M1): a pass that outlived an address change reads, comments and writes nothing', async () => {
+    const { linkId, issueId } = await createdIssue();
+    // A comment and a status read are due; the rows left stand for the new site's.
+    await close([issueId], '2026-11-10T08:00:00Z');
+    await setRow(linkId, { statusCheckedAt: null });
+    const stale = (await openRun(deps, h.organizationId))!;
+    await db()
+      .update(jiraConnections)
+      .set({ siteUrl: `${fake.url}/moved` })
+      .where(eq(jiraConnections.id, connectionId));
+    fake.clearRequests();
+    expect(await runSyncPass(stale)).toMatchObject({
+      reconciled: 0,
+      created: 0,
+      statuses: 0,
+      comments: 0,
+      stop: null,
+    });
+    expect(sent()).toEqual([]);
+    expect(await row(linkId)).toMatchObject({ reportedFixedAt: null, statusCheckedAt: null });
   });
 
   it('connection gone (Review Focus 5): the job ends without an error and queues nothing', async () => {

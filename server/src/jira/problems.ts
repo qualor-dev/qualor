@@ -1,6 +1,6 @@
-import { and, eq, inArray, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
-import { jiraConnections, type JiraProblemValue } from '../db/schema';
+import { jiraConnections, type JiraDeployment, type JiraProblemValue } from '../db/schema';
 import type { JiraError } from './client';
 
 /** spec §6.1: why a Test fails, as a stable code the UI turns into its own words. */
@@ -132,17 +132,52 @@ export function isCredentialCode(code: BackgroundProblemCode): boolean {
   return CREDENTIAL_CODES.has(code);
 }
 
+/** Where a run's or a Test's client calls: the connection's address when it read the row. */
+export interface AddressView {
+  readonly id: string;
+  readonly deployment: JiraDeployment;
+  readonly siteUrl: string;
+  readonly apiUrl: string | null;
+}
+
+/**
+ * The connection row still has the address of `view`. A PUT that gives the connection a new
+ * address keeps its id (and deletes its mappings and links), so a run or a Test that outlived the
+ * move must not write what the old site said onto it.
+ */
+function atAddress(view: AddressView): SQL | undefined {
+  return and(
+    eq(jiraConnections.id, view.id),
+    eq(jiraConnections.deployment, view.deployment),
+    eq(jiraConnections.siteUrl, view.siteUrl),
+    view.apiUrl === null ? isNull(jiraConnections.apiUrl) : eq(jiraConnections.apiUrl, view.apiUrl),
+  );
+}
+
+/**
+ * The fence of a run's statements on `jira_links` (M1): the connection still has the run's
+ * address, so a run that outlived an address change claims, reads and writes none of the rows
+ * made for the new site.
+ */
+export function connectionUnmoved(view: AddressView): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM jira_connections jc
+     WHERE jc.id = ${view.id} AND jc.deployment = ${view.deployment}
+       AND jc.site_url = ${view.siteUrl} AND jc.api_url IS NOT DISTINCT FROM ${view.apiUrl}::text)`;
+}
+
 /**
  * spec §6.1: a Jira call that was answered clears a transient problem, never a credential one,
- * whatever the connection holds by the time it does. True when it cleared one.
+ * whatever the connection holds by the time it does, while the connection keeps the address the
+ * call went to. True when it cleared one.
  */
-export async function clearTransientProblem(db: Executor, connectionId: string): Promise<boolean> {
+export async function clearTransientProblem(db: Executor, view: AddressView): Promise<boolean> {
   const cleared = await db
     .update(jiraConnections)
     .set({ problem: sql`NULL`, updatedAt: sql`now()` })
     .where(
       and(
-        eq(jiraConnections.id, connectionId),
+        atAddress(view),
         inArray(sql`${jiraConnections.problem} ->> 'code'`, [...TRANSIENT_PROBLEM_CODES]),
       ),
     )
@@ -173,9 +208,8 @@ export async function setConnectionProblem(
     .where(eq(jiraConnections.id, connectionId));
 }
 
-/** What a run or a Test last saw of its connection's background problem. */
-export interface ProblemView {
-  readonly id: string;
+/** What a run or a Test read of its connection: its address, and the background problem it last saw. */
+export interface ProblemView extends AddressView {
   problem: JiraProblemValue | null;
 }
 
@@ -206,8 +240,9 @@ function writable(seen: string | null, code: BackgroundProblemCode | null): SQL 
  * Sets the background problem to `code` (null clears it) only while the stored one is still
  * `view.problem`, so a job or a Test never overwrites what another writer stored since it read the
  * row (a fresher problem, or an admin's clear). A credential code also replaces a transient one
- * another job stored meanwhile; a transient code never replaces a credential one. The view
- * follows the stored value either way, read again when this call did not write; true when it did.
+ * another job stored meanwhile; a transient code never replaces a credential one. Nothing is
+ * written once the connection has another address than the view's (M1). The view follows the
+ * stored value either way, read again when this call did not write; true when it did.
  */
 export async function replaceConnectionProblem(
   db: Executor,
@@ -218,7 +253,7 @@ export async function replaceConnectionProblem(
   const [written] = await db
     .update(jiraConnections)
     .set({ problem: problemValue(code), updatedAt: sql`now()` })
-    .where(and(eq(jiraConnections.id, view.id), writable(seen, code)))
+    .where(and(atAddress(view), writable(seen, code)))
     .returning({ problem: jiraConnections.problem });
   if (written) {
     view.problem = written.problem;
@@ -234,7 +269,5 @@ export async function replaceConnectionProblem(
  */
 export async function clearAfterAnswer(db: Executor, view: ProblemView): Promise<void> {
   if (view.problem === null || isCredentialProblem(view.problem)) return;
-  view.problem = (await clearTransientProblem(db, view.id))
-    ? null
-    : await storedProblem(db, view.id);
+  view.problem = (await clearTransientProblem(db, view)) ? null : await storedProblem(db, view.id);
 }

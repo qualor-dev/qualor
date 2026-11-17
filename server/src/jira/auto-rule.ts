@@ -10,6 +10,7 @@ import {
 import { compare, SEVERITIES } from '../vulnerabilities/order';
 import { IS_NEW, scopedRows } from '../vulnerabilities/summary';
 import { trackedTargets, type Target } from '../vulnerabilities/targets';
+import { sameAddress } from './connection';
 import { insertPendingLinks, pairKey, type LinkTarget } from './links';
 import type { JiraMappingRow } from './mapping';
 import type { VulnerabilityPair } from './presence';
@@ -113,7 +114,8 @@ async function ruleProjects(ctx: JiraRunContext, priority: boolean): Promise<str
  * row), then the mapping row shared: a save or removal of the mapping waits, so the rows are those
  * of the rule as stored. A pair linked meanwhile makes none (`ON CONFLICT DO NOTHING`); the rows
  * are written by pair, the route's order, so the two never deadlock. Returns how many it made, or
- * null when the connection is gone.
+ * null when the connection is gone or has another address than the run's (M1: the rows of a new
+ * site are not the old run's to make).
  */
 function linkProject(
   ctx: JiraRunContext,
@@ -127,11 +129,16 @@ function linkProject(
       .where(eq(projects.id, projectId))
       .for('key share');
     const [connection] = await tx
-      .select({ id: jiraConnections.id })
+      .select({
+        id: jiraConnections.id,
+        deployment: jiraConnections.deployment,
+        siteUrl: jiraConnections.siteUrl,
+        apiUrl: jiraConnections.apiUrl,
+      })
       .from(jiraConnections)
       .where(eq(jiraConnections.id, ctx.connection.id))
       .for('key share');
-    if (!connection) return null;
+    if (!connection || !sameAddress(connection, ctx.connection)) return null;
     const [mapping] = await tx
       .select()
       .from(projectJiraSettings)
