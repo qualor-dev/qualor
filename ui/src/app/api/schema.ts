@@ -6480,6 +6480,7 @@ export interface paths {
                                     /** Format: date-time */
                                     createdAt: string;
                                 } | null;
+                                jiraLinkable: boolean;
                             }[];
                             total: number;
                         };

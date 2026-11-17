@@ -1,5 +1,5 @@
 import { hex32 } from '@qualor/shared';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { createFakeJira, type FakeJira } from '../../test/fake-jira';
@@ -17,6 +17,7 @@ import {
   jiraConnections,
   jiraLinks,
   jobs,
+  projectVersions,
   users,
 } from '../db/schema';
 import { JIRA_QUEUE, jiraCreateKey } from '../jira/jobs';
@@ -52,6 +53,8 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
   let viewer: Session;
   let outsider: Session;
   let rater: Session;
+  /** A member of its own bucket of issue changes, for the race test. */
+  let racer: Session;
   let project: IngestProject;
   let other: IngestProject;
   let projectId: string;
@@ -142,6 +145,7 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
     viewer = await make('jl-viewer', 'viewer');
     outsider = await make('jl-outsider');
     rater = await make('jl-rater', 'member');
+    racer = await make('jl-racer', 'member');
     project = await h.project('JL');
     other = await h.project('JL-OTHER');
     projectId = project.id;
@@ -347,6 +351,47 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
     }
   });
 
+  it('links a pair only where the sync pass sees it: tracked targets or a Trivy issue (T6d)', async () => {
+    // The project's version rule is `none`: no version is tracked.
+    const [version] = await db()
+      .insert(projectVersions)
+      .values({
+        projectId,
+        label: `0.${++pkgs}.0`,
+        source: 'tag',
+        tag: `v0.${pkgs}.0`,
+        analyzedAt: NOW,
+      })
+      .returning();
+    const pkg = freshPackage();
+    const pair = { packageName: pkg, vulnerabilityId: 'CVE-2026-3333' };
+    await seedTargetRow(db(), { projectId, versionId: version!.id, ...pair });
+    // A pair only a merge request's Trivy issue reports is not linkable either.
+    const mrOnly = { packageName: freshPackage(), vulnerabilityId: CVE };
+    await trivy(mr, mrOnly.packageName);
+    const [untracked, onMr] = await items({ vulnerabilities: [pair, mrOnly] });
+    expect([untracked?.skipped, untracked?.link, onMr?.skipped]).toEqual([
+      'NOT_ELIGIBLE',
+      null,
+      'NOT_ELIGIBLE',
+    ]);
+    type VulnItem = { packageName: string; jira: Link | null; jiraLinkable: boolean };
+    const onVersion = async () =>
+      (
+        await get<{ items: VulnItem[] }>(
+          `/projects/${projectId}/vulnerabilities?target=version:${version!.id}&pageSize=100`,
+        )
+      ).items.find((v) => v.packageName === pkg);
+    expect(await onVersion()).toMatchObject({ jira: null, jiraLinkable: false });
+
+    // The same pair on a tracked branch too: linkable, wherever it is viewed.
+    await seedTargetRow(db(), { projectId, branchId: release, ...pair });
+    expect(await onVersion()).toMatchObject({ jira: null, jiraLinkable: true });
+    const [linked] = await items({ vulnerabilities: [pair] });
+    expect(linked).toMatchObject({ skipped: null, link: { state: 'pending' } });
+    expect(await onVersion()).toMatchObject({ jiraLinkable: true, jira: { id: linked!.link!.id } });
+  });
+
   it('re-arms a failed or dismissed row; a created row is already linked', async () => {
     const failedIssue = await code(main);
     const failed = await seedJiraLink(db(), {
@@ -442,6 +487,85 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
     ]);
     expect(answers[0]!.link!.id).toBe(answers[1]!.link!.id);
     expect(await rowsOfIssue(issueId)).toHaveLength(1);
+  });
+
+  /**
+   * Starts the requests while a transaction holds the project row (which a link request locks
+   * first), waits until all of them queue behind it, then lets them go at once: their writes
+   * overlap every time.
+   */
+  const inLockstep = async <T>(start: () => Promise<T>[]): Promise<T[]> => {
+    let started: Promise<T>[] = [];
+    await db().transaction(async (tx) => {
+      await tx.execute(sql`SELECT 1 FROM projects WHERE id = ${projectId} FOR UPDATE`);
+      started = start();
+      for (let i = 0; i < 200; i += 1) {
+        const waiting = await db().execute<{ n: number }>(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'`);
+        if ((waiting.rows[0]?.n ?? 0) >= started.length) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      throw new Error('the requests never queued behind the project row');
+    });
+    return Promise.all(started);
+  };
+
+  it('writes in one order whatever the request order, so overlapping requests never deadlock', async () => {
+    // Two requests for the same findings, in opposite orders, released at once. Unordered, each
+    // would write its first finding and then wait on the other's (a new row's unique-index entry,
+    // or a re-armed row's lock): 40P01. Many new rows widen the window of the one INSERT.
+    const fresh = await Promise.all(Array.from({ length: 150 }, () => code(main)));
+    const inserted = await inLockstep(() => [
+      post({ issueIds: fresh }, racer),
+      post({ issueIds: [...fresh].reverse() }, racer),
+    ]);
+    expect(
+      inserted.map((r) => r.statusCode),
+      inserted
+        .filter((r) => r.statusCode !== 202)
+        .map((r) => r.body)
+        .join(' '),
+    ).toEqual([202, 202]);
+    const failed = await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const issueId = await code(main);
+        await seedJiraLink(db(), {
+          projectId,
+          connectionId,
+          kind: 'issue',
+          issueId,
+          state: 'failed',
+        });
+        return issueId;
+      }),
+    );
+    const rearmed = await inLockstep(() => [
+      post({ issueIds: failed }, racer),
+      post({ issueIds: [...failed].reverse() }, racer),
+    ]);
+    expect(
+      rearmed.map((r) => r.statusCode),
+      rearmed
+        .filter((r) => r.statusCode !== 202)
+        .map((r) => r.body)
+        .join(' '),
+    ).toEqual([202, 202]);
+    for (const [findings, answers] of [
+      [fresh, inserted],
+      [failed, rearmed],
+    ] as const) {
+      const rows = await db()
+        .select()
+        .from(jiraLinks)
+        .where(inArray(jiraLinks.issueId, [...findings]));
+      expect(rows).toHaveLength(findings.length);
+      expect(rows.every((r) => r.state === 'pending')).toBe(true);
+      const made = answers
+        .flatMap((r) => (r.json() as { items: Item[] }).items)
+        .filter((i) => i.skipped === null);
+      expect(made).toHaveLength(findings.length);
+    }
   });
 
   it('charges one issue change per new link and refuses a request over the limit whole', async () => {
@@ -619,12 +743,18 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
       jiraLinkable: false,
       jira: null,
     });
-    type VulnItem = { packageName: string; vulnerabilityId: string; jira: Link | null };
+    type VulnItem = {
+      packageName: string;
+      vulnerabilityId: string;
+      jira: Link | null;
+      jiraLinkable: boolean;
+    };
     const vulns = async () =>
       (await get<{ items: VulnItem[] }>(`/projects/${projectId}/vulnerabilities?pageSize=100`))
         .items;
     expect((await vulns()).find((v) => v.packageName === pkg)).toMatchObject({
       vulnerabilityId: CVE,
+      jiraLinkable: true,
       jira: { id: pairLink, state: 'pending' },
     });
 

@@ -1,12 +1,10 @@
 import { SEVERITIES } from '@qualor/shared';
 import { eq, sql } from 'drizzle-orm';
-import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
-import type { AuditAction, AuditDetails, PROJECT_JIRA_CHANGED_FIELDS } from '../audit/catalogue';
-import { actorOf, type AuditEventInput } from '../audit/recorder';
-import { projectRefs } from '../audit/refs';
+import type { PROJECT_JIRA_CHANGED_FIELDS } from '../audit/catalogue';
+import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
 import type { Executor } from '../db/client';
 import { first } from '../db/rows';
@@ -192,26 +190,6 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
   const jiraDeps = {
     secretKey: deps.config.secretKey,
     internalHosts: deps.config.jiraInternalHosts,
-  };
-
-  /** rbac-audit.md §8: `project.jira_updated` in the change's transaction `tx`. */
-  const audit = async <A extends AuditAction>(
-    tx: Executor,
-    request: FastifyRequest,
-    project: ProjectRow,
-    action: A,
-    details: AuditDetails<A>,
-  ): Promise<void> => {
-    if (!deps.audit.active()) return;
-    const refs = await projectRefs(tx, project.id);
-    const event = {
-      action,
-      organization: refs.organization,
-      project: refs.project,
-      target: { type: 'project', id: project.id, label: project.name },
-      details,
-    } as AuditEventInput;
-    await deps.audit.record(tx, actorOf(request), [event]);
   };
 
   /** The 502 for a failed Jira call; a credential failure is also recorded on the connection. */
@@ -531,7 +509,9 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           exploited,
         });
         if (changed.length > 0) {
-          await audit(tx, request, project, 'project.jira_updated', { changed });
+          await recordProjectEvent(deps.audit, tx, request, project, 'project.jira_updated', {
+            changed,
+          });
         }
       });
       return answer(deps.db, project);
@@ -562,7 +542,9 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           .where(eq(projectJiraSettings.projectId, project.id))
           .returning({ projectId: projectJiraSettings.projectId });
         if (removed.length === 0) throw notFound('Jira mapping');
-        await audit(tx, request, project, 'project.jira_updated', { changed: ['mapping'] });
+        await recordProjectEvent(deps.audit, tx, request, project, 'project.jira_updated', {
+          changed: ['mapping'],
+        });
       });
       return reply.code(204).send();
     },

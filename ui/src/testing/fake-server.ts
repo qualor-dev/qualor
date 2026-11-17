@@ -1040,6 +1040,7 @@ export function vulnerabilityCard(given: Partial<VulnerabilityCard> = {}): Vulne
     exploited: null,
     epss: null,
     jira: null,
+    jiraLinkable: true,
     ...given,
   };
 }

@@ -6,7 +6,12 @@ import { jiraConnections, jiraLinks, type JiraLinkState } from '../db/schema';
 import { conflict, ProblemError } from '../http/problem';
 import { iso, isoOrNull, timestamp } from '../http/schemas';
 import type { ProjectRow } from '../projects/access';
-import type { VulnerabilitySettings } from '../versions/settings';
+import {
+  isTrackedBranch,
+  vulnerabilitySettings,
+  type VulnerabilitySettings,
+} from '../versions/settings';
+import { trackedTargets } from '../vulnerabilities/targets';
 import { TRIVY_ENGINE, writesDecision } from '../vulnerabilities/trivy-issues';
 import { connectionOf, type JiraConnectionRow } from './connection';
 import { mappingOf, type JiraMappingRow } from './mapping';
@@ -230,6 +235,92 @@ export async function linksForPairs(
   );
   for (const [key, row] of rows) found.set(key, jiraLinkDto(row, row.siteUrl));
   return found;
+}
+
+/** How the project holds each pair, by {@link pairKey}. */
+export interface PairPresence {
+  /** A `target_vulnerabilities` row of the project on any target, or a Trivy issue of it. */
+  known: Set<string>;
+  /**
+   * Ruling T6d: present as the sync pass judges presence (spec §6.5, "gone"): a
+   * `target_vulnerabilities` row on a target `trackedTargets` returns, or a non-closed Trivy issue
+   * of the main branch or a tracked branch. Only such a pair may be linked; one seen only on an
+   * untracked target or a merge request would read as gone at the first pass.
+   */
+  linkable: Set<string>;
+}
+
+/**
+ * {@link PairPresence} of the pairs: the tracked targets, then one query over the project's
+ * vulnerability rows and one over its Trivy issues (and the settings when there are some), the
+ * same few queries for any number of pairs.
+ */
+export async function pairPresence(
+  db: Executor,
+  projectId: string,
+  pairs: readonly { packageName: string; vulnerabilityId: string }[],
+): Promise<PairPresence> {
+  const presence: PairPresence = { known: new Set(), linkable: new Set() };
+  if (pairs.length === 0) return presence;
+  const json = JSON.stringify(
+    pairs.map((p) => ({ package_name: p.packageName, vulnerability_id: p.vulnerabilityId })),
+  );
+  const tracked = await trackedTargets(db, projectId);
+  const trackedBranches = tracked.flatMap((t) => (t.kind === 'branch' ? [t.branchId] : []));
+  const trackedVersions = tracked.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
+  const rows = await db.execute<{
+    package_name: string;
+    vulnerability_id: string;
+    tracked: boolean;
+  }>(sql`
+    SELECT tv.package_name, tv.vulnerability_id,
+           bool_or(tv.branch_id = ANY(${uuidArray(trackedBranches)})
+                   OR tv.version_id = ANY(${uuidArray(trackedVersions)})) AS tracked
+      FROM (SELECT DISTINCT * FROM jsonb_to_recordset(${json}::jsonb)
+                   AS p(package_name text, vulnerability_id text)) p
+      JOIN target_vulnerabilities tv
+        ON tv.project_id = ${projectId} AND tv.package_name = p.package_name
+       AND tv.vulnerability_id = p.vulnerability_id
+     GROUP BY tv.package_name, tv.vulnerability_id`);
+  for (const r of rows.rows) {
+    const key = pairKey(r.package_name, r.vulnerability_id);
+    presence.known.add(key);
+    if (r.tracked) presence.linkable.add(key);
+  }
+  const reported = await db.execute<{
+    package_name: string;
+    vulnerability_id: string;
+    closed: boolean;
+    name: string;
+    is_main: boolean;
+    kind: string;
+  }>(sql`
+    SELECT DISTINCT p.package_name, p.vulnerability_id, i.status = 'closed' AS closed,
+           b.name, b.is_main, b.kind
+      FROM jsonb_to_recordset(${json}::jsonb) AS p(package_name text, vulnerability_id text)
+      JOIN issues i ON i.project_id = ${projectId} AND i.package_name = p.package_name
+      JOIN rules r ON r.id = i.rule_id AND r.engine_id = ${TRIVY_ENGINE}
+                  AND r.engine_rule_id = p.vulnerability_id
+      JOIN branches b ON b.id = i.branch_id`);
+  if (reported.rows.length > 0) {
+    const settings = await vulnerabilitySettings(db, projectId);
+    for (const r of reported.rows) {
+      const key = pairKey(r.package_name, r.vulnerability_id);
+      presence.known.add(key);
+      if (
+        !r.closed &&
+        isTrackedBranch(settings, { name: r.name, isMain: r.is_main, kind: r.kind })
+      ) {
+        presence.linkable.add(key);
+      }
+    }
+  }
+  return presence;
+}
+
+/** `ARRAY(...)` of uuids, bound as one parameter (an empty list matches nothing). */
+function uuidArray(ids: readonly string[]): SQL {
+  return sql`ARRAY(SELECT jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)::uuid)`;
 }
 
 /**

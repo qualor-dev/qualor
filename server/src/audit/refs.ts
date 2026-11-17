@@ -1,6 +1,9 @@
 import { eq } from 'drizzle-orm';
+import type { FastifyRequest } from 'fastify';
 import type { Executor } from '../db/client';
 import { organizations, projects } from '../db/schema';
+import type { AuditAction, AuditDetails } from './catalogue';
+import { actorOf, type AuditEventInput, type AuditRecorder } from './recorder';
 
 export interface AuditRef {
   id: string;
@@ -41,4 +44,29 @@ export async function projectRefs(
   return row
     ? { project: { id: row.id, key: row.key }, organization: { id: row.orgId, key: row.orgKey } }
     : { project: { id, key: '' }, organization: null };
+}
+
+/**
+ * rbac-audit.md §8: one event about `project` (its target, with the project's and the
+ * organisation's refs), by the request's actor, in the change's transaction `tx`. Nothing while
+ * the recorder is not active.
+ */
+export async function recordProjectEvent<A extends AuditAction>(
+  recorder: AuditRecorder,
+  tx: Executor,
+  request: FastifyRequest,
+  project: { id: string; name: string },
+  action: A,
+  details: AuditDetails<A>,
+): Promise<void> {
+  if (!recorder.active()) return;
+  const refs = await projectRefs(tx, project.id);
+  const event = {
+    action,
+    organization: refs.organization,
+    project: refs.project,
+    target: { type: 'project', id: project.id, label: project.name },
+    details,
+  } as AuditEventInput;
+  await recorder.record(tx, actorOf(request), [event]);
 }

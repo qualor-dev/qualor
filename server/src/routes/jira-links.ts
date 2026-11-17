@@ -1,11 +1,8 @@
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
-import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
-import type { AuditAction, AuditDetails } from '../audit/catalogue';
-import { actorOf, type AuditEventInput } from '../audit/recorder';
-import { projectRefs } from '../audit/refs';
+import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
@@ -26,6 +23,7 @@ import {
   MAX_LINK_ISSUE_IDS,
   MAX_LINK_VULNERABILITIES,
   pairKey,
+  pairPresence,
   REARMABLE_STATES,
   rearmLink,
   RETRYABLE_STATES,
@@ -38,9 +36,8 @@ import {
   type LinkTarget,
 } from '../jira/links';
 import { JIRA_ISSUE_KEY_PATTERN } from '../patterns';
-import { projectForUser, type ProjectRow } from '../projects/access';
-import { isTrackedBranch, vulnerabilitySettings } from '../versions/settings';
-import { TRIVY_ENGINE } from '../vulnerabilities/trivy-issues';
+import { projectForUser } from '../projects/access';
+import { vulnerabilitySettings } from '../versions/settings';
 
 const pairSchema = z.strictObject({
   packageName: noNul(z.string().min(1).max(512)),
@@ -127,56 +124,25 @@ async function issueTargets(
 }
 
 /**
- * spec §6.3: each pair as a vulnerability of the project: a row of the Vulnerabilities tab
- * (`target_vulnerabilities`), or a non-closed Trivy issue of main or a tracked branch. Any other
- * pair is NOT_FOUND. The same few queries for any number of pairs.
+ * spec §6.3, ruling T6d: each pair as a vulnerability to link. One present as the sync pass
+ * judges presence ({@link pairPresence}) is linkable; one the project holds only elsewhere (an
+ * untracked target, a merge request, closed Trivy issues) is NOT_ELIGIBLE; any other is NOT_FOUND.
  */
 async function pairTargets(
   db: Executor,
   projectId: string,
   pairs: readonly Pair[],
 ): Promise<Resolved[]> {
-  const json = JSON.stringify(
-    [...new Map(pairs.map((p) => [pairKey(p.packageName, p.vulnerabilityId), p])).values()].map(
-      (p) => ({ package_name: p.packageName, vulnerability_id: p.vulnerabilityId }),
-    ),
-  );
-  const listed = await db.execute<{ package_name: string; vulnerability_id: string }>(sql`
-    SELECT p.package_name, p.vulnerability_id
-      FROM jsonb_to_recordset(${json}::jsonb) AS p(package_name text, vulnerability_id text)
-     WHERE EXISTS (
-       SELECT 1 FROM target_vulnerabilities tv
-        WHERE tv.project_id = ${projectId} AND tv.package_name = p.package_name
-          AND tv.vulnerability_id = p.vulnerability_id)`);
-  const found = new Set(listed.rows.map((r) => pairKey(r.package_name, r.vulnerability_id)));
-  const reported = await db.execute<{
-    package_name: string;
-    vulnerability_id: string;
-    name: string;
-    is_main: boolean;
-    kind: string;
-  }>(sql`
-    SELECT DISTINCT p.package_name, p.vulnerability_id, b.name, b.is_main, b.kind
-      FROM jsonb_to_recordset(${json}::jsonb) AS p(package_name text, vulnerability_id text)
-      JOIN issues i ON i.project_id = ${projectId} AND i.package_name = p.package_name
-                   AND i.status <> 'closed'
-      JOIN rules r ON r.id = i.rule_id AND r.engine_id = ${TRIVY_ENGINE}
-                  AND r.engine_rule_id = p.vulnerability_id
-      JOIN branches b ON b.id = i.branch_id`);
-  if (reported.rows.length > 0) {
-    const settings = await vulnerabilitySettings(db, projectId);
-    for (const r of reported.rows) {
-      if (isTrackedBranch(settings, { name: r.name, isMain: r.is_main, kind: r.kind })) {
-        found.add(pairKey(r.package_name, r.vulnerability_id));
-      }
-    }
-  }
-  return pairs.map((p): Resolved =>
-    found.has(pairKey(p.packageName, p.vulnerabilityId))
-      ? { item: p, target: { kind: 'vulnerability', ...p } }
-      : { item: p, skipped: 'NOT_FOUND' },
-  );
+  const presence = await pairPresence(db, projectId, pairs);
+  return pairs.map((p): Resolved => {
+    const key = pairKey(p.packageName, p.vulnerabilityId);
+    if (presence.linkable.has(key)) return { item: p, target: { kind: 'vulnerability', ...p } };
+    return { item: p, skipped: presence.known.has(key) ? 'NOT_ELIGIBLE' : 'NOT_FOUND' };
+  });
 }
+
+/** Code-unit order (not locale-dependent). */
+const compareText = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
 
 /** R9: 409 for a row Retry does not take back to pending. */
 function notRetryable(): never {
@@ -197,26 +163,6 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
   chargeIssueChanges?: ChargeIssueChanges;
 }> = async (app, { deps, chargeIssueChanges }) => {
   const chargeChanges = chargeIssueChanges ?? issueChangeCharge();
-
-  /** rbac-audit.md §8: a `jira_link.*` event about the project, in the change's transaction. */
-  const audit = async <A extends AuditAction>(
-    tx: Executor,
-    request: FastifyRequest,
-    project: ProjectRow,
-    action: A,
-    details: AuditDetails<A>,
-  ): Promise<void> => {
-    if (!deps.audit.active()) return;
-    const refs = await projectRefs(tx, project.id);
-    const event = {
-      action,
-      organization: refs.organization,
-      project: refs.project,
-      target: { type: 'project', id: project.id, label: project.name },
-      details,
-    } as AuditEventInput;
-    await deps.audit.record(tx, actorOf(request), [event]);
-  };
 
   app.post(
     '/projects/:id/jira/links',
@@ -276,6 +222,10 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
         if (!row) fresh.push(target);
         else if ((REARMABLE_STATES as readonly string[]).includes(row.state)) rearm.push(row);
       }
+      // Written in one order whatever the request's order (new rows by finding, re-arms by id), so
+      // two overlapping requests wait on each other instead of deadlocking (40P01).
+      fresh.sort((a, b) => compareText(targetKey(a), targetKey(b)));
+      rearm.sort((a, b) => compareText(a.id, b.id));
       const charged = fresh.length + rearm.length;
       if (charged > 0) chargeChanges(principal.user.id, charged);
 
@@ -320,7 +270,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
               : await linkRowsOf(tx, project.id, losers);
           if (pending.length > 0) {
             await enqueueJiraCreate(tx, project.organizationId);
-            await audit(tx, request, project, 'jira_link.requested', {
+            await recordProjectEvent(deps.audit, tx, request, project, 'jira_link.requested', {
               count: pending.length,
               kind: issueIds !== undefined ? 'issue' : 'vulnerability',
             });
@@ -390,7 +340,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
           const rearmed = await rearmLink(tx, link.id, RETRYABLE_STATES, principal.user.id);
           if (!rearmed) notRetryable();
           await enqueueJiraCreate(tx, project.organizationId);
-          await audit(tx, request, project, 'jira_link.requested', {
+          await recordProjectEvent(deps.audit, tx, request, project, 'jira_link.requested', {
             count: 1,
             kind: rearmed.kind,
           });
@@ -437,7 +387,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
           JIRA_ISSUE_KEY_PATTERN.test(dismissed.key)
             ? dismissed.key
             : null;
-        await audit(tx, request, project, 'jira_link.dismissed', { key });
+        await recordProjectEvent(deps.audit, tx, request, project, 'jira_link.dismissed', { key });
       });
       return reply.code(204).send();
     },

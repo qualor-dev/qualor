@@ -13613,6 +13613,9 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "jiraLinkable": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -13634,7 +13637,8 @@
                           "decision",
                           "exploited",
                           "epss",
-                          "jira"
+                          "jira",
+                          "jiraLinkable"
                         ],
                         "additionalProperties": false
                       }
