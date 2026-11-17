@@ -36,6 +36,26 @@ export function isProblem(value: unknown): value is Problem {
   return typeof v === 'object' && v !== null && typeof v.code === 'string';
 }
 
+/** {@link problemMessage} of a Jira problem code (api.md §2.1); null for any other code. */
+function jiraProblemMessage(code: string | null): string | null {
+  switch (code) {
+    case 'JIRA_NOT_CONNECTED':
+      return $localize`:@@jira.error.notConnected:This organization has no Jira connection. An organization admin connects it under Settings → Jira.`;
+    case 'JIRA_CONNECTION_BROKEN':
+      return $localize`:@@jira.error.connectionBroken:The Jira connection has a problem that an organization admin must fix under Settings → Jira.`;
+    case 'JIRA_PROJECT_NOT_MAPPED':
+      return $localize`:@@jira.error.projectNotMapped:This project is not mapped to a Jira project yet.`;
+    case 'JIRA_ISSUE_TYPE_UNSUPPORTED':
+      return $localize`:@@jira.error.issueTypeUnsupported:Qualor cannot create this Jira issue type: it requires fields that Qualor cannot fill.`;
+    case 'JIRA_UNAVAILABLE':
+      return $localize`:@@jira.error.unavailable:Jira could not be reached or refused the request. Try again later.`;
+    case 'JIRA_LINK_NOT_RETRYABLE':
+      return $localize`:@@jira.error.linkNotRetryable:Only a failed or missing Jira issue can be tried again.`;
+    default:
+      return null;
+  }
+}
+
 /**
  * A localized sentence for an error the API (or the network) returned. Problem codes are stable
  * (api.md §2.1); the server's English `title` is never shown, so every word on screen is ours.
@@ -44,6 +64,8 @@ export function problemMessage(err: unknown): string {
   if (!(err instanceof ApiError)) {
     return $localize`:@@error.network:The server could not be reached. Check your connection and try again.`;
   }
+  const jira = jiraProblemMessage(err.code);
+  if (jira !== null) return jira;
   switch (err.code) {
     case 'UNAUTHENTICATED':
       return $localize`:@@error.unauthenticated:Your session has ended. Sign in again.`;
@@ -89,18 +111,6 @@ export function problemMessage(err: unknown): string {
       return $localize`:@@error.webhookLimitReached:This organization has as many webhooks as it can have (50). Delete one first.`;
     case 'SCM_CONNECTION_LIMIT_REACHED':
       return $localize`:@@error.scmConnectionLimitReached:This organization has as many GitLab connections as it can have (10). Delete one first.`;
-    case 'JIRA_NOT_CONNECTED':
-      return $localize`:@@jira.error.notConnected:This organization has no Jira connection. An organization admin connects it under Settings → Jira.`;
-    case 'JIRA_CONNECTION_BROKEN':
-      return $localize`:@@jira.error.connectionBroken:The Jira connection has a problem that an organization admin must fix under Settings → Jira.`;
-    case 'JIRA_PROJECT_NOT_MAPPED':
-      return $localize`:@@jira.error.projectNotMapped:This project is not mapped to a Jira project yet.`;
-    case 'JIRA_ISSUE_TYPE_UNSUPPORTED':
-      return $localize`:@@jira.error.issueTypeUnsupported:Qualor cannot create this Jira issue type: it requires fields that Qualor cannot fill.`;
-    case 'JIRA_UNAVAILABLE':
-      return $localize`:@@jira.error.unavailable:Jira could not be reached or refused the request. Try again later.`;
-    case 'JIRA_LINK_NOT_RETRYABLE':
-      return $localize`:@@jira.error.linkNotRetryable:Only a failed or missing Jira issue can be tried again.`;
     case 'LICENSE_MANAGED_BY_ENVIRONMENT':
       return $localize`:@@error.licenseManagedByEnvironment:The licence key is set by QUALOR_LICENSE or QUALOR_LICENSE_FILE, so it cannot be changed here.`;
     case 'FEATURE_NOT_LICENSED':

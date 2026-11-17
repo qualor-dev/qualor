@@ -23,6 +23,14 @@ import { inputValue } from '../shared/forms';
 type Deployment = JiraConnection['deployment'];
 type TokenField = 'url' | 'api' | 'email' | 'token';
 
+/** Each field's input, in the form's order: the first with an error takes the focus. */
+const FIELD_INPUTS: readonly (readonly [TokenField, string])[] = [
+  ['url', 'jira-site-url'],
+  ['api', 'jira-api-url'],
+  ['email', 'jira-email'],
+  ['token', 'jira-token'],
+];
+
 /** An address as the server stores it: no trailing slash, so re-typing it is no change. */
 function normalUrl(raw: string): string {
   return raw.trim().replace(/\/+$/, '');
@@ -308,16 +316,8 @@ export class JiraSettingsPage {
 
   private focusFirstInvalid(): void {
     const errors = this.fieldError();
-    const id = errors.url
-      ? 'jira-site-url'
-      : errors.api
-        ? 'jira-api-url'
-        : errors.email
-          ? 'jira-email'
-          : errors.token
-            ? 'jira-token'
-            : null;
-    if (id) this.document.getElementById(id)?.focus();
+    const first = FIELD_INPUTS.find(([field]) => errors[field]);
+    if (first) this.document.getElementById(first[1])?.focus();
   }
 
   protected async test(): Promise<void> {
