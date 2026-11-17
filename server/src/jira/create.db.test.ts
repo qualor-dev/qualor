@@ -296,6 +296,41 @@ describe('the Jira create job (spec §6.4, §11.2–11.5)', () => {
     }
   });
 
+  it('a late answer: a row the pass failed outcome_unknown meanwhile becomes created, its reason gone', async () => {
+    const [linkId] = await requestIssues([await issue()]);
+    fake.inject('POST', /\/rest\/api\/2\/issue$/, {
+      passThrough: true,
+      before: async () => {
+        await db()
+          .update(jiraLinks)
+          .set({
+            state: 'failed',
+            failure: { code: 'outcome_unknown', message: JIRA_FAILURE_TEXT.outcome_unknown },
+          })
+          .where(eq(jiraLinks.id, linkId!));
+      },
+    });
+    await run();
+    expect(await row(linkId!)).toMatchObject({
+      state: 'created',
+      failure: null,
+      jiraKey: fake.issues().at(-1)!.key,
+    });
+  });
+
+  it('R18: a run whose every call went unanswered queues no follow-up', async () => {
+    await pendingLinks(CREATE_PER_RUN + 10);
+    const html = {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      body: '<html><body>Sign in</body></html>',
+    };
+    fake.inject('POST', /\/issue\/bulk$/, html, html, html, html);
+    const ctx = (await openRun(deps, h.organizationId))!;
+    expect(await createPending(ctx)).toMatchObject({ unanswered: CREATE_PER_RUN, stop: null });
+    expect(await queuedCreates()).toHaveLength(0);
+  });
+
   it('HTML answer (Review Focus 2): a 200 sign-in page to a bulk keeps the rows pending, the job succeeds', async () => {
     const linkIds = await requestIssues([await issue(), await issue()]);
     fake.inject('POST', /\/issue\/bulk$/, {

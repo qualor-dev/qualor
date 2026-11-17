@@ -18,7 +18,7 @@ import {
 import { JIRA_TOKEN_AAD, runConnectionTest, testJiraConnection } from '../jira/connection';
 import { JiraClient } from '../jira/client';
 import { JIRA_QUEUE } from '../jira/jobs';
-import { JIRA_PROBLEM_TEXT } from '../jira/problems';
+import { JIRA_PROBLEM_TEXT, setConnectionProblem } from '../jira/problems';
 
 const NOW = new Date('2027-01-01T00:00:00Z');
 const EMAIL = 'jira-robot@example.test';
@@ -400,6 +400,18 @@ describe('the organisation Jira connection (0.16 Jira §6.1, §6.8)', () => {
       expect(await read()).toEqual(stored);
       expect((await test()).ok).toBe(true);
       expect(await read()).toBeNull();
+    });
+
+    it('keeps a problem a pass recorded while it ran: it clears only what it read', async () => {
+      const id = await connectJira(h, fake);
+      await setConnectionProblem(h.ctx.db, id, 'token_refused');
+      fake.inject('GET', /\/myself$/, {
+        passThrough: true,
+        before: () => setConnectionProblem(h.ctx.db, id, 'timeout'),
+      });
+      expect((await test()).ok).toBe(true);
+      const [row] = await h.ctx.db.select().from(jiraConnections).where(eq(jiraConnections.id, id));
+      expect(row?.problem?.code).toBe('timeout');
     });
 
     it('reports a token sealed under another key as undecryptable', async () => {

@@ -209,6 +209,11 @@ export function isJiraIssueKey(key: string): boolean {
   return issueKey.safeParse(key).success;
 }
 
+/** Whether a stored id may go into an `id in (…)` search. */
+export function isJiraIssueId(id: string): boolean {
+  return ISSUE_ID.test(id);
+}
+
 const elementError = z.looseObject({
   status: z.number().int().optional(),
   elementErrors: z.unknown().optional(),
@@ -224,8 +229,9 @@ const bulkAnswer = z.looseObject({
  * reads as `new`, so one odd status never fails the whole answer.
  */
 const statusCategory = z.enum(['new', 'indeterminate', 'done']).catch('new');
+/** A searched issue's id goes back into JQL: one not of Jira's form fails the page (bad answer). */
 const searchedIssue = z.looseObject({
-  id: z.string(),
+  id: z.string().regex(ISSUE_ID),
   key: z.string(),
   fields: z.looseObject({
     status: z.looseObject({
@@ -477,6 +483,11 @@ export class JiraClient {
   /** Requests made so far, refused ones included. */
   get requests(): number {
     return this.requestCount;
+  }
+
+  /** Requests the budget still allows. */
+  get remaining(): number {
+    return Math.max(0, this.maxRequests - this.requestCount);
   }
 
   get deployment(): JiraDeployment {
@@ -749,7 +760,8 @@ export class JiraClient {
   /**
    * Finds or gives up on each id of `batch` (spec §6.5 step 4). Cloud fails a whole query on one
    * unknown id (400): the batch is halved until each id is found or alone, and a lone id answering
-   * 400 or 404 is missing this pass. Each request counts against the budget.
+   * 400 or 404 is missing this pass. Each request counts against the budget. Only the codes of
+   * those answers count: a CAPTCHA lockout or a redirect is thrown whatever its status.
    */
   private async settle(
     batch: readonly string[],
@@ -764,7 +776,7 @@ export class JiraClient {
     } catch (err) {
       if (!(err instanceof JiraError)) throw err;
       const alone = batch.length === 1;
-      if (err.status === 400 && this.#deployment === 'cloud') {
+      if (err.code === 'field_refused' && this.#deployment === 'cloud') {
         if (alone) {
           missing.push(...batch);
           return;
@@ -774,7 +786,7 @@ export class JiraClient {
         await this.settle(batch.slice(half), found, missing);
         return;
       }
-      if (err.status === 404 && alone) {
+      if (err.code === 'not_found' && alone) {
         missing.push(...batch);
         return;
       }
@@ -784,7 +796,9 @@ export class JiraClient {
 
   /**
    * The status of each issue by its id, 100 ids per query: those Jira returns (with their key now,
-   * as a moved issue keeps its id), and those it does not.
+   * as a moved issue keeps its id), and those it does not. A failure throws what was read before
+   * it away: the sync pass calls this per batch of {@link JIRA_SEARCH_BATCH}, so a budget stop
+   * keeps the batches it read.
    */
   async searchByIds(
     ids: readonly string[],

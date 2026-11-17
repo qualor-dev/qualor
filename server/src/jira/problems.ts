@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { jiraConnections, type JiraProblemValue } from '../db/schema';
 import type { JiraError } from './client';
@@ -134,10 +134,10 @@ export function isCredentialCode(code: BackgroundProblemCode): boolean {
 
 /**
  * spec §6.1: a Jira call that was answered clears a transient problem, never a credential one,
- * whatever the connection holds by the time it does.
+ * whatever the connection holds by the time it does. True when it cleared one.
  */
-export async function clearTransientProblem(db: Executor, connectionId: string): Promise<void> {
-  await db
+export async function clearTransientProblem(db: Executor, connectionId: string): Promise<boolean> {
+  const cleared = await db
     .update(jiraConnections)
     .set({ problem: sql`NULL`, updatedAt: sql`now()` })
     .where(
@@ -145,24 +145,85 @@ export async function clearTransientProblem(db: Executor, connectionId: string):
         eq(jiraConnections.id, connectionId),
         inArray(sql`${jiraConnections.problem} ->> 'code'`, [...TRANSIENT_PROBLEM_CODES]),
       ),
-    );
+    )
+    .returning({ id: jiraConnections.id });
+  return cleared.length > 0;
+}
+
+/** The stored value of `code`: its fixed text, stamped with the database clock; NULL for null. */
+function problemValue(code: BackgroundProblemCode | null): SQL {
+  return code === null
+    ? sql`NULL`
+    : sql`jsonb_build_object('code', ${code}::text, 'message', ${JIRA_PROBLEM_TEXT[code]}::text, 'at', to_jsonb(now()))`;
 }
 
 /**
  * Sets the connection's background problem to `code` with its fixed text, stamped with the
- * database clock, or clears it with null.
+ * database clock, or clears it with null, whatever it holds: for a writer that holds the row (a
+ * PUT). A job or a Test writes with {@link replaceConnectionProblem}.
  */
 export async function setConnectionProblem(
   db: Executor,
   connectionId: string,
   code: BackgroundProblemCode | null,
 ): Promise<void> {
-  const problem =
-    code === null
-      ? sql`NULL`
-      : sql`jsonb_build_object('code', ${code}::text, 'message', ${JIRA_PROBLEM_TEXT[code]}::text, 'at', to_jsonb(now()))`;
   await db
     .update(jiraConnections)
-    .set({ problem, updatedAt: sql`now()` })
+    .set({ problem: problemValue(code), updatedAt: sql`now()` })
     .where(eq(jiraConnections.id, connectionId));
+}
+
+/** What a run or a Test last saw of its connection's background problem. */
+export interface ProblemView {
+  readonly id: string;
+  problem: JiraProblemValue | null;
+}
+
+async function storedProblem(db: Executor, connectionId: string): Promise<JiraProblemValue | null> {
+  const [row] = await db
+    .select({ problem: jiraConnections.problem })
+    .from(jiraConnections)
+    .where(eq(jiraConnections.id, connectionId));
+  return row?.problem ?? null;
+}
+
+/**
+ * Sets the background problem to `code` (null clears it) only while the stored one is still
+ * `view.problem`, so a job or a Test never overwrites what another writer stored since it read the
+ * row (a fresher problem, or an admin's clear). The view follows the stored value either way, read
+ * again when another writer came first; true when this call wrote.
+ */
+export async function replaceConnectionProblem(
+  db: Executor,
+  view: ProblemView,
+  code: BackgroundProblemCode | null,
+): Promise<boolean> {
+  const seen = view.problem === null ? null : JSON.stringify(view.problem);
+  const [written] = await db
+    .update(jiraConnections)
+    .set({ problem: problemValue(code), updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(jiraConnections.id, view.id),
+        sql`${jiraConnections.problem} IS NOT DISTINCT FROM ${seen}::jsonb`,
+      ),
+    )
+    .returning({ problem: jiraConnections.problem });
+  if (written) {
+    view.problem = written.problem;
+    return true;
+  }
+  view.problem = await storedProblem(db, view.id);
+  return false;
+}
+
+/**
+ * spec §6.1: after an answered call, a transient problem in the view is cleared (conditionally,
+ * {@link clearTransientProblem}); the view follows.
+ */
+export async function clearAfterAnswer(db: Executor, view: ProblemView): Promise<void> {
+  if (view.problem === null || isCredentialProblem(view.problem)) return;
+  view.problem = (await clearTransientProblem(db, view.id))
+    ? null
+    : await storedProblem(db, view.id);
 }

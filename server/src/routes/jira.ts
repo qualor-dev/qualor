@@ -35,6 +35,7 @@ import { scheduleJiraSync, syncJiraNow } from '../jira/jobs';
 import {
   BACKGROUND_PROBLEM_CODES,
   JIRA_PROBLEM_CODES,
+  replaceConnectionProblem,
   setConnectionProblem,
 } from '../jira/problems';
 import { jiraApiUrlProblem, jiraSiteUrlProblem, normalJiraUrl } from '../jira/url';
@@ -402,7 +403,8 @@ export const jiraRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
       const row = await connectionOf(deps.db, organizationId);
       if (!row) throw conflict('JIRA_NOT_CONNECTED', 'The organisation has no Jira connection');
       const result = await testJiraConnection(row, jiraDeps);
-      if (result.ok && row.problem !== null) await setConnectionProblem(deps.db, row.id, null);
+      // Only the problem it read: one a pass recorded while it ran is fresher (Task 3 review).
+      if (result.ok && row.problem !== null) await replaceConnectionProblem(deps.db, row, null);
       return result;
     },
   );

@@ -5,8 +5,9 @@ import type { JobHandlers, WorkerLogger } from '../queue/worker';
 import type { JiraClient } from './client';
 import { connectionOf, jiraClientFor, type JiraConnectionRow, type JiraDeps } from './connection';
 import { createPending } from './create';
-import { JIRA_QUEUE } from './jobs';
-import { setConnectionProblem } from './problems';
+import { JIRA_QUEUE, JIRA_SYNC_INTERVAL_SECONDS, scheduleJiraSync } from './jobs';
+import { replaceConnectionProblem } from './problems';
+import { runSyncPass } from './sync';
 
 /** Ruling R2: the `jira` queue's own worker runs two jobs at once ... */
 export const JIRA_WORKER_CONCURRENCY = 2;
@@ -22,7 +23,11 @@ export interface JiraJobDeps extends JiraDeps {
   logger?: WorkerLogger;
 }
 
-/** One run of a `jira` job: the organisation's connection and a client (one request budget). */
+/**
+ * One run of a `jira` job: the organisation's connection and a client (one request budget).
+ * `connection.problem` is the run's view of the stored problem: its problem writes are
+ * conditional on it and update it (`replaceConnectionProblem`, `clearAfterAnswer`).
+ */
 export interface JiraRunContext {
   deps: JiraJobDeps;
   connection: JiraConnectionRow;
@@ -47,15 +52,49 @@ export async function openRun(
   if (!connection) return null;
   const found = jiraClientFor(connection, deps);
   if ('problem' in found) {
-    await setConnectionProblem(deps.db, connection.id, found.problem);
+    await replaceConnectionProblem(deps.db, connection, found.problem);
     return null;
   }
   return { deps, connection, client: found.client };
 }
 
+/** spec §6.4: one create run of the organisation's pending rows. */
+async function runCreate(deps: JiraJobDeps, organizationId: string): Promise<void> {
+  const ctx = await openRun(deps, organizationId);
+  if (ctx === null) return;
+  const outcome = await createPending(ctx);
+  if (ctx.client.requests > 0 || outcome.failed > 0) {
+    deps.logger?.info(
+      {
+        organizationId,
+        connectionId: ctx.connection.id,
+        requests: ctx.client.requests,
+        ...outcome,
+      },
+      'Jira create run',
+    );
+  }
+}
+
+/**
+ * spec §6.5: one pass, then (ruling P1) the next one 15 minutes out, from `finally` so a pass
+ * that throws keeps its schedule too, while the connection exists: a pass whose connection is
+ * gone ends without an error and queues nothing (T3b, Review Focus 5).
+ */
+async function runSync(deps: JiraJobDeps, organizationId: string): Promise<void> {
+  try {
+    const ctx = await openRun(deps, organizationId);
+    if (ctx !== null) await runSyncPass(ctx);
+  } finally {
+    if ((await connectionOf(deps.db, organizationId)) !== null) {
+      await scheduleJiraSync(deps.db, organizationId, JIRA_SYNC_INTERVAL_SECONDS);
+    }
+  }
+}
+
 /**
  * The `jira` queue's handler (spec §6.4, §6.5), run by its own worker (R2): `create` sends the
- * organisation's pending rows to Jira; `sync`, the pass, comes with Task 8. A job whose
+ * organisation's pending rows to Jira; `sync` runs the pass and schedules the next. A job whose
  * connection is gone ends without an error and queues nothing.
  */
 export function jiraHandlers(deps: JiraJobDeps): JobHandlers {
@@ -67,21 +106,8 @@ export function jiraHandlers(deps: JiraJobDeps): JobHandlers {
         return;
       }
       const { kind, organizationId } = parsed.data;
-      if (kind !== 'create') return;
-      const ctx = await openRun(deps, organizationId);
-      if (ctx === null) return;
-      const outcome = await createPending(ctx);
-      if (ctx.client.requests > 0 || outcome.failed > 0) {
-        deps.logger?.info(
-          {
-            organizationId,
-            connectionId: ctx.connection.id,
-            requests: ctx.client.requests,
-            ...outcome,
-          },
-          'Jira create run',
-        );
-      }
+      if (kind === 'create') await runCreate(deps, organizationId);
+      else await runSync(deps, organizationId);
     },
   };
 }

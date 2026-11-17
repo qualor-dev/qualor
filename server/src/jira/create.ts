@@ -24,10 +24,10 @@ import { JIRA_FAILURE_TEXT, pairKey, type JiraFailureCode, type JiraLinkRow } fr
 import type { JiraMappingRow } from './mapping';
 import {
   backgroundCodeOf,
-  clearTransientProblem,
+  clearAfterAnswer,
   isCredentialCode,
   isCredentialProblem,
-  setConnectionProblem,
+  replaceConnectionProblem,
 } from './problems';
 import type { JiraJobDeps, JiraRunContext } from './run';
 
@@ -67,12 +67,21 @@ interface Failed {
 const compare = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
 
 /** One JSON value for `jsonb_to_recordset`; Postgres refuses U+0000, which Jira's words may hold. */
-const recordset = (rows: readonly object[]): string =>
+export const recordset = (rows: readonly object[]): string =>
   JSON.stringify(rows, (_key, value: unknown) =>
     typeof value === 'string' ? withoutNul(value) : value,
   );
 
-const fenceOf = (row: JiraLinkRow) => ({ id: row.id, generation: row.generation });
+/** The fence of every write to a link: a row re-armed meanwhile is another create's. */
+export const fenceOf = (row: Pick<JiraLinkRow, 'id' | 'generation'>) => ({
+  id: row.id,
+  generation: row.generation,
+});
+
+/** The rows a created answer makes `created`: pending, or failed `outcome_unknown` by the pass. */
+const LATE_CREATED = sql.raw(
+  `l.state = 'pending' OR (l.state = 'failed' AND l.failure ->> 'code' = 'outcome_unknown')`,
+);
 
 /**
  * R1: up to `n` of the connection's never-attempted pending rows, oldest first, stamped with
@@ -96,7 +105,7 @@ async function claim(db: Db, connectionId: string, n: number): Promise<JiraLinkR
 }
 
 /** Rows whose call never reached Jira: never attempted again, so the next run sends them. */
-async function release(db: Db, rows: readonly JiraLinkRow[]): Promise<void> {
+export async function release(db: Db, rows: readonly JiraLinkRow[]): Promise<void> {
   if (rows.length === 0) return;
   await db.execute(sql`
     UPDATE jira_links l SET attempted_at = NULL, updated_at = now()
@@ -107,7 +116,8 @@ async function release(db: Db, rows: readonly JiraLinkRow[]): Promise<void> {
 /**
  * The answers of one call, in one short transaction fenced on `(id, generation)`: a row re-armed
  * meanwhile is another create's. The state changes only from `pending` (R19): a row dismissed
- * while its create was in flight keeps the key and id Jira gave, and fails nothing.
+ * while its create was in flight keeps the key and id Jira gave, and fails nothing. A created
+ * answer also takes a row the pass failed `outcome_unknown` meanwhile: the issue is known now.
  */
 async function record(
   db: Db,
@@ -124,8 +134,9 @@ async function record(
       );
       const result = await tx.execute(sql`
         UPDATE jira_links l
-           SET state = CASE WHEN l.state = 'pending' THEN 'created' ELSE l.state END,
-               jira_issue_id = c.issue_id, jira_key = c.key, failure = NULL, updated_at = now()
+           SET state = CASE WHEN ${LATE_CREATED} THEN 'created' ELSE l.state END,
+               failure = CASE WHEN ${LATE_CREATED} THEN NULL ELSE l.failure END,
+               jira_issue_id = c.issue_id, jira_key = c.key, updated_at = now()
           FROM jsonb_to_recordset(${json}::jsonb)
                AS c(id uuid, generation int, issue_id text, key text)
          WHERE l.id = c.id AND l.generation = c.generation`);
@@ -237,17 +248,34 @@ async function prepare(
 }
 
 /**
- * What a failed call means for the run (spec §6.4, R16): 429 and the request budget stop it; a
- * credential failure (401, captcha, redirect, not public) or a transient one (timeout, no answer,
- * 5xx) is recorded on the connection and stops it; anything else (a bad answer) stops nothing.
+ * What a failed call means for a run (spec §6.4, §6.5, R16): 429 and the request budget stop it;
+ * a credential failure (401, captcha, redirect, not public) or a transient one (timeout, no
+ * answer, 5xx) is recorded on the connection and stops it; anything else (a bad answer) stops
+ * nothing. The record is conditional on the run's view of the problem (`ctx.connection`).
  */
-async function stopFor(ctx: JiraRunContext, err: JiraError): Promise<Stop> {
+export async function stopFor(ctx: JiraRunContext, err: JiraError): Promise<Stop> {
   if (err.code === 'rate_limited') return 'rate_limited';
   if (err.code === 'budget') return 'budget';
   const background = backgroundCodeOf(err);
   if (background === null) return null;
-  await setConnectionProblem(ctx.deps.db, ctx.connection.id, background);
+  await replaceConnectionProblem(ctx.deps.db, ctx.connection, background);
   return isCredentialCode(background) ? 'credential' : 'transient';
+}
+
+/**
+ * When the next create job runs: after a 429's `Retry-After`; at once after a run that took its
+ * limit with an answered call (R18: a run Jira never answered, a sign-in proxy, waits for the
+ * pass instead of pushing the whole backlog through); else none.
+ */
+function followUpDelay(
+  stop: Stop,
+  full: boolean,
+  answered: boolean,
+  retryAfter: number,
+): number | null {
+  if (stop === 'rate_limited') return retryAfter;
+  if (stop === null && full && answered) return 0;
+  return null;
 }
 
 /**
@@ -307,8 +335,9 @@ async function waiting(db: Db, connectionId: string): Promise<boolean> {
  *   (`attempted_at` cleared) and the run stops. While such a problem is set, nothing is sent.
  * - 429 → the rows are released and the create runs again after `Retry-After` (1 s – 15 min).
  *
- * Any answered call clears a transient problem. A run that took `limit` rows while more wait
- * queues the next create job (R18).
+ * Any answered call clears a transient problem; every problem write is conditional on the run's
+ * view (`ctx.connection.problem`), which follows them. A run that took `limit` rows while more
+ * wait, and had an answered call, queues the next create job (R18).
  */
 export async function createPending(
   ctx: JiraRunContext,
@@ -319,12 +348,11 @@ export async function createPending(
   const outcome: CreateOutcome = { created: 0, failed: 0, unanswered: 0, stop: null };
   if (isCredentialProblem(connection.problem)) return { ...outcome, stop: 'credential' };
   const priority = deps.limits().vulnerabilities.priority;
-  /** An answered call clears the transient problem the run started with, once. */
-  let transient = connection.problem !== null;
+  /** An answered call clears a transient problem (the run's view follows its writes). */
+  let answeredCalls = 0;
   const answered = async (): Promise<void> => {
-    if (!transient) return;
-    transient = false;
-    await clearTransientProblem(db, connection.id);
+    answeredCalls += 1;
+    await clearAfterAnswer(db, connection);
   };
   let retryAfter = RATE_LIMITED_WAIT_SECONDS;
   const stopOn = async (err: unknown): Promise<Stop> => {
@@ -390,12 +418,7 @@ export async function createPending(
       outcome.stop = await stopOn(err);
     }
   }
-  const again =
-    outcome.stop === 'rate_limited'
-      ? retryAfter
-      : outcome.stop === null && taken >= limit
-        ? 0
-        : null;
+  const again = followUpDelay(outcome.stop, taken >= limit, answeredCalls > 0, retryAfter);
   if (again !== null && (await waiting(db, connection.id))) {
     await enqueueJiraCreate(db, connection.organizationId, again);
   }

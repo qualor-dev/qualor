@@ -64,6 +64,13 @@ const LINE_SPACE = /[\s\u0085]+/g;
 
 const day = (d: Date): string => d.toISOString().slice(0, 10);
 
+/** The project's Vulnerabilities tab grouped by vulnerability; null without `QUALOR_PUBLIC_URL`. */
+export function vulnerabilitiesUrl(publicUrl: string | null, projectId: string): string | null {
+  return publicUrl === null
+    ? null
+    : `${publicUrl}/projects/${projectId}/vulnerabilities?view=vulnerability`;
+}
+
 function qualorLine(url: string | null): string[] {
   return url === null ? [] : [wikiLink('Open in Qualor', url)];
 }
@@ -120,11 +127,7 @@ export function vulnerabilityContent(f: VulnerabilityFacts, publicUrl: string | 
         : []),
       `Found in: ${foundInText(f.foundIn)}`,
       ...(withUrl && url !== null ? [`Advisory: ${wikiLink(f.vulnerabilityId, url)}`] : []),
-      ...qualorLine(
-        publicUrl === null
-          ? null
-          : `${publicUrl}/projects/${f.projectId}/vulnerabilities?view=vulnerability`,
-      ),
+      ...qualorLine(vulnerabilitiesUrl(publicUrl, f.projectId)),
     ].join('\n');
   const fits = (d: string): boolean => d.length <= DESCRIPTION_MAX;
   const description = [build(true, true), build(false, true), build(false, false)].find(fits);

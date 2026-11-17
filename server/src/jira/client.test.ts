@@ -796,6 +796,31 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
       expect(await client.searchByIds([id])).toEqual({ found: new Map(), missing: [id] });
     });
 
+    it('Cloud: a CAPTCHA lockout answered with 400 is thrown, not halved', async () => {
+      const fake = await fakeJira('cloud');
+      fake.inject('POST', /\/search\/jql$/, {
+        status: 400,
+        headers: { 'X-Seraph-LoginReason': 'AUTHENTICATION_DENIED' },
+      });
+      const err = await failure(clientOf(fake).searchByIds(['10001', '10002']));
+      expect(err).toMatchObject({ code: 'captcha' });
+      expect(fake.requests).toHaveLength(1);
+    });
+
+    it('a searched issue whose id is not a Jira issue id is a bad answer', async () => {
+      const fake = await fakeJira('data_center');
+      const issue = jiraShape<{ issues: Record<string, unknown>[] }>('search.dc').issues[0]!;
+      fake.inject('POST', /\/search$/, {
+        body: {
+          ...jiraShape<Record<string, unknown>>('search.dc'),
+          total: 1,
+          issues: [{ ...issue, id: '10001 OR 1=1' }],
+        },
+      });
+      const err = await failure(clientOf(fake).searchByIds(['10001']));
+      expect(err).toMatchObject({ code: 'bad_answer' });
+    });
+
     it('Data Center: a 400 is thrown, not halved', async () => {
       const fake = await fakeJira('data_center');
       fake.inject('POST', /\/search$/, { status: 400 });
@@ -848,7 +873,11 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
   it('budget: the request after the last allowed one throws budget, unsent', async () => {
     const fake = await fakeJira('data_center');
     const client = clientOf(fake, { maxRequests: 3 });
-    for (let i = 0; i < 3; i++) await client.myself();
+    for (let i = 0; i < 3; i++) {
+      expect(client.remaining).toBe(3 - i);
+      await client.myself();
+    }
+    expect(client.remaining).toBe(0);
     expect(await failure(client.myself())).toMatchObject({ code: 'budget', status: null });
     expect(client.requests).toBe(3);
     expect(fake.requests).toHaveLength(3);
