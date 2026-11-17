@@ -1,7 +1,9 @@
-import { TestBed } from '@angular/core/testing';
+import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   FakeServer,
+  jiraLink,
+  jiraProjectSettings,
   me,
   MEMBER_PROJECT_PERMISSIONS,
   ORG_ID,
@@ -960,6 +962,134 @@ describe('IssuePage', () => {
       'This status change is not allowed any more',
     );
     expect(buttonIn(root, 'Try again')).toBeUndefined();
+  });
+
+  describe('the Jira card', () => {
+    const LINKS = '/api/v0/projects/p1/jira/links';
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+    });
+
+    it('shows the issue’s Jira link in a card after Details', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ jira: jiraLink(), jiraLinkable: true }),
+      });
+      const { root } = await render();
+      const aside = root.querySelector('.issue-aside')!;
+      const headings = [...aside.querySelectorAll('section.card h3')].map((h) =>
+        h.textContent?.trim(),
+      );
+      expect(headings.slice(0, 2)).toEqual(['Details', 'Jira']);
+      const key = aside.querySelector('a.jira-key');
+      expect(key?.textContent?.trim()).toBe('PAY-12');
+      expect(key?.getAttribute('href')).toBe('https://jira.example.com/browse/PAY-12');
+    });
+
+    it('creates the Jira issue of this issue and says "Creating…"', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ jiraLinkable: true }) });
+      server.on('POST', LINKS, {
+        status: 202,
+        body: { items: [{ issueId: ID, link: pendingLink(), skipped: null }] },
+      });
+      const { fixture, root } = await render();
+      buttonIn(root, 'Create Jira issue')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', LINKS).map((r) => r.body)).toEqual([{ issueIds: [ID] }]);
+      expect(root.querySelector('.issue-aside')?.textContent).toContain('Creating…');
+    });
+
+    it('offers no Jira issue for an issue that cannot have one', async () => {
+      const { root } = await render();
+      expect(buttonIn(root, 'Create Jira issue')).toBeUndefined();
+      const headings = [...root.querySelectorAll('.issue-aside section.card h3')].map((h) =>
+        h.textContent?.trim(),
+      );
+      expect(headings).not.toContain('Jira');
+    });
+  });
+});
+
+/** A Jira link waiting for the create job. */
+function pendingLink() {
+  return jiraLink({ state: 'pending', key: null, url: null, status: null, statusCheckedAt: null });
+}
+
+describe('IssuePage while its Jira link is pending (R22)', () => {
+  let server: FakeServer;
+  let current: ComponentFixture<IssuePage> | null = null;
+
+  beforeEach(() => {
+    // Only the timers: the fake fetch and Angular's scheduling still run.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    server = new FakeServer();
+    server.on('GET', `/api/v0/issues/${ID}/changelog`, { body: page([]) });
+    server.on('GET', '/api/v0/projects/p1', { body: PROJECT });
+    server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+    TestBed.configureTestingModule({
+      imports: [IssuePage],
+      providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
+    });
+    TestBed.inject(SessionStore).set(me());
+  });
+
+  afterEach(() => {
+    current?.destroy();
+    current = null;
+    vi.useRealTimers();
+  });
+
+  /** Lets the fake fetch answer and Angular render, without reaching the next refresh. */
+  async function flush(): Promise<void> {
+    for (let i = 0; i < 12; i++) {
+      await vi.advanceTimersByTimeAsync(0);
+      current?.detectChanges();
+    }
+  }
+
+  async function advance(ms: number): Promise<void> {
+    await vi.advanceTimersByTimeAsync(ms);
+    await flush();
+  }
+
+  async function render() {
+    const fixture = TestBed.createComponent(IssuePage);
+    current = fixture;
+    fixture.componentRef.setInput('projectId', 'p1');
+    fixture.componentRef.setInput('issueId', ID);
+    await flush();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const reads = () => server.requestsTo('GET', `/api/v0/issues/${ID}`).length;
+
+  it('reads the issue again every 3 s, and stops after 40 reads', async () => {
+    server.on('GET', `/api/v0/issues/${ID}`, {
+      body: detail({ jira: pendingLink(), jiraLinkable: true }),
+    });
+    const root = await render();
+    expect(root.querySelector('.issue-aside')?.textContent).toContain('Creating…');
+    expect(reads()).toBe(1);
+    await advance(2_999);
+    expect(reads()).toBe(1);
+    await advance(1);
+    expect(reads()).toBe(2);
+    for (let i = 0; i < 45; i++) await advance(3_000);
+    expect(reads()).toBe(41);
+  });
+
+  it('stops reading once the Jira issue is created', async () => {
+    let answers = 0;
+    server.on('GET', `/api/v0/issues/${ID}`, () => ({
+      body: detail({ jira: ++answers < 3 ? pendingLink() : jiraLink(), jiraLinkable: true }),
+    }));
+    const root = await render();
+    await advance(3_000);
+    await advance(3_000);
+    expect(reads()).toBe(3);
+    expect(root.querySelector('a.jira-key')?.textContent?.trim()).toBe('PAY-12');
+    for (let i = 0; i < 5; i++) await advance(3_000);
+    expect(reads()).toBe(3);
   });
 });
 

@@ -1,0 +1,31 @@
+@for (part of parts(); track part.kind; let last = $last) {
+  @switch (part.kind) {
+    @case ('queued') {
+      <span i18n="@@jira.request.queued">{part.count, plural,
+        =1 {1 queued}
+        other {{{ part.count }} queued}
+      }</span>
+    }
+    @case ('alreadyLinked') {
+      <span i18n="@@jira.request.alreadyLinked">{part.count, plural,
+        =1 {1 already linked}
+        other {{{ part.count }} already linked}
+      }</span>
+    }
+    @case ('notLinkable') {
+      <span i18n="@@jira.request.notLinkable">{part.count, plural,
+        =1 {1 not linkable}
+        other {{{ part.count }} not linkable}
+      }</span>
+    }
+    @case ('notFound') {
+      <span i18n="@@jira.request.notFound">{part.count, plural,
+        =1 {1 not found}
+        other {{{ part.count }} not found}
+      }</span>
+    }
+  }
+  @if (!last) {
+    <span>, </span>
+  }
+}

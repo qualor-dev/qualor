@@ -229,7 +229,8 @@
       </section>
     </article>
 
-    <!-- The side column: Details and, for those who may, Change, each card named by its heading. -->
+    <!-- The side column: Details, Jira and, for those who may, Change, each card named by its
+         heading. -->
     <aside class="issue-aside">
       <section class="card" aria-labelledby="details-heading">
         <h3 id="details-heading" i18n="@@issue.details">Details</h3>
@@ -289,6 +290,15 @@
           }
         </dl>
       </section>
+
+      <q-jira-link
+        [link]="i.jira"
+        [linkable]="i.jiraLinkable"
+        [canTriage]="canTriage()"
+        [projectId]="projectId()"
+        [target]="{ issueId: i.id }"
+        (changed)="issue.reload()"
+      />
 
       @if (canTriage()) {
         <section class="card issue-actions" aria-labelledby="actions-heading">

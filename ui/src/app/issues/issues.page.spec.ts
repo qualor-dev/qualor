@@ -1,7 +1,9 @@
-import { TestBed } from '@angular/core/testing';
+import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import {
   FakeServer,
+  jiraLink,
+  jiraProjectSettings,
   me,
   MEMBER_PROJECT_PERMISSIONS,
   ORG_ID,
@@ -701,5 +703,210 @@ describe('IssuesPage', () => {
     expect(store.shownBranch()?.issues).toBe(2);
     fixture.destroy();
     expect(store.shownBranch()).toBeNull();
+  });
+
+  describe('Jira', () => {
+    const LINKS = '/api/v0/projects/p1/jira/links';
+    const jiraButton = (root: HTMLElement) =>
+      [...root.querySelectorAll<HTMLButtonElement>('form.bulk button')].find(
+        (b) => b.textContent?.trim() === 'Create Jira issues',
+      );
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+    });
+
+    it('shows a Jira pill on the rows that have a link, and no row action', async () => {
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: [issue('i1', { jira: jiraLink(), jiraLinkable: true }), issue('i2')],
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      const { root } = await render();
+      const rows = [...root.querySelectorAll('tbody tr')];
+      expect(rows[0]?.querySelector('a.jira-key')?.textContent?.trim()).toBe('PAY-12');
+      expect(rows[0]?.querySelector('.jira-status')?.textContent?.trim()).toBe('In Progress');
+      expect(rows[1]?.querySelector('q-jira-link')).toBeNull();
+      expect(root.querySelector('tbody button')).toBeNull();
+    });
+
+    it('creates Jira issues for the selection and says what happened to each', async () => {
+      const ids = ['i1', 'i2', 'i3', 'i4', 'i5'];
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: ids.map((id) => issue(id, { jiraLinkable: true })),
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      const pending = jiraLink({ state: 'pending', key: null, url: null, status: null });
+      server.on('POST', LINKS, {
+        status: 202,
+        body: {
+          items: [
+            { issueId: 'i1', link: pending, skipped: null },
+            { issueId: 'i2', link: pending, skipped: null },
+            { issueId: 'i3', link: jiraLink(), skipped: 'ALREADY_LINKED' },
+            { issueId: 'i4', link: null, skipped: 'NOT_ELIGIBLE' },
+            { issueId: 'i5', link: null, skipped: 'NOT_FOUND' },
+          ],
+        },
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      jiraButton(root)!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', LINKS).map((r) => r.body)).toEqual([{ issueIds: ids }]);
+      expect(root.querySelector('[role="status"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '2 queued, 1 already linked, 1 not linkable, 1 not found',
+      );
+      // The list is read again for the new pills; the selection is done with.
+      expect(server.requestsTo('GET', '/api/v0/issues')).toHaveLength(2);
+      expect(root.querySelector('form.bulk')).toBeNull();
+    });
+
+    it('leaves out the parts that are zero, in the singular', async () => {
+      server.on('POST', LINKS, {
+        status: 202,
+        body: {
+          items: [
+            { issueId: 'i1', link: jiraLink({ state: 'pending' }), skipped: null },
+            { issueId: 'i2', link: jiraLink(), skipped: 'ALREADY_LINKED' },
+          ],
+        },
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      jiraButton(root)!.click();
+      await settle(fixture);
+      expect(root.querySelector('[role="status"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '1 queued, 1 already linked',
+      );
+    });
+
+    it('says how long to wait when the server refuses too many changes (429)', async () => {
+      server.on('POST', LINKS, {
+        status: 429,
+        headers: { 'retry-after': '30' },
+        body: problem(429, 'RATE_LIMITED'),
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      jiraButton(root)!.click();
+      await settle(fixture);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain('Try again in 30 s.');
+      // Nothing was created: the selection stays for a second attempt.
+      expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('2 issues selected');
+    });
+
+    it('offers no "Create Jira issues" while the project is not mapped', async () => {
+      server.on('GET', '/api/v0/projects/p1/jira', {
+        body: jiraProjectSettings({ mapped: false }),
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(root.querySelector('form.bulk')).not.toBeNull();
+      expect(jiraButton(root)).toBeUndefined();
+    });
+
+    it('refuses more than 500 issues', async () => {
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: Array.from({ length: 501 }, (_, i) => issue(`i${i}`)),
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(jiraButton(root)?.disabled).toBe(true);
+      jiraButton(root)!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', LINKS)).toHaveLength(0);
+      // 501 rendered rows take about 4 s alone and more on a busy machine: past the default 5 s.
+    }, 20_000);
+  });
+});
+
+describe('IssuesPage while a shown Jira link is pending (R22)', () => {
+  let server: FakeServer;
+  let current: ComponentFixture<IssuesPage> | null = null;
+
+  beforeEach(() => {
+    // Only the timers: the fake fetch and Angular's scheduling still run.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    server = new FakeServer();
+    server.on('GET', '/api/v0/projects/p1/branches', {
+      body: page([
+        {
+          id: 'b-main',
+          projectId: 'p1',
+          kind: 'branch',
+          name: 'main',
+          isMain: true,
+          mrSourceBranch: null,
+          mrTargetBranch: null,
+          mrTitle: null,
+          mrUrl: null,
+          lastAnalysisId: null,
+          lastAnalyzedAt: null,
+          gateStatus: null,
+          measures: {},
+        },
+      ]),
+    });
+    server.on('GET', '/api/v0/projects/p1', { body: PROJECT });
+    server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+    server.on('GET', '/api/v0/issues', {
+      body: {
+        items: [
+          issue('i1', {
+            jira: jiraLink({ state: 'pending', key: null, url: null, status: null }),
+            jiraLinkable: true,
+          }),
+        ],
+        nextCursor: null,
+        facets: {},
+      },
+    });
+    TestBed.configureTestingModule({
+      imports: [IssuesPage],
+      providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
+    });
+    TestBed.inject(SessionStore).set(me());
+  });
+
+  afterEach(() => {
+    current?.destroy();
+    current = null;
+    vi.useRealTimers();
+  });
+
+  async function flush(): Promise<void> {
+    for (let i = 0; i < 12; i++) {
+      await vi.advanceTimersByTimeAsync(0);
+      current?.detectChanges();
+    }
+  }
+
+  it('reads the list again every 3 s, and stops after 40 reads', async () => {
+    const fixture = TestBed.createComponent(IssuesPage);
+    current = fixture;
+    fixture.componentRef.setInput('projectId', 'p1');
+    await flush();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('tbody')?.textContent).toContain('Creating Jira issue…');
+    const reads = () => server.requestsTo('GET', '/api/v0/issues').length;
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await flush();
+    expect(reads()).toBe(2);
+    for (let i = 0; i < 45; i++) {
+      await vi.advanceTimersByTimeAsync(3_000);
+      await flush();
+    }
+    expect(reads()).toBe(41);
   });
 });

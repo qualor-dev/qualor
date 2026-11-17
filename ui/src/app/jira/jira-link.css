@@ -1,0 +1,107 @@
+/* A finding's Jira link (spec §6.9): the issue page's card, or a pill in a list row. The host
+   draws no box, so an empty view takes no gap of a column and the pill's parts join the row. */
+:host {
+  display: contents;
+}
+
+.jira-card {
+  display: grid;
+  gap: 10px;
+}
+.jira-card h3 {
+  margin: 0;
+}
+.jira-card .jira-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.jira-state:empty {
+  display: none;
+}
+.jira-card .jira-failure {
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.jira-card .alert {
+  margin: 0;
+}
+
+.jira-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.jira-key:hover {
+  text-decoration: underline;
+}
+.jira-key q-icon {
+  width: 12px;
+  height: 12px;
+}
+.jira-checked {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* The Jira status by its category, in the colours of the other pills: to do grey, in progress
+   blue, done green. */
+.jira-status-new {
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+}
+.jira-status-indeterminate {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.jira-status-done {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.jira-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The pill: the key and status, or the state, and the row's actions on one line. */
+.jira-compact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.jira-compact .jira-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.jira-compact .btn {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.jira-compact .btn-quiet {
+  min-height: 28px;
+  font-size: 12.5px;
+}
+/* A long reason (Jira's own words) is cut in the row; the title holds it whole. */
+.jira-compact .jira-failure {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jira-error {
+  color: var(--bad);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

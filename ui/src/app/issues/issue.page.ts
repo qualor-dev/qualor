@@ -20,6 +20,9 @@ import type { ResponseBody } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
+import { JiraLinkView } from '../jira/jira-link';
+import { JiraProjectState } from '../jira/jira-project';
+import { refreshWhilePending } from '../jira/refresh';
 import { branchView, findBranch, notFound } from '../project/branches';
 import { codeFileLink } from '../project/code-links';
 import { CurrentProject } from '../project/current-project';
@@ -79,12 +82,16 @@ export function readSnippet(raw: unknown): Snippet | null {
  *   region, since the button used may be gone.
  * - A 503 `CONCURRENCY_CONFLICT` offers to send the same change again once `Retry-After` passed.
  * - An id that is not a UUID is "not found" without asking the server.
+ * - The aside's "Jira" card shows the issue's Jira link; while it is pending, the issue is read
+ *   again every 3 s, at most 40 times (R22).
  */
 @Component({
   selector: 'q-issue-page',
-  imports: [AiPanel, DateTimePipe, Icon, LabelPipe, RouterLink],
+  imports: [AiPanel, DateTimePipe, Icon, JiraLinkView, LabelPipe, RouterLink],
   templateUrl: './issue.page.html',
   styleUrl: './issue.page.css',
+  // The project's Jira state is read afresh for each visit (a mapping may have been saved since).
+  providers: [JiraProjectState],
 })
 export class IssuePage {
   private readonly api = inject(Api);
@@ -251,6 +258,11 @@ export class IssuePage {
       });
     });
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
+    refreshWhilePending(
+      () => this.current()?.jira?.state === 'pending',
+      () => this.issue.reload(),
+      inject(DestroyRef),
+    );
   }
 
   protected changeText(entry: ChangelogEntry): string {

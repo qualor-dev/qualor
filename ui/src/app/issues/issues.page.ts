@@ -22,6 +22,18 @@ import type { ItemOf, RequestBody, ResponseBody } from '../api/types';
 import { Distribution, type DistributionItem } from '../charts/distribution';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label, type LabelKind } from '../i18n/labels';
+import { JiraLinkView } from '../jira/jira-link';
+import { JiraProjectState } from '../jira/jira-project';
+import {
+  createJiraLinks,
+  JIRA_ISSUES_MAX,
+  JiraRequestResult,
+  type JiraRequestSummary,
+  jiraRequestError,
+  jiraStateGone,
+  requestSummary,
+} from '../jira/jira-request';
+import { refreshWhilePending } from '../jira/refresh';
 import { branchTitle, branchView, findBranch, mainBranchView } from '../project/branches';
 import { CurrentProject } from '../project/current-project';
 import { type Reason, VEX_REASONS } from '../project/vulnerabilities/vex-reasons';
@@ -135,12 +147,26 @@ function bulkSummary(result: BulkResult): string {
  * `CONCURRENCY_CONFLICT` (an analysis held the issues; nothing was written) offers to send the
  * same change again once its `Retry-After` has passed. After a change, focus moves to the result
  * (an always-present live region), since the control that was used may be gone or disabled.
+ *
+ * Jira (spec §6.9): a row with a Jira link shows it as a pill, and the bulk bar of a project mapped
+ * to Jira creates Jira issues for the selection; while a shown link is pending, the list is read
+ * again every 3 s, at most 40 times (R22).
  */
 @Component({
   selector: 'q-issues-page',
-  imports: [DateTimePipe, Distribution, Icon, LabelPipe, RouterLink],
+  imports: [
+    DateTimePipe,
+    Distribution,
+    Icon,
+    JiraLinkView,
+    JiraRequestResult,
+    LabelPipe,
+    RouterLink,
+  ],
   templateUrl: './issues.page.html',
   styleUrls: ['./issues.page.css', './issue-filters.css'],
+  // The project's Jira state is read afresh for each visit (a mapping may have been saved since).
+  providers: [JiraProjectState],
 })
 export class IssuesPage {
   private readonly api = inject(Api);
@@ -150,6 +176,7 @@ export class IssuesPage {
   private readonly project = inject(CurrentProject);
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private readonly jira = inject(JiraProjectState);
   readonly projectId = input.required<string>();
   /**
    * Whether the caller may change issue statuses here (`issue.triage`): otherwise the selection
@@ -232,6 +259,8 @@ export class IssuesPage {
   protected readonly busy = signal(false);
   protected readonly bulkMessage = signal<string | null>(null);
   protected readonly bulkError = signal<string | null>(null);
+  /** What the last "Create Jira issues" did, for the live region. */
+  protected readonly jiraResult = signal<JiraRequestSummary | null>(null);
   /** The change a 503 refused, to send again as it was. */
   protected readonly retryOffer = new RetryOffer<BulkRequest>();
   private readonly bulkStatus = viewChild<ElementRef<HTMLElement>>('bulkStatus');
@@ -329,6 +358,11 @@ export class IssuesPage {
     return target !== null && needsComment(target);
   });
   protected readonly overLimit = computed(() => this.selected().size > BULK_MAX_IDS);
+  /** The project is mapped to Jira: the bulk bar offers "Create Jira issues". */
+  protected readonly jiraReady = computed(() => this.jira.of(this.projectId())()?.mapped === true);
+  protected readonly canCreateJira = computed(
+    () => !this.busy() && this.selected().size > 0 && this.selected().size <= JIRA_ISSUES_MAX,
+  );
   protected readonly canApply = computed(
     () =>
       !this.busy() &&
@@ -369,6 +403,11 @@ export class IssuesPage {
       });
     });
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
+    refreshWhilePending(
+      () => this.list.items().some((i) => i.jira?.state === 'pending'),
+      () => void this.list.refresh(),
+      inject(DestroyRef),
+    );
   }
 
   /** The branch the list shows: from the project's branch list, else the one fetched on its own. */
@@ -476,10 +515,36 @@ export class IssuesPage {
     if (request) await this.send(request);
   }
 
+  /** "Create Jira issues": the selection is done with once the request is accepted. */
+  protected async createJira(): Promise<void> {
+    if (!this.canCreateJira()) return;
+    const projectId = this.projectId();
+    this.busy.set(true);
+    this.bulkError.set(null);
+    this.bulkMessage.set(null);
+    this.jiraResult.set(null);
+    this.retryOffer.clear();
+    let succeeded = false;
+    try {
+      const items = await createJiraLinks(this.api, projectId, { issueIds: [...this.selected()] });
+      this.jiraResult.set(requestSummary(items));
+      this.selected.set(new Set());
+      await this.list.refresh();
+      succeeded = true;
+    } catch (err) {
+      this.bulkError.set(jiraRequestError(err));
+      if (jiraStateGone(err)) this.jira.reload(projectId);
+    } finally {
+      this.busy.set(false);
+    }
+    this.focusResult(succeeded);
+  }
+
   private async send(request: BulkRequest): Promise<void> {
     this.busy.set(true);
     this.bulkError.set(null);
     this.bulkMessage.set(null);
+    this.jiraResult.set(null);
     this.retryOffer.clear();
     let succeeded = false;
     try {
@@ -510,7 +575,11 @@ export class IssuesPage {
     } finally {
       this.busy.set(false);
     }
-    // The button used may be disabled or gone now: keep keyboard users on the result.
+    this.focusResult(succeeded);
+  }
+
+  /** The button used may be disabled or gone now: keep keyboard users on the result. */
+  private focusResult(succeeded: boolean): void {
     const active = this.document.activeElement;
     if (succeeded || active === null || active === this.document.body) {
       this.bulkStatus()?.nativeElement.focus();

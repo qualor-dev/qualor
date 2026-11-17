@@ -213,6 +213,18 @@
             >
               Change status
             </button>
+            @if (jiraReady()) {
+              <button
+                type="button"
+                class="btn"
+                [disabled]="!canCreateJira()"
+                [attr.aria-describedby]="overLimit() ? 'bulk-limit' : null"
+                (click)="createJira()"
+                i18n="@@jira.bulk.create"
+              >
+                Create Jira issues
+              </button>
+            }
             @if (retryOffer.pending()) {
               <button
                 type="button"
@@ -234,6 +246,9 @@
         <div #bulkStatus class="bulk-status" role="status" tabindex="-1">
           @if (bulkMessage(); as message) {
             <p class="alert alert-success">{{ message }}</p>
+          }
+          @if (jiraResult(); as summary) {
+            <p class="alert alert-success"><q-jira-request-result [summary]="summary" /></p>
           }
           @if (bulkError(); as message) {
             <p class="alert alert-error">{{ message }}</p>
@@ -304,6 +319,17 @@
                     }
                     @if (issue.confidence === 'medium') {
                       <span class="badge badge-tag" i18n="@@issues.possible">Possible</span>
+                    }
+                    <!-- The pill only: the bulk bar creates Jira issues (spec §6.9). -->
+                    @if (issue.jira) {
+                      <q-jira-link
+                        [link]="issue.jira"
+                        [linkable]="issue.jiraLinkable"
+                        [canTriage]="false"
+                        [projectId]="projectId()"
+                        [target]="{ issueId: issue.id }"
+                        [compact]="true"
+                      />
                     }
                   </div>
                 </td>

@@ -20,6 +20,13 @@ export type ResponseBody<P extends keyof paths, M extends keyof paths[P]> = path
       : never
   : never;
 
+/** The JSON body of an operation's 202 response (a request accepted for a job). */
+export type AcceptedBody<P extends keyof paths, M extends keyof paths[P]> = paths[P][M] extends {
+  responses: { 202: infer Accepted };
+}
+  ? JsonOf<Accepted>
+  : never;
+
 /** One item of a keyset-paginated list response (`{ items, nextCursor }`). */
 export type ItemOf<P extends keyof paths> =
   ResponseBody<P, 'get' & keyof paths[P]> extends { items: (infer T)[] } ? T : never;
@@ -57,3 +64,16 @@ export type JiraMapping = NonNullable<JiraProjectSettings['mapping']>;
 export type JiraPickedProject = ItemOf<'/api/v0/projects/{id}/jira/projects'>;
 /** `GET /projects/{id}/jira/issue-types`: an issue type of a Jira project. */
 export type JiraIssueType = ItemOf<'/api/v0/projects/{id}/jira/issue-types'>;
+/**
+ * A finding's Jira link, as issue and vulnerability items embed it (`jira`, null while the finding
+ * has none: a dismissed link reads as none).
+ */
+export type JiraLink = NonNullable<ItemOf<'/api/v0/issues'>['jira']>;
+/**
+ * One item of `POST /projects/{id}/jira/links`: the issue or the vulnerability, its link, and why
+ * it was skipped (`ALREADY_LINKED` carries the link it has).
+ */
+export type JiraLinkItem = AcceptedBody<
+  '/api/v0/projects/{id}/jira/links',
+  'post'
+>['items'][number];

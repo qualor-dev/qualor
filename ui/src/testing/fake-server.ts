@@ -6,7 +6,14 @@ import type {
   PortfolioOverview,
   PortfolioProjectRow,
 } from '../app/api/ee';
-import type { ItemOf, JiraConnection, Me, ResponseBody } from '../app/api/types';
+import type {
+  ItemOf,
+  JiraConnection,
+  JiraLink,
+  JiraProjectSettings,
+  Me,
+  ResponseBody,
+} from '../app/api/types';
 import type {
   DependencyAnswer,
   DependencyRow,
@@ -204,6 +211,53 @@ export function jiraConnection(overrides: Partial<JiraConnection> = {}): JiraCon
     createdAt: '2026-11-17T10:00:00.000Z',
     updatedAt: '2026-11-17T10:00:00.000Z',
     ...overrides,
+  };
+}
+
+/** A finding's Jira link (spec §6.8): PAY-12, created by hand, In Progress, by default. */
+export function jiraLink(overrides: Partial<JiraLink> = {}): JiraLink {
+  return {
+    id: '0190a6c2-0000-7000-8000-0000000000c9',
+    state: 'created',
+    origin: 'manual',
+    key: 'PAY-12',
+    url: 'https://jira.example.com/browse/PAY-12',
+    status: { name: 'In Progress', category: 'indeterminate' },
+    statusCheckedAt: '2026-11-17T10:00:00.000Z',
+    failure: null,
+    reportedFixedAt: null,
+    createdAt: '2026-11-17T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/**
+ * A project's Jira state as `GET /projects/{id}/jira` answers it: a Data Center connection and a
+ * mapping to PAY by default; `connected: false` answers no connection (and so no mapping).
+ */
+export function jiraProjectSettings(
+  given: { connected?: boolean; mapped?: boolean } = {},
+): JiraProjectSettings {
+  const connected = given.connected ?? true;
+  const mapped = connected && (given.mapped ?? true);
+  return {
+    mapping: mapped
+      ? {
+          jiraProject: { id: '10000', key: 'PAY', name: 'Payments' },
+          issueType: { id: '10001', name: 'Bug' },
+          labels: [],
+          priorities: null,
+          labelsAvailable: true,
+          priorityAvailable: true,
+          autoCreate: { minSeverity: null, exploited: false, since: null },
+          updatedAt: '2026-11-17T10:00:00.000Z',
+        }
+      : null,
+    connection: connected
+      ? { deployment: 'data_center', siteUrl: 'https://jira.example.com', problem: null }
+      : null,
+    monitoringOn: true,
+    exploitedAvailable: false,
   };
 }
 

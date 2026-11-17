@@ -1,0 +1,193 @@
+@if (visible()) {
+  @if (compact()) {
+    <span class="jira-compact"><ng-container *ngTemplateOutlet="body" /></span>
+  } @else {
+    <section class="card jira-card" [attr.aria-labelledby]="uid + '-heading'">
+      <h3 [id]="uid + '-heading'" #heading tabindex="-1" i18n="@@jira.link.heading">Jira</h3>
+      <ng-container *ngTemplateOutlet="body" />
+    </section>
+  }
+  @if (confirming()) {
+    <dialog
+      #dialog
+      class="dialog"
+      [attr.aria-labelledby]="uid + '-title'"
+      [attr.aria-describedby]="uid + '-text'"
+      (close)="confirming.set(false)"
+    >
+      <form novalidate (submit)="unlink($event)">
+        <div class="dialog-head">
+          <h2 [id]="uid + '-title'" i18n="@@jira.link.unlinkTitle">Unlink the Jira issue</h2>
+        </div>
+        <div class="dialog-body">
+          @if (shown()?.key; as key) {
+            <p [id]="uid + '-text'" i18n="@@jira.link.unlinkTextKey">
+              This finding stops showing {{ key }}, and Qualor no longer updates it. The Jira issue
+              stays in Jira, and Qualor does not create another one for this finding by itself.
+            </p>
+          } @else {
+            <p [id]="uid + '-text'" i18n="@@jira.link.unlinkText">
+              Qualor stops creating this Jira issue and does not create another one for this finding
+              by itself.
+            </p>
+          }
+        </div>
+        <div class="dialog-actions">
+          <button
+            type="button"
+            class="btn"
+            autofocus
+            (click)="closeUnlink()"
+            i18n="@@dialog.cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-danger-solid"
+            [disabled]="busy()"
+            i18n="@@jira.link.unlinkConfirm"
+          >
+            Unlink
+          </button>
+        </div>
+      </form>
+    </dialog>
+  }
+}
+
+<!-- The state, the error and the actions: the same in the card and in the pill. -->
+<ng-template #body>
+  <span class="jira-state" [attr.role]="compact() ? null : 'status'">
+    @if (shown(); as l) {
+      @switch (l.state) {
+        @case ('pending') {
+          @if (compact()) {
+            <span class="badge badge-tag" i18n="@@jira.link.creatingPill"
+              >Creating Jira issue…</span
+            >
+          } @else {
+            <span i18n="@@jira.link.creating">Creating…</span>
+          }
+        }
+        @case ('created') {
+          @if (l.key; as key) {
+            @if (url(); as href) {
+              <a class="jira-key" [href]="href" target="_blank" rel="noopener noreferrer"
+                >{{ key }}<q-icon name="external"
+              /></a>
+            } @else {
+              <span class="jira-key">{{ key }}</span>
+            }
+          }
+          @if (l.status; as status) {
+            <span class="badge jira-status" [class]="'jira-status-' + status.category">{{
+              status.name
+            }}</span>
+          }
+          @if (!compact() && checked(); as ago) {
+            <span class="jira-checked" [title]="l.statusCheckedAt | dateTime">
+              @switch (ago.unit) {
+                @case ('now') {
+                  <ng-container i18n="@@jira.link.checkedNow">checked just now</ng-container>
+                }
+                @case ('minutes') {
+                  <ng-container i18n="@@jira.link.checkedMinutes">{ago.count, plural,
+                    =1 {checked 1 min ago}
+                    other {checked {{ ago.count }} min ago}
+                  }</ng-container>
+                }
+                @case ('hours') {
+                  <ng-container i18n="@@jira.link.checkedHours">{ago.count, plural,
+                    =1 {checked 1 hour ago}
+                    other {checked {{ ago.count }} hours ago}
+                  }</ng-container>
+                }
+                @default {
+                  <ng-container i18n="@@jira.link.checkedOn">checked {{ ago.date }}</ng-container>
+                }
+              }
+            </span>
+          }
+        }
+        @case ('failed') {
+          <span
+            class="jira-failure"
+            [class.badge]="compact()"
+            [class.badge-failed]="compact()"
+            [attr.title]="compact() ? failure() : null"
+            >{{ failure() }}</span
+          >
+        }
+        @case ('missing') {
+          <span [class.badge]="compact()" [class.badge-tag]="compact()" i18n="@@jira.link.missing"
+            >Not found in Jira</span
+          >
+        }
+      }
+    }
+  </span>
+  @if (error(); as message) {
+    @if (compact()) {
+      <span class="jira-error" role="alert">{{ message }}</span>
+    } @else {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+  }
+  @if (shown(); as l) {
+    @if (canTriage()) {
+      <span class="jira-actions">
+        @if (l.state === 'failed') {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-label]="labels().retry"
+            [disabled]="busy()"
+            (click)="retry()"
+            i18n="@@jira.link.retry"
+          >
+            Retry
+          </button>
+        } @else if (l.state === 'missing') {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-label]="labels().createAgain"
+            [disabled]="busy()"
+            (click)="retry()"
+            i18n="@@jira.link.createAgain"
+          >
+            Create again
+          </button>
+        }
+        <button
+          type="button"
+          class="btn-quiet danger"
+          [attr.aria-label]="labels().unlink"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="openUnlink()"
+          i18n="@@jira.link.unlink"
+        >
+          Unlink
+        </button>
+      </span>
+    }
+  } @else if (canCreate()) {
+    <span class="jira-actions">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-label]="labels().create"
+        [disabled]="busy()"
+        (click)="create()"
+        i18n="@@jira.link.create"
+      >
+        Create Jira issue
+      </button>
+    </span>
+  } @else if (canMap()) {
+    <a [routerLink]="['/projects', projectId(), 'settings']" fragment="jira" i18n="@@jira.link.map"
+      >Map this project to Jira</a
+    >
+  }
+</ng-template>
