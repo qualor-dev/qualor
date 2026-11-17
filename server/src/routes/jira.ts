@@ -32,7 +32,7 @@ import {
   testJiraConnection,
   type JiraConnectionRow,
 } from '../jira/connection';
-import { scheduleJiraSync, syncJiraNow } from '../jira/jobs';
+import { syncJiraNow } from '../jira/jobs';
 import {
   BACKGROUND_PROBLEM_CODES,
   JIRA_PROBLEM_CODES,
@@ -279,8 +279,9 @@ export const jiraRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
               .values({ organizationId, ...next, tokenEnc })
               .returning(),
           );
-          // The schedule lock before the audit chain's, as every Jira path takes them.
-          await scheduleJiraSync(tx, organizationId, 0);
+          // The first pass now, also when a removed connection's pass still waits (T3b); the
+          // schedule lock before the audit chain's, as every Jira path takes them.
+          await syncJiraNow(tx, organizationId);
           await audit(tx, request, created, 'jira_connection.created', {
             deployment: created.deployment,
             siteOrigin: urlOrigin(created.siteUrl),

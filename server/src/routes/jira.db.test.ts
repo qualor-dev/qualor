@@ -166,6 +166,18 @@ describe('the organisation Jira connection (0.16 Jira §6.1, §6.8)', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
+  it('connects again after a remove with the first pass now, not at the old pass time (M4)', async () => {
+    await connectJira(h, fake);
+    // DELETE leaves the old connection's pass queued (T3b), here a day ahead.
+    expect((await call('DELETE', org())).statusCode).toBe(204);
+    const [old] = await queuedJobs();
+    expect(old!.runAt.getTime()).toBeGreaterThan(Date.now() + 60 * 60_000);
+    expect((await put({})).statusCode).toBe(200);
+    const queued = await queuedJobs();
+    expect(queued.map((j) => j.id)).toEqual([old!.id]);
+    expect(queued[0]!.runAt.getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
+  });
+
   it('stores the context path without the trailing slash', async () => {
     const res = await put({ siteUrl: `${fake.url}/jira/` });
     expect(res.statusCode, res.body).toBe(200);
