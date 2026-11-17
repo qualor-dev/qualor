@@ -58,6 +58,10 @@ export interface JiraContent {
   description: string;
 }
 
+/** An advisory URL longer than this (encoded) is left out of the description. */
+const ADVISORY_URL_MAX = 2_000;
+const LINE_SPACE = /[\s\u0085]+/g;
+
 const day = (d: Date): string => d.toISOString().slice(0, 10);
 
 function qualorLine(url: string | null): string[] {
@@ -72,56 +76,64 @@ function foundInText(names: string[]): string {
 
 export function codeIssueContent(f: CodeIssueFacts, publicUrl: string | null): JiraContent {
   const place = f.path === null ? [] : [`File: ${e(f.path)}${f.line === null ? '' : `:${f.line}`}`];
-  const lines = [
-    `h3. ${e(f.ruleName)}`,
-    noformat(cutText(f.message, MESSAGE_MAX)),
-    `Project: ${e(f.projectName)} (${e(f.projectKey)})`,
-    `Branch: ${e(f.branchName)}`,
-    ...place,
-    `Rule: ${e(f.ruleKey)}, ${f.severity}, ${e(f.quality)}`,
-    `First seen: ${day(f.firstSeenAt)}`,
-    ...qualorLine(issueUrl(publicUrl, f.projectId, f.issueId)),
-  ];
-  return {
-    summary: cutText(f.message.replace(/\s+/g, ' ').trim(), SUMMARY_MAX),
-    description: lines.join('\n'),
-  };
+  const build = (messageMax: number): string =>
+    [
+      `h3. ${e(f.ruleName)}`,
+      noformat(cutText(f.message, messageMax)),
+      `Project: ${e(f.projectName)} \\(${e(f.projectKey)}\\)`,
+      `Branch: ${e(f.branchName)}`,
+      ...place,
+      `Rule: ${e(f.ruleKey)}, ${f.severity}, ${e(f.quality)}`,
+      `First seen: ${day(f.firstSeenAt)}`,
+      ...qualorLine(issueUrl(publicUrl, f.projectId, f.issueId)),
+    ].join('\n');
+  // The message is the only unbounded part: shrink it until the whole description fits.
+  let messageMax = MESSAGE_MAX;
+  let description = build(messageMax);
+  while (description.length > DESCRIPTION_MAX && messageMax > 0) {
+    messageMax = Math.max(0, messageMax - (description.length - DESCRIPTION_MAX) - 1);
+    description = build(messageMax);
+  }
+  return { summary: cutText(f.message.replace(LINE_SPACE, ' ').trim(), SUMMARY_MAX), description };
 }
 
 export function vulnerabilityContent(f: VulnerabilityFacts, publicUrl: string | null): JiraContent {
   const heading =
     f.title === null ? e(f.vulnerabilityId) : `${e(f.vulnerabilityId)}: ${e(f.title)}`;
-  const installed =
-    f.installedVersions.length === 0 ? '' : `, installed ${foundInText(f.installedVersions)}`;
   const date = f.exploited && /^\d{4}-\d{2}-\d{2}$/.test(f.exploited.dateAdded);
-  const url = advisoryUrl(f.primaryUrl);
-  const lines = [
-    `h3. ${heading}`,
-    `Package: ${e(f.packageName)}${installed}`,
-    f.fixedVersion === null ? 'Fixed in: no fixed version yet' : `Fixed in: ${e(f.fixedVersion)}`,
-    `Severity: ${f.severity}`,
-    ...(f.exploited
-      ? [`Exploited: CISA KEV, added ${date ? f.exploited.dateAdded : e(f.exploited.dateAdded)}`]
-      : []),
-    ...(f.epss
-      ? [
-          `EPSS: ${(f.epss.score * 100).toFixed(1)}% (percentile ${Math.round(f.epss.percentile * 100)})`,
-        ]
-      : []),
-    `Found in: ${foundInText(f.foundIn)}`,
-    ...(url === null ? [] : [`Advisory: ${wikiLink(f.vulnerabilityId, url)}`]),
-    ...qualorLine(
-      publicUrl === null
-        ? null
-        : `${publicUrl}/projects/${f.projectId}/vulnerabilities?view=vulnerability`,
-    ),
-  ];
+  const encoded = advisoryUrl(f.primaryUrl);
+  const url = encoded !== null && encoded.length <= ADVISORY_URL_MAX ? encoded : null;
+  // Every part is capped, so this holds; the fallbacks only drop optional parts if it ever did not.
+  const build = (withUrl: boolean, withInstalled: boolean): string =>
+    [
+      `h3. ${heading}`,
+      `Package: ${e(f.packageName)}${withInstalled && f.installedVersions.length > 0 ? `, installed ${foundInText(f.installedVersions)}` : ''}`,
+      f.fixedVersion === null ? 'Fixed in: no fixed version yet' : `Fixed in: ${e(f.fixedVersion)}`,
+      `Severity: ${f.severity}`,
+      ...(f.exploited
+        ? [`Exploited: CISA KEV, added ${date ? f.exploited.dateAdded : e(f.exploited.dateAdded)}`]
+        : []),
+      ...(f.epss
+        ? [
+            `EPSS: ${(f.epss.score * 100).toFixed(1)}% (percentile ${Math.round(f.epss.percentile * 100)})`,
+          ]
+        : []),
+      `Found in: ${foundInText(f.foundIn)}`,
+      ...(withUrl && url !== null ? [`Advisory: ${wikiLink(f.vulnerabilityId, url)}`] : []),
+      ...qualorLine(
+        publicUrl === null
+          ? null
+          : `${publicUrl}/projects/${f.projectId}/vulnerabilities?view=vulnerability`,
+      ),
+    ].join('\n');
+  const fits = (d: string): boolean => d.length <= DESCRIPTION_MAX;
+  const description = [build(true, true), build(false, true), build(false, false)].find(fits);
   return {
     summary: cutText(
-      `${f.vulnerabilityId} in ${f.packageName} (${f.severity})`.replace(/\s+/g, ' '),
+      `${f.vulnerabilityId} in ${f.packageName} (${f.severity})`.replace(LINE_SPACE, ' '),
       SUMMARY_MAX,
     ),
-    description: lines.join('\n'),
+    description: description ?? build(false, false),
   };
 }
 

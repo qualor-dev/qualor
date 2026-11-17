@@ -82,7 +82,7 @@ describe('markup injection', () => {
       PUBLIC,
     ).description;
     expect(d).toContain('Package: a\\|b\\]c, installed');
-    expect(d).toContain('h3. CVE\\-2021\\-44906: x \\{noformat\\} http:/​/evil.example y');
+    expect(d).toContain('h3. CVE\\-2021\\-44906: x \\{noformat\\} http:/\u200B/evil.example y');
     expect(d).not.toContain('{noformat}');
   });
 });
@@ -96,7 +96,7 @@ describe('code issue', () => {
       '{noformat}',
       'Do not use eval',
       '{noformat}',
-      'Project: Payments (pay)',
+      'Project: Payments \\(pay\\)',
       'Branch: main',
       'File: src/a.ts:12',
       'Rule: ts:S1, high, security',
@@ -173,6 +173,61 @@ describe('vulnerability', () => {
     expect(js.description).not.toContain('Advisory');
     const odd = vulnerabilityContent(vuln({ primaryUrl: 'https://x.example/a|b]c d' }), PUBLIC);
     expect(odd.description).toContain('|https://x.example/a%7Cb%5Dc%20d]');
+  });
+});
+
+describe('description bounds and hardening', () => {
+  it('stays within 30 000 with a huge advisory url and 20 long versions', () => {
+    const d = vulnerabilityContent(
+      vuln({
+        primaryUrl: `https://x.example/${'a'.repeat(40_000)}`,
+        installedVersions: Array.from({ length: 20 }, () => 'v'.repeat(255)),
+      }),
+      PUBLIC,
+    ).description;
+    expect(d.length).toBeLessThanOrEqual(30_000);
+    expect(d).not.toContain('Advisory');
+    expect(d.split('\n').at(-1)).toBe(
+      '[Open in Qualor|https://qualor.example/projects/p1/vulnerabilities?view=vulnerability]',
+    );
+  });
+  it('shrinks a code message that grows when escaped, keeping the closing tag and link', () => {
+    const { description } = codeIssueContent(
+      code({ message: '{noformat}'.repeat(5_000), path: 'p'.repeat(255) }),
+      PUBLIC,
+    );
+    expect(description.length).toBeLessThanOrEqual(30_000);
+    const lines = description.split('\n');
+    expect(lines.at(-1)).toBe(ISSUE_LINK);
+    expect(lines.filter((l) => l === '{noformat}')).toHaveLength(2);
+  });
+  it('breaks mailto: and file: in a path and a title', () => {
+    const c = codeIssueContent(
+      code({ path: 'mailto:a@evil.example', ruleName: 'file:///x' }),
+      null,
+    );
+    expect(c.description).toContain('File: mailto:\u200Ba@evil.example');
+    expect(c.description).toContain('h3. file:\u200B/\u200B//x');
+  });
+  it('leaves no icon from a project key or an emoticon', () => {
+    const d = codeIssueContent(code({ projectKey: 'y', ruleName: 'a:D' }), null).description;
+    expect(d).toContain('Project: Payments \\(y\\)');
+    expect(d).toContain('h3. a:\u200BD');
+  });
+  it('treats U+0085 as a line break so no line-start markup forms', () => {
+    const c = codeIssueContent(
+      code({ path: 'a\u0085h1. x\u0085* y', message: 'm\u0085h1. x' }),
+      null,
+    );
+    expect(c.summary).toBe('m h1. x');
+    expect(c.description).toContain('File: a h1. x \\* y:12');
+  });
+  it('encodes advisory markup in the link', () => {
+    const d = vulnerabilityContent(
+      vuln({ primaryUrl: 'https://x.example/{noformat}\\' }),
+      PUBLIC,
+    ).description;
+    expect(d).toContain('Advisory: [CVE\\-2021\\-44906|https://x.example/%7Bnoformat%7D%5C]');
   });
 });
 
