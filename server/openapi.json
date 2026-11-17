@@ -746,7 +746,8 @@
                                 "org.audit.read",
                                 "org.compliance.manage",
                                 "org.ai.manage",
-                                "org.licenses.manage"
+                                "org.licenses.manage",
+                                "org.jira.manage"
                               ]
                             }
                           }

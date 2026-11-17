@@ -1,4 +1,4 @@
-import type { DependencyIgnore, LlmFeature, RuleScope } from '@qualor/shared';
+import type { DependencyIgnore, LlmFeature, RuleScope, Severity } from '@qualor/shared';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -41,6 +41,27 @@ export type VersionSource = 'tag' | 'label' | 'sbom';
 export type VersionTracking = 'auto' | 'pinned' | 'unsupported';
 export type VulnerabilityVersionRule = 'lines' | 'all' | 'none';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'dead';
+/** 0.16 Jira (spec §7): Jira Cloud, or Data Center / Server. */
+export type JiraDeployment = 'cloud' | 'data_center';
+export type JiraLinkKind = 'issue' | 'vulnerability';
+export type JiraLinkState = 'pending' | 'created' | 'failed' | 'missing' | 'dismissed';
+export type JiraLinkOrigin = 'manual' | 'auto';
+/** Jira's own status categories (`new` = To Do, `indeterminate` = In Progress). */
+export type JiraStatusCategory = 'new' | 'indeterminate' | 'done';
+export type JiraAutoSeverity = 'critical' | 'high' | 'medium' | 'low';
+/** A credential or transient problem of the connection: a code and its fixed text. */
+export interface JiraProblemValue {
+  code: string;
+  message: string;
+  at: string;
+}
+/** Why a link could not be created: a code and its fixed text (Jira's words for field_refused). */
+export interface JiraFailure {
+  code: string;
+  message: string;
+}
+/** The Jira priority name for a Qualor severity; a severity without one sets none. */
+export type JiraPriorities = Partial<Record<Severity, string>>;
 export interface FieldIssue {
   path: string;
   message: string;
@@ -1286,6 +1307,133 @@ export const issueChanges = pgTable(
       .where(sql`analysis_id IS NOT NULL`),
     check('issue_changes_field_check', sql`field IN ('status','severity','comment')`),
     check('issue_changes_comment_length', sql`char_length(comment) <= 2000`),
+  ],
+);
+
+// ─── Jira (0.16, migration 0032) ────────────────────────────────────────────
+
+export const jiraConnections = pgTable(
+  'jira_connections',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    deployment: text('deployment').notNull().$type<JiraDeployment>(),
+    siteUrl: text('site_url').notNull(),
+    /** Cloud only: the scoped-token gateway, https://api.atlassian.com/ex/jira/<cloudId>. */
+    apiUrl: text('api_url'),
+    /** Cloud only (Basic auth); NULL for Data Center. */
+    email: text('email'),
+    /** The API token or personal access token, AES-256-GCM with AAD `jira_connections.token_enc`. */
+    tokenEnc: jsonb('token_enc').notNull().$type<EncryptedValue>(),
+    problem: jsonb('problem').$type<JiraProblemValue>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('jira_connections_organization_uq').on(t.organizationId),
+    check('jira_connections_deployment_check', sql`deployment IN ('cloud','data_center')`),
+    check('jira_connections_api_url_check', sql`api_url IS NULL OR deployment = 'cloud'`),
+    check('jira_connections_email_check', sql`(deployment = 'cloud') = (email IS NOT NULL)`),
+  ],
+);
+
+export const projectJiraSettings = pgTable(
+  'project_jira_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => jiraConnections.id, { onDelete: 'cascade' }),
+    jiraProjectId: text('jira_project_id').notNull(),
+    jiraProjectKey: text('jira_project_key').notNull(),
+    jiraProjectName: text('jira_project_name').notNull(),
+    issueTypeId: text('issue_type_id').notNull(),
+    issueTypeName: text('issue_type_name').notNull(),
+    labels: text('labels').array().notNull().default(emptyTextArray),
+    priorities: jsonb('priorities').$type<JiraPriorities>(),
+    /** Whether the issue type's create screen has the labels / priority field. */
+    labelsAvailable: boolean('labels_available').notNull(),
+    priorityAvailable: boolean('priority_available').notNull(),
+    /** The automatic rule: off while this is NULL and `auto_exploited` is false. */
+    autoMinSeverity: text('auto_min_severity').$type<JiraAutoSeverity>(),
+    autoExploited: boolean('auto_exploited').notNull().default(false),
+    autoSince: at('auto_since'),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check('project_jira_settings_labels_check', sql`cardinality(labels) <= 10`),
+    check(
+      'project_jira_settings_auto_severity_check',
+      sql`auto_min_severity IS NULL OR auto_min_severity IN ('critical','high','medium','low')`,
+    ),
+    check(
+      'project_jira_settings_auto_since_check',
+      sql`(auto_min_severity IS NULL AND NOT auto_exploited) OR auto_since IS NOT NULL`,
+    ),
+  ],
+);
+
+export const jiraLinks = pgTable(
+  'jira_links',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => jiraConnections.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().$type<JiraLinkKind>(),
+    issueId: uuid('issue_id').references(() => issues.id, { onDelete: 'cascade' }),
+    packageName: text('package_name'),
+    vulnerabilityId: text('vulnerability_id'),
+    state: text('state').notNull().$type<JiraLinkState>(),
+    origin: text('origin').notNull().$type<JiraLinkOrigin>(),
+    /** Raised on each re-arm; part of the reconciliation label. */
+    generation: smallint('generation').notNull().default(1),
+    attemptedAt: at('attempted_at'),
+    failure: jsonb('failure').$type<JiraFailure>(),
+    jiraIssueId: text('jira_issue_id'),
+    jiraKey: text('jira_key'),
+    statusName: text('status_name'),
+    statusCategory: text('status_category').$type<JiraStatusCategory>(),
+    statusCheckedAt: at('status_checked_at'),
+    missedPasses: smallint('missed_passes').notNull().default(0),
+    reportedFixedAt: at('reported_fixed_at'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Unique on issue_id alone: it is NULL exactly for vulnerability rows (R3), and the index also
+    // serves the foreign key's cascade when housekeeping deletes closed issues.
+    uniqueIndex('jira_links_issue_uq').on(t.issueId),
+    uniqueIndex('jira_links_vulnerability_uq')
+      .on(t.projectId, t.packageName, t.vulnerabilityId)
+      .where(sql`kind = 'vulnerability'`),
+    index('jira_links_pass_idx').on(t.connectionId, t.state, t.statusCheckedAt),
+    check('jira_links_kind_check', sql`kind IN ('issue','vulnerability')`),
+    check(
+      'jira_links_target_check',
+      sql`(kind = 'issue' AND issue_id IS NOT NULL AND package_name IS NULL AND vulnerability_id IS NULL) OR (kind = 'vulnerability' AND issue_id IS NULL AND package_name IS NOT NULL AND vulnerability_id IS NOT NULL)`,
+    ),
+    check(
+      'jira_links_state_check',
+      sql`state IN ('pending','created','failed','missing','dismissed')`,
+    ),
+    check('jira_links_origin_check', sql`origin IN ('manual','auto')`),
+    check(
+      'jira_links_jira_check',
+      sql`state NOT IN ('created','missing') OR (jira_issue_id IS NOT NULL AND jira_key IS NOT NULL)`,
+    ),
+    check(
+      'jira_links_status_category_check',
+      sql`status_category IS NULL OR status_category IN ('new','indeterminate','done')`,
+    ),
   ],
 );
 

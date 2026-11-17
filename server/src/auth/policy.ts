@@ -29,6 +29,8 @@ export const ORGANIZATION_PERMISSIONS = [
   'org.ai.manage',
   // 6M §5: the organisation licence policy (core routes; changing it needs license-policy).
   'org.licenses.manage',
+  // 0.16 Jira §6: the organisation's Jira connection (community).
+  'org.jira.manage',
 ] as const;
 export const PROJECT_PERMISSIONS = [
   'project.read',
@@ -92,6 +94,7 @@ const SCOPES: Readonly<Record<Permission, PermissionScope>> = Object.freeze({
   'org.compliance.manage': 'admin',
   'org.ai.manage': 'admin',
   'org.licenses.manage': 'admin',
+  'org.jira.manage': 'admin',
   'project.read': 'read',
   'project.analyze': 'analysis:write',
   'issue.triage': 'write',

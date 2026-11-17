@@ -511,7 +511,7 @@ export interface paths {
                                 organizationKey: string;
                                 organizationName: string;
                                 role: ("admin" | "project_admin" | "member" | "viewer") | null;
-                                permissions: ("org.read" | "org.members.read" | "org.members.manage" | "org.projects.create" | "org.gates.manage" | "org.profiles.manage" | "org.webhooks.manage" | "org.scm.manage" | "org.audit.read" | "org.compliance.manage" | "org.ai.manage" | "org.licenses.manage")[];
+                                permissions: ("org.read" | "org.members.read" | "org.members.manage" | "org.projects.create" | "org.gates.manage" | "org.profiles.manage" | "org.webhooks.manage" | "org.scm.manage" | "org.audit.read" | "org.compliance.manage" | "org.ai.manage" | "org.licenses.manage" | "org.jira.manage")[];
                             }[];
                             projectGrants: {
                                 /** Format: uuid */

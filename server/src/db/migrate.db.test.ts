@@ -71,8 +71,8 @@ describe('runMigrations / pendingMigrations', () => {
     // project's vulnerability alerts, approved 2026-11-15), 0030_vulnerability_alert_items_checked
     // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15),
     // 0031_sbom_versions (0.16, SBOM versions, source packages and the package search, approved
-    // 2026-11-16).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(32);
+    // 2026-11-16), 0032_jira (0.16, Jira connections, mappings and links, approved 2026-11-17).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(33);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -327,6 +327,9 @@ describe('runMigrations / pendingMigrations', () => {
     const added = [
       ...added0006,
       'compliance_reports', // 0007_compliance_reports
+      'jira_connections', // 0032_jira
+      'jira_links', // 0032_jira
+      'project_jira_settings', // 0032_jira
       'matched_packages', // 0021_vulndb
       'target_vulnerabilities', // 0021_vulndb
       'vulnerability_decisions', // 0022_vulnerability_decisions

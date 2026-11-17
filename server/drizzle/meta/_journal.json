@@ -225,6 +225,13 @@
       "when": 1794856468248,
       "tag": "0031_sbom_versions",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794900589046,
+      "tag": "0032_jira",
+      "breakpoints": true
     }
   ]
 }

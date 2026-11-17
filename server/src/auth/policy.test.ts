@@ -255,3 +255,19 @@ describe('the licence policy (6M §5)', () => {
     expect(permissionScope('org.licenses.manage')).toBe('admin');
   });
 });
+
+describe('the Jira connection (0.16)', () => {
+  it('gives org.jira.manage to the organisation admin only, with token scope admin', () => {
+    expect(ORGANIZATION_PERMISSIONS).toContain('org.jira.manage');
+    expect(ROLE_PERMISSIONS.admin.organization).toContain('org.jira.manage');
+    for (const role of ['project_admin', 'member', 'viewer'] as const) {
+      expect(ROLE_PERMISSIONS[role].organization).not.toContain('org.jira.manage');
+    }
+    expect(
+      organizationPermissions(facts({ hasProjectGrantInOrganization: true })).has(
+        'org.jira.manage',
+      ),
+    ).toBe(false);
+    expect(permissionScope('org.jira.manage')).toBe('admin');
+  });
+});
