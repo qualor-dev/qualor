@@ -40,6 +40,18 @@ const liveChat =
   (process.env.QUALOR_TEAMS_WEBHOOK_URL ?? '') !== '';
 
 /**
+ * 0.16 Jira (spec §9): the opt-in check against a real Jira site (`pnpm jira:live`). Never part of
+ * `pnpm test` or CI, whatever variables are set: the unit project excludes `*.live.test.ts`, and
+ * the project exists only when the command line names it. Without QUALOR_LIVE_JIRA_* the file
+ * skips with a message.
+ */
+const JIRA_LIVE_FILE = 'server/src/jira/live.live.test.ts';
+const liveJira = process.argv.some(
+  (arg, i, all) =>
+    arg === '--project=jira-live' || (arg === '--project' && all[i + 1] === 'jira-live'),
+);
+
+/**
  * Plan 4A (ruling RE5): tests that run Helm, cosign or Syft in the release toolbox (Docker). Never
  * part of `pnpm test`: the project exists only when `pnpm helm:test` or `pnpm release:test` sets
  * QUALOR_RELEASE_TOOLS=1 (tools/release/test-tools.ts), after building the toolbox image.
@@ -180,6 +192,18 @@ export default defineConfig({
                 name: 'chat-live',
                 include: ['server/src/webhooks/chat/live.live.test.ts'],
                 testTimeout: 60_000,
+              },
+            },
+          ]
+        : []),
+      ...(liveJira
+        ? [
+            {
+              test: {
+                name: 'jira-live',
+                include: [JIRA_LIVE_FILE],
+                testTimeout: 300_000,
+                hookTimeout: 120_000,
               },
             },
           ]

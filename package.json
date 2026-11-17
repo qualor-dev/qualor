@@ -69,6 +69,7 @@
     "llm:live": "vitest run --project llm-live",
     "review:live": "vitest run --project review-live",
     "chat:live": "vitest run --project chat-live",
+    "jira:live": "vitest run --project jira-live",
     "sso:keycloak": "vitest run --project keycloak",
     "bench": "pnpm --filter @qualor/cli bench",
     "openapi": "pnpm --filter @qualor/server openapi",

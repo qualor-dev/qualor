@@ -31,3 +31,28 @@ The behaviour the fake models comes from the same research: auth headers (https:
 - **The status fields** (`fields.status.name`, `fields.status.statusCategory.key` in `new`, `indeterminate`, `done`) come from general Jira knowledge, not from the spec text.
 - **Data Center's `warningMessages`** for an unknown id under `validateQuery: "warn"` (the fake adds them) come from general Jira knowledge.
 - The fake's own texts for a bulk of more than 50 and for a JQL it cannot read are not Jira's.
+
+## The live check
+
+`pnpm jira:live` runs `server/src/jira/live.live.test.ts` against a real Jira. It is never part of `pnpm test` or CI. Without its variables it skips and says so.
+
+| Variable                                                                          | Meaning                                                                                                                    |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `QUALOR_LIVE_JIRA_SITE_URL`, `QUALOR_LIVE_JIRA_TOKEN`, `QUALOR_LIVE_JIRA_PROJECT` | Required: the site, the API token (Cloud) or personal access token (Data Center), a project key the account may create in. |
+| `QUALOR_LIVE_JIRA_DEPLOYMENT`                                                     | `cloud` (default) or `data_center`.                                                                                        |
+| `QUALOR_LIVE_JIRA_EMAIL`                                                          | Cloud's account email (basic auth). Not used on Data Center.                                                               |
+| `QUALOR_LIVE_JIRA_API_URL`, `QUALOR_LIVE_JIRA_API_TOKEN`                          | Cloud: `https://api.atlassian.com/ex/jira/<cloudId>` and a scoped token (default: `TOKEN`). Runs a second pass.            |
+| `QUALOR_LIVE_JIRA_ISSUE_TYPE`                                                     | The issue type's name (default `Task`, else the first that is not a sub-task).                                             |
+| `QUALOR_LIVE_JIRA_CLEANUP`                                                        | `1` deletes the created issues at the end. Without it they stay, labelled `qualor-live`.                                   |
+
+Run it once per setup: Cloud with basic auth, Cloud with a scoped token through the gateway, Data Center with a personal access token.
+
+Every answer goes to `.tmp/jira-live/<date>/<cloud-basic|cloud-scoped|dc-pat>/`: `shapes/*.json` (bodies named as the files here, ready to compare or copy; nothing is copied automatically) and `summary.json` (the createmeta envelope keys, how long the label and id searches took, the answers to a batch with a missing id, the `a\b` rendering, the findings). The token and the email are removed from them; read the files before you commit one, as `myself` holds the account's name and id.
+
+Then open the printed issue URLs and look: nothing of the injected text may show as a link, an image, a macro or bold.
+
+Settle with it, and then delete the matching "not verified" line above:
+
+- the Data Center createmeta envelope (`createmetaEnvelope` in `summary.json`: `values` or `issueTypes` and `fields`);
+- whether Cloud answers 400 for a whole id batch with a missing id, and whether Data Center's `validateQuery: "warn"` keeps the rest (`batchWithMissingId`);
+- the status fields and the bulk and error shapes (`shapes/search-ids-with-missing.*`, `bulk-partial`, `error`).

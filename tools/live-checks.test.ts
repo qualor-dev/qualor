@@ -21,6 +21,9 @@ const VARS = [
   'QUALOR_LIVE_LLM_MODEL',
   'QUALOR_LIVE_REVIEW_URL',
   'QUALOR_LIVE_REVIEW_MODEL',
+  'QUALOR_LIVE_JIRA_SITE_URL',
+  'QUALOR_LIVE_JIRA_TOKEN',
+  'QUALOR_LIVE_JIRA_PROJECT',
   'QUALOR_RELEASE_TOOLS',
 ];
 
@@ -271,6 +274,65 @@ describe('the live Keycloak check is never collected by pnpm test or CI', () => 
     for (const file of ci) {
       const text = readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/sso:keycloak|--project[ =]keycloak/);
+    }
+  });
+});
+
+/**
+ * 0.16 Jira (spec §9): the live check creates issues in a real Jira site, so `pnpm test` and CI
+ * must never collect it, even with its variables set. Its project exists only when the command
+ * line names it (`pnpm jira:live` runs `vitest run --project jira-live`).
+ */
+describe('the live Jira check is never collected by pnpm test or CI', () => {
+  const JIRA_LIVE_FILE = 'server/src/jira/live.live.test.ts';
+  const SET = {
+    QUALOR_LIVE_JIRA_SITE_URL: 'https://x.atlassian.net',
+    QUALOR_LIVE_JIRA_TOKEN: 'x',
+    QUALOR_LIVE_JIRA_PROJECT: 'KEY',
+  };
+
+  it('is a project only when the command line names it, whatever variables are set', async () => {
+    const names = (ps: Project[]) => ps.map((p) => p.test.name);
+    expect(names(await projects({}))).not.toContain('jira-live');
+    expect(names(await projects(SET))).not.toContain('jira-live');
+    expect(names(await projects(SET, []))).not.toContain('jira-live');
+    expect(names(await projects(SET, ['run']))).not.toContain('jira-live');
+    expect(names(await projects(SET, ['run', 'jira-live']))).not.toContain('jira-live');
+    for (const args of [
+      ['run', '--project', 'jira-live'],
+      ['run', '--project=jira-live'],
+    ]) {
+      const on = await projects({}, args);
+      expect(on.find((p) => p.test.name === 'jira-live')?.test.include).toEqual([JIRA_LIVE_FILE]);
+    }
+  });
+
+  it('is excluded from the unit project, and no other pattern reaches it', async () => {
+    expect(JIRA_LIVE_FILE.endsWith('.live.test.ts')).toBe(true);
+    for (const p of await projects(SET, ['run'])) {
+      const include = p.test.include ?? [];
+      if (include.includes('**/*.test.ts')) expect(p.test.exclude).toContain('**/*.live.test.ts');
+      else for (const pattern of include) expect(pattern).not.toContain('live');
+    }
+  });
+
+  it('runs only through pnpm jira:live, which no CI job calls', () => {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['jira:live']).toBe('vitest run --project jira-live');
+    for (const [name, script] of Object.entries(pkg.scripts)) {
+      if (name !== 'jira:live') expect(script, name).not.toMatch(/jira-live|jira:live/);
+    }
+    const ci = [
+      path.join(root, '.gitlab-ci.yml'),
+      ...readdirSync(path.join(root, '.github', 'workflows')).map((f) =>
+        path.join(root, '.github', 'workflows', f),
+      ),
+    ];
+    for (const file of ci) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/QUALOR_LIVE_JIRA|jira-live|jira:live/);
     }
   });
 });
