@@ -9,6 +9,8 @@ import {
   ENTERPRISE_PORT,
   ENTERPRISE_STORAGE_STATE,
   ENTERPRISE_URL,
+  JIRA_PORT,
+  JIRA_TOKEN,
   LICENSE_KEY_FILE,
   MAIL_PORT,
   OLGA,
@@ -120,6 +122,8 @@ export default defineConfig({
       QUALOR_E2E_BUSINESS_PORT: String(BUSINESS_PORT),
       QUALOR_E2E_MAIL_PORT: String(MAIL_PORT),
       QUALOR_E2E_CHAT_PORT: String(CHAT_PORT),
+      QUALOR_E2E_JIRA_PORT: String(JIRA_PORT),
+      QUALOR_E2E_JIRA_TOKEN: JIRA_TOKEN,
       // Built by the command above (`pnpm --filter @qualor/enterprise build`).
       QUALOR_E2E_ENTERPRISE_PLUGIN: fileURLToPath(
         new URL('../enterprise/dist/plugin.js', import.meta.url),

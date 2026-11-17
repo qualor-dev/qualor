@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import pg from 'pg';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
+import { createFakeJira, defaultIssueTypes } from '../../test/fake-jira';
 import {
   cannedModelText,
   createFakeLlm,
@@ -71,6 +72,11 @@ import { sweepE2eDatabases } from './sweep';
  * `license-policy`, `vuln.priority`, `vuln.alerts`, `sbom`), as a replica would after a move to
  * the Business plan. It starts on the first connection to its port (see {@link lazyServer}).
  * Mail E2: a reader on QUALOR_E2E_MAIL_PORT hands the tests the body of a pending account email.
+ *
+ * 0.16 Jira: a fake Jira Data Center (server/test/fake-jira.ts) on QUALOR_E2E_JIRA_PORT, with its
+ * debug routes (`GET /__fake/issues`, `POST /__fake/issues/:key/status`), one project QUAL and the
+ * token QUALOR_E2E_JIRA_TOKEN; every server lists it in QUALOR_JIRA_INTERNAL_HOSTS, so nothing
+ * contacts a real Jira.
  */
 const MAIN = fileURLToPath(new URL('../../.tmp/e2e-main.js', import.meta.url));
 
@@ -228,6 +234,7 @@ async function main(): Promise<void> {
   const chatPort = Number(process.env.QUALOR_E2E_CHAT_PORT ?? String(port + 5));
   const businessPort = Number(process.env.QUALOR_E2E_BUSINESS_PORT ?? String(port + 3));
   const mailPort = Number(process.env.QUALOR_E2E_MAIL_PORT ?? String(port + 4));
+  const jiraPort = Number(process.env.QUALOR_E2E_JIRA_PORT ?? String(port + 6));
   const plugin = path.resolve(env('QUALOR_E2E_ENTERPRISE_PLUGIN'));
   if (!existsSync(plugin)) throw new Error(`no built enterprise plugin at ${plugin}`);
   const roleUsers = {
@@ -239,8 +246,16 @@ async function main(): Promise<void> {
   answerAlways(llm);
   const gitlab = await createFakeGitLab();
   gitlabWithMergeRequest(gitlab);
+  const jira = await createFakeJira({
+    deployment: 'data_center',
+    token: env('QUALOR_E2E_JIRA_TOKEN'),
+    port: jiraPort,
+    debugRoutes: true,
+  });
+  // Bug, which Qualor can create; Story, whose required Components it cannot fill.
+  jira.addProject({ id: '10000', key: 'QUAL', name: 'Quality', issueTypes: defaultIssueTypes() });
   const closeFakes = async (): Promise<void> => {
-    await Promise.all([llm.close(), gitlab.close()]);
+    await Promise.all([llm.close(), gitlab.close(), jira.close()]);
   };
 
   let container: StartedPostgreSqlContainer | undefined;
@@ -277,6 +292,7 @@ async function main(): Promise<void> {
     HOST: '127.0.0.1',
     QUALOR_LLM_INTERNAL_HOSTS: llm.host,
     QUALOR_SCM_INTERNAL_HOSTS: new URL(gitlab.url).host,
+    QUALOR_JIRA_INTERNAL_HOSTS: new URL(jira.url).host,
   };
   const start = (extra: Record<string, string>) =>
     spawn(process.execPath, [MAIN], {

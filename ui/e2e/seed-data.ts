@@ -105,6 +105,16 @@ export const MAIL_URL = `http://127.0.0.1:${MAIL_PORT}`;
 /** 6G: the fake Slack receiver (server/scripts/e2e/serve.ts `chatReceiver`). */
 export const CHAT_PORT = E2E_PORT + 5;
 export const CHAT_URL = `http://127.0.0.1:${CHAT_PORT}`;
+/**
+ * 0.16 Jira: the fake Jira Data Center serve.ts runs for every e2e server (server/test/fake-jira.ts,
+ * with its `/__fake/` routes), its personal access token (passed to serve.ts by
+ * playwright.config.ts) and the one project serve.ts gives it, with the fake's default issue
+ * types: Bug (`bug`, its id), and Story, whose required Components Qualor cannot fill.
+ */
+export const JIRA_PORT = E2E_PORT + 6;
+export const JIRA_URL = `http://127.0.0.1:${JIRA_PORT}`;
+export const JIRA_TOKEN = 'e2e-jira-pat';
+export const JIRA_PROJECT = { id: '10000', key: 'QUAL', name: 'Quality', bug: '10001' };
 /** An organisation admin of Default who is not an instance admin, on both servers (seedRoles). */
 export const OLGA = { username: 'olga', password: 'olga e2e passphrase' };
 /** A user in no organisation, with a Viewer grant on Web Shop only (seed.ts seedRoles). */

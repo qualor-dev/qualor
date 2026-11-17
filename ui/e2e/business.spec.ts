@@ -1,14 +1,16 @@
-import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
+import { createHmac, hkdfSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { expect, expectAccessible, test } from './fixtures';
+import { ingestAgain, paymentsReport, projectId } from './report';
 import {
   BUSINESS_URL,
   CHAT_URL,
   DEPENDENCIES,
+  JIRA_PROJECT,
+  JIRA_TOKEN,
+  JIRA_URL,
   PAYMENTS,
-  PAYMENTS_REPORT_FILE,
   SIEM_URL,
 } from './seed-data';
 
@@ -223,69 +225,8 @@ test('a Business admin downloads the support bundle', async ({ page }) => {
   await expectAccessible(page);
 });
 
-/** The parts of a report the tests change; the rest goes back to the server as it was. */
-interface Report {
-  analysisDate: string;
-  scm: { revision: string; branch: string | null };
-  dependencies?: unknown[];
-}
-
-/** 6M: the seed's last report of Payments API's main branch (serve.ts writes it). */
-function paymentsReport(): Report {
-  return JSON.parse(readFileSync(PAYMENTS_REPORT_FILE, 'utf8')) as Report;
-}
-
-async function paymentsId(page: Page): Promise<string> {
-  const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
-    items: { id: string; key: string }[];
-  };
-  const payments = projects.items.find((p) => p.key === PAYMENTS.key);
-  expect(payments).toBeDefined();
-  return payments!.id;
-}
-
-/**
- * 6M: a report of Payments API ingested as a new analysis (a new revision, today's date) with a
- * project analysis token, as the CLI would upload it; resolves once the server has analysed it.
- */
-async function ingestAgain(page: Page, request: APIRequestContext, report: Report): Promise<void> {
-  const me = (await (await page.request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
-  const created = await page.request.post(`/api/v0/projects/${await paymentsId(page)}/tokens`, {
-    headers: { 'x-qualor-csrf': me.csrfToken },
-    data: { name: 'business e2e' },
-  });
-  expect(created.status()).toBe(201);
-  const { token } = (await created.json()) as { token: string };
-
-  const fresh: Report = {
-    ...report,
-    analysisDate: new Date().toISOString(),
-    scm: { ...report.scm, revision: randomBytes(20).toString('hex') },
-  };
-  const upload = await request.post(
-    `/api/v0/analyses?projectKey=${encodeURIComponent(PAYMENTS.key)}`,
-    {
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/vnd.qualor.report+json',
-        'content-encoding': 'gzip',
-      },
-      data: gzipSync(Buffer.from(JSON.stringify(fresh), 'utf8')),
-    },
-  );
-  expect(upload.status()).toBe(202);
-  const { analysisId } = (await upload.json()) as { analysisId: string };
-  await expect
-    .poll(
-      async () => {
-        const res = await request.get(`/api/v0/analyses/${analysisId}`, {
-          headers: { authorization: `Bearer ${token}` },
-        });
-        return ((await res.json()) as { status: string }).status;
-      },
-      { timeout: 60_000 },
-    )
-    .toBe('succeeded');
+function paymentsId(page: Page): Promise<string> {
+  return projectId(page.request, PAYMENTS.key);
 }
 
 // 6M §5, §8: the licence policy is a Business feature (`license-policy`). The admin forbids strong
@@ -332,7 +273,7 @@ test('a Business admin forbids strong copyleft, and the next analysis reports it
 
   const request = await playwright.request.newContext({ baseURL: BUSINESS_URL });
   try {
-    await ingestAgain(page, request, paymentsReport());
+    await ingestAgain(page.request, request, PAYMENTS.key, paymentsReport());
   } finally {
     await request.dispose();
   }
@@ -419,7 +360,7 @@ test('a branch with an empty inventory says it has no packages and exports its S
   const report = paymentsReport();
   const request = await playwright.request.newContext({ baseURL: BUSINESS_URL });
   try {
-    await ingestAgain(page, request, {
+    await ingestAgain(page.request, request, PAYMENTS.key, {
       ...report,
       scm: { ...report.scm, branch: EMPTY_BRANCH },
       dependencies: [],
@@ -528,5 +469,60 @@ test('a Business user stops vulnerability emails from the link', async ({ page }
     });
   } finally {
     await page.request.delete(`/api/v0/projects/${projectId}/watch`, { headers });
+  }
+});
+
+// 0.16 Jira (spec §6.2, §6.11): the automatic rule's exploited option needs `vuln.priority`, which
+// the Business plan has. The connection to the fake Jira (serve.ts) and Payments API's mapping are
+// made through the API; the panel then offers the option, and saving it answers 200. The test
+// removes the connection, and with it the mapping.
+test('a Business project turns on Jira issues for exploited vulnerabilities', async ({
+  page,
+  request,
+}) => {
+  const me = (await (await request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
+  const headers = { 'x-qualor-csrf': me.csrfToken };
+  const orgs = (await (await request.get('/api/v0/organizations')).json()) as {
+    items: { id: string }[];
+  };
+  const organizationId = orgs.items[0]!.id;
+  const payments = await projectId(request, PAYMENTS.key);
+  const connected = await request.put(`/api/v0/organizations/${organizationId}/jira`, {
+    headers,
+    data: { deployment: 'data_center', siteUrl: JIRA_URL, token: JIRA_TOKEN },
+  });
+  expect(connected.status()).toBe(200);
+  try {
+    const mapped = await request.put(`/api/v0/projects/${payments}/jira`, {
+      headers,
+      data: {
+        jiraProject: { id: JIRA_PROJECT.id, key: JIRA_PROJECT.key, name: JIRA_PROJECT.name },
+        issueType: { id: JIRA_PROJECT.bug, name: 'Bug' },
+        labels: [],
+        priorities: null,
+        autoCreate: { minSeverity: null, exploited: false },
+      },
+    });
+    expect(mapped.status()).toBe(200);
+
+    await page.goto(`/projects/${payments}/settings`);
+    const panel = page.locator('section#jira');
+    const exploited = panel.getByRole('switch', { name: 'Exploited vulnerabilities (CISA KEV)' });
+    await expect(exploited).toBeEnabled();
+    await exploited.check();
+    const saved = page.waitForResponse(
+      (r) =>
+        r.request().method() === 'PUT' &&
+        new URL(r.url()).pathname === `/api/v0/projects/${payments}/jira`,
+    );
+    await panel.getByRole('button', { name: 'Save' }).click();
+    expect((await saved).status()).toBe(200);
+    await expect(panel.getByRole('status')).toHaveText('Saved.');
+    await expect(exploited).toBeChecked();
+  } finally {
+    const removed = await request.delete(`/api/v0/organizations/${organizationId}/jira`, {
+      headers,
+    });
+    expect(removed.status()).toBe(204);
   }
 });
