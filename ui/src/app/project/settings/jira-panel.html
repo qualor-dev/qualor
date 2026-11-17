@@ -1,0 +1,292 @@
+@if (isShown()) {
+  <section class="card panel" id="jira">
+    <div class="panel-head">
+      <h2 tabindex="-1" i18n="@@project.settings.jira">Jira</h2>
+    </div>
+    <div class="panel-body">
+      <div role="status">
+        @if (announcement(); as message) {
+          <p class="alert alert-success">{{ message }}</p>
+        }
+      </div>
+      @if (error(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+      }
+      @if (loadError(); as message) {
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+        <button
+          type="button"
+          class="btn"
+          [disabled]="loading()"
+          (click)="load(project().id, true)"
+          i18n="@@jira.panel.retry"
+        >
+          Try again
+        </button>
+      } @else if (loaded(); as l) {
+        @if (!l.connection) {
+          <p i18n="@@jira.panel.notConnected">This organization is not connected to Jira.</p>
+          <p>
+            <a routerLink="/settings/jira" i18n="@@jira.panel.settingsLink">Settings → Jira</a>
+          </p>
+        } @else if (problem(); as p) {
+          <div class="alert alert-error" role="alert">
+            <p>{{ p.text }}</p>
+            <p>{{ p.fix }}</p>
+          </div>
+        }
+      }
+    </div>
+
+    @if (loaded(); as l) {
+      @if (l.connection) {
+        <div class="vm-section" role="group" aria-labelledby="jira-where">
+          <h3 id="jira-where" i18n="@@jira.panel.where">Where Jira issues go</h3>
+
+          <div class="field jira-field">
+            @if (picked(); as p) {
+              <span class="jira-label" i18n="@@jira.panel.project">Jira project</span>
+              <div class="picked">
+                <span class="chip mono">{{ p.key }} · {{ p.name }}</span>
+                <button type="button" class="btn" (click)="changeProject()">
+                  <ng-container i18n="@@jira.panel.change">Change</ng-container>
+                </button>
+              </div>
+            } @else {
+              <label for="jira-project-search" i18n="@@jira.panel.project">Jira project</label>
+              <input
+                id="jira-project-search"
+                type="search"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="jira-project-hint"
+                [value]="query()"
+                (input)="search($event)"
+              />
+              <span id="jira-project-hint" class="hint" i18n="@@jira.panel.projectHint">
+                Type a Jira project key or name.
+              </span>
+              <div role="status">
+                @switch (searchState()) {
+                  @case ('loading') {
+                    <span class="hint" i18n="@@jira.panel.searching">Searching…</span>
+                  }
+                  @case ('empty') {
+                    <span class="hint" i18n="@@jira.panel.noProjects"
+                      >No Jira project matches.</span
+                    >
+                  }
+                  @case ('error') {
+                    <span class="field-error">{{ searchError() }}</span>
+                  }
+                }
+              </div>
+              @if (searchState() === 'results') {
+                <ul class="results">
+                  @for (r of results(); track r.id) {
+                    <li>
+                      <button type="button" (click)="choose(r)">{{ r.key }} · {{ r.name }}</button>
+                    </li>
+                  }
+                </ul>
+              }
+            }
+          </div>
+
+          @if (picked()) {
+            <div class="field jira-field">
+              <label for="jira-issue-type" i18n="@@jira.panel.issueType">Jira issue type</label>
+              @if (typesError(); as message) {
+                <span class="field-error" role="alert">{{ message }}</span>
+              } @else if (types(); as list) {
+                <select id="jira-issue-type" (change)="setType($event)">
+                  <option value="" [selected]="typeId() === ''" i18n="@@jira.panel.chooseType">
+                    Choose an issue type
+                  </option>
+                  @for (t of list; track t.id) {
+                    <option [value]="t.id" [disabled]="!t.supported" [selected]="t.id === typeId()">
+                      {{ typeLabel(t) }}
+                    </option>
+                  }
+                </select>
+              } @else {
+                <span class="hint" i18n="@@jira.panel.loadingTypes">Loading issue types…</span>
+              }
+            </div>
+          }
+
+          @if (selectedType(); as type) {
+            @if (type.labels) {
+              <div class="field jira-field">
+                <label for="jira-labels" i18n="@@jira.panel.labels">Labels</label>
+                <input
+                  id="jira-labels"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-describedby="jira-labels-hint"
+                  [attr.aria-invalid]="labelsError() ? 'true' : null"
+                  [value]="labelsText()"
+                  (input)="setLabels($event)"
+                />
+                @if (labelsError(); as message) {
+                  <span id="jira-labels-error" class="field-error" role="alert">{{ message }}</span>
+                }
+                <span id="jira-labels-hint" class="hint" i18n="@@jira.panel.labelsHint">
+                  Up to 10, separated by commas. Qualor always adds the label qualor.
+                </span>
+              </div>
+            }
+            @if (priorityField(); as field) {
+              <div class="priorities" role="group" aria-labelledby="jira-priorities">
+                <span id="jira-priorities" class="jira-label" i18n="@@jira.panel.priorities"
+                  >Priority by severity</span
+                >
+                @for (s of severities; track s) {
+                  <div class="priority-row field">
+                    <label [for]="priorityId(s)">{{ severityLabel(s) }}</label>
+                    <select [id]="priorityId(s)" (change)="setPriority(s, $event)">
+                      @if (field.required) {
+                        <option value="" i18n="@@jira.panel.choosePriority">
+                          Choose a priority
+                        </option>
+                      } @else {
+                        <option value="" i18n="@@jira.panel.noPriority">No priority</option>
+                      }
+                      @for (a of field.allowed; track a.id) {
+                        <option [value]="a.id" [selected]="priorities()[s] === a.id">
+                          {{ a.name }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
+
+        <div class="vm-section" role="group" aria-labelledby="jira-auto-heading">
+          <h3 id="jira-auto-heading" i18n="@@jira.panel.auto">Automatic creation</h3>
+          <div class="field jira-field">
+            <label for="jira-auto" i18n="@@jira.panel.autoLabel"
+              >Create Jira issues for new vulnerabilities</label
+            >
+            <select
+              id="jira-auto"
+              aria-describedby="jira-auto-hint"
+              (change)="setMinSeverity($event)"
+            >
+              <option value="" [selected]="minSeverity() === null" i18n="@@jira.panel.auto.off">
+                Off
+              </option>
+              <option
+                value="critical"
+                [selected]="minSeverity() === 'critical'"
+                i18n="@@jira.panel.auto.critical"
+              >
+                Critical
+              </option>
+              <option
+                value="high"
+                [selected]="minSeverity() === 'high'"
+                i18n="@@jira.panel.auto.high"
+              >
+                High and above
+              </option>
+              <option
+                value="medium"
+                [selected]="minSeverity() === 'medium'"
+                i18n="@@jira.panel.auto.medium"
+              >
+                Medium and above
+              </option>
+              <option value="low" [selected]="minSeverity() === 'low'" i18n="@@jira.panel.auto.low">
+                Low and above
+              </option>
+            </select>
+          </div>
+          <div class="switch-row">
+            <input
+              id="jira-exploited"
+              class="switch"
+              type="checkbox"
+              role="switch"
+              [checked]="exploited()"
+              [disabled]="!l.exploitedAvailable && !exploited()"
+              (change)="setExploited($event)"
+            />
+            <label for="jira-exploited">
+              <span class="sw-name" i18n="@@jira.panel.exploited"
+                >Exploited vulnerabilities (CISA KEV)</span
+              >
+            </label>
+          </div>
+          <p id="jira-auto-hint" class="hint" i18n="@@jira.panel.autoNote">
+            Counts vulnerabilities first found after you save.
+          </p>
+          @if (!l.monitoringOn) {
+            <p class="hint" i18n="@@jira.panel.monitoringOff">
+              Vulnerability monitoring is off for this project.
+            </p>
+          }
+        </div>
+
+        <div class="vm-actions">
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="canSave()"
+            [disabled]="!canSave() || busy()"
+            (click)="save()"
+            i18n="@@jira.panel.save"
+          >
+            Save
+          </button>
+          @if (l.mapping) {
+            <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="openRemove()">
+              <ng-container i18n="@@jira.panel.remove">Remove mapping</ng-container>
+            </button>
+          }
+        </div>
+      }
+    }
+  </section>
+
+  @if (loaded()?.mapping) {
+    <dialog
+      #dialog
+      id="remove-jira-mapping"
+      class="dialog"
+      aria-labelledby="remove-jira-title"
+      aria-describedby="remove-jira-text"
+    >
+      <form novalidate (submit)="remove($event)">
+        <div class="dialog-head">
+          <h2 id="remove-jira-title" i18n="@@jira.panel.removeTitle">Remove the Jira mapping</h2>
+        </div>
+        <div class="dialog-body">
+          @if (removeError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <p id="remove-jira-text" i18n="@@jira.panel.removeText">
+            Qualor stops creating Jira issues for this project. Jira issues that exist stay in Jira.
+          </p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeRemove()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-danger-solid"
+            [disabled]="busy()"
+            i18n="@@jira.panel.removeConfirm"
+          >
+            Remove mapping
+          </button>
+        </div>
+      </form>
+    </dialog>
+  }
+}

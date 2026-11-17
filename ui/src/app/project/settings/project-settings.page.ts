@@ -7,6 +7,7 @@ import {
   ElementRef,
   inject,
   input,
+  signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,6 +16,7 @@ import { SessionStore } from '../../auth/session';
 import { CurrentProject } from '../current-project';
 import { ProjectAiPanel } from './ai-panel';
 import { GateProfilesPanel } from './gate-profiles-panel';
+import { ProjectJiraPanel } from './jira-panel';
 import { MainBranchPanel } from './main-branch-panel';
 import { NewCodePanel } from './new-code-panel';
 import { DeleteProjectPanel } from './delete-project-panel';
@@ -44,6 +46,7 @@ const MOVED: ReadonlyMap<string, string> = new Map([
     MainBranchPanel,
     NewCodePanel,
     ProjectAiPanel,
+    ProjectJiraPanel,
     ProjectTokensPanel,
     ProjectWebhooksPanel,
     RouterLink,
@@ -61,6 +64,8 @@ export class ProjectSettingsPage {
   private readonly fragment = toSignal(inject(ActivatedRoute).fragment, { initialValue: null });
   private scrolledToFragment = false;
   readonly projectId = input.required<string>();
+  /** Whether the Jira panel has anything for this caller; its index link follows. */
+  protected readonly jiraShown = signal(false);
 
   protected readonly project = this.store.current;
   protected readonly show = computed(() => {

@@ -1,0 +1,84 @@
+:host {
+  display: block;
+}
+
+.vm-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 22px 20px;
+  border-top: 1px solid var(--hairline);
+}
+
+.vm-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.jira-field {
+  margin: 0;
+  max-width: 28rem;
+}
+
+.jira-field input[type='search'],
+.jira-field input[type='text'],
+.jira-field select {
+  width: 100%;
+}
+
+.jira-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.results {
+  display: grid;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.results button {
+  width: 100%;
+  padding: 7px 12px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.results button:hover,
+.results button:focus-visible {
+  background: var(--surface-2);
+}
+
+.priorities {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.priority-row {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.vm-actions {
+  display: flex;
+  gap: var(--space-3);
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--hairline);
+}

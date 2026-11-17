@@ -16,6 +16,8 @@ import { ProjectSettingsPage } from './project-settings.page';
 const PROJECT = '0190a6c2-0000-7000-8000-0000000000f1';
 
 interface Setup {
+  /** Whether the organisation has a Jira connection (the Jira panel shows for a project admin). */
+  jira?: boolean;
   projectPermissions: string[];
   orgRole: 'admin' | 'member';
   /** The app's routes; by default the page is rendered outside any. */
@@ -53,6 +55,17 @@ function setup(options: Setup): FakeServer {
       matchingBranches: [],
       trackedVersions: [],
       versionCount: 1,
+    },
+  });
+  server.on('GET', `/api/v0/projects/${PROJECT}/jira`, {
+    body: {
+      mapping: null,
+      connection:
+        options.jira === false
+          ? null
+          : { deployment: 'data_center', siteUrl: 'https://jira.example.com', problem: null },
+      monitoringOn: true,
+      exploitedAvailable: true,
     },
   });
   TestBed.configureTestingModule({
@@ -105,6 +118,7 @@ describe('ProjectSettingsPage', () => {
       'Quality gate and profiles',
       'Main branch',
       'Vulnerability monitoring',
+      'Jira',
       'AI',
       'Analysis tokens',
       'Danger zone',
@@ -116,11 +130,23 @@ describe('ProjectSettingsPage', () => {
       'gate',
       'main-branch',
       'vulnerabilities',
+      'jira',
       'ai',
       'tokens',
       'danger',
     ]);
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('hides the Jira panel and its index link from a member when the organisation has no connection', async () => {
+    setup({
+      projectPermissions: ['project.read', 'project.settings'],
+      orgRole: 'member',
+      jira: false,
+    });
+    const { root } = await render();
+    expect(texts(root, '.card.panel h2')).not.toContain('Jira');
+    expect(texts(root, 'nav.settings-index a')).not.toContain('Jira');
   });
 
   it('shows only Webhooks to a caller who holds org.webhooks.manage and no project setting', async () => {
@@ -174,12 +200,13 @@ describe('ProjectSettingsPage index', () => {
       'Quality gate and profiles',
       'Main branch',
       'Vulnerability monitoring',
+      'Jira',
       'AI',
       'Danger zone',
     ]);
     // To open in a new tab or copy: the page's own address, with the panel.
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
-      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'ai', 'danger'].map(
+      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'jira', 'ai', 'danger'].map(
         (id) => `/projects/${PROJECT}/settings#${id}`,
       ),
     );

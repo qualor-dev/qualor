@@ -49,3 +49,11 @@ export type JiraSettingsAnswer = ResponseBody<'/api/v0/organizations/{id}/jira',
 export type JiraConnection = NonNullable<JiraSettingsAnswer['connection']>;
 /** `POST /organizations/{id}/jira/test`. */
 export type JiraTestResult = ResponseBody<'/api/v0/organizations/{id}/jira/test', 'post'>;
+
+/** `GET /projects/{id}/jira`: the mapping, the organisation's connection and the rule's switches. */
+export type JiraProjectSettings = ResponseBody<'/api/v0/projects/{id}/jira', 'get'>;
+export type JiraMapping = NonNullable<JiraProjectSettings['mapping']>;
+/** `GET /projects/{id}/jira/projects`: one Jira project of the picker. */
+export type JiraPickedProject = ItemOf<'/api/v0/projects/{id}/jira/projects'>;
+/** `GET /projects/{id}/jira/issue-types`: an issue type of a Jira project. */
+export type JiraIssueType = ItemOf<'/api/v0/projects/{id}/jira/issue-types'>;
