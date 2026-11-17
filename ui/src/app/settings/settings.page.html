@@ -99,6 +99,19 @@
                 >GitHub</a
               >
             </li>
+          }
+          @if (jira()) {
+            <li>
+              <a
+                routerLink="jira"
+                routerLinkActive="active"
+                ariaCurrentWhenActive="page"
+                i18n="@@settings.tab.jira"
+                >Jira</a
+              >
+            </li>
+          }
+          @if (org.can('org.scm.manage')) {
             <li>
               <a
                 routerLink="repositories"

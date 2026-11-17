@@ -72,6 +72,8 @@ export class SettingsPage {
    * says when the instance has no AI provider or the organisation is not enabled.
    */
   protected readonly aiReview = computed(() => this.org.can('org.ai.manage'));
+  /** The organisation's Jira connection (Jira 0.16 §6.1): for holders of `org.jira.manage`. */
+  protected readonly jira = computed(() => this.org.can('org.jira.manage'));
   /**
    * The organisation's licence policy (6M §8): for holders of `org.licenses.manage`, while
    * `license-policy` is active; the address itself shows the Business note when it is not.
@@ -89,6 +91,7 @@ export class SettingsPage {
       this.org.can('org.members.read') ||
       this.org.can('org.webhooks.manage') ||
       this.org.can('org.scm.manage') ||
+      this.jira() ||
       this.aiReview() ||
       this.licensePolicy() ||
       this.auditLog() ||

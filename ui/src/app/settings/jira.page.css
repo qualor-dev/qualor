@@ -1,0 +1,21 @@
+/* Settings → Jira (0.16 §6.1): one connection form, the counts of what hangs on it below. */
+.jira-fix {
+  display: block;
+  margin-top: 4px;
+}
+.jira-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 16px 0 0;
+  padding: 14px 22px;
+}
+.jira-facts dt {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+.jira-facts dd {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}

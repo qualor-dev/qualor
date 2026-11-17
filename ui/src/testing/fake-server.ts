@@ -6,7 +6,7 @@ import type {
   PortfolioOverview,
   PortfolioProjectRow,
 } from '../app/api/ee';
-import type { ItemOf, Me, ResponseBody } from '../app/api/types';
+import type { ItemOf, JiraConnection, Me, ResponseBody } from '../app/api/types';
 import type {
   DependencyAnswer,
   DependencyRow,
@@ -132,6 +132,7 @@ export const ORG_ADMIN_PERMISSIONS = [
   'org.ai.manage',
   'org.audit.read',
   'org.gates.manage',
+  'org.jira.manage',
   'org.licenses.manage',
   'org.members.manage',
   'org.members.read',
@@ -183,6 +184,26 @@ export function me(
     projectGrants: [],
     csrfToken: 'csrf-token',
     demo: overrides.demo ?? false,
+  };
+}
+
+/** The organisation's Jira connection as `GET /organizations/{id}/jira` answers it: a Data Center one. */
+export function jiraConnection(overrides: Partial<JiraConnection> = {}): JiraConnection {
+  return {
+    id: '0190a6c2-0000-7000-8000-000000000091',
+    organizationId: ORG_ID,
+    deployment: 'data_center',
+    siteUrl: 'https://jira.example.com',
+    apiUrl: null,
+    email: null,
+    tokenSet: true,
+    tokenReadable: true,
+    problem: null,
+    mappedProjects: 0,
+    links: { pending: 0, created: 0, failed: 0, missing: 0, dismissed: 0 },
+    createdAt: '2026-11-17T10:00:00.000Z',
+    updatedAt: '2026-11-17T10:00:00.000Z',
+    ...overrides,
   };
 }
 

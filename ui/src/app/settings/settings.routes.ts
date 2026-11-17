@@ -60,6 +60,12 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./github.page').then((m) => m.GitHubPage),
   },
   {
+    // Jira 0.16 §6.1: the organisation's Jira connection, for its admins (org.jira.manage).
+    path: 'jira',
+    title: $localize`:@@title.jira:Jira`,
+    loadComponent: () => import('./jira.page').then((m) => m.JiraSettingsPage),
+  },
+  {
     path: 'repositories',
     title: $localize`:@@title.repositories:Repositories`,
     loadComponent: () => import('./repositories.page').then((m) => m.RepositoriesPage),

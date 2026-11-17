@@ -1,0 +1,349 @@
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@jira.title">Jira</h2>
+    @if (!canRead()) {
+      <p class="muted" i18n="@@jira.adminsOnly">Only organization administrators connect Jira.</p>
+    } @else {
+      <p class="muted" i18n="@@jira.intro">
+        Connect Jira so that projects can turn issues and vulnerabilities into Jira issues. Use an
+        account that can browse the projects and create issues in them.
+      </p>
+    }
+  </div>
+</div>
+@if (canRead()) {
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+    @if (testResult(); as result) {
+      @if (result.ok && result.user) {
+        <p class="alert alert-success">
+          @if (result.projectsVisible === null) {
+            <span i18n="@@jira.testOkNoProjects">Connected as {{ result.user.displayName }}.</span>
+          } @else {
+            <span i18n="@@jira.testOk">Connected as {{ result.user.displayName }};</span>&ngsp;<span
+              i18n="@@jira.projectsVisible"
+              >{result.projectsVisible, plural,
+                =1 {1 project visible}
+                other {{{ result.projectsVisible }} projects visible}
+              }</span
+            >
+          }
+        </p>
+      }
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  @if (failure(); as failed) {
+    <p class="alert alert-error" role="alert">
+      {{ failed.text }} <span class="jira-fix">{{ failed.fix }}</span>
+    </p>
+  }
+  @if (problem(); as stored) {
+    <p class="alert alert-error" role="alert">
+      <strong i18n="@@jira.problemSince">Problem since {{ stored.at | dateTime }}.</strong>
+      {{ stored.text }} <span class="jira-fix">{{ stored.fix }}</span>
+    </p>
+  }
+  @if (loaded() && !publicUrlSet()) {
+    <p class="alert alert-warn" role="note" i18n="@@jira.noPublicUrl">
+      The server has no QUALOR_PUBLIC_URL, so Jira issues carry no links back to Qualor. Ask the
+      operator to set it.
+    </p>
+  }
+
+  @if (loaded()) {
+    <form id="jira-form" class="card panel" novalidate (submit)="save($event)">
+      <div class="panel-head">
+        <h3 i18n="@@jira.connection">Connection</h3>
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <label for="jira-deployment" i18n="@@jira.deployment">Jira</label>
+        </div>
+        <div class="setting-field">
+          <select
+            id="jira-deployment"
+            [disabled]="!canManage()"
+            [value]="deployment()"
+            (change)="setDeployment($event)"
+          >
+            <option value="cloud" [selected]="deployment() === 'cloud'" i18n="@@jira.cloud">
+              Jira Cloud
+            </option>
+            <option
+              value="data_center"
+              [selected]="deployment() === 'data_center'"
+              i18n="@@jira.dataCenter"
+            >
+              Jira Data Center or Server
+            </option>
+          </select>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-text">
+          <label for="jira-site-url" i18n="@@jira.siteUrl">Address</label>
+          <p i18n="@@jira.siteUrlHint">
+            Jira Cloud: https://your-site.atlassian.net. Data Center: its base URL, with the context
+            path if it has one.
+          </p>
+        </div>
+        <div class="setting-field">
+          <input
+            id="jira-site-url"
+            type="url"
+            required
+            maxlength="2048"
+            autocomplete="off"
+            spellcheck="false"
+            [attr.aria-invalid]="fieldError().url ? true : null"
+            [attr.aria-describedby]="fieldError().url ? 'jira-site-url-error' : null"
+            [disabled]="!canManage()"
+            [value]="siteUrl()"
+            (input)="setSiteUrl($event)"
+          />
+          @if (fieldError().url; as message) {
+            <span id="jira-site-url-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      </div>
+      @if (deployment() === 'cloud') {
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="jira-email" i18n="@@jira.email">Email</label>
+          </div>
+          <div class="setting-field">
+            <input
+              id="jira-email"
+              type="email"
+              required
+              maxlength="320"
+              autocomplete="off"
+              spellcheck="false"
+              [attr.aria-invalid]="fieldError().email ? true : null"
+              [attr.aria-describedby]="fieldError().email ? 'jira-email-error' : null"
+              [disabled]="!canManage()"
+              [value]="email()"
+              (input)="setEmail($event)"
+            />
+            @if (fieldError().email; as message) {
+              <span id="jira-email-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-text">
+            <label for="jira-api-url" i18n="@@jira.apiUrl">Scoped token? API URL</label>
+            <p id="jira-api-url-hint" i18n="@@jira.apiUrlHint">
+              Only for a scoped API token: https://api.atlassian.com/ex/jira/ and the cloud id of
+              your site. Leave it empty for an unscoped token.
+            </p>
+          </div>
+          <div class="setting-field">
+            <input
+              id="jira-api-url"
+              type="url"
+              maxlength="2048"
+              autocomplete="off"
+              spellcheck="false"
+              [attr.aria-invalid]="fieldError().api ? true : null"
+              [attr.aria-describedby]="
+                fieldError().api ? 'jira-api-url-error jira-api-url-hint' : 'jira-api-url-hint'
+              "
+              [disabled]="!canManage()"
+              [value]="apiUrl()"
+              (input)="setApiUrl($event)"
+            />
+            @if (fieldError().api; as message) {
+              <span id="jira-api-url-error" class="field-error" role="alert">{{ message }}</span>
+            }
+          </div>
+        </div>
+      }
+      <div class="setting-row">
+        <div class="setting-text">
+          <label for="jira-token">{{ tokenLabel() }}</label>
+          <p id="jira-token-hint">
+            @if (connection()?.tokenSet && !connection()?.tokenReadable) {
+              <span i18n="@@jira.tokenUnreadable"
+                >The stored token can no longer be read: enter it again.</span
+              >
+            } @else if (connection()?.tokenSet) {
+              <span i18n="@@jira.tokenKept"
+                >A token is stored. Leave this empty to keep it; a new address needs it again.</span
+              >
+            } @else {
+              <span i18n="@@jira.tokenHint">Stored encrypted; Qualor never shows it again.</span>
+            }
+          </p>
+        </div>
+        <div class="setting-field">
+          <input
+            #tokenField
+            id="jira-token"
+            type="password"
+            maxlength="1024"
+            autocomplete="new-password"
+            data-1p-ignore
+            data-lpignore="true"
+            spellcheck="false"
+            [attr.aria-invalid]="fieldError().token ? true : null"
+            [attr.aria-describedby]="
+              fieldError().token ? 'jira-token-error jira-token-hint' : 'jira-token-hint'
+            "
+            [disabled]="!canManage()"
+            (input)="clearErrors()"
+          />
+          @if (fieldError().token; as message) {
+            <span id="jira-token-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      </div>
+      @if (canManage()) {
+        <div class="setting-actions">
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@jira.save"
+          >
+            Save
+          </button>
+          @if (connection()) {
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="test()"
+              i18n="@@jira.test"
+            >
+              Test
+            </button>
+            <button
+              type="button"
+              class="btn-quiet danger"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="remove()"
+              i18n="@@jira.remove"
+            >
+              Remove
+            </button>
+          }
+        </div>
+      }
+    </form>
+
+    @if (connection(); as c) {
+      <dl class="card panel jira-facts">
+        <div>
+          <dt i18n="@@jira.mappedProjects">Mapped projects</dt>
+          <dd>{{ c.mappedProjects }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@jira.links.pending">Waiting</dt>
+          <dd>{{ c.links.pending }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@jira.links.created">Created</dt>
+          <dd>{{ c.links.created }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@jira.links.failed">Failed</dt>
+          <dd>{{ c.links.failed }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@jira.links.missing">Missing</dt>
+          <dd>{{ c.links.missing }}</dd>
+        </div>
+        <div>
+          <dt i18n="@@jira.links.dismissed">Unlinked</dt>
+          <dd>{{ c.links.dismissed }}</dd>
+        </div>
+      </dl>
+    }
+  }
+
+  @if (canManage()) {
+    <dialog
+      #confirmDialog
+      id="jira-confirm-dialog"
+      class="dialog"
+      aria-labelledby="jira-confirm-title"
+      aria-describedby="jira-confirm-text"
+      (close)="cancelChange()"
+    >
+      <div class="dialog-head">
+        <h2 id="jira-confirm-title" i18n="@@jira.confirmChangeTitle">Change the Jira address</h2>
+      </div>
+      <div class="dialog-body">
+        <p id="jira-confirm-text" i18n="@@jira.confirmChange">
+          A new Jira is a different Jira, so Qualor deletes the mappings and links of this one. Jira
+          keeps its issues.
+        </p>
+        <ul>
+          <li>
+            <span i18n="@@jira.confirmMappings">{changeMappings(), plural,
+              =1 {1 mapped project}
+              other {{{ changeMappings() }} mapped projects}
+            }</span>
+          </li>
+          <li>
+            <span i18n="@@jira.confirmLinks">{changeLinks(), plural,
+              =1 {1 link}
+              other {{{ changeLinks() }} links}
+            }</span>
+          </li>
+        </ul>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="cancelChange()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmChange()"
+          i18n="@@jira.confirmChangeAction"
+        >
+          Change the address
+        </button>
+      </div>
+    </dialog>
+
+    <dialog
+      #removeDialog
+      id="jira-remove-dialog"
+      class="dialog"
+      aria-labelledby="jira-remove-title"
+      aria-describedby="jira-remove-text"
+      (close)="cancelRemove()"
+    >
+      <div class="dialog-head">
+        <h2 id="jira-remove-title" i18n="@@jira.removeTitle">Remove the Jira connection</h2>
+      </div>
+      <div class="dialog-body">
+        <p id="jira-remove-text" i18n="@@jira.removeText">
+          Qualor stops creating and tracking Jira issues, and deletes the project mappings and the
+          links. Jira keeps its issues.
+        </p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="cancelRemove()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmRemove()"
+          i18n="@@jira.removeAction"
+        >
+          Remove connection
+        </button>
+      </div>
+    </dialog>
+  }
+}

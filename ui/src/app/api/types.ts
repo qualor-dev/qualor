@@ -43,3 +43,9 @@ export type Organization = ItemOf<'/api/v0/organizations'>;
 export type ProjectGrant = ItemOf<'/api/v0/projects/{id}/members'>;
 /** The roles a project grant may carry: `admin` is organisation-wide only (§3.2). */
 export type GrantRole = ProjectGrant['role'];
+
+/** `GET /organizations/{id}/jira`: the connection (or null) and whether Qualor links can be written. */
+export type JiraSettingsAnswer = ResponseBody<'/api/v0/organizations/{id}/jira', 'get'>;
+export type JiraConnection = NonNullable<JiraSettingsAnswer['connection']>;
+/** `POST /organizations/{id}/jira/test`. */
+export type JiraTestResult = ResponseBody<'/api/v0/organizations/{id}/jira/test', 'post'>;
