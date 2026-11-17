@@ -30,6 +30,8 @@ export interface ProblemExtensions {
   details?: { invalid: string[] };
   /** 422 JIRA_ISSUE_TYPE_UNSUPPORTED: the names of the required fields Qualor cannot fill (0.16 Jira §6.2). */
   missingFields?: string[];
+  /** 409 JIRA_CONNECTION_BROKEN: the code of the connection's credential problem (0.16 Jira §6.4). */
+  problemCode?: string;
 }
 
 export interface Problem extends ProblemExtensions {

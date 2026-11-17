@@ -31,6 +31,11 @@ const PROBLEM_SCHEMA = {
         'JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill',
       items: { type: 'string' },
     },
+    problemCode: {
+      type: 'string',
+      description:
+        "JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection",
+    },
     errors: {
       type: 'array',
       items: {

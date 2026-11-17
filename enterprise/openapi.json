@@ -66,6 +66,10 @@
               "type": "string"
             }
           },
+          "problemCode": {
+            "type": "string",
+            "description": "JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection"
+          },
           "errors": {
             "type": "array",
             "items": {

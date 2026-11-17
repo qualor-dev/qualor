@@ -66,6 +66,8 @@ function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
     closedAt: null,
     createdAt: '2026-09-15T09:00:00.000Z',
     updatedAt: '2026-09-15T09:00:00.000Z',
+    jira: null,
+    jiraLinkable: false,
     fingerprint: 'f',
     snippet: { startLine: 43, lines: ['const a = 1;', 'if (a == "1") {'] },
     secondaryLocations: [],

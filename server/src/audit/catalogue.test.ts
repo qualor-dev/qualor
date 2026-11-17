@@ -140,6 +140,8 @@ describe('the audit catalogue (rbac-audit.md §8)', () => {
     'project.deleted.key': isIdentifier('acme:web'),
     'quality_profile.rule_set.ruleKey': isIdentifier('eslint:no-eval'),
     'quality_profile.rule_reset.ruleKey': isIdentifier('eslint:no-eval'),
+    // 0.16 Jira §6.10: the dismissed link's Jira issue key (`QUAL-1`), never a credential.
+    'jira_link.dismissed.key': isIdentifier('QUAL-1'),
     'user.created.passwordChangeRequired': (s) => s instanceof z.ZodBoolean,
     'user.updated.passwordReset': (s) => s instanceof z.ZodBoolean,
     'ai.settings_updated.apiKey': (s) =>

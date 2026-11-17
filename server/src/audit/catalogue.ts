@@ -6,7 +6,7 @@ import {
   type LicenseGroupId,
 } from '@qualor/shared';
 import { z } from 'zod';
-import { ORGANIZATION_KEY_PATTERN, PROJECT_KEY_PATTERN } from '../patterns';
+import { JIRA_ISSUE_KEY_PATTERN, ORGANIZATION_KEY_PATTERN, PROJECT_KEY_PATTERN } from '../patterns';
 import { REVIEW_SCOPES } from '../review/schema';
 import type { AuditJson } from './canonical';
 import { auditHashString, auditSeqString } from './settings';
@@ -641,6 +641,21 @@ export const AUDIT_CATALOGUE = {
       deployment: z.enum(['cloud', 'data_center']),
       siteOrigin: url,
       links: count,
+    }),
+  },
+  // 0.16 Jira §6.10: `count` the rows a request made pending (at most the 500 ids it may name, R21),
+  // `kind` the request's form; `key` the dismissed link's Jira issue, null when it had none.
+  'jira_link.requested': {
+    target: 'project',
+    details: z.strictObject({
+      count: z.number().int().min(1).max(500),
+      kind: z.enum(['issue', 'vulnerability']),
+    }),
+  },
+  'jira_link.dismissed': {
+    target: 'project',
+    details: z.strictObject({
+      key: z.string().max(255).regex(JIRA_ISSUE_KEY_PATTERN).nullable(),
     }),
   },
   'webhook.created': { target: 'webhook', details: webhookRef },

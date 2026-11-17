@@ -6456,6 +6456,30 @@ export interface paths {
                                     score: number;
                                     percentile: number;
                                 } | null;
+                                jira: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    key: string | null;
+                                    url: string | null;
+                                    status: {
+                                        name: string;
+                                        /** @enum {string} */
+                                        category: "new" | "indeterminate" | "done";
+                                    } | null;
+                                    statusCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
                             }[];
                             total: number;
                         };
@@ -7716,6 +7740,31 @@ export interface paths {
                                 createdAt: string;
                                 /** Format: date-time */
                                 updatedAt: string;
+                                jira: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    key: string | null;
+                                    url: string | null;
+                                    status: {
+                                        name: string;
+                                        /** @enum {string} */
+                                        category: "new" | "indeterminate" | "done";
+                                    } | null;
+                                    statusCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                jiraLinkable: boolean;
                             }[];
                             nextCursor: string | null;
                             facets?: {
@@ -7846,6 +7895,31 @@ export interface paths {
                             createdAt: string;
                             /** Format: date-time */
                             updatedAt: string;
+                            jira: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                key: string | null;
+                                url: string | null;
+                                status: {
+                                    name: string;
+                                    /** @enum {string} */
+                                    category: "new" | "indeterminate" | "done";
+                                } | null;
+                                statusCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            jiraLinkable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8015,6 +8089,31 @@ export interface paths {
                             createdAt: string;
                             /** Format: date-time */
                             updatedAt: string;
+                            jira: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                key: string | null;
+                                url: string | null;
+                                status: {
+                                    name: string;
+                                    /** @enum {string} */
+                                    category: "new" | "indeterminate" | "done";
+                                } | null;
+                                statusCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            jiraLinkable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8222,6 +8321,31 @@ export interface paths {
                             createdAt: string;
                             /** Format: date-time */
                             updatedAt: string;
+                            jira: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                key: string | null;
+                                url: string | null;
+                                status: {
+                                    name: string;
+                                    /** @enum {string} */
+                                    category: "new" | "indeterminate" | "done";
+                                } | null;
+                                statusCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            jiraLinkable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -17513,6 +17637,364 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/jira/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Jira issues for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link that the create job sends to Jira. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Issues: a code issue of the main branch, or a Trivy issue of main or a tracked branch (its vulnerability is linked) */
+                        issueIds?: string[];
+                        /** @description Vulnerabilities of the project, as the Vulnerabilities tab lists them */
+                        vulnerabilities?: {
+                            packageName: string;
+                            vulnerabilityId: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: ({
+                                /** Format: uuid */
+                                issueId: string;
+                                link: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    key: string | null;
+                                    url: string | null;
+                                    status: {
+                                        name: string;
+                                        /** @enum {string} */
+                                        category: "new" | "indeterminate" | "done";
+                                    } | null;
+                                    statusCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                skipped: ("NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_LINKED") | null;
+                            } | {
+                                packageName: string;
+                                vulnerabilityId: string;
+                                link: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    key: string | null;
+                                    url: string | null;
+                                    status: {
+                                        name: string;
+                                        /** @enum {string} */
+                                        category: "new" | "indeterminate" | "done";
+                                    } | null;
+                                    statusCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                skipped: ("NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_LINKED") | null;
+                            })[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; JIRA_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; JIRA_PROJECT_NOT_MAPPED: the project has no Jira mapping; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED), also without exactly one of `issueIds` and `vulnerabilities` */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too many issue changes by this user, one per link made or re-armed (RATE_LIMITED); see Retry-After */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/jira-links/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed or missing Jira link: it goes back to pending as a new create (its generation goes up, its old key, status and failure are cleared). The mapping is not checked: without one, the create job fails the link `not_mapped` */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                            /** @enum {string} */
+                            origin: "manual" | "auto";
+                            key: string | null;
+                            url: string | null;
+                            status: {
+                                name: string;
+                                /** @enum {string} */
+                                category: "new" | "indeterminate" | "done";
+                            } | null;
+                            statusCheckedAt: string | null;
+                            failure: {
+                                /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone or outcome_unknown */
+                                code: string;
+                                message: string;
+                            } | null;
+                            reportedFixedAt: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; JIRA_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; JIRA_LINK_NOT_RETRYABLE: the link is neither failed nor missing (R9); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too many issue changes by this user (RATE_LIMITED); see Retry-After */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/jira-links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unlink: the link becomes dismissed and reads as no link; its key is kept, the Jira issue stays, and the automatic rule never brings it back. Requesting a Jira issue for the finding again re-arms it. Unlinking a dismissed link changes nothing */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/organizations/{id}/setup-checklist": {
         parameters: {
             query?: never;
@@ -17702,6 +18184,8 @@ export interface components {
             };
             /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
             missingFields?: string[];
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection */
+            problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */
                 path: string;

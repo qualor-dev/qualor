@@ -277,11 +277,12 @@ export const jiraRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
               .values({ organizationId, ...next, tokenEnc })
               .returning(),
           );
+          // The schedule lock before the audit chain's, as every Jira path takes them.
+          await scheduleJiraSync(tx, organizationId, 0);
           await audit(tx, request, created, 'jira_connection.created', {
             deployment: created.deployment,
             siteOrigin: urlOrigin(created.siteUrl),
           });
-          await scheduleJiraSync(tx, organizationId, 0);
           return created;
         }
         // spec §6.1: a stored token only ever serves the address it was saved for; a new address

@@ -4302,6 +4302,8 @@ export interface components {
             };
             /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
             missingFields?: string[];
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection */
+            problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */
                 path: string;

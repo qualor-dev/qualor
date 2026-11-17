@@ -38,9 +38,21 @@ import {
   withProvenance,
 } from '../llm/provenance';
 import { transitionIssues, USER_STATUSES } from '../issues/transitions';
+import {
+  isPairIssue,
+  issueLinkable,
+  jiraLinkSchema,
+  linksForIssues,
+  type IssueLinkLookup,
+  type JiraLink,
+} from '../jira/links';
 import { branchForUser, issueForUser, type IssueRow } from '../projects/access';
 import type { IssueStatus } from '../tracking/plan';
-import { vulnerabilitySettings } from '../versions/settings';
+import {
+  isTrackedBranch,
+  vulnerabilitySettings,
+  type VulnerabilitySettings,
+} from '../versions/settings';
 import {
   DECISION_STATUSES,
   effectiveDecision,
@@ -50,6 +62,9 @@ import {
 import { TRIVY_ENGINE, writesDecision } from '../vulnerabilities/trivy-issues';
 
 export const issueStatusSchema = z.enum(ISSUE_STATUSES);
+
+/** What R6 and the triage of a Trivy issue read of its branch. */
+type Branch = { name: string; isMain: boolean; kind: string };
 
 export const issueSchema = z.object({
   id: z.uuid(),
@@ -80,8 +95,24 @@ export const issueSchema = z.object({
   closedAt: timestamp.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
+  /**
+   * 0.16 Jira §6.8: the finding's Jira link while one exists that is not dismissed: a Trivy issue
+   * of main or a tracked branch shows its vulnerability's link; null otherwise.
+   */
+  jira: jiraLinkSchema.nullable(),
+  /**
+   * R6: whether a Jira issue may be requested for it: a code issue of the main branch, or a Trivy
+   * issue of main or a tracked branch, that is not closed.
+   */
+  jiraLinkable: z.boolean(),
 });
 export type IssueDto = z.infer<typeof issueSchema>;
+
+/** An issue's Jira link and whether one may be requested (R6). */
+export interface IssueJira {
+  link: JiraLink | null;
+  linkable: boolean;
+}
 
 /**
  * What an AI review kept beside the issue it raised: the finding's own text, what it takes
@@ -247,7 +278,7 @@ export function facetList(raw: string | undefined): IssueFacet[] {
   return names as IssueFacet[];
 }
 
-export function issueDto(row: IssueListRow): IssueDto {
+export function issueDto(row: IssueListRow, jira: IssueJira): IssueDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -272,6 +303,8 @@ export function issueDto(row: IssueListRow): IssueDto {
     closedAt: isoOrNull(row.closedAt),
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
+    jira: jira.link,
+    jiraLinkable: jira.linkable,
   };
 }
 
@@ -284,19 +317,41 @@ export const issueRoutes: FastifyPluginAsyncZod<{
   // change; checked before anything is read or written.
   const chargeChanges = chargeIssueChanges ?? issueChangeCharge();
 
+  /**
+   * The Jira links of issues of one branch, in one batched lookup (spec §6.8), and R6. A Trivy
+   * issue is looked up by its pair only on main or a tracked branch, so a merge request's embeds
+   * nothing.
+   */
+  const jiraOf = async (
+    projectId: string,
+    branch: Branch,
+    settings: VulnerabilitySettings,
+    rows: readonly IssueListRow[],
+  ): Promise<(row: IssueListRow) => IssueJira> => {
+    const tracked = isTrackedBranch(settings, branch);
+    const links = await linksForIssues(
+      deps.db,
+      projectId,
+      rows.flatMap((row): IssueLinkLookup[] => {
+        if (!isPairIssue(row)) return [{ id: row.id, packageName: null, vulnerabilityId: null }];
+        if (!tracked) return [];
+        return [{ id: row.id, packageName: row.packageName, vulnerabilityId: row.engineRuleId }];
+      }),
+    );
+    return (row) => ({
+      link: links.get(row.id) ?? null,
+      linkable: issueLinkable(row, branch, settings),
+    });
+  };
+
   /** The pair of a Trivy issue and the decision in force on its branch; null for other issues. */
   const vulnerabilityOf = async (
     issue: IssueRow,
     rule: typeof rules.$inferSelect,
+    branch: Branch,
+    settings: VulnerabilitySettings,
   ): Promise<z.infer<typeof vulnerabilitySchema> | null> => {
     if (rule.engineId !== TRIVY_ENGINE || issue.packageName === null) return null;
-    const branch = first(
-      await deps.db
-        .select({ name: branches.name, isMain: branches.isMain, kind: branches.kind })
-        .from(branches)
-        .where(eq(branches.id, issue.branchId)),
-    );
-    const settings = await vulnerabilitySettings(deps.db, issue.projectId);
     const decision = await effectiveDecision(deps.db, {
       projectId: issue.projectId,
       branchId: issue.branchId,
@@ -344,13 +399,23 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       .select()
       .from(reviewFindings)
       .where(eq(reviewFindings.issueId, issue.id));
+    const branch = first(
+      await deps.db
+        .select({ name: branches.name, isMain: branches.isMain, kind: branches.kind })
+        .from(branches)
+        .where(eq(branches.id, issue.branchId)),
+    );
+    const settings = await vulnerabilitySettings(deps.db, issue.projectId);
+    const row: IssueListRow = {
+      ...issue,
+      ruleKey: rule.key,
+      ruleName: rule.name,
+      engineId: rule.engineId,
+      engineRuleId: rule.engineRuleId,
+    };
+    const jira = await jiraOf(issue.projectId, branch, settings, [row]);
     return {
-      ...issueDto({
-        ...issue,
-        ruleKey: rule.key,
-        ruleName: rule.name,
-        engineId: rule.engineId,
-      }),
+      ...issueDto(row, jira(row)),
       rule: {
         key: rule.key,
         name: rule.name,
@@ -379,7 +444,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             reviewedCommit: finding.reviewedHeadSha,
           }
         : null,
-      vulnerability: await vulnerabilityOf(issue, rule),
+      vulnerability: await vulnerabilityOf(issue, rule, branch, settings),
     };
   };
 
@@ -405,14 +470,29 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       const facets = facetList(request.query.facets);
       // The cursor is checked before any query runs: a bad one is a 422 that costs no facets.
       const plan = issueSortPlan(request.query.sort, request.query.cursor);
-      await branchForUser(accessOf(deps), principal, request.query.branchId, 'project.read');
+      const branch = await branchForUser(
+        accessOf(deps),
+        principal,
+        request.query.branchId,
+        'project.read',
+      );
       const filters = filtersFrom(request.query);
       const [page, counts] = await Promise.all([
         listIssues(deps.db, filters, { plan, limit: request.query.limit }),
         facets.length > 0 ? issueFacets(deps.db, filters, facets) : undefined,
       ]);
+      // After the page, so the request still holds at most three pool connections (api.md §4).
+      const jira =
+        page.items.length === 0
+          ? () => ({ link: null, linkable: false })
+          : await jiraOf(
+              branch.projectId,
+              branch,
+              await vulnerabilitySettings(deps.db, branch.projectId),
+              page.items,
+            );
       return {
-        items: page.items.map(issueDto),
+        items: page.items.map((row) => issueDto(row, jira(row))),
         nextCursor: page.nextCursor,
         ...(counts === undefined ? {} : { facets: counts }),
       };

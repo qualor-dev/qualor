@@ -11,6 +11,7 @@ import { idParams, noNul } from '../http/schemas';
 import { transitionComment } from '../issues/comment';
 import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
 import { setLockTimeout, TRANSITION_LOCK_TIMEOUT_MS } from '../issues/transitions';
+import { jiraLinkSchema, linksForPairs, pairKey } from '../jira/links';
 import { projectForUser } from '../projects/access';
 import {
   DECISION_STATUSES,
@@ -155,6 +156,8 @@ const itemSchema = z.object({
   exploited: z.object({ dateAdded: z.iso.date(), ransomware: z.boolean() }).nullable(),
   /** The EPSS score. Null without the vuln.priority feature or when not scored. */
   epss: z.object({ score: z.number(), percentile: z.number() }).nullable(),
+  /** 0.16 Jira §6.8: the pair's Jira link while one exists that is not dismissed; null otherwise. */
+  jira: jiraLinkSchema.nullable(),
 });
 
 const TARGET_PATTERN =
@@ -302,7 +305,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
       );
       if (exploited === 'true' && !priority) throw priorityNotLicensed();
       const [kind, id] = target?.split(':') ?? [];
-      return listVulnerabilities(
+      const page = await listVulnerabilities(
         deps.db,
         project.id,
         {
@@ -315,6 +318,14 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         },
         { priority },
       );
+      const links = await linksForPairs(deps.db, project.id, page.items);
+      return {
+        ...page,
+        items: page.items.map((item) => ({
+          ...item,
+          jira: links.get(pairKey(item.packageName, item.vulnerabilityId)) ?? null,
+        })),
+      };
     },
   );
 

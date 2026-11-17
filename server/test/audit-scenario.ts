@@ -7,6 +7,7 @@ import {
   branches,
   instanceSettings,
   issues,
+  jiraLinks,
   jobs,
   projectVersions,
 } from '../src/db/schema';
@@ -563,6 +564,22 @@ export async function runAuditScenario(
   };
   await call('PUT', `/projects/${main.id}/jira`, 200, jiraMapping);
   await call('PUT', `/projects/${main.id}/jira`, 200, { ...jiraMapping, labels: ['scenario'] });
+  // jira_link.requested (a request, then a retry of the link once it failed), jira_link.dismissed
+  // (the link once created). Nothing calls Jira: no worker runs the create job.
+  const requested = await call('POST', `/projects/${main.id}/jira/links`, 202, {
+    issueIds: [open.id],
+  });
+  const linkId = (requested.json() as { items: { link: { id: string } }[] }).items[0]!.link.id;
+  await ctx.db
+    .update(jiraLinks)
+    .set({ state: 'failed', failure: { code: 'permission_missing', message: 'scenario' } })
+    .where(eq(jiraLinks.id, linkId));
+  await call('POST', `/jira-links/${linkId}/retry`, 202);
+  await ctx.db
+    .update(jiraLinks)
+    .set({ state: 'created', jiraKey: 'QUAL-1', jiraIssueId: '10001' })
+    .where(eq(jiraLinks.id, linkId));
+  await call('DELETE', `/jira-links/${linkId}`, 204);
   await call('DELETE', `/projects/${main.id}/jira`, 204);
   await call('PUT', `/organizations/${org}/jira`, 200, {
     deployment: 'cloud',

@@ -108,6 +108,8 @@ export interface IssueListRow {
   ruleKey: string;
   ruleName: string;
   engineId: string;
+  /** The rule's own id (a Trivy rule's vulnerability id), for the issue's Jira link. */
+  engineRuleId: string;
   severity: string;
   severityRank: number;
   severityOverridden: boolean;
@@ -123,6 +125,8 @@ export interface IssueListRow {
   inNewCode: boolean;
   duplicateOfIssueId: string | null;
   confidence: string | null;
+  /** A Trivy issue's package (its vulnerability is the rule's id); null for others. */
+  packageName: string | null;
   firstSeenAt: Date;
   resolvedAt: Date | null;
   closedAt: Date | null;
@@ -137,6 +141,7 @@ const listColumns = {
   ruleKey: rules.key,
   ruleName: rules.name,
   engineId: rules.engineId,
+  engineRuleId: rules.engineRuleId,
   severity: issues.severity,
   severityRank: issues.severityRank,
   severityOverridden: issues.severityOverridden,
@@ -152,6 +157,7 @@ const listColumns = {
   inNewCode: issues.inNewCode,
   duplicateOfIssueId: issues.duplicateOfIssueId,
   confidence: issues.confidence,
+  packageName: issues.packageName,
   firstSeenAt: issues.firstSeenAt,
   resolvedAt: issues.resolvedAt,
   closedAt: issues.closedAt,
