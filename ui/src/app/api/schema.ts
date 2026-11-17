@@ -17809,7 +17809,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry a failed or missing Jira link: it goes back to pending as a new create (its generation goes up, its old key, status and failure are cleared). The mapping is not checked: without one, the create job fails the link `not_mapped` */
+        /** Retry a failed or missing Jira link whose finding may still have one (as for a request: a code issue of the main branch that is not closed, a vulnerability still linkable): it goes back to pending as a new create (its generation goes up, its old key, status and failure are cleared). The mapping is not checked: without one, the create job fails the link `not_mapped` */
         post: {
             parameters: {
                 query?: never;
@@ -17880,7 +17880,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; JIRA_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; JIRA_LINK_NOT_RETRYABLE: the link is neither failed nor missing (R9); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; JIRA_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; JIRA_LINK_NOT_RETRYABLE: the link is neither failed nor missing (R9), or its finding is closed or no longer linkable (a code issue off the main branch, a vulnerability no tracked target or Trivy issue holds); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
                 409: {
                     headers: {
                         [name: string]: unknown;

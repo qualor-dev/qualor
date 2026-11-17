@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
+  type FakeReply,
   FakeServer,
   jiraLink,
   jiraProjectSettings,
@@ -261,6 +262,47 @@ describe('JiraLinkView', () => {
     await settle(fixture);
     expect(server.requestsTo('POST', RETRY)).toHaveLength(1);
     expect(text(root)).toContain('Creating…');
+  });
+
+  it('offers neither Retry nor Create again for a finding that is not linkable, only Unlink (R7)', async () => {
+    setup(jiraProjectSettings());
+    const failed = jiraLink({
+      state: 'failed',
+      key: null,
+      url: null,
+      status: null,
+      failure: { code: 'permission_missing', message: 'permission_missing' },
+    });
+    const { fixture, root } = await render({ link: failed, linkable: false });
+    expect(text(root)).toContain('The account lacks a permission in Jira.');
+    expect(button(root, 'Retry')).toBeUndefined();
+    expect(button(root, 'Unlink')).toBeDefined();
+
+    fixture.componentRef.setInput('link', jiraLink({ state: 'missing' }));
+    await settle(fixture);
+    expect(text(root)).toContain('Not found in Jira');
+    expect(button(root, 'Create again')).toBeUndefined();
+    expect(button(root, 'Unlink')).toBeDefined();
+  });
+
+  it('does no more once it is gone while its request is out: no emit, no focus, no error', async () => {
+    setup(jiraProjectSettings());
+    let answer: (reply: FakeReply) => void = () => undefined;
+    server.on('POST', LINKS, () => new Promise<FakeReply>((resolve) => (answer = resolve)));
+    const { fixture, changed } = await render();
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // The click handler's own promise: a rejection here would be unhandled in the page.
+    const pending = (fixture.componentInstance as unknown as { create(): Promise<void> }).create();
+    await settle();
+    expect(server.requestsTo('POST', LINKS)).toHaveLength(1);
+    fixture.destroy();
+    answer({ status: 202, body: { items: [{ issueId: ISSUE, link: PENDING, skipped: null }] } });
+    await expect(pending).resolves.toBeUndefined();
+    await settle();
+    expect(changed).not.toHaveBeenCalled();
+    expect(warned).not.toHaveBeenCalled();
+    expect(logged).not.toHaveBeenCalled();
   });
 
   it('asks before it unlinks, sends nothing on Cancel, and DELETEs the link on Unlink', async () => {

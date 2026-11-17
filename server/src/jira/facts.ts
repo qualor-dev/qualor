@@ -12,11 +12,14 @@ import { TRIVY_ENGINE } from '../vulnerabilities/trivy-issues';
 import type { CodeIssueFacts, VulnerabilityFacts } from './content';
 import { pairKey } from './links';
 
+/** A code issue's facts, and whether it is closed now (R7: the create job sends no closed one). */
+export type CodeIssueRecord = CodeIssueFacts & { closed: boolean };
+
 /** The code issues' facts for their Jira issue, by issue id; an issue that is gone is absent. */
 export async function codeIssueFacts(
   db: Executor,
   issueIds: readonly string[],
-): Promise<Map<string, CodeIssueFacts>> {
+): Promise<Map<string, CodeIssueRecord>> {
   if (issueIds.length === 0) return new Map();
   const rows = await db
     .select({
@@ -35,6 +38,7 @@ export async function codeIssueFacts(
       firstSeenAt: issues.firstSeenAt,
       closedAt: issues.closedAt,
       lastSeenAt: analyses.analysisDate,
+      status: issues.status,
     })
     .from(issues)
     .innerJoin(projects, eq(projects.id, issues.projectId))
@@ -42,7 +46,12 @@ export async function codeIssueFacts(
     .innerJoin(rules, eq(rules.id, issues.ruleId))
     .leftJoin(analyses, eq(analyses.id, issues.lastSeenAnalysisId))
     .where(inArray(issues.id, uuidList([...new Set(issueIds)])));
-  return new Map(rows.map((r) => [r.issueId, { ...r, severity: r.severity as Severity }]));
+  return new Map(
+    rows.map(({ status, ...r }) => [
+      r.issueId,
+      { ...r, severity: r.severity as Severity, closed: status === 'closed' },
+    ]),
+  );
 }
 
 /** A Trivy issue's severity as a vulnerability's (the ingestion maps critical to blocker). */

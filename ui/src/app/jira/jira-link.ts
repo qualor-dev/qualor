@@ -3,6 +3,7 @@ import {
   afterNextRender,
   Component,
   computed,
+  DestroyRef,
   ElementRef,
   inject,
   Injector,
@@ -53,7 +54,8 @@ function skippedText(skipped: JiraLinkItem['skipped'] | undefined): string {
  * - No link: "Create Jira issue" with `canTriage`, a `linkable` finding and a mapped project; in
  *   the card, a project admin of an unmapped project sees "Map this project to Jira" instead.
  * - Pending: "Creating…". Created: the key, linked to Jira in a new tab, its status pill and when
- *   it was read. Failed: why, and Retry. Missing: "Not found in Jira", and Create again.
+ *   it was read. Failed: why, and Retry. Missing: "Not found in Jira", and Create again. Retry and
+ *   Create again only for a finding still `linkable` (a closed one gets no new Jira issue, R7).
  * - Unlink asks first; the Jira issue stays in Jira.
  * Without a Jira connection it shows nothing at all. An action's answer shows at once, and
  * `changed` tells the page to read the finding again (which then refreshes while pending, R22).
@@ -71,6 +73,7 @@ export class JiraLinkView {
   private readonly document = inject(DOCUMENT);
   private readonly locale = inject(LOCALE_ID);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+  private destroyed = false;
 
   readonly link = input<JiraLink | null>(null);
   readonly linkable = input(false);
@@ -151,6 +154,10 @@ export class JiraLinkView {
     };
   });
 
+  constructor() {
+    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
+  }
+
   protected async create(): Promise<void> {
     const target = this.target();
     const body =
@@ -215,20 +222,30 @@ export class JiraLinkView {
     });
   }
 
-  /** Runs one action; `run` answers whether the link changed, which the page is told. */
+  /**
+   * Runs one action; `run` answers whether the link changed, which the page is told. A view gone
+   * while its request was out (its row left with another page or filter) does nothing more.
+   */
   private async act(run: () => Promise<boolean>): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
     this.error.set(null);
+    let outcome: { changed: boolean } | { error: unknown };
     try {
-      if (await run()) this.changed.emit();
-    } catch (err) {
+      outcome = { changed: await run() };
+    } catch (error) {
+      outcome = { error };
+    }
+    this.busy.set(false);
+    if (this.destroyed) return;
+    if ('error' in outcome) {
+      const err = outcome.error;
       this.error.set(jiraRequestError(err));
       if (jiraStateGone(err)) this.jira.reload(this.projectId());
       // Changed elsewhere meanwhile (retried, created): the page reads what it is now.
       if (err instanceof ApiError && err.code === 'JIRA_LINK_NOT_RETRYABLE') this.changed.emit();
-    } finally {
-      this.busy.set(false);
+    } else if (outcome.changed) {
+      this.changed.emit();
     }
     this.keepFocus();
   }

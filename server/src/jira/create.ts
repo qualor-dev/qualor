@@ -174,7 +174,7 @@ async function mappingsOf(
 interface Prepared {
   /** The rows to send, each with its create's fields, in the order they go. */
   send: { row: JiraLinkRow; fields: Record<string, unknown> }[];
-  /** R8: rows that cannot be sent (no mapping any more, or no finding). */
+  /** R8: rows that cannot be sent (no mapping any more, no finding, or a closed code issue). */
   failed: Failed[];
 }
 
@@ -225,7 +225,8 @@ async function prepare(
     let built: { content: JiraContent; severity: Severity } | null = null;
     if (row.kind === 'issue') {
       const facts = row.issueId === null ? undefined : codeFacts.get(row.issueId);
-      if (facts)
+      // R7: a closed issue gets no Jira issue (one re-armed before it closed is gone, R8).
+      if (facts && !facts.closed)
         built = { content: codeIssueContent(facts, deps.publicUrl), severity: facts.severity };
     } else {
       const facts = pairFacts
@@ -326,8 +327,8 @@ async function waiting(db: Db, connectionId: string): Promise<boolean> {
  *
  * - Created → `created` with the Jira issue's id and key; their status is read after the last call.
  * - Refused element (400, 403, 404, 413, 422; a whole-call refusal fails every row, P6) → `failed`
- *   with its code; for 400 the message is Jira's words. No mapping → `not_mapped`; no finding →
- *   `finding_gone` (R8), unsent.
+ *   with its code; for 400 the message is Jira's words. No mapping → `not_mapped`; no finding, or
+ *   a closed code issue (R7) → `finding_gone` (R8), unsent.
  * - No answer (timeout, reset, 5xx, an unreadable or unmatched answer) → `pending` with
  *   `attempted_at`: the pass reconciles it and never resends blindly. A timeout or an unreachable
  *   Jira is recorded as the transient problem and stops the run.

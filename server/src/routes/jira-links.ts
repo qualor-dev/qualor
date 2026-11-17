@@ -153,6 +153,25 @@ function notRetryable(): never {
 }
 
 /**
+ * Ruling T12b: Retry asks what a request asks of its finding (R6, R7, T6d): a code issue still on
+ * the main branch and not closed, a pair still linkable. Otherwise 409, nothing changed.
+ */
+async function requireLinkable(db: Executor, projectId: string, link: JiraLinkRow): Promise<void> {
+  const target = rowTarget(link);
+  const [resolved] =
+    target.kind === 'issue'
+      ? await issueTargets(db, projectId, [target.issueId])
+      : await pairTargets(db, projectId, [
+          { packageName: target.packageName, vulnerabilityId: target.vulnerabilityId },
+        ]);
+  if (resolved && 'target' in resolved && resolved.target.kind === target.kind) return;
+  throw conflict(
+    'JIRA_LINK_NOT_RETRYABLE',
+    'The finding of this Jira link is closed or can no longer have a Jira issue',
+  );
+}
+
+/**
  * spec §6.4, §6.8: requesting Jira issues for findings, retrying a failed or missing link, and
  * unlinking (`issue.triage`). Each link made or re-armed costs its user one issue change (ruling
  * G7, the limiter `POST /issues/bulk-transition` charges), and the create job does the Jira calls.
@@ -309,7 +328,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
         openapi: {
           problems: [409, 429],
           problemDescriptions: {
-            409: `${CONNECTION_PROBLEMS}; JIRA_LINK_NOT_RETRYABLE: the link is neither failed nor missing (R9)`,
+            409: `${CONNECTION_PROBLEMS}; JIRA_LINK_NOT_RETRYABLE: the link is neither failed nor missing (R9), or its finding is closed or no longer linkable (a code issue off the main branch, a vulnerability no tracked target or Trivy issue holds)`,
             429: 'Too many issue changes by this user (RATE_LIMITED); see Retry-After',
           },
         },
@@ -317,7 +336,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
       schema: {
         tags: ['jira'],
         summary:
-          'Retry a failed or missing Jira link: it goes back to pending as a new create (its generation goes up, its old key, status and failure are cleared). The mapping is not checked: without one, the create job fails the link `not_mapped`',
+          'Retry a failed or missing Jira link whose finding may still have one (as for a request: a code issue of the main branch that is not closed, a vulnerability still linkable): it goes back to pending as a new create (its generation goes up, its old key, status and failure are cleared). The mapping is not checked: without one, the create job fails the link `not_mapped`',
         params: idParams,
         response: { 202: jiraLinkSchema },
       },
@@ -333,6 +352,7 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
       // Ruling P15: the connection, not the mapping.
       const connection = await usableConnection(deps.db, project);
       if (!(RETRYABLE_STATES as readonly string[]).includes(link.state)) notRetryable();
+      await requireLinkable(deps.db, project.id, link);
       chargeChanges(principal.user.id, 1);
       let row: JiraLinkRow;
       try {

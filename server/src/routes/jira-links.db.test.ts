@@ -651,6 +651,63 @@ describe('Jira links: request, retry, unlink, embedded (0.16 Jira §6.3, §6.4, 
     expect((await retry(uuidv7())).statusCode).toBe(404);
   });
 
+  it('retries only a finding that may still have a Jira issue (R7, T6d, T12b); else 409, unchanged', async () => {
+    const seed = (over: Partial<typeof jiraLinks.$inferInsert>) =>
+      seedJiraLink(db(), {
+        projectId,
+        connectionId,
+        state: 'failed',
+        failure: { code: 'permission_missing', message: 'x' },
+        attemptedAt: NOW,
+        ...over,
+      });
+    const closed = await seed({ kind: 'issue', issueId: await code(main, { status: 'closed' }) });
+    const offMain = await seedJiraLink(db(), {
+      projectId,
+      connectionId,
+      kind: 'issue',
+      issueId: await code(feature),
+      state: 'missing',
+      jiraKey: 'QUAL-9',
+      jiraIssueId: '10009',
+    });
+    // A pair only an untracked version holds (the version rule is `none`).
+    const [version] = await db()
+      .insert(projectVersions)
+      .values({
+        projectId,
+        label: `0.${++pkgs}.0`,
+        source: 'tag',
+        tag: `v0.${pkgs}.0`,
+        analyzedAt: NOW,
+      })
+      .returning();
+    const pair = { packageName: freshPackage(), vulnerabilityId: 'CVE-2026-4444' };
+    await seedTargetRow(db(), { projectId, versionId: version!.id, ...pair });
+    const untracked = await seed({ kind: 'vulnerability', ...pair });
+    since = await lastSeq();
+    for (const id of [closed, offMain, untracked]) {
+      const before = await row(id);
+      const res = await retry(id);
+      expect([res.statusCode, res.json().code], res.body).toEqual([409, 'JIRA_LINK_NOT_RETRYABLE']);
+      expect(await row(id)).toEqual(before);
+    }
+    expect(await events('jira_link.requested')).toEqual([]);
+    const createJobs = await db()
+      .select()
+      .from(jobs)
+      .where(
+        and(eq(jobs.queue, JIRA_QUEUE), eq(jobs.concurrencyKey, jiraCreateKey(h.organizationId))),
+      );
+    expect(createJobs).toHaveLength(0);
+
+    // The same pair on a tracked branch too: linkable again, so retried.
+    await seedTargetRow(db(), { projectId, branchId: release, ...pair });
+    const res = await retry(untracked);
+    expect(res.statusCode, res.body).toBe(202);
+    expect(await row(untracked)).toMatchObject({ state: 'pending', generation: 2 });
+  });
+
   it('unlinks: the row becomes dismissed and keeps its key', async () => {
     const created = await seedJiraLink(db(), {
       projectId,

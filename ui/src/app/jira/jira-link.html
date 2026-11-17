@@ -137,7 +137,8 @@
   @if (shown(); as l) {
     @if (canTriage()) {
       <span class="jira-actions">
-        @if (l.state === 'failed') {
+        <!-- Only a finding that may still have a Jira issue (R7): Unlink stays either way. -->
+        @if (l.state === 'failed' && linkable()) {
           <button
             type="button"
             class="btn"
@@ -148,7 +149,7 @@
           >
             Retry
           </button>
-        } @else if (l.state === 'missing') {
+        } @else if (l.state === 'missing' && linkable()) {
           <button
             type="button"
             class="btn"

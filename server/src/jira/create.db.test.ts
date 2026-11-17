@@ -478,6 +478,26 @@ describe('the Jira create job (spec §6.4, §11.2–11.5)', () => {
     expect(creates()).toHaveLength(0);
   });
 
+  it('finding gone (R7, R8): a pending row of a closed code issue fails finding_gone, unsent', async () => {
+    // Re-armed before its issue closed, or made before Retry checked the finding (T12b).
+    const issueId = await seedIssue(db(), {
+      projectId,
+      branchId: main,
+      ruleId: codeRule,
+      status: 'closed',
+    });
+    const [pending] = await insertPendingLinks(db(), { projectId, connectionId, userId: adminId }, [
+      { kind: 'issue', issueId },
+    ]);
+    await enqueueJiraCreate(db(), h.organizationId);
+    await run();
+    expect(await row(pending!.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'finding_gone', message: JIRA_FAILURE_TEXT.finding_gone },
+    });
+    expect(creates()).toHaveLength(0);
+  });
+
   it('dismissed in flight (R19): the row stays dismissed and keeps the key Jira gave', async () => {
     const [linkId] = await requestIssues([await issue()]);
     fake.inject('POST', /\/rest\/api\/2\/issue$/, {
