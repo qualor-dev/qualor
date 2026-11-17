@@ -86,7 +86,7 @@ const SEVERITY_WHENS = SEVERITIES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' 
 const SEVERITY_RANK = sql.raw(`CASE severity ${SEVERITY_WHENS} END`);
 
 /** The refs of the targets, in the order given, without any that no longer exists. */
-async function refsOf(
+export async function targetRefsOf(
   db: Executor,
   projectId: string,
   targets: readonly { kind: 'branch' | 'version'; id: string }[],
@@ -196,12 +196,12 @@ export async function listVulnerabilities(
 ): Promise<{ items: VulnerabilityItem[]; total: number }> {
   let scope: TargetRef[];
   if (q.target) {
-    scope = await refsOf(db, projectId, [q.target]);
+    scope = await targetRefsOf(db, projectId, [q.target]);
     if (scope.length === 0) throw notFound('Target');
     // Final review F2: while monitoring is off one target is empty too, like the summary.
     if (!(await monitoringOn(db, projectId))) return { items: [], total: 0 };
   } else {
-    scope = await refsOf(db, projectId, (await trackedTargets(db, projectId)).map(targetId));
+    scope = await targetRefsOf(db, projectId, (await trackedTargets(db, projectId)).map(targetId));
   }
   if (scope.length === 0) return { items: [], total: 0 };
 

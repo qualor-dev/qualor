@@ -17,7 +17,10 @@ export interface JiraDeps {
   secretKey: string;
   /** `QUALOR_JIRA_INTERNAL_HOSTS` (config.ts). */
   internalHosts: ReadonlySet<string>;
-  /** Tests substitute DNS; `timeoutMs` is never passed on (it would cut the 30 s project list). */
+  /**
+   * Tests substitute DNS and shorten deadlines; `timeoutMs` leaves the Data Center project list its
+   * 30 s (ruling T3a, `projectListTimeoutMs`).
+   */
   clientOptions?: JiraClientOptions;
 }
 
@@ -39,12 +42,6 @@ export function jiraClientFor(
   ) {
     return { problem: 'url_not_allowed' };
   }
-  const { connectTimeoutMs, resolve, maxRequests } = deps.clientOptions ?? {};
-  const options: JiraClientOptions = {
-    ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
-    ...(resolve === undefined ? {} : { resolve }),
-    ...(maxRequests === undefined ? {} : { maxRequests }),
-  };
   return {
     client: new JiraClient(
       {
@@ -56,7 +53,7 @@ export function jiraClientFor(
             : { kind: 'bearer', token },
         allowInternalHosts: jiraHostAllowed(row.siteUrl, row.deployment, deps.internalHosts),
       },
-      options,
+      deps.clientOptions,
     ),
   };
 }

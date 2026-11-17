@@ -3,6 +3,9 @@ import type { Config } from '../src/config';
 import type { Executor } from '../src/db/client';
 import { jiraLinks, jobs } from '../src/db/schema';
 import { JIRA_QUEUE } from '../src/jira/jobs';
+import { jiraHandlers, type JiraJobDeps } from '../src/jira/run';
+import { communityLimits } from '../src/limits';
+import { runUntilIdle } from '../src/queue/worker';
 import type { FakeJira } from './fake-jira';
 import type { IngestHarness } from './ingest';
 
@@ -85,4 +88,42 @@ export async function mapJira(
     },
   });
   if (res.statusCode !== 200) throw new Error(`jira mapping: ${res.body}`);
+}
+
+/**
+ * The create and sync jobs' deps for the harness's app: its secret key, internal hosts, public URL
+ * and limits, and a 1 s deadline per Jira request so a hang costs a second, not ten.
+ */
+export function jiraJobDeps(h: IngestHarness, overrides: Partial<JiraJobDeps> = {}): JiraJobDeps {
+  return {
+    db: h.ctx.db,
+    secretKey: h.ctx.config.secretKey,
+    internalHosts: h.ctx.config.jiraInternalHosts,
+    publicUrl: h.ctx.config.publicUrl,
+    limits: () => h.ctx.edition?.limits() ?? communityLimits(),
+    clientOptions: { timeoutMs: 1_000 },
+    ...overrides,
+  };
+}
+
+/**
+ * Makes the queued `jira` jobs of this kind due now and runs the queue until idle (a job those
+ * jobs queue for now runs too). Returns how many jobs ran.
+ */
+export async function runJiraJobs(
+  h: IngestHarness,
+  deps: JiraJobDeps,
+  kind: 'create' | 'sync',
+): Promise<number> {
+  await h.ctx.db
+    .update(jobs)
+    .set({ runAt: sql`now()` })
+    .where(
+      and(
+        eq(jobs.queue, JIRA_QUEUE),
+        eq(jobs.status, 'queued'),
+        sql`${jobs.payload} ->> 'kind' = ${kind}`,
+      ),
+    );
+  return runUntilIdle(h.ctx.db, jiraHandlers(deps), deps.logger ?? h.ctx.app.log);
 }

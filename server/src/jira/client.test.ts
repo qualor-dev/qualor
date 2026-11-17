@@ -302,6 +302,20 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
     expect((await failure(client.projectsVisible())).code).toBe('bad_answer');
   });
 
+  it('T3a: the Data Center project list has its own deadline, which a short timeoutMs does not cut', async () => {
+    const fake = await fakeJira('data_center');
+    const slow: JiraInjectedAnswer = {
+      passThrough: true,
+      before: () => new Promise((resolve) => setTimeout(resolve, 600)),
+    };
+    fake.inject('GET', /\/rest\/api\/2\/project$/, slow, { hang: true });
+    fake.inject('GET', /\/myself$/, slow);
+    const client = clientOf(fake, { timeoutMs: 300, projectListTimeoutMs: 1_000 });
+    expect(await client.projectsVisible()).toBe(1);
+    expect((await failure(client.projectsVisible())).code).toBe('timeout');
+    expect((await failure(client.myself())).code).toBe('timeout');
+  });
+
   describe('createmeta', () => {
     /** `n` fields: the Bug's own, then optional custom fields. */
     const fields = (n: number): FakeJiraField[] => {
@@ -508,7 +522,6 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
       expect(mapBulkAnswer(3, { issues: created(2), errors: [refused(3)] })).toBeNull();
       expect(mapBulkAnswer(3, { issues: created(1), errors: [refused(1), refused(1)] })).toBeNull();
       expect(mapBulkAnswer(2, '<html></html>')).toBeNull();
-      expect(mapBulkAnswer(2, { issues: [{ id: 'x', key: 'QUAL-1' }, created(1)[0]] })).toBeNull();
       expect(mapBulkAnswer(2, { issues: created(1), errors: [refused(0)] })).toEqual([
         {
           failed: expect.objectContaining({
@@ -522,6 +535,41 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
       expect(forbidden?.[0]).toMatchObject({
         failed: { code: 'permission_missing', status: 403, jiraText: null },
       });
+    });
+
+    it('mapBulkAnswer (T6b): an element with a bad id or key, or an error that refuses nothing, is a bad answer of its own', () => {
+      const refusedWith = (status: number, i: number) => ({
+        status,
+        elementErrors: { errorMessages: ['x'], errors: {} },
+        failedElementNumber: i,
+      });
+      const outcome = mapBulkAnswer(7, {
+        issues: [
+          { id: 'x', key: 'QUAL-1' },
+          { id: '10002', key: 'not a key' },
+          { id: '10003', key: `Q-${'1'.repeat(260)}` },
+          { id: '10004', key: 'QUAL-4' },
+        ],
+        errors: [refusedWith(401, 1), refusedWith(429, 3), refusedWith(500, 5)],
+      });
+      expect(outcome).toMatchObject([
+        { failed: { code: 'bad_answer', jiraText: null } },
+        { failed: { code: 'bad_answer', status: 401, jiraText: null } },
+        { failed: { code: 'bad_answer' } },
+        { failed: { code: 'bad_answer', status: 429 } },
+        { failed: { code: 'bad_answer' } },
+        { failed: { code: 'bad_answer', status: 500 } },
+        { created: { id: '10004', key: 'QUAL-4' } },
+      ]);
+    });
+
+    it('a single create answered with a key that is not a Jira key is a bad answer (T6b)', async () => {
+      const fake = await fakeJira('data_center');
+      fake.inject('POST', /\/issue$/, { status: 201, body: { id: '10001', key: 'QUAL 1' } });
+      const client = clientOf(fake);
+      expect((await failure(client.createIssue(bug('a')))).code).toBe('bad_answer');
+      fake.inject('POST', /\/issue$/, { status: 201, body: { id: '10001', key: 'QUAL 1' } });
+      expect((await failure(client.createIssues([bug('a')]))).code).toBe('bad_answer');
     });
 
     it('a bulk answered 403 as a whole fails every element with permission_missing (P6)', async () => {

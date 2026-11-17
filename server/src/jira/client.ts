@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { JiraDeployment, JiraStatusCategory } from '../db/schema';
 import { outboundRequest, type OutboundFailed, type Resolver } from '../http/outbound';
 import { VERSION } from '../index';
+import { JIRA_ISSUE_KEY_PATTERN } from '../patterns';
 import { retryAfterSeconds } from '../scm/gitlab/client';
 import { scmRefusedAddress } from '../scm/url';
 
@@ -55,9 +56,9 @@ export type JiraErrorCode =
 
 /**
  * The codes that refuse what was sent, not the connection: in a create, they fail the elements
- * and leave the call answered (spec §6.4, ruling P6).
+ * and leave the call answered (spec §6.4, ruling P6). Any other failed element is a bad answer.
  */
-const ELEMENT_CODES: ReadonlySet<JiraErrorCode> = new Set([
+export const ELEMENT_CODES: ReadonlySet<JiraErrorCode> = new Set([
   'field_refused',
   'permission_missing',
   'not_found',
@@ -110,8 +111,10 @@ export interface JiraConnectionInput {
 }
 
 export interface JiraClientOptions {
-  /** Every request's deadline; a test's value also bounds the Data Center project list. */
+  /** Every request's deadline but the Data Center project list's (default 10 s). */
   timeoutMs?: number;
+  /** The Data Center project list's deadline (default 30 s); `timeoutMs` does not cut it. */
+  projectListTimeoutMs?: number;
   connectTimeoutMs?: number;
   resolve?: Resolver;
   maxRequests?: number;
@@ -142,7 +145,11 @@ export interface CreatedIssue {
   key: string;
 }
 
-/** One outcome per element sent, in the order sent. */
+/**
+ * One outcome per element sent, in the order sent. A failed element's code is one of
+ * {@link ELEMENT_CODES} (Jira refused it), or `bad_answer` (its answer is not understood: the issue
+ * may exist).
+ */
 export type BulkOutcome = ({ created: CreatedIssue } | { failed: JiraError })[];
 
 export interface JiraIssueState {
@@ -193,14 +200,23 @@ const allowedValue = z.looseObject({
 });
 /** Jira issue ids are integers; only such ids are ever stored or put into JQL. */
 const ISSUE_ID = /^\d{1,18}$/;
-const createdIssue = z.looseObject({ id: z.string().regex(ISSUE_ID), key: z.string().min(1) });
+/** Ruling T6b: only a key of Jira's form, as the audit catalogue names it, is ever stored. */
+const issueKey = z.string().max(255).regex(JIRA_ISSUE_KEY_PATTERN);
+const createdIssue = z.looseObject({ id: z.string().regex(ISSUE_ID), key: issueKey });
+
+/** Whether a key Jira gave has Jira's form (T6b); a search's keys are checked by the caller. */
+export function isJiraIssueKey(key: string): boolean {
+  return issueKey.safeParse(key).success;
+}
+
 const elementError = z.looseObject({
   status: z.number().int().optional(),
   elementErrors: z.unknown().optional(),
   failedElementNumber: z.number().int(),
 });
+/** Each created issue is read on its own: one with a bad id or key fails only its element. */
 const bulkAnswer = z.looseObject({
-  issues: z.array(createdIssue).optional(),
+  issues: z.array(z.unknown()).optional(),
   errors: z.array(elementError).optional(),
 });
 /**
@@ -340,10 +356,16 @@ function transportError(failed: OutboundFailed): JiraError {
   }
 }
 
-/** The error of one element of a bulk answer: 400 is `field_refused` with Jira's words. */
+/**
+ * The error of one element of a bulk answer: 400 is `field_refused` with Jira's words, 403, 404,
+ * 413 and 422 refuse the element too. Any other status (401, 429 or 5xx inside an answered bulk)
+ * refuses nothing Qualor can name: a bad answer, so the element waits to be reconciled.
+ */
 function elementErrorOf(e: z.infer<typeof elementError>, secrets: readonly string[]): JiraError {
   const status = e.status ?? 400;
-  return new JiraError(codeOfStatus(status), {
+  const code = codeOfStatus(status);
+  if (!ELEMENT_CODES.has(code)) return new JiraError('bad_answer', { status });
+  return new JiraError(code, {
     status,
     jiraText: status === 400 ? jiraTextOf(e.elementErrors, secrets) : null,
   });
@@ -352,9 +374,10 @@ function elementErrorOf(e: z.infer<typeof elementError>, secrets: readonly strin
 /**
  * The outcome of each element of a bulk create (spec §11.3), from Jira's answer: an element named
  * by `errors[].failedElementNumber` failed, and the created issues, which Jira lists in the order
- * sent without the failed ones, belong to the others in turn. Null when the answer is not
- * understood or its counts do not add up (R17: the call counts as unanswered). `secrets` are cut
- * out of the elements' Jira texts.
+ * sent without the failed ones, belong to the others in turn; a created issue whose id or key is
+ * not of Jira's form is a bad answer of its element (T6b). Null when the answer is not understood
+ * or its counts do not add up (R17: the call counts as unanswered). `secrets` are cut out of the
+ * elements' Jira texts.
  */
 export function mapBulkAnswer(
   sent: number,
@@ -375,9 +398,16 @@ export function mapBulkAnswer(
   const outcome: BulkOutcome = [];
   for (let i = 0; i < sent; i++) {
     const error = failed.get(i);
-    const issue = error ? undefined : created.next().value;
-    if (error) outcome.push({ failed: error });
-    else if (issue) outcome.push({ created: { id: issue.id, key: issue.key } });
+    if (error) {
+      outcome.push({ failed: error });
+      continue;
+    }
+    const issue = createdIssue.safeParse(created.next().value);
+    outcome.push(
+      issue.success
+        ? { created: { id: issue.data.id, key: issue.data.key } }
+        : { failed: new JiraError('bad_answer') },
+    );
   }
   return outcome;
 }
@@ -534,7 +564,7 @@ export class JiraClient {
   private dcProjects(): Promise<z.infer<typeof project>[]> {
     return this.call(z.array(project), 'GET', '/rest/api/2/project', undefined, {
       maxBytes: JIRA_PROJECT_LIST_MAX_BYTES,
-      timeoutMs: this.options.timeoutMs ?? JIRA_PROJECT_LIST_TIMEOUT_MS,
+      timeoutMs: this.options.projectListTimeoutMs ?? JIRA_PROJECT_LIST_TIMEOUT_MS,
     });
   }
 
@@ -643,7 +673,8 @@ export class JiraClient {
    * through `POST /rest/api/2/issue`, more through `POST /rest/api/2/issue/bulk`. A refusal of what
    * was sent (400, 403, 404, 413, 422) fails the elements it concerns, or every element when Jira
    * names none (ruling P6); anything else (no answer, 3xx, 401, 429, 5xx, an answer that does not
-   * add up, R17) throws, as it concerns the whole call.
+   * add up, R17, a single created issue whose id or key is not of Jira's form) throws, as it
+   * concerns the whole call.
    */
   async createIssues(fields: readonly Record<string, unknown>[]): Promise<BulkOutcome> {
     if (fields.length > JIRA_BULK_MAX) {

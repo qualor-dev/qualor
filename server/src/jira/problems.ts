@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { jiraConnections, type JiraProblemValue } from '../db/schema';
 import type { JiraError } from './client';
@@ -119,6 +119,33 @@ const CREDENTIAL_CODES: ReadonlySet<string> = new Set(CREDENTIAL_PROBLEM_CODES);
 /** Whether the stored problem needs an administrator (creates are refused while it is set). */
 export function isCredentialProblem(problem: JiraProblemValue | null): boolean {
   return problem !== null && CREDENTIAL_CODES.has(problem.code);
+}
+
+/** spec §6.1: the background problems that pass by themselves (they block nothing). */
+export const TRANSIENT_PROBLEM_CODES = [
+  'timeout',
+  'unreachable',
+] as const satisfies readonly BackgroundProblemCode[];
+
+/** Whether a background code needs an administrator (else it passes by itself). */
+export function isCredentialCode(code: BackgroundProblemCode): boolean {
+  return CREDENTIAL_CODES.has(code);
+}
+
+/**
+ * spec §6.1: a Jira call that was answered clears a transient problem, never a credential one,
+ * whatever the connection holds by the time it does.
+ */
+export async function clearTransientProblem(db: Executor, connectionId: string): Promise<void> {
+  await db
+    .update(jiraConnections)
+    .set({ problem: sql`NULL`, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(jiraConnections.id, connectionId),
+        inArray(sql`${jiraConnections.problem} ->> 'code'`, [...TRANSIENT_PROBLEM_CODES]),
+      ),
+    );
 }
 
 /**

@@ -36,6 +36,33 @@ export const REARMABLE_STATES = [
 /** spec §6.8: the states `POST /jira-links/{id}/retry` takes back to pending (R9). */
 export const RETRYABLE_STATES = ['failed', 'missing'] as const satisfies readonly JiraLinkState[];
 
+/** spec §6.4, §6.5, R8: why a link is `failed`. */
+export type JiraFailureCode =
+  | 'field_refused'
+  | 'permission_missing'
+  | 'not_found'
+  | 'limit_reached'
+  | 'not_mapped'
+  | 'finding_gone'
+  | 'outcome_unknown';
+
+/**
+ * The fixed text of each failure. A `field_refused` failure carries Jira's own words instead (spec
+ * §6.4); this text stands in when Jira gave none.
+ */
+export const JIRA_FAILURE_TEXT: Record<JiraFailureCode, string> = {
+  field_refused: 'Jira refused a field of the issue (HTTP 400). Check the mapping of the project.',
+  permission_missing:
+    'The account of the token may not create issues in this Jira project (HTTP 403).',
+  not_found:
+    'Jira answered that the Jira project or the issue type does not exist (HTTP 404). Map the project again.',
+  limit_reached: 'Jira refused the issue as too large or over one of its limits (HTTP 413 or 422).',
+  not_mapped: 'The project is not mapped to a Jira project any more. Map it, then retry.',
+  finding_gone: 'The finding no longer exists in Qualor.',
+  outcome_unknown:
+    'Jira did not answer the create, and without labels Qualor cannot find out whether the issue was made. It may exist in Jira: check before you retry.',
+};
+
 /** spec §6.8: a finding's Jira link, embedded in the issue and vulnerability lists. */
 export const jiraLinkSchema = z.object({
   id: z.uuid(),

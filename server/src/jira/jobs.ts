@@ -37,9 +37,10 @@ async function queuedJob(tx: Executor, key: string): Promise<string | null> {
 
 /**
  * Asks for a create run of the organisation `delaySeconds` from now, unless one is queued; true
- * when this call queued it. Under `LOCKS.jiraSchedule`, with a queued job's row locked until the
- * caller's transaction commits, as `enqueueVulnerabilityAlerts` does: the worker cannot claim a
- * job before the rows it is about are committed.
+ * when this call queued it. A queued one is held back to `delaySeconds` from now when it is due
+ * sooner (a 429's `Retry-After` holds for every run). Under `LOCKS.jiraSchedule`, with a queued
+ * job's row locked until the caller's transaction commits, as `enqueueVulnerabilityAlerts` does:
+ * the worker cannot claim a job before the rows it is about are committed.
  */
 export async function enqueueJiraCreate(
   db: Executor,
@@ -48,7 +49,15 @@ export async function enqueueJiraCreate(
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
     await lockSchedule(tx);
-    if ((await queuedJob(tx, jiraCreateKey(organizationId))) !== null) return false;
+    const queued = await queuedJob(tx, jiraCreateKey(organizationId));
+    if (queued !== null) {
+      if (delaySeconds > 0) {
+        await tx.execute(sql`
+          UPDATE jobs SET run_at = ${after(delaySeconds)}, updated_at = now()
+           WHERE id = ${queued} AND run_at < ${after(delaySeconds)}`);
+      }
+      return false;
+    }
     const payload: JiraJobPayload = { kind: 'create', organizationId };
     await enqueue(tx, {
       queue: JIRA_QUEUE,

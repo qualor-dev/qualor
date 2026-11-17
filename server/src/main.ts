@@ -20,6 +20,8 @@ import { loadUiAssets, UiAssetsError, type UiAssets } from './http/ui';
 import { VERSION } from './index';
 import { jobHandlers } from './ingest/handlers';
 import { reconcileDeadAnalyses } from './ingest/process';
+import { ensureJiraSyncScheduled } from './jira/jobs';
+import { JIRA_LEASE_MS, JIRA_WORKER_CONCURRENCY, jiraHandlers } from './jira/run';
 import { LicenseFileError } from './license/source';
 import { autoFixHandlers } from './llm/auto-fix';
 import {
@@ -539,6 +541,26 @@ async function main(): Promise<void> {
       await ensureVulnerabilityDigestScheduled(db);
     },
   });
+  // 0.16 Jira (ruling R2): Jira calls have their own worker, so a slow or absent Jira never delays
+  // analyses, deliveries or decorations. Each organisation's create runs and sync passes have a
+  // key of their own (R1); the pass is ensured for every connection after each reap.
+  const jiraWorker = startWorker({
+    db: database.db,
+    handlers: jiraHandlers({
+      db: database.db,
+      secretKey: config.secretKey,
+      internalHosts: config.jiraInternalHosts,
+      publicUrl: config.publicUrl,
+      limits: () => edition.limits(),
+      logger,
+    }),
+    concurrency: JIRA_WORKER_CONCURRENCY,
+    leaseMs: JIRA_LEASE_MS,
+    logger,
+    afterReap: async (db) => {
+      await ensureJiraSyncScheduled(db);
+    },
+  });
   // enterprise.md §10.3: plugin jobs have their own worker, only when a plugin registered jobs;
   // each job checks its feature against the same edition as the API's routes.
   const pluginWorker = startPluginWorker({ db: database.db, plugins, edition, logger });
@@ -577,6 +599,9 @@ async function main(): Promise<void> {
   await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
     scheduleDigestAtBoot(database.db),
   );
+  await scheduleAtBoot(logger, 'jira', 'the Jira passes could not be scheduled', () =>
+    ensureJiraSyncScheduled(database.db),
+  );
 
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
@@ -606,6 +631,7 @@ async function main(): Promise<void> {
       await requestsStopped;
       await reviewsStopped;
       await mailWorker.stop();
+      await jiraWorker.stop();
       await vulndbStopped;
       await pluginWorker?.stop();
       await database.close();
