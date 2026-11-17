@@ -38,6 +38,7 @@ import {
 import { JIRA_ISSUE_KEY_PATTERN } from '../patterns';
 import { projectForUser } from '../projects/access';
 import { vulnerabilitySettings } from '../versions/settings';
+import { compare } from '../vulnerabilities/order';
 
 const pairSchema = z.strictObject({
   packageName: noNul(z.string().min(1).max(512)),
@@ -141,9 +142,6 @@ async function pairTargets(
   });
 }
 
-/** Code-unit order (not locale-dependent). */
-const compareText = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
-
 /** R9: 409 for a row Retry does not take back to pending. */
 function notRetryable(): never {
   throw conflict(
@@ -243,8 +241,8 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
       }
       // Written in one order whatever the request's order (new rows by finding, re-arms by id), so
       // two overlapping requests wait on each other instead of deadlocking (40P01).
-      fresh.sort((a, b) => compareText(targetKey(a), targetKey(b)));
-      rearm.sort((a, b) => compareText(a.id, b.id));
+      fresh.sort((a, b) => compare(targetKey(a), targetKey(b)));
+      rearm.sort((a, b) => compare(a.id, b.id));
       const charged = fresh.length + rearm.length;
       if (charged > 0) chargeChanges(principal.user.id, charged);
 

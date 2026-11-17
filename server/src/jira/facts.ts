@@ -5,9 +5,10 @@ import type { Executor } from '../db/client';
 import { analyses, branches, issues, projects, rules } from '../db/schema';
 import { isTrackedBranch, vulnerabilitySettings } from '../versions/settings';
 import { highestFixedVersion } from '../vulnerabilities/fixed-version';
-import { targetRefsOf } from '../vulnerabilities/list';
+import { SEVERITY_RANK, targetId, targetRefsOf } from '../vulnerabilities/list';
+import { compare } from '../vulnerabilities/order';
 import { SEVERITIES, scopedRows, type VulnerabilitySeverity } from '../vulnerabilities/summary';
-import { trackedTargets, type Target } from '../vulnerabilities/targets';
+import { trackedTargets } from '../vulnerabilities/targets';
 import { TRIVY_ENGINE } from '../vulnerabilities/trivy-issues';
 import type { CodeIssueFacts, VulnerabilityFacts } from './content';
 import { pairKey } from './links';
@@ -63,10 +64,6 @@ const VULNERABILITY_SEVERITY: Record<Severity, VulnerabilitySeverity> = {
   info: 'low',
 };
 
-const SEVERITY_RANK = sql.raw(
-  `CASE severity ${SEVERITIES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' ')} END`,
-);
-
 interface TrackedRow extends Record<string, unknown> {
   package_name: string;
   vulnerability_id: string;
@@ -95,12 +92,6 @@ interface PriorityRow extends Record<string, unknown> {
   epss_percentile: number | null;
 }
 
-/** Code-unit order (not locale-dependent). */
-const compare = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
-
-const refOf = (t: Target): { kind: 'branch' | 'version'; id: string } =>
-  t.kind === 'branch' ? { kind: 'branch', id: t.branchId } : { kind: 'version', id: t.versionId };
-
 /**
  * The project's vulnerabilities' facts for their Jira issue, by {@link pairKey}. A pair is read
  * from its rows on the tracked targets (`scopedRows`, as the Vulnerabilities tab groups them);
@@ -127,7 +118,11 @@ export async function vulnerabilityFacts(
     );
   const base = { projectId, projectName: project.name, exploited: null, epss: null };
 
-  const scope = await targetRefsOf(db, projectId, (await trackedTargets(db, projectId)).map(refOf));
+  const scope = await targetRefsOf(
+    db,
+    projectId,
+    (await trackedTargets(db, projectId)).map(targetId),
+  );
   if (scope.length > 0) {
     const branchIds = scope.filter((t) => t.kind === 'branch').map((t) => t.id);
     const versionIds = scope.filter((t) => t.kind === 'version').map((t) => t.id);

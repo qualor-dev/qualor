@@ -235,7 +235,7 @@ function parseJql(jql: string): { field: 'id' | 'labels'; values: string[] } | n
   if (!match) return null;
   const values: string[] = [];
   const list = match[2] ?? '';
-  const token = /\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,"()]+))\s*(,|$)/gy;
+  const token = /\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,"()]+))\s*(,|$)/y;
   let at = 0;
   while (at < list.length) {
     token.lastIndex = at;

@@ -13,6 +13,14 @@ export const JIRA_TOKEN_PATTERN = /^[\x21-\x7e]{1,1024}$/;
 
 export type JiraConnectionRow = typeof jiraConnections.$inferSelect;
 
+/** Where a connection's calls go: a change of any of these is a new site (spec §6.1). */
+export type JiraAddress = Pick<JiraConnectionRow, 'deployment' | 'siteUrl' | 'apiUrl'>;
+
+/** Whether two connections have one address. */
+export function sameAddress(a: JiraAddress, b: JiraAddress): boolean {
+  return a.deployment === b.deployment && a.siteUrl === b.siteUrl && a.apiUrl === b.apiUrl;
+}
+
 export interface JiraDeps {
   secretKey: string;
   /** `QUALOR_JIRA_INTERNAL_HOSTS` (config.ts). */

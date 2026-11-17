@@ -1,5 +1,5 @@
 import { SEVERITIES } from '@qualor/shared';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
@@ -25,7 +25,12 @@ import {
 import { idParams, noContent, noNul, text } from '../http/schemas';
 import { JiraError, type JiraClient } from '../jira/client';
 import { analyzeIssueType } from '../jira/createmeta';
-import { connectionOf, jiraClientFor, type JiraConnectionRow } from '../jira/connection';
+import {
+  connectionOf,
+  jiraClientFor,
+  sameAddress,
+  type JiraConnectionRow,
+} from '../jira/connection';
 import { mappingDto, mappingOf, type JiraMappingRow } from '../jira/mapping';
 import {
   backgroundCodeOf,
@@ -176,6 +181,58 @@ function changedFields(
     changed.push('autoCreate');
   }
   return changed;
+}
+
+/** The 422 errors of priorities the issue type does not offer: none when none is set. */
+function priorityErrors(
+  priorities: JiraPriorities | null,
+  field: { allowed: { id: string }[] } | null,
+): FieldError[] {
+  if (priorities === null || SEVERITIES.every((s) => priorities[s] === undefined)) return [];
+  if (field === null) {
+    return [{ path: 'body.priorities', message: 'The issue type has no priority field' }];
+  }
+  const allowed = new Set(field.allowed.map((p) => p.id));
+  return SEVERITIES.flatMap((s) => {
+    const id = priorities[s];
+    if (id === undefined || allowed.has(id)) return [];
+    return [{ path: `body.priorities.${s}`, message: 'Not a priority the type offers' }];
+  });
+}
+
+/** spec §6.6: the rule's `since`, now whenever the rule changes, else kept; null while it is off. */
+function autoSinceOf(
+  rule: { minSeverity: JiraAutoSeverity | null; exploited: boolean },
+  before: JiraMappingRow | null,
+): SQL | Date | null {
+  if (rule.minSeverity === null && !rule.exploited) return null;
+  const changed =
+    before === null ||
+    before.autoMinSeverity !== rule.minSeverity ||
+    before.autoExploited !== rule.exploited;
+  return changed ? sql`now()` : (before?.autoSince ?? null);
+}
+
+/**
+ * The connection's row, shared until the transaction ends, once it is known to keep the address
+ * that the Jira answers were read from: 409 when it is gone, 503 (retry) when it moved, since the
+ * answers would be the old site's.
+ */
+async function lockUnmoved(tx: Executor, row: JiraConnectionRow): Promise<void> {
+  const [current] = await tx
+    .select()
+    .from(jiraConnections)
+    .where(eq(jiraConnections.id, row.id))
+    .for('share');
+  if (!current) throw conflict('JIRA_NOT_CONNECTED', 'The organisation has no Jira connection');
+  if (!sameAddress(current, row)) {
+    throw new ProblemError(
+      503,
+      'CONCURRENCY_CONFLICT',
+      'The request conflicted with a concurrent change; retry it',
+      { headers: { 'retry-after': '1' } },
+    );
+  }
 }
 
 /**
@@ -413,28 +470,8 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           },
         );
       }
-      if (priorities !== null) {
-        const errors: FieldError[] = [];
-        const allowed = new Set(support.priority?.allowed.map((p) => p.id));
-        for (const s of SEVERITIES) {
-          const id = priorities[s];
-          if (id === undefined) continue;
-          if (support.priority === null) {
-            errors.push({
-              path: 'body.priorities',
-              message: 'The issue type has no priority field',
-            });
-            break;
-          }
-          if (!allowed.has(id)) {
-            errors.push({
-              path: `body.priorities.${s}`,
-              message: 'Not a priority the type offers',
-            });
-          }
-        }
-        if (errors.length > 0) throw validationFailed(errors);
-      }
+      const errors = priorityErrors(priorities, support.priority);
+      if (errors.length > 0) throw validationFailed(errors);
       const { minSeverity, exploited } = body.autoCreate;
       await deps.db.transaction(async (tx) => {
         await tx
@@ -442,27 +479,7 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           .from(projects)
           .where(eq(projects.id, project.id))
           .for('no key update');
-        // A connection that moved to another address after the answers above was read would make
-        // them the old site's: its row first (shared), then the same address or no save.
-        const [current] = await tx
-          .select()
-          .from(jiraConnections)
-          .where(eq(jiraConnections.id, row.id))
-          .for('share');
-        if (!current)
-          throw conflict('JIRA_NOT_CONNECTED', 'The organisation has no Jira connection');
-        if (
-          current.deployment !== row.deployment ||
-          current.siteUrl !== row.siteUrl ||
-          current.apiUrl !== row.apiUrl
-        ) {
-          throw new ProblemError(
-            503,
-            'CONCURRENCY_CONFLICT',
-            'The request conflicted with a concurrent change; retry it',
-            { headers: { 'retry-after': '1' } },
-          );
-        }
+        await lockUnmoved(tx, row);
         const before = await mappingOf(tx, project.id);
         // R10: only turning it on needs the licence; a stored true is kept as it is.
         if (
@@ -472,11 +489,6 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
         ) {
           throw priorityNotLicensed();
         }
-        const ruleOn = minSeverity !== null || exploited;
-        const ruleChanged =
-          before === null ||
-          before.autoMinSeverity !== minSeverity ||
-          before.autoExploited !== exploited;
         const values = {
           connectionId: row.id,
           jiraProjectId: body.jiraProject.id,
@@ -490,7 +502,7 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           priorityAvailable: support.priority !== null,
           autoMinSeverity: minSeverity,
           autoExploited: exploited,
-          autoSince: !ruleOn ? null : ruleChanged ? sql`now()` : (before?.autoSince ?? null),
+          autoSince: autoSinceOf(body.autoCreate, before),
           updatedAt: sql`now()`,
         };
         first(

@@ -8,6 +8,7 @@ import {
   vulnerabilitySettingsOf,
   type VulnerabilitySettings,
 } from '../versions/settings';
+import { compare } from '../vulnerabilities/order';
 import { projectTargets, type Target } from '../vulnerabilities/targets';
 import { TRIVY_ENGINE } from '../vulnerabilities/trivy-issues';
 import { readVulndbSettings } from '../vulndb/settings';
@@ -61,12 +62,6 @@ interface PlaceRow extends Record<string, unknown> {
 
 const placeOf = (t: Target): string =>
   t.kind === 'branch' ? `branch:${t.branchId}` : `version:${t.versionId}`;
-
-/** Code-unit order (not locale-dependent). */
-function compare(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
-}
 
 /** Whether the row is a place where its pair is present (T6d). */
 function presentAt(

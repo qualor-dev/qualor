@@ -3,8 +3,7 @@ import { uuidList } from '../db/bulk';
 import type { Db } from '../db/client';
 import { jiraLinks, projectJiraSettings, projects } from '../db/schema';
 import { issueUrl } from '../scm/decoration-data';
-import { targetRefsOf } from '../vulnerabilities/list';
-import type { Target } from '../vulnerabilities/targets';
+import { targetId, targetRefsOf } from '../vulnerabilities/list';
 import { runAutoRule } from './auto-rule';
 import {
   ELEMENT_CODES,
@@ -504,9 +503,6 @@ async function judge(
   return { judged, scopes };
 }
 
-const refOf = (t: Target): { kind: 'branch' | 'version'; id: string } =>
-  t.kind === 'branch' ? { kind: 'branch', id: t.branchId } : { kind: 'version', id: t.versionId };
-
 /** What the comments of the due rows say beyond the link row: names, days, tracked targets. */
 interface CommentSources {
   code: Map<string, CodeIssueFacts>;
@@ -540,7 +536,7 @@ async function commentSources(
     const targets = scopes.get(projectId)?.targets ?? [];
     tracked.set(
       projectId,
-      (await targetRefsOf(db, projectId, targets.map(refOf))).map((t) => t.name),
+      (await targetRefsOf(db, projectId, targets.map(targetId))).map((t) => t.name),
     );
   }
   return { code, projectNames: new Map(named.map((p) => [p.id, p.name])), tracked };

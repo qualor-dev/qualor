@@ -28,6 +28,7 @@ import {
   connectionOf,
   JIRA_TOKEN_AAD,
   JIRA_TOKEN_PATTERN,
+  sameAddress,
   testJiraConnection,
   type JiraConnectionRow,
 } from '../jira/connection';
@@ -288,10 +289,7 @@ export const jiraRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
         }
         // spec §6.1: a stored token only ever serves the address it was saved for; a new address
         // is a new connection, whose mappings and links belong to the old site.
-        const moves =
-          next.deployment !== row.deployment ||
-          next.siteUrl !== row.siteUrl ||
-          next.apiUrl !== row.apiUrl;
+        const moves = !sameAddress(next, row);
         if (moves && tokenEnc === undefined) {
           throw validationFailed([
             {

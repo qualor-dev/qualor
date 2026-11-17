@@ -33,9 +33,13 @@ export function escapeIdentifier(text: string, max = 255): string {
   return slashes % 2 === 1 ? `${body.slice(0, -1)}…` : cut;
 }
 
+/** A `{` that opens no macro: an invisible space follows it. */
+const INERT_BRACE = '{' + ZWSP;
+
 /** Free text in a `{noformat}` block; a `{noformat}` inside it (any case) cannot close the block. */
 export function noformat(text: string): string {
-  return `{noformat}\n${text.replace(/\{(?=noformat)/gi, `{${ZWSP}`)}\n{noformat}`;
+  const inert = text.replace(/\{(?=noformat)/gi, INERT_BRACE);
+  return `{noformat}\n${inert}\n{noformat}`;
 }
 
 /** An advisory's `http(s)` URL with the characters of the link syntax encoded, else null. */

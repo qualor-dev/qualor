@@ -3,6 +3,7 @@ import { inArray, sql } from 'drizzle-orm';
 import { uuidList, withoutNul } from '../db/bulk';
 import type { Db } from '../db/client';
 import { jiraLinks, projectJiraSettings } from '../db/schema';
+import { compare } from '../vulnerabilities/order';
 import {
   ELEMENT_CODES,
   isJiraIssueKey,
@@ -18,10 +19,11 @@ import {
   type JiraContent,
   type VulnerabilityFacts,
 } from './content';
-import { codeIssueFacts, vulnerabilityFacts } from './facts';
+import { codeIssueFacts, vulnerabilityFacts, type CodeIssueRecord } from './facts';
 import { enqueueJiraCreate } from './jobs';
 import { JIRA_FAILURE_TEXT, pairKey, type JiraFailureCode, type JiraLinkRow } from './links';
 import type { JiraMappingRow } from './mapping';
+import type { VulnerabilityPair } from './presence';
 import {
   backgroundCodeOf,
   clearAfterAnswer,
@@ -62,9 +64,6 @@ interface Failed {
   code: JiraFailureCode;
   message: string;
 }
-
-/** Code-unit order (not locale-dependent). */
-const compare = (a: string, b: string): number => (a === b ? 0 : a < b ? -1 : 1);
 
 /** One JSON value for `jsonb_to_recordset`; Postgres refuses U+0000, which Jira's words may hold. */
 export const recordset = (rows: readonly object[]): string =>
@@ -185,6 +184,65 @@ const failure = (row: JiraLinkRow, code: Exclude<JiraFailureCode, 'field_refused
   message: JIRA_FAILURE_TEXT[code],
 });
 
+/** The facts of the rows' findings: code issues by issue id, pairs by project and {@link pairKey}. */
+interface Findings {
+  code: Map<string, CodeIssueRecord>;
+  pairs: Map<string, Map<string, VulnerabilityFacts>>;
+}
+
+/** The vulnerability pairs of the rows, by project. */
+function pairsByProject(rows: readonly JiraLinkRow[]): Map<string, VulnerabilityPair[]> {
+  const byProject = new Map<string, VulnerabilityPair[]>();
+  for (const r of rows) {
+    if (r.kind !== 'vulnerability' || r.packageName === null || r.vulnerabilityId === null) {
+      continue;
+    }
+    const pair = { packageName: r.packageName, vulnerabilityId: r.vulnerabilityId };
+    const list = byProject.get(r.projectId);
+    if (list) list.push(pair);
+    else byProject.set(r.projectId, [pair]);
+  }
+  return byProject;
+}
+
+async function findingsOf(
+  db: Db,
+  rows: readonly JiraLinkRow[],
+  priority: boolean,
+): Promise<Findings> {
+  const code = await codeIssueFacts(
+    db,
+    rows.flatMap((r) => (r.kind === 'issue' && r.issueId !== null ? [r.issueId] : [])),
+  );
+  const pairs = new Map<string, Map<string, VulnerabilityFacts>>();
+  for (const [projectId, list] of pairsByProject(rows)) {
+    pairs.set(projectId, await vulnerabilityFacts(db, projectId, list, { priority }));
+  }
+  return { code, pairs };
+}
+
+/** A row's content and severity from its finding's facts; null when there is no finding to send. */
+function contentOf(
+  row: JiraLinkRow,
+  findings: Findings,
+  publicUrl: string | null,
+): { content: JiraContent; severity: Severity } | null {
+  if (row.kind === 'issue') {
+    const facts = row.issueId === null ? undefined : findings.code.get(row.issueId);
+    // R7: a closed issue gets no Jira issue (one re-armed before it closed is gone, R8).
+    if (!facts || facts.closed) return null;
+    return { content: codeIssueContent(facts, publicUrl), severity: facts.severity };
+  }
+  const facts = findings.pairs
+    .get(row.projectId)
+    ?.get(pairKey(row.packageName ?? '', row.vulnerabilityId ?? ''));
+  if (!facts) return null;
+  return {
+    content: vulnerabilityContent(facts, publicUrl),
+    severity: issueSeverityOf(facts.severity),
+  };
+}
+
 /** The fields of each claimed row's create (spec §6.4), from its mapping and its finding's facts. */
 async function prepare(
   deps: JiraJobDeps,
@@ -195,26 +253,11 @@ async function prepare(
     deps.db,
     rows.map((r) => r.projectId),
   );
-  const mapped = rows.filter((r) => mappings.has(r.projectId));
-  const codeFacts = await codeIssueFacts(
+  const findings = await findingsOf(
     deps.db,
-    mapped.flatMap((r) => (r.kind === 'issue' && r.issueId !== null ? [r.issueId] : [])),
+    rows.filter((r) => mappings.has(r.projectId)),
+    priority,
   );
-  const pairsOf = new Map<string, { packageName: string; vulnerabilityId: string }[]>();
-  for (const r of mapped) {
-    if (r.kind !== 'vulnerability' || r.packageName === null || r.vulnerabilityId === null) {
-      continue;
-    }
-    const pair = { packageName: r.packageName, vulnerabilityId: r.vulnerabilityId };
-    const list = pairsOf.get(r.projectId);
-    if (list) list.push(pair);
-    else pairsOf.set(r.projectId, [pair]);
-  }
-  const pairFacts = new Map<string, Map<string, VulnerabilityFacts>>();
-  for (const [projectId, pairs] of pairsOf) {
-    pairFacts.set(projectId, await vulnerabilityFacts(deps.db, projectId, pairs, { priority }));
-  }
-
   const prepared: Prepared = { send: [], failed: [] };
   for (const row of rows) {
     const mapping = mappings.get(row.projectId);
@@ -222,28 +265,10 @@ async function prepare(
       prepared.failed.push(failure(row, 'not_mapped'));
       continue;
     }
-    let built: { content: JiraContent; severity: Severity } | null = null;
-    if (row.kind === 'issue') {
-      const facts = row.issueId === null ? undefined : codeFacts.get(row.issueId);
-      // R7: a closed issue gets no Jira issue (one re-armed before it closed is gone, R8).
-      if (facts && !facts.closed)
-        built = { content: codeIssueContent(facts, deps.publicUrl), severity: facts.severity };
-    } else {
-      const facts = pairFacts
-        .get(row.projectId)
-        ?.get(pairKey(row.packageName ?? '', row.vulnerabilityId ?? ''));
-      if (facts) {
-        built = {
-          content: vulnerabilityContent(facts, deps.publicUrl),
-          severity: issueSeverityOf(facts.severity),
-        };
-      }
-    }
-    if (built === null) {
-      prepared.failed.push(failure(row, 'finding_gone'));
-      continue;
-    }
-    prepared.send.push({ row, fields: issueFields(mapping, built.content, built.severity, row) });
+    const built = contentOf(row, findings, deps.publicUrl);
+    if (built === null) prepared.failed.push(failure(row, 'finding_gone'));
+    else
+      prepared.send.push({ row, fields: issueFields(mapping, built.content, built.severity, row) });
   }
   return prepared;
 }
@@ -344,84 +369,135 @@ export async function createPending(
   ctx: JiraRunContext,
   limit = CREATE_PER_RUN,
 ): Promise<CreateOutcome> {
-  const { deps, connection, client } = ctx;
-  const { db } = deps;
   const outcome: CreateOutcome = { created: 0, failed: 0, unanswered: 0, stop: null };
-  if (isCredentialProblem(connection.problem)) return { ...outcome, stop: 'credential' };
-  const priority = deps.limits().vulnerabilities.priority;
-  /** An answered call clears a transient problem (the run's view follows its writes). */
-  let answeredCalls = 0;
-  const answered = async (): Promise<void> => {
-    answeredCalls += 1;
-    await clearAfterAnswer(db, connection);
+  if (isCredentialProblem(ctx.connection.problem)) return { ...outcome, stop: 'credential' };
+  const run: CreateRun = {
+    ctx,
+    priority: ctx.deps.limits().vulnerabilities.priority,
+    outcome,
+    made: [],
+    answeredCalls: 0,
+    retryAfter: RATE_LIMITED_WAIT_SECONDS,
   };
-  let retryAfter = RATE_LIMITED_WAIT_SECONDS;
-  const stopOn = async (err: unknown): Promise<Stop> => {
-    if (!(err instanceof JiraError)) throw err;
-    if (err.code === 'rate_limited') {
-      retryAfter = err.retryAfterSeconds ?? RATE_LIMITED_WAIT_SECONDS;
-    }
-    return stopFor(ctx, err);
-  };
-
-  const made: Created[] = [];
+  const { db } = ctx.deps;
   let taken = 0;
   while (outcome.stop === null && taken < limit) {
-    const rows = await claim(db, connection.id, Math.min(JIRA_BULK_MAX, limit - taken));
+    const rows = await claim(db, ctx.connection.id, Math.min(JIRA_BULK_MAX, limit - taken));
     if (rows.length === 0) break;
     taken += rows.length;
-    let prepared: Prepared;
-    try {
-      prepared = await prepare(deps, rows, priority);
-    } catch (err) {
-      // Nothing was sent: the rows go back for the next run.
-      await release(db, rows);
-      throw err;
-    }
-    const sent = prepared.send.map((s) => s.row);
-    let answers: BulkOutcome | null = null;
-    if (sent.length > 0) {
-      try {
-        answers = await client.createIssues(prepared.send.map((s) => s.fields));
-      } catch (err) {
-        outcome.stop = await stopOn(err);
-        if (RELEASING.has(outcome.stop)) await release(db, sent);
-        else outcome.unanswered += sent.length;
-      }
-    }
-    const created: Created[] = [];
-    const failed = [...prepared.failed];
-    answers?.forEach((answer, i) => {
-      const row = sent[i];
-      if (!row) return;
-      if ('created' in answer) {
-        created.push({ row, issueId: answer.created.id, key: answer.created.key });
-      } else if (ELEMENT_CODES.has(answer.failed.code)) {
-        const code = answer.failed.code as JiraFailureCode;
-        failed.push({ row, code, message: answer.failed.jiraText ?? JIRA_FAILURE_TEXT[code] });
-      } else {
-        // An element whose answer is not understood: the issue may exist.
-        outcome.unanswered += 1;
-      }
-    });
-    const written = await record(db, created, failed);
-    outcome.created += written.created;
-    outcome.failed += written.failed;
-    made.push(...created);
-    if (answers !== null) await answered();
+    await createCall(run, rows);
   }
-
-  if (outcome.stop === null && made.length > 0) {
-    try {
-      await readStatus(ctx, made);
-      await answered();
-    } catch (err) {
-      outcome.stop = await stopOn(err);
-    }
-  }
-  const again = followUpDelay(outcome.stop, taken >= limit, answeredCalls > 0, retryAfter);
-  if (again !== null && (await waiting(db, connection.id))) {
-    await enqueueJiraCreate(db, connection.organizationId, again);
+  await readCreatedStatus(run);
+  const again = followUpDelay(outcome.stop, taken >= limit, run.answeredCalls > 0, run.retryAfter);
+  if (again !== null && (await waiting(db, ctx.connection.id))) {
+    await enqueueJiraCreate(db, ctx.connection.organizationId, again);
   }
   return outcome;
+}
+
+/** One create run's state across its calls. */
+interface CreateRun {
+  readonly ctx: JiraRunContext;
+  /** `vuln.priority`: the Exploited and EPSS lines. */
+  readonly priority: boolean;
+  readonly outcome: CreateOutcome;
+  /** The rows created so far: their status is read after the last call. */
+  readonly made: Created[];
+  /** The calls Jira answered (R18: a run without one queues no follow-up). */
+  answeredCalls: number;
+  /** When the next run goes after a 429. */
+  retryAfter: number;
+}
+
+/** An answered call clears a transient problem (the run's view follows its writes). */
+async function answered(run: CreateRun): Promise<void> {
+  run.answeredCalls += 1;
+  await clearAfterAnswer(run.ctx.deps.db, run.ctx.connection);
+}
+
+/** The stop of a failed call ({@link stopFor}); a 429 also sets when the next run goes. */
+async function stopOn(run: CreateRun, err: unknown): Promise<Stop> {
+  if (!(err instanceof JiraError)) throw err;
+  if (err.code === 'rate_limited') {
+    run.retryAfter = err.retryAfterSeconds ?? RATE_LIMITED_WAIT_SECONDS;
+  }
+  return stopFor(run.ctx, err);
+}
+
+/**
+ * The prepared rows sent in one call: Jira's answers, or null when nothing was sent or the call
+ * failed. A failed call's rows are released when they never reached Jira (or must not wait), else
+ * left with `attempted_at` for the pass to reconcile.
+ */
+async function send(run: CreateRun, prepared: Prepared): Promise<BulkOutcome | null> {
+  if (prepared.send.length === 0) return null;
+  try {
+    return await run.ctx.client.createIssues(prepared.send.map((s) => s.fields));
+  } catch (err) {
+    run.outcome.stop = await stopOn(run, err);
+    const sent = prepared.send.map((s) => s.row);
+    if (RELEASING.has(run.outcome.stop)) await release(run.ctx.deps.db, sent);
+    else run.outcome.unanswered += sent.length;
+    return null;
+  }
+}
+
+/** The answers of one call, by element: created, refused, or not understood (the issue may exist). */
+function sortAnswers(
+  run: CreateRun,
+  sent: readonly JiraLinkRow[],
+  answers: BulkOutcome,
+): { created: Created[]; failed: Failed[] } {
+  const sorted: { created: Created[]; failed: Failed[] } = { created: [], failed: [] };
+  answers.forEach((answer, i) => {
+    const row = sent[i];
+    if (!row) return;
+    if ('created' in answer) {
+      sorted.created.push({ row, issueId: answer.created.id, key: answer.created.key });
+    } else if (ELEMENT_CODES.has(answer.failed.code)) {
+      const code = answer.failed.code as JiraFailureCode;
+      sorted.failed.push({ row, code, message: answer.failed.jiraText ?? JIRA_FAILURE_TEXT[code] });
+    } else {
+      run.outcome.unanswered += 1;
+    }
+  });
+  return sorted;
+}
+
+/** One call: the claimed rows prepared, sent, and their answers written. */
+async function createCall(run: CreateRun, rows: readonly JiraLinkRow[]): Promise<void> {
+  const { db } = run.ctx.deps;
+  let prepared: Prepared;
+  try {
+    prepared = await prepare(run.ctx.deps, rows, run.priority);
+  } catch (err) {
+    // Nothing was sent: the rows go back for the next run.
+    await release(db, rows);
+    throw err;
+  }
+  const answers = await send(run, prepared);
+  const sorted =
+    answers === null
+      ? { created: [], failed: [] }
+      : sortAnswers(
+          run,
+          prepared.send.map((s) => s.row),
+          answers,
+        );
+  const written = await record(db, sorted.created, [...prepared.failed, ...sorted.failed]);
+  run.outcome.created += written.created;
+  run.outcome.failed += written.failed;
+  run.made.push(...sorted.created);
+  if (answers !== null) await answered(run);
+}
+
+/** spec §6.4: the status of the run's created issues, after its last call, unless it stopped. */
+async function readCreatedStatus(run: CreateRun): Promise<void> {
+  if (run.outcome.stop !== null || run.made.length === 0) return;
+  try {
+    await readStatus(run.ctx, run.made);
+    await answered(run);
+  } catch (err) {
+    run.outcome.stop = await stopOn(run, err);
+  }
 }

@@ -271,6 +271,21 @@ export const JIRA_SHAPES = {
 
 type SearchedIssue = z.infer<typeof searchedIssue>;
 
+/**
+ * Whether a createmeta page of `read` items, read up to `startAt`, is the last: an empty one is;
+ * else `isLast` when Jira says it, else `total`, else a short page.
+ */
+function lastCreatemetaPage(
+  page: z.infer<typeof createmetaPage>,
+  read: number,
+  startAt: number,
+): boolean {
+  if (read === 0) return true;
+  if (page.isLast !== undefined) return page.isLast;
+  if (page.total !== undefined) return startAt >= page.total;
+  return read < CREATEMETA_PAGE_SIZE;
+}
+
 // ─── Errors ─────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -629,14 +644,7 @@ export class JiraClient {
       if (!parsed.success) throw new JiraError('bad_answer');
       items.push(...parsed.data);
       startAt += parsed.data.length;
-      const done =
-        parsed.data.length === 0 ||
-        (page.isLast !== undefined
-          ? page.isLast
-          : page.total !== undefined
-            ? startAt >= page.total
-            : parsed.data.length < CREATEMETA_PAGE_SIZE);
-      if (done) break;
+      if (lastCreatemetaPage(page, parsed.data.length, startAt)) break;
     }
     return items.slice(0, MAX_CREATEMETA_ITEMS);
   }
@@ -768,30 +776,37 @@ export class JiraClient {
     found: Map<string, JiraIssueState>,
     missing: string[],
   ): Promise<void> {
+    let issues: SearchedIssue[];
     try {
-      for (const issue of await this.search(`id in (${batch.join(',')})`)) {
-        found.set(issue.id, stateOf(issue));
-      }
-      for (const id of batch) if (!found.has(id)) missing.push(id);
+      issues = await this.search(`id in (${batch.join(',')})`);
     } catch (err) {
-      if (!(err instanceof JiraError)) throw err;
-      const alone = batch.length === 1;
-      if (err.code === 'field_refused' && this.#deployment === 'cloud') {
-        if (alone) {
-          missing.push(...batch);
-          return;
-        }
-        const half = Math.ceil(batch.length / 2);
-        await this.settle(batch.slice(0, half), found, missing);
-        await this.settle(batch.slice(half), found, missing);
-        return;
-      }
-      if (err.code === 'not_found' && alone) {
-        missing.push(...batch);
-        return;
-      }
-      throw err;
+      await this.settleRefused(err, batch, found, missing);
+      return;
     }
+    for (const issue of issues) found.set(issue.id, stateOf(issue));
+    for (const id of batch) if (!found.has(id)) missing.push(id);
+  }
+
+  /**
+   * {@link settle} of a batch whose query failed: a lone id answering 400 or 404 is missing, a
+   * larger batch answering 400 on Cloud is halved, and anything else is thrown.
+   */
+  private async settleRefused(
+    err: unknown,
+    batch: readonly string[],
+    found: Map<string, JiraIssueState>,
+    missing: string[],
+  ): Promise<void> {
+    if (!(err instanceof JiraError)) throw err;
+    const halvable = err.code === 'field_refused' && this.#deployment === 'cloud';
+    if (batch.length === 1 && (halvable || err.code === 'not_found')) {
+      missing.push(...batch);
+      return;
+    }
+    if (!halvable) throw err;
+    const half = Math.ceil(batch.length / 2);
+    await this.settle(batch.slice(0, half), found, missing);
+    await this.settle(batch.slice(half), found, missing);
   }
 
   /**

@@ -78,11 +78,13 @@ function qualorLine(url: string | null): string[] {
 function foundInText(names: string[]): string {
   const shown = names.slice(0, FOUND_IN_MAX).map((n) => e(n));
   const more = names.length - shown.length;
-  return `${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''}`;
+  const rest = more > 0 ? ` and ${more} more` : '';
+  return shown.join(', ') + rest;
 }
 
 export function codeIssueContent(f: CodeIssueFacts, publicUrl: string | null): JiraContent {
-  const place = f.path === null ? [] : [`File: ${e(f.path)}${f.line === null ? '' : `:${f.line}`}`];
+  const line = f.line === null ? '' : `:${f.line}`;
+  const place = f.path === null ? [] : [`File: ${e(f.path)}${line}`];
   const build = (messageMax: number): string =>
     [
       `h3. ${e(f.ruleName)}`,
@@ -111,10 +113,12 @@ export function vulnerabilityContent(f: VulnerabilityFacts, publicUrl: string | 
   const encoded = advisoryUrl(f.primaryUrl);
   const url = encoded !== null && encoded.length <= ADVISORY_URL_MAX ? encoded : null;
   // Every part is capped, so this holds; the fallbacks only drop optional parts if it ever did not.
+  const installed =
+    f.installedVersions.length > 0 ? `, installed ${foundInText(f.installedVersions)}` : '';
   const build = (withUrl: boolean, withInstalled: boolean): string =>
     [
       `h3. ${heading}`,
-      `Package: ${e(f.packageName)}${withInstalled && f.installedVersions.length > 0 ? `, installed ${foundInText(f.installedVersions)}` : ''}`,
+      `Package: ${e(f.packageName)}${withInstalled ? installed : ''}`,
       f.fixedVersion === null ? 'Fixed in: no fixed version yet' : `Fixed in: ${e(f.fixedVersion)}`,
       `Severity: ${f.severity}`,
       ...(f.exploited

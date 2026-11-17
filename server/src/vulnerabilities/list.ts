@@ -83,7 +83,8 @@ interface GroupRow extends Record<string, unknown> {
 }
 
 const SEVERITY_WHENS = SEVERITIES.map((s, i) => `WHEN '${s}' THEN ${i}`).join(' ');
-const SEVERITY_RANK = sql.raw(`CASE severity ${SEVERITY_WHENS} END`);
+/** A row's `severity` as its index in {@link SEVERITIES} (0 is the worst): `min()` is the worst. */
+export const SEVERITY_RANK = sql.raw(`CASE severity ${SEVERITY_WHENS} END`);
 
 /** The refs of the targets, in the order given, without any that no longer exists. */
 export async function targetRefsOf(
@@ -125,7 +126,8 @@ export async function targetRefsOf(
   });
 }
 
-const targetId = (t: Target): { kind: 'branch' | 'version'; id: string } =>
+/** A target as {@link targetRefsOf} takes it. */
+export const targetId = (t: Target): { kind: 'branch' | 'version'; id: string } =>
   t.kind === 'branch' ? { kind: 'branch', id: t.branchId } : { kind: 'version', id: t.versionId };
 
 /** The grouped items (one per package and vulnerability) of the scope that pass the filters. */
