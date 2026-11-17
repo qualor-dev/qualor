@@ -1,4 +1,3 @@
-import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -19,10 +18,6 @@ const RELEASE = {
   main: false,
   source: null,
 };
-
-/** Stands in for the Dependencies tab: only the URL it is opened with matters here. */
-@Component({ template: '' })
-class DependenciesTab {}
 
 function row(over: Record<string, unknown> = {}) {
   return {
@@ -56,7 +51,8 @@ describe('PackagesPage (0.16 SBOM §6.9)', () => {
         provideRouter(
           [
             { path: 'packages', component: PackagesPage },
-            { path: 'projects/:projectId/dependencies', component: DependenciesTab },
+            // Stands in for the Dependencies tab: only the URL it is opened with matters here.
+            { path: 'projects/:projectId/dependencies', children: [] },
           ],
           withComponentInputBinding(),
         ),

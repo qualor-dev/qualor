@@ -199,7 +199,7 @@ describe('parseTrivyOutput', () => {
 
   it('reads text as Trivy wrote it: escapes decoded, nothing HTML-escaped', () => {
     const title = 'kernel: clear skb2->cb[] & "disable" <sysfs>';
-    // encoding/json (Trivy's toJson) writes <, > and & as <, > and &.
+    // encoding/json (Trivy's toJson) writes <, > and & as the escapes <, > and &.
     const text = `{"VulnerabilityID":"CVE-1","PkgIdentifier":{"BOMRef":"pkg:deb/debian/a@1?distro=debian-12\\u0026upstream=a@1","PURL":""},"Title":"kernel: clear skb2-\\u003ecb[] \\u0026 \\"disable\\" \\u003csysfs\\u003e"}\n`;
     const got = parseTrivyOutput(text);
     expect([...got.keys()]).toEqual(['pkg:deb/debian/a@1?distro=debian-12&upstream=a@1']);
