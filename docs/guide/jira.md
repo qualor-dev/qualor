@@ -111,8 +111,9 @@ A vulnerability uses the same scale: Critical is Blocker, and Unknown is Medium.
 ### Which issue types work
 
 Qualor can create a type when it can fill every field the type requires. It fills the project, the
-issue type, the summary, the description, the reporter, the labels, and the priority when you set one
-for every severity. A required field with a default is no problem. A type with another required
+issue type, the summary, the description, the labels, and the priority when you set one for every
+severity. Jira fills the reporter with the account of the token. A required field with a default is
+no problem. A type with another required
 field is shown disabled: "<name> — needs: <field names>". Choose another type, or ask the Jira
 administrator to make those fields optional or give them a default.
 
@@ -265,14 +266,14 @@ resumes when it succeeds. A timeout or an unreachable Jira blocks nothing.
 | `not_found` | Jira could not find what was asked for, or the account cannot see it | check the address and the Jira project, and that the account sees it |
 | `http_error` | Jira answered with an error Qualor cannot use | try again later |
 | `rate_limited` | Jira asked Qualor to slow down (HTTP 429) | nothing: Qualor tries again later |
-| "The finding no longer exists." (`finding_gone`) | the finding was deleted before the Jira issue was made | nothing to do |
+| "The finding is closed or can no longer have a Jira issue." (`finding_gone`) | the finding was deleted, or was closed, before the Jira issue was made | nothing to do |
 | `permission_missing` | the account may not browse or create | give it Browse projects and Create issues in the Jira project |
 | `undecryptable` | the server key `QUALOR_SECRET_KEY` changed | enter the token again |
 | A failed Jira issue shows Jira's own reason | Jira refused a field, such as a required one or an unknown label | fix the field in Jira or in the mapping, then **Retry** |
 | The type shows "needs: …" | the type requires fields Qualor cannot fill | [Which issue types work](#which-issue-types-work) |
 | "Qualor could not tell whether Jira created the issue" | the answer to a create was lost, and the screen has no labels to look for it | look in Jira for the finding. **Retry** creates it again |
 | "The project had no Jira mapping when the Jira issue was to be created." | the mapping was removed before creation | map the project, then **Retry** |
-| `limit_reached` | Jira refused the request as too large | try again later |
+| `limit_reached` | Jira refused the request as too large | shorten the labels of the mapping, or ask the Jira administrator about the limit |
 | Jira issues have no link back to Qualor | `QUALOR_PUBLIC_URL` is not set on the server | set it |
 | Nothing is created and no problem shows | the project is not mapped, or vulnerability monitoring is off for an automatic rule | check the panel |
 

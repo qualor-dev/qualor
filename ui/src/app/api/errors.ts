@@ -50,7 +50,7 @@ function jiraProblemMessage(code: string | null): string | null {
     case 'JIRA_UNAVAILABLE':
       return $localize`:@@jira.error.unavailable:Jira could not be reached or refused the request. Try again later.`;
     case 'JIRA_LINK_NOT_RETRYABLE':
-      return $localize`:@@jira.error.linkNotRetryable:Only a failed or missing Jira issue can be tried again.`;
+      return $localize`:@@jira.error.linkNotRetryable:This can no longer be tried again: the finding is closed or can no longer have a Jira issue, or its Jira issue changed meanwhile.`;
     default:
       return null;
   }

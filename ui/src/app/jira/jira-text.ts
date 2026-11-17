@@ -42,7 +42,7 @@ export function jiraProblemText(code: string): string {
     case 'not_mapped':
       return $localize`:@@jira.problem.notMapped:The project had no Jira mapping when the Jira issue was to be created.`;
     case 'finding_gone':
-      return $localize`:@@jira.problem.findingGone:The finding no longer exists.`;
+      return $localize`:@@jira.problem.findingGone:The finding is closed or can no longer have a Jira issue.`;
     case 'outcome_unknown':
       return $localize`:@@jira.problem.outcomeUnknown:Qualor could not tell whether Jira created the issue.`;
     default:

@@ -57,7 +57,7 @@ export const JIRA_FAILURE_TEXT: Record<JiraFailureCode, string> = {
     'Jira answered that the Jira project or the issue type does not exist (HTTP 404). Map the project again.',
   limit_reached: 'Jira refused the issue as too large or over one of its limits (HTTP 413 or 422).',
   not_mapped: 'The project is not mapped to a Jira project any more. Map it, then retry.',
-  finding_gone: 'The finding no longer exists in Qualor.',
+  finding_gone: 'The finding is closed or can no longer have a Jira issue.',
   outcome_unknown:
     'Jira did not answer the create, and without labels Qualor cannot find out whether the issue was made. It may exist in Jira: check before you retry.',
 };
