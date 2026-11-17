@@ -22,6 +22,7 @@ CycloneDX only.
 | Suppressing a finding | the status **Not affected (false positive)** or **Affected, won't fix** |
 | VEX and SBOM export | [SBOM and VEX export](./dependency-vulnerabilities.md#export-sbom-and-vex-business-and-enterprise) (Business and Enterprise) |
 | Vulnerability notifications | [Alerts](./dependency-vulnerabilities.md#alerts-business-and-enterprise) (Business and Enterprise) |
+| The Jira notification publisher | [Jira](./jira.md): a Jira issue for each new vulnerability at or above a severity, with its status. Every edition |
 
 Differences that matter:
 

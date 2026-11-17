@@ -15,7 +15,7 @@ PostgreSQL 18 on a volume. It needs no Elasticsearch, Redis or message broker. R
 | Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small. The [vulnerability database](./vulnerability-database.md) needs a cache volume of its own ([how big](./vulnerability-database.md)). PostgreSQL also holds up to two copies of the compressed file, about 131 MiB each |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
 | Inbound network | HTTPS from CI runners and users | |
-| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror. Business and Enterprise (`vuln.priority`), with **Vulnerability monitoring** on: `www.cisa.gov` and `epss.empiricalsecurity.com`, or your mirror's URLs ([Telemetry](./telemetry.md#vulnerability-database)) |
+| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), the Jira site an organisation admin configured ([Jira](./jira.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror. Business and Enterprise (`vuln.priority`), with **Vulnerability monitoring** on: `www.cisa.gov` and `epss.empiricalsecurity.com`, or your mirror's URLs ([Telemetry](./telemetry.md#vulnerability-database)) |
 
 ## Images
 
@@ -87,6 +87,7 @@ services:
       QUALOR_SCM_INTERNAL_HOSTS: ${QUALOR_SCM_INTERNAL_HOSTS:-}
       QUALOR_LLM_INTERNAL_HOSTS: ${QUALOR_LLM_INTERNAL_HOSTS:-}
       QUALOR_SSO_INTERNAL_HOSTS: ${QUALOR_SSO_INTERNAL_HOSTS:-}
+      QUALOR_JIRA_INTERNAL_HOSTS: ${QUALOR_JIRA_INTERNAL_HOSTS:-}
       QUALOR_FORCE_PASSWORD_SIGN_IN: ${QUALOR_FORCE_PASSWORD_SIGN_IN:-}
       # Email (email.md), if you send it: the SMTP server and the sender.
       # QUALOR_SMTP_URL: ${QUALOR_SMTP_URL}
@@ -140,6 +141,8 @@ QUALOR_TRUST_PROXY=1
 # QUALOR_LLM_INTERNAL_HOSTS=ollama:11434
 # An identity provider for single sign-on on an internal network (see sso-and-scim.md), if any:
 # QUALOR_SSO_INTERNAL_HOSTS=keycloak.corp.example.com:8443
+# A Jira Data Center on an internal network (see jira.md), if any:
+# QUALOR_JIRA_INTERNAL_HOSTS=jira.corp.example.com
 # An SMTP server for email (see email.md), if any:
 # QUALOR_SMTP_URL=smtp://qualor%40example.com:<password>@smtp.example.com:587
 # QUALOR_SMTP_FROM=Qualor <qualor@example.com>
@@ -271,7 +274,7 @@ kubectl -n qualor rollout restart deployment/qualor
 
 These [server settings](#server-settings) have a value in `config`: `bootstrapAdminUsername`,
 `publicUrl`, `trustProxy`, `scmInternalHosts`, `llmInternalHosts`, `ssoInternalHosts`,
-`forcePasswordSignIn`, `telemetry`, `workerConcurrency`, `logLevel`, `smtpFrom` and `smtpReplyTo`.
+`jiraInternalHosts`, `forcePasswordSignIn`, `telemetry`, `workerConcurrency`, `logLevel`, `smtpFrom` and `smtpReplyTo`.
 Every other one goes into `extraEnv`:
 
 ```yaml
@@ -438,6 +441,7 @@ goes into a `postgres://` URL.
 | `QUALOR_AI_REVIEW_MAX_MINUTES` | `45` | an [AI review](./ai-review.md)'s time in all, 5 to 240 minutes. Raise it for a slow model. Any other value stops the start |
 | `QUALOR_VULNDB_DIR` | `/var/cache/qualor/vulndb` | where the server unpacks the [vulnerability database](./vulnerability-database.md) for Trivy. Mount a writable volume ([size](./vulnerability-database.md)); it holds only a copy, so losing it costs nothing. Use a dedicated directory: Qualor removes only what it created there |
 | `QUALOR_TRIVY_PATH` | `/usr/local/bin/trivy` | the Trivy program the server runs for re-checks. The image has it |
+| `QUALOR_JIRA_INTERNAL_HOSTS` | none | the same for a Jira Data Center on your internal network ([Jira](./jira.md#connect-jira-data-center-or-server)), which may then use plain `http`. A list of its own, at most 50 entries. Jira Cloud needs a public address |
 | `QUALOR_VULNDB_INTERNAL_HOSTS` | none | the mirror of the [vulnerability database](./vulnerability-database.md) on your internal network that Qualor may call, a list of its own, comma-separated, each with an optional port (`registry.corp:5000`). It lifts the check for private addresses only; the registry must still use HTTPS |
 | `QUALOR_VULNDB_UPLOAD_MAX_BYTES` | 1 GiB | the largest `db.tar.gz` the vulnerability database page accepts |
 | `QUALOR_VULNDB_MAX_DOWNLOADS` | 4 | how many scanners may download the [vulnerability database](./vulnerability-database.md#scanners) at once, 1 to 64. More get `503 DOWNLOADS_BUSY` and use their cached copy or image |

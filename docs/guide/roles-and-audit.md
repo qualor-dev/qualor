@@ -25,6 +25,9 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 | Opt one project out of automatic fix suggestions (with `llm.auto-fix`; part of changing project settings) | ✓ | ✓ | | |
 | Read the project's dependencies and their licences (the **Dependencies** tab), and the organisation's licence policy | ✓ | ✓ | ✓ | ✓ |
 | Set or remove the organisation's licence policy (with `license-policy`, permission `org.licenses.manage`) | ✓ | | | |
+| Connect, test and remove the organisation's [Jira](./jira.md) connection (permission `org.jira.manage`) | ✓ | | | |
+| Map a project to Jira and set its automatic rule (part of changing project settings) | ✓ | ✓ | | |
+| Create, retry and unlink Jira issues (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 
 - In the API the roles are `admin` (Organization admin), `project_admin`, `member` (Maintainer)
   and `viewer`.
@@ -157,6 +160,7 @@ in `.*` (for example `issue.*`).
 - **[AI review](./ai-review.md):** an organisation's settings changed
   (`organization.ai_review_changed`, with whether it is on, its scope, how many projects it lists,
   whether this change confirmed the warning, and the provider's host and model).
+- **Jira** ([Jira](./jira.md)): a connection created, changed (the names of the changed fields only) or deleted (`jira_connection.created`, `.updated`, `.deleted`, with the deployment, the site's address and, on delete, how many links it had); a project's mapping changed or removed (`project.jira_updated`); Jira issues requested (`jira_link.requested`, with how many and whether from issues or vulnerabilities) and a link removed (`jira_link.dismissed`, with the Jira key). The automatic rule's Jira issues are not recorded.
 - **Email:** its settings changed (the names of the changed fields only, never the password), and a
   test message sent, with whether it was delivered.
 - **The licence policy** (with `license-policy`, [Dependency licences](./dependency-licenses.md)):
@@ -178,7 +182,7 @@ behind.
 
 **Never recorded:**
 
-- any password, token or token hash, webhook or stream secret, SCM token, GitHub private key,
+- any password, token or token hash, webhook or stream secret, SCM token, Jira token, Jira account email, GitHub private key,
   licence key, the AI provider's key, session id, or password reset or invitation link;
 - an OIDC client secret, a SAML service provider key, a SCIM token, an ID token, an access token,
   an authorization code, a SAML response or assertion, or what the identity provider says about a

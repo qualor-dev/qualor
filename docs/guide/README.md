@@ -67,6 +67,7 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
     the issues.
 32. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
     digest in a channel.
+33. [Jira](./jira.md): create Jira issues from findings, with their status and fix comments.
 
 ## How Qualor works
 

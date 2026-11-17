@@ -16,6 +16,7 @@ the audit log for your organisation.
 | Feature | Feature key | Community | Business | Enterprise |
 |---|---|---|---|---|
 | [Analysis, quality gates and issues](./quality-gates.md), with merge request comments on GitLab and GitHub | none | yes | yes | yes |
+| [Jira](./jira.md): Jira issues from code issues and vulnerabilities, with their status. The option to create them for exploited vulnerabilities needs `vuln.priority` | none | yes | yes | yes |
 | [Compliance reports](./compliance-reports.md) (OWASP Top 10, CWE Top 25, OWASP ASVS, PCI DSS 6.2.4) as JSON, CSV and PDF, with the project's SBOM attached | `compliance-export` | no | no | yes |
 | [Portfolio reports](./portfolio.md): the quality of every project and organisation, with 12-week or 12-month trends and the projects that need attention, as CSV and PDF | `portfolio` | no | no | yes |
 

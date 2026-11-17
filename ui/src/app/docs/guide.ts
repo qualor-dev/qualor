@@ -23,6 +23,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   gitlab: () => import('../../../../docs/guide/gitlab.md'),
   'install-server': () => import('../../../../docs/guide/install-server.md'),
   'languages-and-analyzers': () => import('../../../../docs/guide/languages-and-analyzers.md'),
+  jira: () => import('../../../../docs/guide/jira.md'),
   mcp: () => import('../../../../docs/guide/mcp.md'),
   'migrate-from-dependency-track': () =>
     import('../../../../docs/guide/migrate-from-dependency-track.md'),

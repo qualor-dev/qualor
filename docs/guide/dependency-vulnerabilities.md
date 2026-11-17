@@ -172,6 +172,18 @@ Only vulnerabilities found after the alert baseline count. The emails, their lim
 baseline in detail are in [Vulnerability emails](./email.md#vulnerability-emails). Every email has
 a link that stops them for all your watches.
 
+## Jira
+
+With a [Jira connection](./jira.md), the list shows a **Jira** pill on each vulnerability that has a
+Jira issue, and **Create Jira issue** as a row action next to **Change status**. Tick rows and use
+**Create Jira issues** to create up to 100 at once. One Jira issue covers a package and a
+vulnerability id across the project, as a decision does.
+
+A project admin can also let Qualor create Jira issues by itself for new vulnerabilities at or above
+a severity, and for exploited ones with Business or Enterprise
+([The automatic rule](./jira.md#the-automatic-rule)). Qualor comments on the Jira issue when the
+vulnerability is gone from the tracked branches and versions, and again if it returns.
+
 ## Statuses and reasons
 
 Triage sets a **status** for a vulnerability in a package:
@@ -431,6 +443,7 @@ A refused or failed decision costs nothing.
 |---|---|---|
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
 | `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`, tracked or not; a merge request is not a target (404)), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
+| `POST /api/v0/projects/:id/jira/links` | `issue.triage` | Jira issues for up to 100 vulnerabilities, or up to 500 issues ([Jira](./jira.md)) |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 | `GET /api/v0/packages/usages` | the `read` scope; not a project token | where a package is used ([Where used](#where-used)). Query: `q` (required), `ecosystem`, `version`, `page` (at most 100), `pageSize` (50 by default, at most 100). Each row has `project`, `target`, `ecosystem`, `name`, `version`, `path`, `direct`, `distribution` and `vulnerabilities` (null where the page says "not checked"); the answer has `total` and `totalCapped` |
 

@@ -136,6 +136,9 @@ it; see the [configuration reference](docs/guide/configuration.md).
   request data into SQL, shell commands, file paths, templates, redirects and outgoing requests.
 - **Merge request comments** on GitLab and GitHub: a summary, a thread on each new issue, and a
   commit status or check run.
+- **Jira.** One click, or a rule for new vulnerabilities, turns a code issue or a vulnerability into
+  a Jira issue. It shows the Jira status and comments when the finding is fixed. See
+  [Jira](docs/guide/jira.md).
 - **SonarQube import**: quality gates, profiles and issue statuses
   ([Migrating from SonarQube](#migrating-from-sonarqube)).
 

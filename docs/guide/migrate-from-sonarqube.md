@@ -29,6 +29,9 @@ Not imported, and reported instead:
 - history;
 - new-code definitions.
 
+SonarQube's Jira integration has its counterpart in Qualor: [Jira](./jira.md) creates a Jira issue
+from a code issue, shows its Jira status, and is in every edition.
+
 ### How rules map
 
 Qualor does not run SonarSource's own analyzers, apart from the SonarQube-compatible rules it
