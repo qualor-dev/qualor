@@ -37,6 +37,7 @@ export const AUDIT_TARGET_TYPES = [
   'oauth_grant',
   'mcp_settings',
   'vulnerability_decision',
+  'jira_connection',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -102,6 +103,14 @@ export const SCM_CONNECTION_CHANGED_FIELDS = [
   'privateKey',
   'webhookSecret',
   'ciSetupAllowed',
+] as const;
+/** 0.16 Jira §6.10: the names `jira_connection.updated` may list (names only, never the email or the token). */
+export const JIRA_CONNECTION_CHANGED_FIELDS = [
+  'deployment',
+  'siteUrl',
+  'apiUrl',
+  'email',
+  'token',
 ] as const;
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
 export const MAIL_SETTINGS_CHANGED_FIELDS = [
@@ -598,6 +607,26 @@ export const AUDIT_CATALOGUE = {
   'scm_connection.deleted': {
     target: 'scm_connection',
     details: z.strictObject({ provider, baseUrl: url }),
+  },
+  'jira_connection.created': {
+    target: 'jira_connection',
+    details: z.strictObject({ deployment: z.enum(['cloud', 'data_center']), siteOrigin: url }),
+  },
+  'jira_connection.updated': {
+    target: 'jira_connection',
+    details: z.strictObject({
+      changed: z
+        .array(z.enum(JIRA_CONNECTION_CHANGED_FIELDS))
+        .max(JIRA_CONNECTION_CHANGED_FIELDS.length),
+    }),
+  },
+  'jira_connection.deleted': {
+    target: 'jira_connection',
+    details: z.strictObject({
+      deployment: z.enum(['cloud', 'data_center']),
+      siteOrigin: url,
+      links: count,
+    }),
   },
   'webhook.created': { target: 'webhook', details: webhookRef },
   'webhook.updated': { target: 'webhook', details: changed },

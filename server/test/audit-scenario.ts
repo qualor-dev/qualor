@@ -35,6 +35,7 @@ import {
   type TestContext,
 } from './app';
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
+import { createFakeJira, type FakeJira } from './fake-jira';
 import { createFakeLlm, type FakeLlm } from './fake-llm';
 import { mainBranchId, seedIssue, seedRule } from './issues';
 import { closedPort } from './mail';
@@ -58,6 +59,8 @@ const S = {
   gitlabToken: ['glpat', 'scenario', 'mapped', '9Z8Y'].join('-'),
   scmToken: ['glpat', 'scenario', 'created', '5G6H'].join('-'),
   scmTokenUpdated: ['glpat', 'scenario', 'updated', '7J8K'].join('-'),
+  jiraToken: ['jira', 'scenario', 'api', 'token', '2K3L'].join('-'),
+  jiraEmail: ['jira', 'scenario', 'robot', '6P'].join('-') + '@example.test',
   gitlabWebhookSecret: ['gitlab', 'webhook', 'secret', 'CREATED83'].join('-'),
   gitlabWebhookSecretUpdated: ['gitlab', 'webhook', 'secret', 'UPDATED94'].join('-'),
   githubWebhookSecret: ['github', 'webhook', 'secret', 'CREATED61'].join('-'),
@@ -84,6 +87,8 @@ export const SCENARIO_NOW = new Date('2027-01-01T00:00:00Z');
 export interface AuditScenarioEnv {
   llm: FakeLlm;
   gitlab: FakeGitLab;
+  /** A Data Center the Jira connection's first address is on (nothing calls it). */
+  jira: FakeJira;
   /** Trusted by the scenario's `PUT /license` when the context's edition trusts it. */
   signer: TestSigner;
   /** createTestContext's `config`: the fakes are internal hosts the server may call. */
@@ -94,16 +99,19 @@ export interface AuditScenarioEnv {
 export async function startAuditScenarioEnv(): Promise<AuditScenarioEnv> {
   const llm = await createFakeLlm({ apiKey: S.llmKey });
   const gitlab = await createFakeGitLab({ token: S.gitlabToken });
+  const jira = await createFakeJira({ deployment: 'data_center', token: S.jiraToken });
   return {
     llm,
     gitlab,
+    jira,
     signer: testSigner(),
     config: {
       scmInternalHosts: parseInternalHosts(new URL(gitlab.url).host),
+      jiraInternalHosts: parseInternalHosts(new URL(jira.url).host),
       llmInternalHosts: parseInternalHosts(llm.host),
     },
     close: async () => {
-      await Promise.all([llm.close(), gitlab.close()]);
+      await Promise.all([llm.close(), gitlab.close(), jira.close()]);
     },
   };
 }
@@ -207,7 +215,7 @@ export async function runAuditScenario(
   const keep = (...values: string[]) => {
     for (const v of values) secrets.push(v, ...hashForms(v));
   };
-  const { llm, gitlab } = env;
+  const { llm, gitlab, jira } = env;
 
   const expectStatus = (
     res: { statusCode: number; body: string },
@@ -535,6 +543,21 @@ export async function runAuditScenario(
     webhookSecret: S.githubWebhookSecretUpdated,
   });
   await call('DELETE', `/scm-connections/${github}`, 204);
+
+  // jira_connection.created (a Data Center), .updated (a new address, Cloud with the email and
+  // the token: deployment, siteUrl, email and token), .deleted. Nothing calls Jira.
+  await call('PUT', `/organizations/${org}/jira`, 200, {
+    deployment: 'data_center',
+    siteUrl: jira.url,
+    token: S.jiraToken,
+  });
+  await call('PUT', `/organizations/${org}/jira`, 200, {
+    deployment: 'cloud',
+    siteUrl: 'https://scenario.atlassian.net',
+    email: S.jiraEmail,
+    token: S.jiraToken,
+  });
+  await call('DELETE', `/organizations/${org}/jira`, 204);
 
   // webhook.*: a URL whose path and query hold secrets, on the internal fake address
   await ctx.db

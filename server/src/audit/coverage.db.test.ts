@@ -359,6 +359,14 @@ describe('the audit catalogue end to end (rbac-audit.md §19 criteria 7–8)', (
     ]);
   });
 
+  it('names the changed Jira fields, the email and the token as names only', async () => {
+    const rows = await ctx.db.execute<{ changed: string[] }>(
+      sql`SELECT details->'changed' AS changed FROM audit_events
+          WHERE action = 'jira_connection.updated' ORDER BY seq`,
+    );
+    expect(rows.rows.map((r) => r.changed)).toEqual([['deployment', 'siteUrl', 'email', 'token']]);
+  });
+
   it('is one valid chain', async () => {
     expect(await verifyAuditChain(ctx.db)).toMatchObject({ ok: true, break: null });
   });
