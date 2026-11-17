@@ -310,4 +310,14 @@ describe('the Jira tables (0.16 spec §7, migration 0032_jira)', () => {
       expect(kept?.createdBy).toBeNull();
     });
   });
+
+  it('indexes the pass in the status order: never read first (M7)', async () => {
+    const { rows } = await t.pool.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'jira_links_pass_idx'`,
+    );
+    expect(rows.map((r) => r.indexdef.replace(/^.* USING /, ''))).toEqual([
+      'btree (connection_id, state, status_checked_at NULLS FIRST)',
+    ]);
+  });
 });

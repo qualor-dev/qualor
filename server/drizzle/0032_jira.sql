@@ -76,4 +76,7 @@ ALTER TABLE "project_jira_settings" ADD CONSTRAINT "project_jira_settings_connec
 CREATE UNIQUE INDEX "jira_connections_organization_uq" ON "jira_connections" USING btree ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "jira_links_issue_uq" ON "jira_links" USING btree ("issue_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "jira_links_vulnerability_uq" ON "jira_links" USING btree ("project_id","package_name","vulnerability_id") WHERE kind = 'vulnerability';--> statement-breakpoint
-CREATE INDEX "jira_links_pass_idx" ON "jira_links" USING btree ("connection_id","state","status_checked_at");
+CREATE INDEX "jira_links_pass_idx" ON "jira_links" USING btree ("connection_id","state","status_checked_at" NULLS FIRST);--> statement-breakpoint
+CREATE INDEX "jira_links_project_idx" ON "jira_links" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "jira_links_created_by_idx" ON "jira_links" USING btree ("created_by") WHERE created_by IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "project_jira_settings_connection_idx" ON "project_jira_settings" USING btree ("connection_id");

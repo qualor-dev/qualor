@@ -1,5 +1,5 @@
 {
-  "id": "70b653f6-1459-4712-807f-013b5d435cc0",
+  "id": "eaa10a3d-a0ad-4f85-ad73-9d1f2762ecef",
   "prevId": "ebd03d01-9871-4492-a6f8-1def7338497f",
   "version": "7",
   "dialect": "postgresql",
@@ -3139,10 +3139,41 @@
               "expression": "status_checked_at",
               "isExpression": false,
               "asc": true,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "jira_links_project_idx": {
+          "name": "jira_links_project_idx",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "jira_links_created_by_idx": {
+          "name": "jira_links_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "created_by IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5087,7 +5118,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "project_jira_settings_connection_idx": {
+          "name": "project_jira_settings_connection_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "project_jira_settings_project_id_projects_id_fk": {
           "name": "project_jira_settings_project_id_projects_id_fk",

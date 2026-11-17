@@ -1364,7 +1364,9 @@ export const projectJiraSettings = pgTable(
     autoSince: at('auto_since'),
     updatedAt: updatedAt(),
   },
-  () => [
+  (t) => [
+    // The connection's cascade, and the mappings of a connection (the rule, the settings page).
+    index('project_jira_settings_connection_idx').on(t.connectionId),
     check('project_jira_settings_labels_check', sql`cardinality(labels) <= 10`),
     check(
       'project_jira_settings_auto_severity_check',
@@ -1415,7 +1417,13 @@ export const jiraLinks = pgTable(
     uniqueIndex('jira_links_vulnerability_uq')
       .on(t.projectId, t.packageName, t.vulnerabilityId)
       .where(sql`kind = 'vulnerability'`),
-    index('jira_links_pass_idx').on(t.connectionId, t.state, t.statusCheckedAt),
+    // The status step reads the oldest first, never read first of all (sync.ts readStatuses).
+    index('jira_links_pass_idx').on(t.connectionId, t.state, t.statusCheckedAt.asc().nullsFirst()),
+    // The project's cascade and the user's SET NULL (every foreign key has an index).
+    index('jira_links_project_idx').on(t.projectId),
+    index('jira_links_created_by_idx')
+      .on(t.createdBy)
+      .where(sql`created_by IS NOT NULL`),
     check('jira_links_kind_check', sql`kind IN ('issue','vulnerability')`),
     check(
       'jira_links_target_check',
