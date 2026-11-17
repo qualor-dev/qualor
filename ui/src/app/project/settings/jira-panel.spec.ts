@@ -283,6 +283,23 @@ describe('ProjectJiraPanel', () => {
       expect(button(root, 'Save').disabled).toBe(true);
     });
 
+    it('accepts a label of 100 characters and refuses one of 101', async () => {
+      setup();
+      const { root } = await render();
+      await pick(root);
+      type(root, '#jira-labels', 'a'.repeat(100));
+      await flush();
+      expect(root.querySelector('#jira-labels-error')).toBeNull();
+      expect(button(root, 'Save').disabled).toBe(false);
+      type(root, '#jira-labels', 'a'.repeat(101));
+      await flush();
+      expect(root.querySelector('#jira-labels-error')?.textContent).toContain('100 characters');
+      expect(root.querySelector('#jira-labels')?.getAttribute('aria-describedby')).toContain(
+        'jira-labels-error',
+      );
+      expect(button(root, 'Save').disabled).toBe(true);
+    });
+
     it('is not offered for a type without a labels field', async () => {
       setup(settings(), { types: [issueType({ labels: false })] });
       const { root } = await render();

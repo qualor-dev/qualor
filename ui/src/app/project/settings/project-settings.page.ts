@@ -96,6 +96,8 @@ export class ProjectSettingsPage {
     // A URL that already names a panel: scroll to it once the panels have rendered.
     afterRenderEffect(() => {
       const fragment = this.fragment();
+      // The Jira panel appears after its own read: its arrival tries the address again.
+      this.jiraShown();
       if (this.scrolledToFragment || fragment === null || this.show() === null) return;
       if (this.reveal(fragment)) this.scrolledToFragment = true;
     });

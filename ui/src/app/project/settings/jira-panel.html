@@ -124,7 +124,9 @@
                   type="text"
                   autocomplete="off"
                   spellcheck="false"
-                  aria-describedby="jira-labels-hint"
+                  [attr.aria-describedby]="
+                    labelsError() ? 'jira-labels-error jira-labels-hint' : 'jira-labels-hint'
+                  "
                   [attr.aria-invalid]="labelsError() ? 'true' : null"
                   [value]="labelsText()"
                   (input)="setLabels($event)"

@@ -39,6 +39,7 @@ type Priorities = Partial<Record<Severity, string>>;
 /** The picker asks the server this long after the last keystroke. */
 const SEARCH_DELAY_MS = 300;
 const MAX_LABELS = 10;
+const MAX_LABEL_LENGTH = 100;
 
 /** The label field as labels: trimmed, without empty parts. */
 function splitLabels(text: string): string[] {
@@ -152,6 +153,9 @@ export class ProjectJiraPanel {
     const labels = this.labels();
     if (labels.some((l) => /\s/.test(l))) {
       return $localize`:@@jira.panel.labelSpace:A label cannot contain a space.`;
+    }
+    if (labels.some((l) => l.length > MAX_LABEL_LENGTH)) {
+      return $localize`:@@jira.panel.labelLength:A label can have at most 100 characters.`;
     }
     if (labels.length > MAX_LABELS) {
       return $localize`:@@jira.panel.labelCount:Use at most 10 labels.`;

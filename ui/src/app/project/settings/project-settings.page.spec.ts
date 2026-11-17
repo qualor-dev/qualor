@@ -241,6 +241,14 @@ describe('ProjectSettingsPage index', () => {
     expect(TestBed.inject(Router).url).toBe(`/projects/${PROJECT}/settings#danger`);
   });
 
+  it('reveals the Jira panel for the address #jira once the panel has loaded', async () => {
+    const scroll = catchScrolls();
+    const { root } = await open('jira');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(root.querySelector('section#jira'));
+    expect(document.activeElement).toBe(root.querySelector('section#jira h2'));
+  });
+
   it.each(['ai', 'auto-fix', 'ai-review'])(
     'reveals the AI panel for the address #%s',
     async (fragment) => {

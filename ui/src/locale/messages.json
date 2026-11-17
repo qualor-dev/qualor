@@ -1104,6 +1104,7 @@
     "jira.panel.removeConfirm": " Remove mapping ",
     "jira.panel.typeUnsupported": "Qualor cannot fill these required fields of the issue type: {$fields}.",
     "jira.panel.labelSpace": "A label cannot contain a space.",
+    "jira.panel.labelLength": "A label can have at most 100 characters.",
     "jira.panel.labelCount": "Use at most 10 labels.",
     "jira.panel.typeNeeds": "{$name} — needs: {$fields}",
     "jira.panel.severity.blocker": "Blocker",
