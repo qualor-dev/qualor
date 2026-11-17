@@ -65,7 +65,7 @@ export function jiraProblemFix(code: string): string {
     case 'token_refused':
       return $localize`:@@jira.fix.tokenRefused:Check the token (and, on Jira Cloud, the email), then save it again.`;
     case 'captcha':
-      return $localize`:@@jira.fix.captcha:Sign in to Jira in a browser with the same account and solve the CAPTCHA, then test again.`;
+      return $localize`:@@jira.fix.captcha:Sign in to Jira in a browser with that account and answer the CAPTCHA, or ask a Jira administrator to reset its failed logins, then test again.`;
     case 'redirected':
       return $localize`:@@jira.fix.redirected:Use the final address of your Jira, without a redirect.`;
     case 'permission_missing':

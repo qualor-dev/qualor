@@ -72,8 +72,9 @@ At most 50 entries, each with an optional port. If Jira's certificate comes from
 the server that CA with `NODE_EXTRA_CA_CERTS`
 ([Install the server](./install-server.md#server-settings)).
 
-After repeated failed sign-ins, Jira Data Center locks the account with a CAPTCHA. A Jira
-administrator has to reset the lockout. Qualor then probes the account at most once an hour, because
+After repeated failed sign-ins, Jira Data Center locks the account with a CAPTCHA. Sign in to Jira in a
+browser with that account and answer the CAPTCHA, or ask a Jira administrator to reset its failed
+logins. Qualor then probes the account at most once an hour, because
 every failed attempt extends the lockout.
 
 ## The connection
@@ -101,7 +102,7 @@ connection. Without one, an org admin sees a link to **Settings → Jira**.
 |---|---|
 | **Jira project** | search by key or name. The list holds the Jira projects the account sees, at most 50 |
 | **Jira issue type** | the type Qualor creates, such as Bug or Task |
-| **Labels** | up to 10 extra labels, separated by commas. Qualor always adds `qualor` |
+| **Labels** | up to 10 extra labels, separated by commas, each 1 to 100 characters without spaces. Qualor always adds `qualor` |
 | **Priority by severity** | a Jira priority for Blocker, High, Medium, Low and Info |
 | **Automatic creation** | [the rule](#the-automatic-rule), off by default |
 
@@ -115,8 +116,9 @@ for every severity. A required field with a default is no problem. A type with a
 field is shown disabled: "<name> — needs: <field names>". Choose another type, or ask the Jira
 administrator to make those fields optional or give them a default.
 
-Sub-task types are not offered. The description and the labels must be on the type's create screen.
-When the labels are not, Qualor cannot find an issue again after a lost answer (see
+Sub-task types are not offered. The description must be on the type's create screen. The labels
+field is optional, but without it Qualor cannot find a Jira issue again after a lost answer, so that
+create fails as "Qualor could not tell whether Jira created the issue." (see
 [Troubleshooting](#troubleshooting)).
 
 **Save** checks the type again. A type that became unsupported is refused with the field names.
@@ -140,15 +142,17 @@ A closed finding shows no button. Where the project has no mapping, a project ad
 | Where | How |
 |---|---|
 | The issue page | the **Jira** card, **Create Jira issue** |
-| The **Issues** tab | the pill in a row, or select rows and **Create Jira issues**: at most 500 issues |
+| The **Issues** tab | select rows and **Create Jira issues**: at most 500 issues. A row that has a Jira issue shows a pill with its key, with no actions |
 | The **Vulnerabilities** tab | **Create Jira issue** on a row, or tick rows, or **Select all on this page**, and **Create Jira issues**: at most 100 vulnerabilities |
 
-The row shows **Creating…**, then the Jira key as a link, the Jira status and when Qualor read it.
+The issue page and the Vulnerabilities rows show **Creating…** (a row of the Issues tab shows **Creating Jira issue…**), then the Jira key as a link, the Jira status and when Qualor read it.
 A bulk request ends with a line such as "12 queued, 3 already linked, 1 not linkable".
 
 Creation runs in the background. Each new Jira issue counts against the same per-user limit as
 status changes: 120 a minute, with a burst of 500. A request over it is refused whole, and the
 screen says when to try again.
+
+On the issue page and on a Vulnerabilities row:
 
 | State | What you see | What you can do |
 |---|---|---|
@@ -221,7 +225,7 @@ adds the exploited ones. It needs Business or Enterprise: the same feature that 
 | What counts | vulnerabilities **first found after you save**. Saving the rule, or changing its threshold, never creates Jira issues for the backlog |
 | New | as the Vulnerabilities tab means it ([New vulnerabilities](./dependency-vulnerabilities.md#new-vulnerabilities)). A first check of a branch or version is a baseline and creates nothing |
 | A target tracked again | a version or branch that is tracked again counts what appeared while it was untracked as new, as the tab does |
-| Exploited | a vulnerability that CISA added to the catalogue after you saved, or that is new |
+| Exploited | a vulnerability that CISA added to the catalogue on or after the day you saved, or that is new |
 | Unknown severity | never counts by severity |
 | Pace | at most 50 new Jira issues per organisation in one 15-minute pass. The rest follow in the next passes |
 | Unlinked | a finding whose link you removed is never created again |
@@ -250,18 +254,22 @@ resumes when it succeeds. A timeout or an unreachable Jira blocks nothing.
 | Problem | Cause | Fix |
 |---|---|---|
 | `token_refused` | Jira answered 401: the token expired, was revoked, or the email is wrong | create a new token. A Jira Cloud token lives at most 365 days. Save it with the email |
-| No projects visible | a scoped token on the site address | set the **API URL** ([A scoped token](#a-scoped-token)), or give the account access to a project |
-| `captcha` | Jira Data Center locked the account | a Jira administrator resets the lockout. Qualor probes at most hourly |
+| `no_projects` | a scoped token on the site address | set the **API URL** ([A scoped token](#a-scoped-token)), or give the account access to a project |
+| `captcha` | Jira Data Center locked the account | sign in to Jira in a browser with that account and answer the CAPTCHA, or ask a Jira administrator to reset its failed logins. Qualor probes at most hourly |
 | `redirected` | the address redirects, often to a sign-in proxy or the wrong host | enter the final address of Jira |
 | `bad_answer` | the answer was not Jira data, often a sign-in page | use the address of Jira itself |
 | `url_not_allowed`, `not_public` | the host is private, or `http` | the operator lists it in `QUALOR_JIRA_INTERNAL_HOSTS`. Jira Cloud needs a public address |
 | `unresolved`, `unreachable`, `timeout` | the server cannot reach Jira, or it is down | check the address and the network. Passes try again |
+| `not_found` | Jira could not find what was asked for, or the account cannot see it | check the address and the Jira project, and that the account sees it |
+| `http_error` | Jira answered with an error Qualor cannot use | try again later |
+| `rate_limited` | Jira asked Qualor to slow down (HTTP 429) | nothing: Qualor tries again later |
+| "The finding no longer exists." (`finding_gone`) | the finding was deleted before the Jira issue was made | nothing to do |
 | `permission_missing` | the account may not browse or create | give it Browse projects and Create issues in the Jira project |
 | `undecryptable` | the server key `QUALOR_SECRET_KEY` changed | enter the token again |
 | A failed Jira issue shows Jira's own reason | Jira refused a field, such as a required one or an unknown label | fix the field in Jira or in the mapping, then **Retry** |
 | The type shows "needs: …" | the type requires fields Qualor cannot fill | [Which issue types work](#which-issue-types-work) |
 | "Qualor could not tell whether Jira created the issue" | the answer to a create was lost, and the screen has no labels to look for it | look in Jira for the finding. **Retry** creates it again |
-| "The project had no Jira mapping" | the mapping was removed before creation | map the project, then **Retry** |
+| "The project had no Jira mapping when the Jira issue was to be created." | the mapping was removed before creation | map the project, then **Retry** |
 | `limit_reached` | Jira refused the request as too large | try again later |
 | Jira issues have no link back to Qualor | `QUALOR_PUBLIC_URL` is not set on the server | set it |
 | Nothing is created and no problem shows | the project is not mapped, or vulnerability monitoring is off for an automatic rule | check the panel |

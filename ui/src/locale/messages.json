@@ -666,7 +666,7 @@
     "jira.fix.hosts": "Ask the operator to list the host in QUALOR_JIRA_INTERNAL_HOSTS, or use the address of a Jira that is reachable from the internet.",
     "jira.fix.network": "Check the address and that the Qualor server can reach Jira, then test again.",
     "jira.fix.tokenRefused": "Check the token (and, on Jira Cloud, the email), then save it again.",
-    "jira.fix.captcha": "Sign in to Jira in a browser with the same account and solve the CAPTCHA, then test again.",
+    "jira.fix.captcha": "Sign in to Jira in a browser with that account and answer the CAPTCHA, or ask a Jira administrator to reset its failed logins, then test again.",
     "jira.fix.redirected": "Use the final address of your Jira, without a redirect.",
     "jira.fix.permission": "Give the account the Browse projects and Create issues permissions in the Jira project.",
     "jira.fix.badAnswer": "Check the address, and that no sign-in page sits in front of Jira.",
