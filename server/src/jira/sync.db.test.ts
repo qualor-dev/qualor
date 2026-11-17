@@ -509,6 +509,23 @@ describe('the Jira sync pass (spec §6.5, §11.2, §11.6–11.9)', () => {
     expect(commentsSent()).toEqual([]);
   });
 
+  it('comment answered with a 200 sign-in page (M2): not recorded; the next pass posts it', async () => {
+    const { linkId, issueId, key } = await createdIssue();
+    await close([issueId], '2026-11-10T08:00:00Z');
+    fake.inject('POST', /\/comment$/, {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      body: '<html><body>Sign in</body></html>',
+    });
+    expect(await runPass()).toMatchObject({ comments: 0, stop: null });
+    expect((await row(linkId)).reportedFixedAt).toBeNull();
+    // R16: a bad answer records no background problem.
+    expect((await connection())?.problem).toBeNull();
+    expect(await runPass()).toMatchObject({ comments: 1, stop: null });
+    expect(fake.issue(key)!.comments).toHaveLength(1);
+    expect((await row(linkId)).reportedFixedAt).not.toBeNull();
+  });
+
   it('expired token (spec §11.6): the pass ends at the 401, probes only after, and a new token lets it go on', async () => {
     const { issueId } = await createdIssue();
     // A comment is due: a pass that went on after the 401 would send it.

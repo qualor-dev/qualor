@@ -162,6 +162,8 @@ export interface JiraIssueState {
 // ─── Answer shapes (the fields Qualor reads; server/test/jira-shapes/ holds recorded ones) ──────
 
 const myself = z.looseObject({ displayName: z.string() });
+/** A created comment: Jira answers with it, its `id` included. */
+const comment = z.looseObject({ id: z.string() });
 const project = z.looseObject({ id: z.string(), key: z.string(), name: z.string() });
 /** Cloud's `project/search` page. */
 const projectPage = z.looseObject({
@@ -259,6 +261,7 @@ const errorBody = z.looseObject({
 /** Every recorded shape the client parses, for the shape test (server/test/jira-shapes/). */
 export const JIRA_SHAPES = {
   myself,
+  comment,
   projectPage,
   projects: z.array(project),
   createmetaPage,
@@ -767,9 +770,10 @@ export class JiraClient {
 
   /**
    * Finds or gives up on each id of `batch` (spec §6.5 step 4). Cloud fails a whole query on one
-   * unknown id (400): the batch is halved until each id is found or alone, and a lone id answering
-   * 400 or 404 is missing this pass. Each request counts against the budget. Only the codes of
-   * those answers count: a CAPTCHA lockout or a redirect is thrown whatever its status.
+   * unknown id (400), and so may a Data Center whose `validateQuery: "warn"` does not help (M3):
+   * the batch is halved until each id is found or alone, and a lone id answering 400 or 404 is
+   * missing this pass. Each request counts against the budget. Only the codes of those answers
+   * count: a CAPTCHA lockout or a redirect is thrown whatever its status.
    */
   private async settle(
     batch: readonly string[],
@@ -789,7 +793,7 @@ export class JiraClient {
 
   /**
    * {@link settle} of a batch whose query failed: a lone id answering 400 or 404 is missing, a
-   * larger batch answering 400 on Cloud is halved, and anything else is thrown.
+   * larger batch answering 400 is halved, and anything else is thrown.
    */
   private async settleRefused(
     err: unknown,
@@ -798,7 +802,7 @@ export class JiraClient {
     missing: string[],
   ): Promise<void> {
     if (!(err instanceof JiraError)) throw err;
-    const halvable = err.code === 'field_refused' && this.#deployment === 'cloud';
+    const halvable = err.code === 'field_refused';
     if (batch.length === 1 && (halvable || err.code === 'not_found')) {
       missing.push(...batch);
       return;
@@ -848,13 +852,13 @@ export class JiraClient {
     return out;
   }
 
-  /** `POST /rest/api/2/issue/{id}/comment`: a comment in wiki markup. */
+  /**
+   * `POST /rest/api/2/issue/{id}/comment`: a comment in wiki markup. Jira answers with the
+   * comment; any other 2xx (a sign-in page) is a bad answer, so nothing counts as posted (M2).
+   */
   async addComment(issueId: string, body: string): Promise<void> {
-    const answer = await this.exchange(
-      'POST',
-      `/rest/api/2/issue/${encodeURIComponent(issueId)}/comment`,
-      { body },
-    );
-    if (answer.status < 200 || answer.status >= 300) throw this.refusal(answer);
+    await this.call(comment, 'POST', `/rest/api/2/issue/${encodeURIComponent(issueId)}/comment`, {
+      body,
+    });
   }
 }

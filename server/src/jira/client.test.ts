@@ -104,8 +104,7 @@ describe('the recorded shapes (server/test/jira-shapes/)', () => {
       'bulk-partial.json': 'bulkAnswer',
       'search-jql.cloud.json': 'cloudSearchPage',
       'search.dc.json': 'dcSearchPage',
-      // The client reads nothing of a created comment but its status.
-      'comment.json': null,
+      'comment.json': 'comment',
       'error.json': 'errorBody',
     };
     expect(files.sort()).toEqual(Object.keys(schemaOf).sort());
@@ -670,6 +669,28 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
       expect((await failure(client.addComment(id, 'again'))).code).toBe('not_found');
     });
 
+    it('a comment answered with a 200 sign-in page is a bad answer, not posted (M2)', async () => {
+      const fake = await fakeJira('data_center');
+      const client = clientOf(fake);
+      const { id } = await client.createIssue(bug('commented'));
+      fake.inject(
+        'POST',
+        /\/comment$/,
+        {
+          status: 200,
+          headers: { 'content-type': 'text/html;charset=UTF-8' },
+          body: '<html><body><form action="/login.jsp">Log in</form></body></html>',
+        },
+        { status: 201, body: { self: 'https://jira.corp.example/rest/api/2/issue/1/comment' } },
+      );
+      expect(await failure(client.addComment(id, 'fixed'))).toMatchObject({
+        code: 'bad_answer',
+        status: 200,
+      });
+      // JSON without the comment's id is not understood either.
+      expect((await failure(client.addComment(id, 'fixed'))).code).toBe('bad_answer');
+    });
+
     it('a lost answer (spec §11.2): the fake makes the issue, then hangs or resets', async () => {
       const fake = await fakeJira('data_center');
       const client = clientOf(fake, { timeoutMs: 300 });
@@ -821,12 +842,22 @@ describe('Jira client (spec §6.7) against the fake Jira', () => {
       expect(err).toMatchObject({ code: 'bad_answer' });
     });
 
-    it('Data Center: a 400 is thrown, not halved', async () => {
+    it('Data Center (M3): a batch answering 400 is halved too; a lone id answering 400 is missing', async () => {
       const fake = await fakeJira('data_center');
+      const client = clientOf(fake);
+      const ids: string[] = [];
+      for (const s of ['a', 'b', 'c']) ids.push((await client.createIssue(bug(s))).id);
+      fake.clearRequests();
+      // validateQuery "warn" did not help: the batch of three and its first half answer 400.
+      fake.inject('POST', /\/search$/, { status: 400 }, { status: 400 });
+      const { found, missing } = await client.searchByIds(ids);
+      expect([...found.keys()].sort()).toEqual([...ids].sort());
+      expect(missing).toEqual([]);
+      expect(
+        fake.requests.map((r) => (JSON.parse(r.body) as { jql: string }).jql.replace(/\d+/g, 'n')),
+      ).toEqual(['id in (n,n,n)', 'id in (n,n)', 'id in (n)', 'id in (n)', 'id in (n)']);
       fake.inject('POST', /\/search$/, { status: 400 });
-      const err = await failure(clientOf(fake).searchByIds(['10001', '10002']));
-      expect(err).toMatchObject({ code: 'field_refused', status: 400 });
-      expect(fake.requests).toHaveLength(1);
+      expect(await client.searchByIds([ids[0]!])).toEqual({ found: new Map(), missing: [ids[0]] });
     });
 
     it('issues inside the search lag are not found yet', async () => {
