@@ -4300,6 +4300,8 @@ export interface components {
             details?: {
                 invalid: string[];
             };
+            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
+            missingFields?: string[];
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */
                 path: string;

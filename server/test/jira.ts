@@ -61,3 +61,28 @@ export async function seedJiraLink(
     .returning({ id: jiraLinks.id });
   return created!.id;
 }
+
+/**
+ * Maps the project to the fake's `QUAL` project (id 10000, as the tests add it) and its `Bug` type,
+ * with no labels, no priorities and the automatic rule off; `body` overrides any of it.
+ */
+export async function mapJira(
+  h: IngestHarness,
+  projectId: string,
+  body: object = {},
+): Promise<void> {
+  const res = await h.ctx.app.inject({
+    method: 'PUT',
+    url: `/api/v0/projects/${projectId}/jira`,
+    headers: h.orgAdmin.headers,
+    payload: {
+      jiraProject: { id: '10000', key: 'QUAL', name: 'Qualor findings' },
+      issueType: { id: '10001', name: 'Bug' },
+      labels: [],
+      priorities: null,
+      autoCreate: { minSeverity: null, exploited: false },
+      ...body,
+    },
+  });
+  if (res.statusCode !== 200) throw new Error(`jira mapping: ${res.body}`);
+}

@@ -112,6 +112,15 @@ export const JIRA_CONNECTION_CHANGED_FIELDS = [
   'email',
   'token',
 ] as const;
+/** 0.16 Jira §6.10: the names `project.jira_updated` may list (names only; `mapping` is the whole mapping created or removed). */
+export const PROJECT_JIRA_CHANGED_FIELDS = [
+  'mapping',
+  'jiraProject',
+  'issueType',
+  'labels',
+  'priorities',
+  'autoCreate',
+] as const;
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
 export const MAIL_SETTINGS_CHANGED_FIELDS = [
   'server',
@@ -460,6 +469,12 @@ export const AUDIT_CATALOGUE = {
       changed: z
         .array(z.enum(VULNERABILITY_MONITORING_CHANGED_FIELDS))
         .max(VULNERABILITY_MONITORING_CHANGED_FIELDS.length),
+    }),
+  },
+  'project.jira_updated': {
+    target: 'project',
+    details: z.strictObject({
+      changed: z.array(z.enum(PROJECT_JIRA_CHANGED_FIELDS)).max(PROJECT_JIRA_CHANGED_FIELDS.length),
     }),
   },
   'vulnerability.decision_changed': {

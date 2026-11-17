@@ -16982,6 +16982,537 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/jira": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The project's Jira mapping or null, the organisation's connection (deployment, address, background problem) or null, whether vulnerability monitoring is on, and whether `exploited` of the automatic rule is licensed */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            mapping: {
+                                jiraProject: {
+                                    id: string;
+                                    key: string;
+                                    name: string;
+                                };
+                                issueType: {
+                                    id: string;
+                                    name: string;
+                                };
+                                labels: string[];
+                                priorities: {
+                                    [key: string]: string;
+                                } | null;
+                                labelsAvailable: boolean;
+                                priorityAvailable: boolean;
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            connection: {
+                                /** @enum {string} */
+                                deployment: "cloud" | "data_center";
+                                siteUrl: string;
+                                problem: {
+                                    /** @enum {string} */
+                                    code: "token_refused" | "captcha" | "unreachable" | "timeout" | "redirected" | "not_public" | "url_not_allowed" | "undecryptable";
+                                    message: string;
+                                    /** Format: date-time */
+                                    at: string;
+                                } | null;
+                            } | null;
+                            monitoringOn: boolean;
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        /** Create or replace the project's Jira mapping (project admins). The issue type is checked against Jira's create screen: 422 JIRA_ISSUE_TYPE_UNSUPPORTED (with `missingFields`) when it needs fields Qualor cannot fill, 422 on `body.issueType.id` for an unknown or sub-task type, 422 on `body.priorities.<severity>` for a priority the type does not offer. Whether the screen has labels and priority is stored. `autoCreate.since` is set whenever the rule changes and cleared when it goes off */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        jiraProject: {
+                            id: string;
+                            key: string;
+                            name: string;
+                        };
+                        issueType: {
+                            id: string;
+                            name: string;
+                        };
+                        /** @description At most 10 extra labels, added to `qualor` and the link label */
+                        labels: string[];
+                        /** @description Jira priority ids (from the issue type's `allowedValues`) by issue severity; null sets none */
+                        priorities: {
+                            blocker?: string;
+                            high?: string;
+                            medium?: string;
+                            low?: string;
+                            info?: string;
+                        } | null;
+                        autoCreate: {
+                            minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                            /** @description Turning it on needs the `vuln.priority` licence (403 FEATURE_NOT_LICENSED) */
+                            exploited: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            mapping: {
+                                jiraProject: {
+                                    id: string;
+                                    key: string;
+                                    name: string;
+                                };
+                                issueType: {
+                                    id: string;
+                                    name: string;
+                                };
+                                labels: string[];
+                                priorities: {
+                                    [key: string]: string;
+                                } | null;
+                                labelsAvailable: boolean;
+                                priorityAvailable: boolean;
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            connection: {
+                                /** @enum {string} */
+                                deployment: "cloud" | "data_center";
+                                siteUrl: string;
+                                problem: {
+                                    /** @enum {string} */
+                                    code: "token_refused" | "captcha" | "unreachable" | "timeout" | "redirected" | "not_public" | "url_not_allowed" | "undecryptable";
+                                    message: string;
+                                    /** Format: date-time */
+                                    at: string;
+                                } | null;
+                            } | null;
+                            monitoringOn: boolean;
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_UNAVAILABLE: the Jira call failed; `detail` is the fixed text of its problem code, never Jira's own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Remove the project's Jira mapping (project admins); its links stay and keep syncing, nothing new is created. 404 without a mapping */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/jira/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The picker (project admins): at most 50 Jira projects the connection can see whose key or name contains `query` */
+        get: {
+            parameters: {
+                query?: {
+                    query?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: string;
+                                key: string;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_UNAVAILABLE: the Jira call failed; `detail` is the fixed text of its problem code, never Jira's own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/jira/issue-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The issue types of a Jira project (project admins), sub-tasks left out, each with whether Qualor can create it, the names of the required fields it cannot fill, and its labels and priority fields. A required priority without default counts as settable: the mapping then needs a priority for every severity */
+        get: {
+            parameters: {
+                query: {
+                    jiraProject: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: string;
+                                name: string;
+                                supported: boolean;
+                                missingFields: string[];
+                                labels: boolean;
+                                priority: {
+                                    allowed: {
+                                        id: string;
+                                        name: string;
+                                    }[];
+                                    required: boolean;
+                                } | null;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description JIRA_UNAVAILABLE: the Jira call failed; `detail` is the fixed text of its problem code, never Jira's own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/organizations/{id}/setup-checklist": {
         parameters: {
             query?: never;
@@ -17169,6 +17700,8 @@ export interface components {
             details?: {
                 invalid: string[];
             };
+            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
+            missingFields?: string[];
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */
                 path: string;

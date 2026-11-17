@@ -25,6 +25,12 @@ const PROBLEM_SCHEMA = {
       properties: { invalid: { type: 'array', items: { type: 'string' } } },
       required: ['invalid'],
     },
+    missingFields: {
+      type: 'array',
+      description:
+        'JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill',
+      items: { type: 'string' },
+    },
     errors: {
       type: 'array',
       items: {

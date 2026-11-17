@@ -545,12 +545,25 @@ export async function runAuditScenario(
   await call('DELETE', `/scm-connections/${github}`, 204);
 
   // jira_connection.created (a Data Center), .updated (a new address, Cloud with the email and
-  // the token: deployment, siteUrl, email and token), .deleted. Nothing calls Jira.
+  // the token: deployment, siteUrl, email and token), .deleted. Only the mapping calls Jira.
   await call('PUT', `/organizations/${org}/jira`, 200, {
     deployment: 'data_center',
     siteUrl: jira.url,
     token: S.jiraToken,
   });
+  // project.jira_updated: map (mapping), update (labels), unmap (mapping), before the new address
+  // that would delete a mapping.
+  jira.addProject({ id: '10000', key: 'QUAL', name: 'Qualor findings' });
+  const jiraMapping = {
+    jiraProject: { id: '10000', key: 'QUAL', name: 'Qualor findings' },
+    issueType: { id: '10001', name: 'Bug' },
+    labels: [] as string[],
+    priorities: null,
+    autoCreate: { minSeverity: null, exploited: false },
+  };
+  await call('PUT', `/projects/${main.id}/jira`, 200, jiraMapping);
+  await call('PUT', `/projects/${main.id}/jira`, 200, { ...jiraMapping, labels: ['scenario'] });
+  await call('DELETE', `/projects/${main.id}/jira`, 204);
   await call('PUT', `/organizations/${org}/jira`, 200, {
     deployment: 'cloud',
     siteUrl: 'https://scenario.atlassian.net',

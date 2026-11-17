@@ -28,6 +28,8 @@ export interface ProblemExtensions {
   reason?: string;
   /** 400 INVALID_LICENSE_ID: the policy entries that are not SPDX ids or terms (6M §5). */
   details?: { invalid: string[] };
+  /** 422 JIRA_ISSUE_TYPE_UNSUPPORTED: the names of the required fields Qualor cannot fill (0.16 Jira §6.2). */
+  missingFields?: string[];
 }
 
 export interface Problem extends ProblemExtensions {
