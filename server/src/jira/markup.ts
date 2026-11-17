@@ -1,0 +1,54 @@
+/**
+ * Wiki markup escaping for the Jira issue content (spec §6.4, §11.1). Nothing from a report, a
+ * rule, an advisory or a user may render as a link, an image, a macro or formatting: free text goes
+ * into `{noformat}` blocks, short identifiers are backslash-escaped, URLs are built or encoded here.
+ */
+
+const ZWSP = '\u200B';
+const MARKUP = /[\\*_?\-+^~{}[\]|!#()]/g;
+const LINE_BREAKS = /\r\n|[\n\r\u2028\u2029]/g;
+
+/** At most `max` UTF-16 units including the `…`; never splits a surrogate pair. */
+export function cutText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = Math.max(0, max - 1);
+  const last = text.charCodeAt(end - 1);
+  if (end > 0 && last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+
+/** A short identifier made inert: no markup character, no line break, no `://` that could link. */
+export function escapeIdentifier(text: string, max = 255): string {
+  const escaped = text
+    .replace(LINE_BREAKS, ' ')
+    .replace(MARKUP, '\\$&')
+    .replaceAll('://', `:/${ZWSP}/`);
+  const cut = cutText(escaped, max);
+  if (cut === escaped) return cut;
+  // A cut inside an escape pair must not leave a backslash that would escape the `…`.
+  const body = cut.slice(0, -1);
+  const slashes = body.length - body.replace(/\\+$/, '').length;
+  return slashes % 2 === 1 ? `${body.slice(0, -1)}…` : cut;
+}
+
+/** Free text in a `{noformat}` block; a `{noformat}` inside it (any case) cannot close the block. */
+export function noformat(text: string): string {
+  return `{noformat}\n${text.replace(/\{noformat\}/gi, (m) => `{${ZWSP}${m.slice(1)}`)}\n{noformat}`;
+}
+
+/** An advisory's `http(s)` URL with the characters of the link syntax encoded, else null. */
+export function advisoryUrl(raw: string | null): string | null {
+  if (raw === null) return null;
+  const trimmed = raw.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return trimmed
+    .replaceAll('|', '%7C')
+    .replaceAll(']', '%5D')
+    .replaceAll('[', '%5B')
+    .replace(/\s/g, '%20');
+}
+
+/** `[<escaped text>|<url>]`; the URL is built or encoded by the caller. */
+export function wikiLink(text: string, url: string): string {
+  return `[${escapeIdentifier(text)}|${url}]`;
+}
