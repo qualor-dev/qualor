@@ -37,6 +37,9 @@
   @if (error(); as message) {
     <p class="alert alert-error" role="alert">{{ message }}</p>
   }
+  @if (loadFailed()) {
+    <button type="button" class="btn" (click)="retry()" i18n="@@jira.retry">Retry</button>
+  }
   @if (failure(); as failed) {
     <p class="alert alert-error" role="alert">
       {{ failed.text }} <span class="jira-fix">{{ failed.fix }}</span>

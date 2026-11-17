@@ -53,6 +53,8 @@ export class JiraSettingsPage {
   protected readonly canManage = computed(() => this.org.canChange('org.jira.manage'));
 
   protected readonly loaded = signal(false);
+  /** The first read failed: no form until the connection's state is known (Save would replace it). */
+  protected readonly loadFailed = signal(false);
   protected readonly connection = signal<JiraConnection | null>(null);
   protected readonly publicUrlSet = signal(true);
   protected readonly deployment = signal<Deployment>('cloud');
@@ -109,6 +111,7 @@ export class JiraSettingsPage {
       untracked(() => {
         this.orgGeneration++;
         this.loaded.set(false);
+        this.loadFailed.set(false);
         this.announcement.set(null);
         this.error.set(null);
         this.testResult.set(null);
@@ -135,11 +138,20 @@ export class JiraSettingsPage {
       );
       if (generation !== this.orgGeneration) return;
       this.apply(answer);
+      this.loaded.set(true);
     } catch (err) {
       if (generation !== this.orgGeneration) return;
       this.error.set(problemMessage(err));
+      this.loadFailed.set(true);
     }
-    this.loaded.set(true);
+  }
+
+  protected retry(): void {
+    const organizationId = this.org.currentId();
+    if (!organizationId) return;
+    this.error.set(null);
+    this.loadFailed.set(false);
+    void this.load(organizationId);
   }
 
   private apply(answer: JiraSettingsAnswer): void {

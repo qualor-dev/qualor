@@ -2352,6 +2352,7 @@
     "jira.testOkNoProjects": "Connected as {$INTERPOLATION}.",
     "jira.testOk": "Connected as {$INTERPOLATION};",
     "jira.projectsVisible": "{VAR_PLURAL, plural, =1 {1 project visible} other {{INTERPOLATION} projects visible}}",
+    "jira.retry": "Retry",
     "jira.problemSince": "Problem since {$INTERPOLATION}.",
     "jira.noPublicUrl": " The server has no QUALOR_PUBLIC_URL, so Jira issues carry no links back to Qualor. Ask the operator to set it. ",
     "jira.connection": "Connection",

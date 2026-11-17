@@ -201,8 +201,46 @@ describe('JiraSettingsPage', () => {
     await settle(fixture);
     button(root.querySelector('dialog#jira-confirm-dialog')!, 'Change the address').click();
     await settle(fixture);
-    expect(root.querySelector('#jira-token-error')?.textContent).toContain('token');
+    expect(root.querySelector('#jira-token-error')?.textContent).toContain(
+      'Qualor sends a stored token only to the address it was saved for',
+    );
     expect(root.querySelector('.alert-error')).toBeNull();
+  });
+
+  it('a token that is sent and refused with a 422 shows the token format text', async () => {
+    const server = setup(jiraConnection());
+    server.on('PUT', URL, {
+      status: 422,
+      body: problem(422, 'VALIDATION_FAILED', [{ path: 'body.token', message: 'Bad' }]),
+    });
+    const { fixture, root } = await render();
+    type(root, '#jira-token', 'bad token');
+    submit(root);
+    await settle(fixture);
+    expect(root.querySelector('#jira-token-error')?.textContent).toContain(
+      'Paste the token as Jira shows it (no spaces).',
+    );
+  });
+
+  it('shows only the error and a Retry after a failed load, then the form with the stored values', async () => {
+    const server = setup(jiraConnection({ siteUrl: 'https://jira.corp.example' }));
+    server.on('GET', URL, { status: 500, body: problem(500, 'INTERNAL') });
+    const { fixture, root } = await render();
+    expect(root.querySelector('.alert-error')).not.toBeNull();
+    expect(root.querySelector('form#jira-form')).toBeNull();
+    expect(button(root, 'Save')).toBeUndefined();
+    server.on('GET', URL, {
+      body: {
+        connection: jiraConnection({ siteUrl: 'https://jira.corp.example' }),
+        publicUrlSet: true,
+      },
+    });
+    button(root, 'Retry').click();
+    await settle(fixture);
+    expect(root.querySelector('.alert-error')).toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#jira-site-url')!.value).toBe(
+      'https://jira.corp.example',
+    );
   });
 
   it('Test shows who is connected and how many projects, with a plural', async () => {
