@@ -1,0 +1,17 @@
+[
+  {
+    "expand": "description,lead,url,projectKeys",
+    "self": "https://jira.corp.example/rest/api/2/project/10000",
+    "id": "10000",
+    "key": "QUAL",
+    "name": "Qualor findings",
+    "avatarUrls": {
+      "48x48": "https://jira.corp.example/secure/projectavatar?avatarId=10324",
+      "24x24": "https://jira.corp.example/secure/projectavatar?size=small&avatarId=10324",
+      "16x16": "https://jira.corp.example/secure/projectavatar?size=xsmall&avatarId=10324",
+      "32x32": "https://jira.corp.example/secure/projectavatar?size=medium&avatarId=10324"
+    },
+    "projectTypeKey": "software",
+    "archived": false
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "self": "https://jira.corp.example/rest/api/2/issue/10001/comment/10100",
+  "id": "10100",
+  "author": {
+    "self": "https://jira.corp.example/rest/api/2/user?username=qualor",
+    "name": "qualor",
+    "displayName": "Qualor Service",
+    "active": true
+  },
+  "body": "Qualor no longer finds this issue on main (analysis of 2026-11-17).",
+  "updateAuthor": {
+    "self": "https://jira.corp.example/rest/api/2/user?username=qualor",
+    "name": "qualor",
+    "displayName": "Qualor Service",
+    "active": true
+  },
+  "created": "2026-11-17T09:30:00.000+0000",
+  "updated": "2026-11-17T09:30:00.000+0000"
+}

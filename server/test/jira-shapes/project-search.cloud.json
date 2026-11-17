@@ -1,0 +1,27 @@
+{
+  "self": "https://acme.atlassian.net/rest/api/2/project/search?startAt=0&maxResults=50",
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "expand": "description,lead,issueTypes,url,projectKeys,permissions,insight",
+      "self": "https://acme.atlassian.net/rest/api/2/project/10000",
+      "id": "10000",
+      "key": "QUAL",
+      "name": "Qualor findings",
+      "avatarUrls": {
+        "48x48": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/project/avatar/10400",
+        "24x24": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/project/avatar/10400?size=small",
+        "16x16": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/project/avatar/10400?size=xsmall",
+        "32x32": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/project/avatar/10400?size=medium"
+      },
+      "projectTypeKey": "software",
+      "simplified": false,
+      "style": "classic",
+      "isPrivate": false,
+      "properties": {}
+    }
+  ]
+}

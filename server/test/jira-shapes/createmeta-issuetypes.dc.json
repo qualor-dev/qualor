@@ -1,0 +1,17 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "self": "https://jira.corp.example/rest/api/2/issuetype/10001",
+      "id": "10001",
+      "description": "A problem which impairs or prevents the functions of the product.",
+      "iconUrl": "https://jira.corp.example/secure/viewavatar?size=xsmall&avatarId=10303&avatarType=issuetype",
+      "name": "Bug",
+      "subtask": false,
+      "avatarId": 10303
+    }
+  ]
+}

@@ -41,6 +41,7 @@ describe('loadConfig', () => {
       scmInternalHosts: new Set(),
       llmInternalHosts: new Set(),
       ssoInternalHosts: new Set(),
+      jiraInternalHosts: new Set(),
       vulndb: {
         dir: resolve('/var/cache/qualor/vulndb'),
         trivyPath: resolve('/usr/local/bin/trivy'),
@@ -124,6 +125,19 @@ describe('loadConfig', () => {
     expect([
       ...loadConfig({ ...base, QUALOR_SCM_INTERNAL_HOSTS: 'ollama:11434' }).llmInternalHosts,
     ]).toEqual([]);
+  });
+
+  it('reads QUALOR_JIRA_INTERNAL_HOSTS like the SCM list, at most 50 (0.16 Jira, spec §6.12)', () => {
+    const c = loadConfig({ ...base, QUALOR_JIRA_INTERNAL_HOSTS: 'Jira.corp:8080, 10.0.0.5' });
+    expect([...c.jiraInternalHosts]).toEqual(['jira.corp:8080', '10.0.0.5']);
+    expect(loadConfig(base).jiraInternalHosts.size).toBe(0);
+    expect([
+      ...loadConfig({ ...base, QUALOR_SCM_INTERNAL_HOSTS: 'jira.corp' }).jiraInternalHosts,
+    ]).toEqual([]);
+    const many = Array.from({ length: 51 }, (_, i) => `jira${i}.corp`).join(',');
+    expect(problems({ ...base, QUALOR_JIRA_INTERNAL_HOSTS: many })).toEqual([
+      'QUALOR_JIRA_INTERNAL_HOSTS: at most 50 hosts',
+    ]);
   });
 
   it('resolves QUALOR_UI_DIR to an absolute path and treats an empty value as unset', () => {

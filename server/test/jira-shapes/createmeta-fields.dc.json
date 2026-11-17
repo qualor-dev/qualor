@@ -1,0 +1,38 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 2,
+  "isLast": true,
+  "values": [
+    {
+      "required": true,
+      "schema": { "type": "string", "system": "summary" },
+      "name": "Summary",
+      "fieldId": "summary",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    },
+    {
+      "required": false,
+      "schema": { "type": "priority", "system": "priority" },
+      "name": "Priority",
+      "fieldId": "priority",
+      "hasDefaultValue": true,
+      "operations": ["set"],
+      "allowedValues": [
+        {
+          "self": "https://jira.corp.example/rest/api/2/priority/1",
+          "iconUrl": "https://jira.corp.example/images/icons/priorities/highest.svg",
+          "name": "Highest",
+          "id": "1"
+        }
+      ],
+      "defaultValue": {
+        "self": "https://jira.corp.example/rest/api/2/priority/3",
+        "iconUrl": "https://jira.corp.example/images/icons/priorities/medium.svg",
+        "name": "Medium",
+        "id": "3"
+      }
+    }
+  ]
+}

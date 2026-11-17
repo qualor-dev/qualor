@@ -68,6 +68,8 @@ config:
   # switch QUALOR_FORCE_PASSWORD_SIGN_IN (https://qualor.dev/docs/sso-and-scim). Remove it once SSO works.
   ssoInternalHosts: ''
   forcePasswordSignIn: false
+  # Jira Data Center on the internal network, or on plain http (https://qualor.dev/docs/jira).
+  jiraInternalHosts: ''
   # Anonymous usage statistics sent daily to qualor.dev (https://qualor.dev/docs/telemetry).
   telemetry: true
   # The sender of Qualor's email, `Name <address>` or an address; needed with an SMTP URL.

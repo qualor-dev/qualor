@@ -222,6 +222,10 @@ seccompProfile:
 - name: QUALOR_SSO_INTERNAL_HOSTS
   value: {{ . | quote }}
 {{- end }}
+{{- with $v.config.jiraInternalHosts }}
+- name: QUALOR_JIRA_INTERNAL_HOSTS
+  value: {{ . | quote }}
+{{- end }}
 {{- if $v.config.forcePasswordSignIn }}
 - name: QUALOR_FORCE_PASSWORD_SIGN_IN
   value: "true"

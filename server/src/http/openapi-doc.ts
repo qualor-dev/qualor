@@ -43,6 +43,7 @@ export async function openApiDocument(plugins?: OpenApiPlugins): Promise<unknown
     scmInternalHosts: new Set(),
     llmInternalHosts: new Set(),
     ssoInternalHosts: new Set(),
+    jiraInternalHosts: new Set(),
     chatTestHosts: new Set(),
     vulndb: {
       dir: '/var/cache/qualor/vulndb',

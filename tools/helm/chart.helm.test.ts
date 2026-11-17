@@ -100,6 +100,18 @@ describe('database modes (release.md §6.2)', () => {
     expect(env(sts, 'QUALOR_FORCE_PASSWORD_SIGN_IN')?.value).toBe('true');
   });
 
+  it('Jira: jiraInternalHosts becomes QUALOR_JIRA_INTERNAL_HOSTS, and nothing when empty (R23)', () => {
+    const sts = find(
+      render(EMBEDDED, { config: { jiraInternalHosts: 'jira.corp:8443' } }),
+      'StatefulSet',
+      'qualor',
+    );
+    expect(env(sts, 'QUALOR_JIRA_INTERNAL_HOSTS')?.value).toBe('jira.corp:8443');
+    expect(
+      env(find(render(EMBEDDED), 'StatefulSet', 'qualor'), 'QUALOR_JIRA_INTERNAL_HOSTS'),
+    ).toBeUndefined();
+  });
+
   it('config.telemetry: false becomes QUALOR_TELEMETRY=false', () => {
     const sts = find(render(EMBEDDED, { config: { telemetry: false } }), 'StatefulSet', 'qualor');
     expect(env(sts, 'QUALOR_TELEMETRY')?.value).toBe('false');

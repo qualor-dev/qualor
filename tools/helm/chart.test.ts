@@ -108,6 +108,10 @@ describe('values.schema.json (release.md §6.3)', () => {
       { config: { ssoInternalHosts: 'keycloak.corp:8443', forcePasswordSignIn: true } },
     ],
     [
+      'a Jira Data Center on the internal network',
+      { config: { jiraInternalHosts: 'jira.corp:8443' } },
+    ],
+    [
       'a username of 64 allowed characters',
       { config: { bootstrapAdminUsername: 'a._-Z9'.repeat(10) + 'abcd' } },
     ],

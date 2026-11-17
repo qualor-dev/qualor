@@ -1,0 +1,31 @@
+{
+  "expand": "schema,names",
+  "startAt": 0,
+  "maxResults": 100,
+  "total": 1,
+  "issues": [
+    {
+      "expand": "operations,versionedRepresentations,editmeta,changelog,renderedFields",
+      "id": "10001",
+      "self": "https://jira.corp.example/rest/api/2/issue/10001",
+      "key": "QUAL-1",
+      "fields": {
+        "status": {
+          "self": "https://jira.corp.example/rest/api/2/status/10000",
+          "description": "",
+          "iconUrl": "https://jira.corp.example/images/icons/statuses/open.png",
+          "name": "To Do",
+          "id": "10000",
+          "statusCategory": {
+            "self": "https://jira.corp.example/rest/api/2/statuscategory/2",
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "To Do"
+          }
+        },
+        "labels": ["qualor", "qualor-0b6f2a1c9d8e4f7a8b9c0d1e2f3a4b5c-1"]
+      }
+    }
+  ]
+}

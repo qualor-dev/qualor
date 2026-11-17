@@ -330,6 +330,8 @@ const envSchema = z
     QUALOR_LLM_INTERNAL_HOSTS: internalHostsSchema,
     // sso-scim.md §14: its own list, as QUALOR_SCM_INTERNAL_HOSTS and QUALOR_LLM_INTERNAL_HOSTS are.
     QUALOR_SSO_INTERNAL_HOSTS: internalHostsSchema,
+    // 0.16 Jira (spec §6.12): a Data Center on the internal network, as the other lists are.
+    QUALOR_JIRA_INTERNAL_HOSTS: internalHostsSchema,
     // 6G R7: chat webhook hosts besides Slack's and Teams' (tests and fake receivers only).
     QUALOR_CHAT_TEST_HOSTS: internalHostsSchema,
     // sso-scim.md §10.4: the emergency switch; anything but true/false/empty stops the boot.
@@ -457,6 +459,8 @@ export interface Config {
   llmInternalHosts: ReadonlySet<string>;
   /** QUALOR_SSO_INTERNAL_HOSTS, normalised (sso-scim.md §14). */
   ssoInternalHosts: ReadonlySet<string>;
+  /** QUALOR_JIRA_INTERNAL_HOSTS, normalised (0.16 Jira, spec §6.12). */
+  jiraInternalHosts: ReadonlySet<string>;
   /** The vulnerability database (0.15): local copy, Trivy binary, mirror hosts, upload cap. */
   vulndb: {
     dir: string;
@@ -539,6 +543,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     scmInternalHosts: e.QUALOR_SCM_INTERNAL_HOSTS,
     llmInternalHosts: e.QUALOR_LLM_INTERNAL_HOSTS,
     ssoInternalHosts: e.QUALOR_SSO_INTERNAL_HOSTS,
+    jiraInternalHosts: e.QUALOR_JIRA_INTERNAL_HOSTS,
     vulndb: {
       dir: resolve(e.QUALOR_VULNDB_DIR.trim()),
       trivyPath: resolve(e.QUALOR_TRIVY_PATH.trim()),

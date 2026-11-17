@@ -1,0 +1,17 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "issueTypes": [
+    {
+      "self": "https://acme.atlassian.net/rest/api/2/issuetype/10001",
+      "id": "10001",
+      "description": "A problem or error.",
+      "iconUrl": "https://acme.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+      "name": "Bug",
+      "untranslatedName": "Bug",
+      "subtask": false,
+      "hierarchyLevel": 0
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "issues": [
+    {
+      "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations",
+      "id": "10001",
+      "self": "https://acme.atlassian.net/rest/api/2/issue/10001",
+      "key": "QUAL-1",
+      "fields": {
+        "status": {
+          "self": "https://acme.atlassian.net/rest/api/2/status/10000",
+          "description": "",
+          "iconUrl": "https://acme.atlassian.net/",
+          "name": "To Do",
+          "id": "10000",
+          "statusCategory": {
+            "self": "https://acme.atlassian.net/rest/api/2/statuscategory/2",
+            "id": 2,
+            "key": "new",
+            "colorName": "blue-gray",
+            "name": "To Do"
+          }
+        },
+        "labels": ["qualor", "qualor-0b6f2a1c9d8e4f7a8b9c0d1e2f3a4b5c-1"]
+      }
+    }
+  ],
+  "nextPageToken": "CAEaAggD",
+  "isLast": false
+}

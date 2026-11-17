@@ -1,0 +1,26 @@
+{
+  "issues": [
+    {
+      "id": "10001",
+      "key": "QUAL-1",
+      "self": "https://acme.atlassian.net/rest/api/2/issue/10001"
+    },
+    {
+      "id": "10002",
+      "key": "QUAL-2",
+      "self": "https://acme.atlassian.net/rest/api/2/issue/10002"
+    }
+  ],
+  "errors": [
+    {
+      "status": 400,
+      "elementErrors": {
+        "errorMessages": [],
+        "errors": {
+          "priority": "Field 'priority' cannot be set. It is not on the appropriate screen, or unknown."
+        }
+      },
+      "failedElementNumber": 1
+    }
+  ]
+}

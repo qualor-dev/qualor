@@ -125,6 +125,7 @@
         "scmInternalHosts": { "type": "string" },
         "llmInternalHosts": { "type": "string" },
         "ssoInternalHosts": { "type": "string" },
+        "jiraInternalHosts": { "type": "string" },
         "forcePasswordSignIn": { "type": "boolean" },
         "telemetry": { "type": "boolean" },
         "smtpFrom": { "type": "string", "maxLength": 400, "pattern": "^[^\\r\\n]*$" },

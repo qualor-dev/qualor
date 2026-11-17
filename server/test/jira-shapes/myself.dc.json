@@ -1,0 +1,20 @@
+{
+  "self": "https://jira.corp.example/rest/api/2/user?username=qualor",
+  "key": "JIRAUSER10100",
+  "name": "qualor",
+  "emailAddress": "qualor@corp.example",
+  "avatarUrls": {
+    "48x48": "https://jira.corp.example/secure/useravatar?avatarId=10122",
+    "24x24": "https://jira.corp.example/secure/useravatar?size=small&avatarId=10122",
+    "16x16": "https://jira.corp.example/secure/useravatar?size=xsmall&avatarId=10122",
+    "32x32": "https://jira.corp.example/secure/useravatar?size=medium&avatarId=10122"
+  },
+  "displayName": "Qualor Service",
+  "active": true,
+  "deleted": false,
+  "timeZone": "Europe/Helsinki",
+  "locale": "en_US",
+  "groups": { "size": 1, "items": [] },
+  "applicationRoles": { "size": 1, "items": [] },
+  "expand": "groups,applicationRoles"
+}

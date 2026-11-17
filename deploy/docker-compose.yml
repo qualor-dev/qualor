@@ -58,6 +58,8 @@ services:
       # everyone with a password while the identity provider is down (remove it again afterwards).
       # QUALOR_SSO_INTERNAL_HOSTS: keycloak.corp.example.com:8443
       # QUALOR_FORCE_PASSWORD_SIGN_IN: 'true'
+      # Jira Data Center (docs/guide/jira.md) on the internal network, or on plain http: list its host.
+      # QUALOR_JIRA_INTERNAL_HOSTS: jira.corp.example.com:8443
       # Email (docs/guide/email.md): the SMTP server and the sender, if Qualor sends email.
       # QUALOR_SMTP_URL: smtp://qualor%40example.com:<password>@smtp.example.com:587
       # QUALOR_SMTP_FROM: Qualor <qualor@example.com>

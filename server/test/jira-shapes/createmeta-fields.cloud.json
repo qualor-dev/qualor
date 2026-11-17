@@ -1,0 +1,39 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 2,
+  "fields": [
+    {
+      "required": true,
+      "schema": { "type": "string", "system": "summary" },
+      "name": "Summary",
+      "key": "summary",
+      "fieldId": "summary",
+      "hasDefaultValue": false,
+      "operations": ["set"]
+    },
+    {
+      "required": false,
+      "schema": { "type": "priority", "system": "priority" },
+      "name": "Priority",
+      "key": "priority",
+      "fieldId": "priority",
+      "hasDefaultValue": true,
+      "operations": ["set"],
+      "allowedValues": [
+        {
+          "self": "https://acme.atlassian.net/rest/api/2/priority/1",
+          "iconUrl": "https://acme.atlassian.net/images/icons/priorities/highest.svg",
+          "name": "Highest",
+          "id": "1"
+        }
+      ],
+      "defaultValue": {
+        "self": "https://acme.atlassian.net/rest/api/2/priority/3",
+        "iconUrl": "https://acme.atlassian.net/images/icons/priorities/medium.svg",
+        "name": "Medium",
+        "id": "3"
+      }
+    }
+  ]
+}
