@@ -18,6 +18,7 @@ import {
   vulnerabilityContent,
   type JiraContent,
 } from './content';
+import { forbiddenMarkup } from './live-render';
 import { advisoryUrl } from './markup';
 import { normalJiraUrl } from './url';
 
@@ -168,13 +169,6 @@ const decodeEntities = (s: string): string =>
 const plainText = (html: string): string =>
   decodeEntities(html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '')).replaceAll(ZWSP, '');
 
-const FORBIDDEN: [string, RegExp][] = [
-  ['an image', /<img\b/i],
-  ['bold or italic', /<(b|strong|em|i)[\s>]/i],
-  ['a coloured text', /<font\b|color\s*[:=]/i],
-  ['a script', /<script\b/i],
-];
-
 async function eventually<T>(
   read: () => Promise<T>,
   done: (value: T) => boolean,
@@ -234,10 +228,9 @@ describe.skipIf(!configured).each(connections)('live Jira: $name', (c) => {
       if (!allowed) note(`${what}: an unexpected link, href ${href}`);
       expect.soft(allowed, `${what}: link ${href}`).toBe(true);
     }
-    for (const [name, pattern] of FORBIDDEN) {
-      const hit = pattern.test(html);
-      if (hit) note(`${what}: renders ${name}`);
-      expect.soft(hit, `${what}: renders ${name}`).toBe(false);
+    for (const name of forbiddenMarkup(html)) {
+      note(`${what}: renders ${name}`);
+      expect.soft(name, `${what}: renders ${name}`).toBeUndefined();
     }
     const plain = plainText(html);
     for (const literal of literals) {
