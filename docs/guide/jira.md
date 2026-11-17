@@ -145,14 +145,16 @@ A closed finding shows no button. Where the project has no mapping, a project ad
 | The **Issues** tab | select rows and **Create Jira issues**: at most 500 issues. A row that has a Jira issue shows a pill with its key, with no actions |
 | The **Vulnerabilities** tab | **Create Jira issue** on a row, or tick rows, or **Select all on this page**, and **Create Jira issues**: at most 100 vulnerabilities |
 
-The issue page and the Vulnerabilities rows show **Creating…** (a row of the Issues tab shows **Creating Jira issue…**), then the Jira key as a link, the Jira status and when Qualor read it.
+The issue page shows **Creating…**, then the Jira key as a link, the Jira status and when Qualor read it
+("checked 5 min ago"). A row of the Issues tab or the Vulnerabilities tab shows a pill: **Creating Jira
+issue…**, then the key and the status, without the checked time.
 A bulk request ends with a line such as "12 queued, 3 already linked, 1 not linkable".
 
 Creation runs in the background. Each new Jira issue counts against the same per-user limit as
 status changes: 120 a minute, with a burst of 500. A request over it is refused whole, and the
 screen says when to try again.
 
-On the issue page and on a Vulnerabilities row:
+The issue page's **Jira** card and a Vulnerabilities row offer the same actions. The card shows:
 
 | State | What you see | What you can do |
 |---|---|---|
