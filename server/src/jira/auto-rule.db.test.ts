@@ -25,8 +25,9 @@ import {
 } from '../db/schema';
 import { communityLimits } from '../limits';
 import { writeVulndbSettings } from '../vulndb/settings';
-import { AUTO_PER_PASS, runAutoRule } from './auto-rule';
+import { AUTO_PER_PASS, qualifyingPairs, runAutoRule } from './auto-rule';
 import { JIRA_QUEUE } from './jobs';
+import { mappingOf } from './mapping';
 import { openRun, type JiraJobDeps } from './run';
 import { runSyncPass } from './sync';
 
@@ -99,7 +100,7 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
   const seedPair = async (row: Parameters<typeof seedPairs>[1]) => (await seedPairs(1, row))[0]!;
   /**
    * The rule as stored, written directly with a `since` in the past; the switch-on and threshold
-   * tests go through the mapping route, whose `since` is now.
+   * tests go through the mapping route, whose `since` is the database's now ({@link storedSince}).
    */
   const rule = (
     set: { minSeverity?: JiraAutoSeverity | null; exploited?: boolean; since?: Date },
@@ -113,13 +114,26 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
         autoSince: set.since ?? SINCE,
       })
       .where(eq(projectJiraSettings.projectId, project));
-  const storedSince = async () =>
-    (
-      await db()
-        .select({ since: projectJiraSettings.autoSince })
-        .from(projectJiraSettings)
-        .where(eq(projectJiraSettings.projectId, projectId))
-    )[0]?.since ?? null;
+  /**
+   * The `since` the mapping route stored (the database's clock, which may be a second or more off
+   * the host's): a test that switches the rule on through the route derives every time from it.
+   */
+  const storedSince = async (): Promise<Date> => {
+    const [row] = await db()
+      .select({ since: projectJiraSettings.autoSince })
+      .from(projectJiraSettings)
+      .where(eq(projectJiraSettings.projectId, projectId));
+    expect(row?.since, 'the rule is on').toBeInstanceOf(Date);
+    return row!.since!;
+  };
+  /** `ms` after (or before) `d`. */
+  const shifted = (d: Date, ms: number) => new Date(d.getTime() + ms);
+  /** Moves main's baseline (its first check) to `at`. */
+  const baseline = (at: Date) =>
+    db()
+      .update(vulnerabilityTargetChecks)
+      .set({ baselineAt: at })
+      .where(eq(vulnerabilityTargetChecks.branchId, main));
   const kev = (vulnerabilityId: string, dateAdded: string, delistedAt: Date | null = null) =>
     db().insert(vulnerabilityKev).values({ vulnerabilityId, dateAdded, delistedAt });
   const priority = (): Partial<JiraJobDeps> => {
@@ -138,6 +152,22 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
       .map((l) => keyOf({ packageName: l.packageName!, vulnerabilityId: l.vulnerabilityId! }))
       .sort();
   const sorted = (pairs: Pair[]) => pairs.map(keyOf).sort();
+  /** A version of the project, checked first at {@link BASELINE}. */
+  const seedVersion = async (label: string, tracking: 'pinned' | 'unsupported') => {
+    const [v] = await db()
+      .insert(projectVersions)
+      .values({
+        projectId,
+        label,
+        source: 'tag',
+        tag: `v${label}`,
+        analyzedAt: new Date(),
+        tracking,
+      })
+      .returning({ id: projectVersions.id });
+    await seedCheck(db(), { projectId, versionId: v!.id, baselineAt: BASELINE });
+    return v!.id;
+  };
   const monitoring = (enabled: boolean) =>
     db()
       .insert(projectVulnerabilitySettings)
@@ -174,15 +204,17 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
   });
 
   it('no backlog (spec §11.10): switched on over 300 new high rows first seen before it, it opens nothing', async () => {
-    await seedPairs(300, { firstSeenAt: () => new Date(Date.now() - HOUR) });
     await mapJira(h, projectId, { autoCreate: { minSeverity: 'high', exploited: false } });
-    expect(await storedSince()).not.toBeNull();
+    const since = await storedSince();
+    // The backlog: new on the tab (after main's baseline), first seen an hour before the switch.
+    await baseline(shifted(since, -DAY));
+    await seedPairs(300, { firstSeenAt: () => shifted(since, -HOUR) });
 
     expect(await pass()).toMatchObject({ auto: 0, created: 0, stop: null });
     expect(await links()).toEqual([]);
 
     // A row first seen after the switch is the rule's.
-    const fresh = await seedPair({ firstSeenAt: () => new Date() });
+    const fresh = await seedPair({ firstSeenAt: () => shifted(since, MINUTE) });
     expect(await pass()).toMatchObject({ auto: 1, created: 1 });
     expect(await linkedKeys()).toEqual([keyOf(fresh)]);
   });
@@ -231,10 +263,7 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
     // Main is first checked after the rule's since (a newly tracked target, an SBOM upload,
     // monitoring switched on): its rows are the baseline, not new.
     const checked = after(HOUR);
-    await db()
-      .update(vulnerabilityTargetChecks)
-      .set({ baselineAt: checked })
-      .where(eq(vulnerabilityTargetChecks.branchId, main));
+    await baseline(checked);
     await seedPairs(5, { firstSeenAt: () => checked });
     expect(await auto()).toBe(0);
 
@@ -246,14 +275,30 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
   it('lowering the threshold (spec §11.10) moves since: the medium rows seen before it open nothing', async () => {
     await mapJira(h, projectId, { autoCreate: { minSeverity: 'high', exploited: false } });
     const high = await storedSince();
-    await seedPairs(5, { severity: 'medium', firstSeenAt: () => new Date() });
+    await baseline(shifted(high, -DAY));
+    // Medium rows first seen just after the first since (1 ms: the stored value is in µs).
+    const seen = shifted(high, 1);
+    await seedPairs(5, { severity: 'medium', firstSeenAt: () => seen });
     expect(await auto()).toBe(0);
+    // Under a medium rule from that first since, they would all qualify.
+    const asSaved = (await mappingOf(db(), projectId))!;
+    expect(
+      await qualifyingPairs(
+        db(),
+        { ...asSaved, autoMinSeverity: 'medium' },
+        { exploited: false, limit: AUTO_PER_PASS },
+      ),
+    ).toHaveLength(5);
 
     await mapJira(h, projectId, { autoCreate: { minSeverity: 'medium', exploited: false } });
-    expect((await storedSince())!.getTime()).toBeGreaterThan(high!.getTime());
+    const medium = await storedSince();
+    expect(medium.getTime()).toBeGreaterThan(seen.getTime());
     expect(await auto()).toBe(0);
 
-    const fresh = await seedPair({ severity: 'medium', firstSeenAt: () => new Date() });
+    const fresh = await seedPair({
+      severity: 'medium',
+      firstSeenAt: () => shifted(medium, MINUTE),
+    });
     expect(await auto()).toBe(1);
     expect(await linkedKeys()).toEqual([keyOf(fresh)]);
   });
@@ -317,23 +362,8 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
 
   it('versions: a new row on a tracked version qualifies, one on a version no longer tracked does not', async () => {
     await rule({ minSeverity: 'high' });
-    const version = async (label: string, tracking: 'pinned' | 'unsupported') => {
-      const [v] = await db()
-        .insert(projectVersions)
-        .values({
-          projectId,
-          label,
-          source: 'tag',
-          tag: `v${label}`,
-          analyzedAt: new Date(),
-          tracking,
-        })
-        .returning({ id: projectVersions.id });
-      await seedCheck(db(), { projectId, versionId: v!.id, baselineAt: BASELINE });
-      return v!.id;
-    };
-    const tracked = await version('2.0.0', 'pinned');
-    const dropped = await version('1.0.0', 'unsupported');
+    const tracked = await seedVersion('2.0.0', 'pinned');
+    const dropped = await seedVersion('1.0.0', 'unsupported');
     const onTracked = freshPair();
     await seedTargetRow(db(), {
       projectId,
@@ -350,6 +380,38 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
 
     expect(await auto()).toBe(1);
     expect(await linkedKeys()).toEqual([keyOf(onTracked)]);
+  });
+
+  it('a target tracked again (ruling T9b): the rows its re-check adds are new, capped like any other', async () => {
+    await rule({ minSeverity: 'high' });
+    // Checked long before since, then not tracked any more; its baseline row is kept.
+    const version = await seedVersion('3.0.0', 'unsupported');
+    const kept = freshPair();
+    await seedTargetRow(db(), { projectId, versionId: version, ...kept, firstSeenAt: BASELINE });
+    expect(await auto()).toBe(0);
+
+    // Tracked again after since: the re-check diffs against the kept rows, so what it adds is
+    // first seen then, after the old baseline: new, as the tab counts it.
+    await db()
+      .update(projectVersions)
+      .set({ tracking: 'pinned' })
+      .where(eq(projectVersions.id, version));
+    const added = [freshPair(), freshPair(), freshPair()];
+    for (const [i, pair] of added.entries()) {
+      await seedTargetRow(db(), {
+        projectId,
+        versionId: version,
+        ...pair,
+        firstSeenAt: after(HOUR + i * MINUTE),
+      });
+    }
+
+    const ctx = await context();
+    expect(await runAutoRule(ctx, 2)).toBe(2);
+    expect(await linkedKeys()).toEqual(sorted(added.slice(0, 2)));
+    expect(await runAutoRule(ctx, 2)).toBe(1);
+    expect(await runAutoRule(ctx, 2)).toBe(0);
+    expect(await linkedKeys()).toEqual(sorted(added));
   });
 
   it("exploited: CISA's date_added on or after the day of since, or a new row of any severity; never Qualor's listed_at", async () => {
