@@ -5,6 +5,7 @@ import { jiraLinks, projectJiraSettings, projects } from '../db/schema';
 import { issueUrl } from '../scm/decoration-data';
 import { targetRefsOf } from '../vulnerabilities/list';
 import type { Target } from '../vulnerabilities/targets';
+import { runAutoRule } from './auto-rule';
 import {
   ELEMENT_CODES,
   isJiraIssueId,
@@ -52,7 +53,7 @@ export interface PassOutcome {
   /** Unanswered creates found by their label. */
   reconciled: number;
   created: number;
-  /** Links the automatic rule made (Task 9). */
+  /** Links the automatic rule made (spec §6.6). */
   auto: number;
   /** Links whose status was read. */
   statuses: number;
@@ -303,15 +304,12 @@ async function create(pass: Pass): Promise<void> {
   pass.outcome.stop = result.stop;
 }
 
-/** The links step 3 makes: none until Task 9's automatic rule (`runAutoRule`) takes this place. */
-const automaticLinks = (): Promise<number> => Promise.resolve(0);
-
 /**
  * spec §6.5 step 3, the automatic rule (§6.6). Ruling P5: when it made rows and the budget
  * allows, the create step runs once more, so they need not wait for the next pass.
  */
 async function automaticRule(pass: Pass): Promise<void> {
-  const made = await automaticLinks();
+  const made = await runAutoRule(pass.ctx);
   pass.outcome.auto += made;
   if (made > 0 && pass.ctx.client.remaining > 0) await create(pass);
 }

@@ -331,20 +331,21 @@ export async function linkPreconditions(
 }
 
 /**
- * A pending row, `origin` manual and made by `userId`, for each target that has none (one
- * statement per kind, `ON CONFLICT DO NOTHING` on its unique index). Returns the rows made: a
- * target another request linked meanwhile makes none.
+ * A pending row for each target that has none (one statement per kind, `ON CONFLICT DO NOTHING`
+ * on its unique index): `origin` manual and made by `userId`, or, with `userId` null, the
+ * automatic rule's (`origin` auto, no `created_by`, spec §6.6). Returns the rows made: a target
+ * another request linked meanwhile makes none.
  */
 export async function insertPendingLinks(
   tx: Executor,
-  at: { projectId: string; connectionId: string; userId: string },
+  at: { projectId: string; connectionId: string; userId: string | null },
   targets: readonly LinkTarget[],
 ): Promise<JiraLinkRow[]> {
   const base = {
     projectId: at.projectId,
     connectionId: at.connectionId,
     state: 'pending' as const,
-    origin: 'manual' as const,
+    origin: at.userId === null ? ('auto' as const) : ('manual' as const),
     createdBy: at.userId,
   };
   const issueRows = targets.flatMap((t) =>
