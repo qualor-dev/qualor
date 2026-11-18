@@ -24249,6 +24249,9 @@
                               "missing"
                             ],
                             "additionalProperties": false
+                          },
+                          "fixMrsAllowed": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -24259,7 +24262,8 @@
                           "createdAt",
                           "github",
                           "gitlab",
-                          "ciSetup"
+                          "ciSetup",
+                          "fixMrsAllowed"
                         ],
                         "additionalProperties": false
                       }
@@ -24370,6 +24374,9 @@
                       },
                       "ciSetupAllowed": {
                         "type": "boolean"
+                      },
+                      "fixMrsAllowed": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -24419,6 +24426,9 @@
                       "ciSetupAllowed": {
                         "not": {},
                         "description": "Not a field of a GitHub connection: sending it is a 422"
+                      },
+                      "fixMrsAllowed": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -24581,6 +24591,9 @@
                         "missing"
                       ],
                       "additionalProperties": false
+                    },
+                    "fixMrsAllowed": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -24591,7 +24604,8 @@
                     "createdAt",
                     "github",
                     "gitlab",
-                    "ciSetup"
+                    "ciSetup",
+                    "fixMrsAllowed"
                   ],
                   "additionalProperties": false
                 }
@@ -24694,6 +24708,9 @@
                     ]
                   },
                   "ciSetupAllowed": {
+                    "type": "boolean"
+                  },
+                  "fixMrsAllowed": {
                     "type": "boolean"
                   }
                 },
@@ -24860,6 +24877,9 @@
                         "missing"
                       ],
                       "additionalProperties": false
+                    },
+                    "fixMrsAllowed": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -24870,7 +24890,8 @@
                     "createdAt",
                     "github",
                     "gitlab",
-                    "ciSetup"
+                    "ciSetup",
+                    "fixMrsAllowed"
                   ],
                   "additionalProperties": false
                 }
@@ -39389,6 +39410,550 @@
           },
           "409": {
             "description": "LICENSE_POLICIES_UNREADABLE: the stored licence policies (instance setting `licensePolicy`) are not an object with an `organizations` object; nothing is changed until an operator fixes or deletes the row; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/fixes/settings": {
+      "get": {
+        "summary": "The project's fix MR settings (defaults while none are saved: off, at most 5 open), the preconditions of a request (repository mapped, the connection's switch, monitoring, the last claim), the counts of fixes in flight and whether `exploited` of the automatic rule is licensed",
+        "tags": [
+          "fixes"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "autoCreate": {
+                          "type": "object",
+                          "properties": {
+                            "minSeverity": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "critical",
+                                    "high",
+                                    "medium",
+                                    "low"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "exploited": {
+                              "type": "boolean"
+                            },
+                            "since": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "minSeverity",
+                            "exploited",
+                            "since"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxOpen": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "autoCreate",
+                        "maxOpen",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "preconditions": {
+                      "type": "object",
+                      "properties": {
+                        "scmBound": {
+                          "type": "boolean",
+                          "description": "The project is mapped to a repository"
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "gitlab",
+                                "github"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fixMrsAllowed": {
+                          "type": "boolean",
+                          "description": "An organisation admin allowed fix merge requests on the project's connection"
+                        },
+                        "monitoringOn": {
+                          "type": "boolean"
+                        },
+                        "lastClaimAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scmBound",
+                        "provider",
+                        "fixMrsAllowed",
+                        "monitoringOn",
+                        "lastClaimAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "requested": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "preparing": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "committing": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "open": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "requested",
+                        "preparing",
+                        "committing",
+                        "open"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "exploitedAvailable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "preconditions",
+                    "counts",
+                    "exploitedAvailable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save the fix MR settings (project admins): the switch, the automatic rule and the cap of fixes in flight (1-20). `autoCreate.since` is set whenever the rule changes and cleared when it goes off. Turning the switch on queues a pass of the organisation",
+        "tags": [
+          "fixes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "autoCreate": {
+                    "type": "object",
+                    "properties": {
+                      "minSeverity": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "critical",
+                              "high",
+                              "medium",
+                              "low"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "exploited": {
+                        "type": "boolean",
+                        "description": "Turning it on needs the `vuln.priority` licence (403 FEATURE_NOT_LICENSED)"
+                      }
+                    },
+                    "required": [
+                      "minSeverity",
+                      "exploited"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxOpen": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "autoCreate",
+                  "maxOpen"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "settings": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "autoCreate": {
+                          "type": "object",
+                          "properties": {
+                            "minSeverity": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "critical",
+                                    "high",
+                                    "medium",
+                                    "low"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "exploited": {
+                              "type": "boolean"
+                            },
+                            "since": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "minSeverity",
+                            "exploited",
+                            "since"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxOpen": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "autoCreate",
+                        "maxOpen",
+                        "updatedAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "preconditions": {
+                      "type": "object",
+                      "properties": {
+                        "scmBound": {
+                          "type": "boolean",
+                          "description": "The project is mapped to a repository"
+                        },
+                        "provider": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "gitlab",
+                                "github"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "fixMrsAllowed": {
+                          "type": "boolean",
+                          "description": "An organisation admin allowed fix merge requests on the project's connection"
+                        },
+                        "monitoringOn": {
+                          "type": "boolean"
+                        },
+                        "lastClaimAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scmBound",
+                        "provider",
+                        "fixMrsAllowed",
+                        "monitoringOn",
+                        "lastClaimAt"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "requested": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "preparing": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "committing": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "open": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "requested",
+                        "preparing",
+                        "committing",
+                        "open"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "exploitedAvailable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "settings",
+                    "preconditions",
+                    "counts",
+                    "exploitedAvailable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
             "content": {
               "application/problem+json": {
                 "schema": {

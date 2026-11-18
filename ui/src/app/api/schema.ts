@@ -11109,6 +11109,7 @@ export interface paths {
                                     /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
                                     missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                                 };
+                                fixMrsAllowed: boolean;
                             }[];
                             nextCursor: string | null;
                         };
@@ -11176,6 +11177,7 @@ export interface paths {
                         privateKey?: unknown;
                         webhookSecret?: string;
                         ciSetupAllowed?: boolean;
+                        fixMrsAllowed?: boolean;
                     } | {
                         /** Format: uuid */
                         organizationId: string;
@@ -11189,6 +11191,7 @@ export interface paths {
                         token?: unknown;
                         /** @description Not a field of a GitHub connection: sending it is a 422 */
                         ciSetupAllowed?: unknown;
+                        fixMrsAllowed?: boolean;
                     };
                 };
             };
@@ -11229,6 +11232,7 @@ export interface paths {
                                 /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
                                 missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
+                            fixMrsAllowed: boolean;
                         };
                     };
                 };
@@ -11382,6 +11386,7 @@ export interface paths {
                         privateKey?: string;
                         webhookSecret?: string | null;
                         ciSetupAllowed?: boolean;
+                        fixMrsAllowed?: boolean;
                     };
                 };
             };
@@ -11422,6 +11427,7 @@ export interface paths {
                                 /** @description GitHub: the permissions the best installation of the App lacks (the first that grants the most of the three). Empty for GitLab, and when they could not be read. */
                                 missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
+                            fixMrsAllowed: boolean;
                         };
                     };
                 };
@@ -16702,6 +16708,213 @@ export interface paths {
                     };
                 };
                 /** @description LICENSE_POLICIES_UNREADABLE: the stored licence policies (instance setting `licensePolicy`) are not an object with an `organizations` object; nothing is changed until an operator fixes or deletes the row; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/fixes/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The project's fix MR settings (defaults while none are saved: off, at most 5 open), the preconditions of a request (repository mapped, the connection's switch, monitoring, the last claim), the counts of fixes in flight and whether `exploited` of the automatic rule is licensed */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            settings: {
+                                enabled: boolean;
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                maxOpen: number;
+                                updatedAt: string | null;
+                            };
+                            preconditions: {
+                                /** @description The project is mapped to a repository */
+                                scmBound: boolean;
+                                provider: ("gitlab" | "github") | null;
+                                /** @description An organisation admin allowed fix merge requests on the project's connection */
+                                fixMrsAllowed: boolean;
+                                monitoringOn: boolean;
+                                lastClaimAt: string | null;
+                            };
+                            counts: {
+                                requested: number;
+                                preparing: number;
+                                committing: number;
+                                open: number;
+                            };
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        /** Save the fix MR settings (project admins): the switch, the automatic rule and the cap of fixes in flight (1-20). `autoCreate.since` is set whenever the rule changes and cleared when it goes off. Turning the switch on queues a pass of the organisation */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        enabled: boolean;
+                        autoCreate: {
+                            minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                            /** @description Turning it on needs the `vuln.priority` licence (403 FEATURE_NOT_LICENSED) */
+                            exploited: boolean;
+                        };
+                        maxOpen: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            settings: {
+                                enabled: boolean;
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                maxOpen: number;
+                                updatedAt: string | null;
+                            };
+                            preconditions: {
+                                /** @description The project is mapped to a repository */
+                                scmBound: boolean;
+                                provider: ("gitlab" | "github") | null;
+                                /** @description An organisation admin allowed fix merge requests on the project's connection */
+                                fixMrsAllowed: boolean;
+                                monitoringOn: boolean;
+                                lastClaimAt: string | null;
+                            };
+                            counts: {
+                                requested: number;
+                                preparing: number;
+                                committing: number;
+                                open: number;
+                            };
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
                 409: {
                     headers: {
                         [name: string]: unknown;

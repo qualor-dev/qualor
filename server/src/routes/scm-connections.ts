@@ -112,6 +112,8 @@ const connectionSchema = z.object({
   gitlab: gitlabSchema.nullable(),
   /** Whether Qualor can open CI-setup pull or merge requests through this connection. */
   ciSetup: ciSetupSchema,
+  /** Whether Qualor may open fix merge or pull requests in this connection's repositories. */
+  fixMrsAllowed: z.boolean(),
 });
 
 const testResultSchema = z.object({
@@ -165,6 +167,7 @@ function connectionDto(
           ciSetupAllowed: row.ciSetupAllowed,
         },
     ciSetup,
+    fixMrsAllowed: row.fixMrsAllowed,
   };
 }
 
@@ -245,6 +248,7 @@ interface ConnectionPatch {
   privateKey?: string;
   webhookSecret?: string | null;
   ciSetupAllowed?: boolean;
+  fixMrsAllowed?: boolean;
 }
 
 /** A 422 for each sent field the connection's provider does not have. */
@@ -310,6 +314,7 @@ function addFieldChanges(
     changes.tokenEnc = encryptPrivateKey(key, checkedPrivateKey(body.privateKey));
   }
   if (body.ciSetupAllowed !== undefined) changes.ciSetupAllowed = body.ciSetupAllowed;
+  if (body.fixMrsAllowed !== undefined) changes.fixMrsAllowed = body.fixMrsAllowed;
   if (body.webhookSecret !== undefined) {
     changes.webhookSecretEnc =
       body.webhookSecret === null ? null : encryptWebhookSecret(key, body.webhookSecret);
@@ -438,6 +443,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             privateKey: notAField('GitLab'),
             webhookSecret: webhookSecret.optional(),
             ciSetupAllowed: z.boolean().optional(),
+            fixMrsAllowed: z.boolean().optional(),
           }),
           z.strictObject({
             organizationId: z.uuid(),
@@ -448,6 +454,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             webhookSecret: webhookSecret.optional(),
             token: notAField('GitHub'),
             ciSetupAllowed: notAField('GitHub'),
+            fixMrsAllowed: z.boolean().optional(),
           }),
         ]),
         response: { 201: connectionSchema },
@@ -477,6 +484,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
                 body.webhookSecret === undefined
                   ? null
                   : encryptWebhookSecret(key, body.webhookSecret),
+              fixMrsAllowed: body.fixMrsAllowed ?? false,
             }
           : {
               organizationId: body.organizationId,
@@ -488,6 +496,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
                   ? null
                   : encryptWebhookSecret(key, body.webhookSecret),
               ciSetupAllowed: body.ciSetupAllowed ?? false,
+              fixMrsAllowed: body.fixMrsAllowed ?? false,
             };
       const created = await deps.db.transaction(async (tx) => {
         // Serialises concurrent creations for the organisation, so the bound below holds.
@@ -541,6 +550,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             privateKey: privateKey.optional(),
             webhookSecret: webhookSecret.nullable().optional(),
             ciSetupAllowed: z.boolean().optional(),
+            fixMrsAllowed: z.boolean().optional(),
           })
           .refine((b) => Object.keys(b).length > 0, { message: 'At least one field is required' }),
         response: { 200: connectionSchema },

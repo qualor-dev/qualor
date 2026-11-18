@@ -55,6 +55,7 @@ function connection(
           }
         : null,
     ciSetup,
+    fixMrsAllowed: false,
   };
 }
 

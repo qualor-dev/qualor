@@ -1,7 +1,15 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { Db, Executor } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { enqueue, enqueueMany } from '../queue/queue';
+import {
+  after,
+  lockSchedule,
+  pullPassForward,
+  queuedJob,
+  queuePass,
+  type PassSchedule,
+} from '../queue/schedule';
 
 /** The queue of both kinds of Jira job (a worker of its own, ruling R2). */
 export const JIRA_QUEUE = 'jira';
@@ -19,22 +27,6 @@ export const JIRA_SYNC_INTERVAL_SECONDS = 900;
 export const jiraCreateKey = (organizationId: string): string => `jira-create:${organizationId}`;
 export const jiraSyncKey = (organizationId: string): string => `jira-sync:${organizationId}`;
 
-const after = (seconds: number): SQL => sql`now() + make_interval(secs => ${seconds})`;
-
-/** Takes the schedule lock, which the caller's transaction holds to its end. */
-async function lockSchedule(tx: Executor): Promise<void> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.jiraSchedule})`);
-}
-
-/** The id of the queued job with this key, its row locked until the caller's transaction ends. */
-async function queuedJob(tx: Executor, key: string): Promise<string | null> {
-  const queued = await tx.execute<{ id: string }>(sql`
-    SELECT id FROM jobs
-     WHERE queue = ${JIRA_QUEUE} AND status = 'queued' AND concurrency_key = ${key}
-     LIMIT 1 FOR UPDATE`);
-  return queued.rows[0]?.id ?? null;
-}
-
 /**
  * Asks for a create run of the organisation `delaySeconds` from now, unless one is queued; true
  * when this call queued it. A queued one is held back to `delaySeconds` from now when it is due
@@ -48,8 +40,8 @@ export async function enqueueJiraCreate(
   delaySeconds = 0,
 ): Promise<boolean> {
   return db.transaction(async (tx) => {
-    await lockSchedule(tx);
-    const queued = await queuedJob(tx, jiraCreateKey(organizationId));
+    await lockSchedule(tx, LOCKS.jiraSchedule);
+    const queued = await queuedJob(tx, JIRA_QUEUE, jiraCreateKey(organizationId));
     if (queued !== null) {
       if (delaySeconds > 0) {
         await tx.execute(sql`
@@ -69,6 +61,13 @@ export async function enqueueJiraCreate(
   });
 }
 
+const syncPass = (organizationId: string): PassSchedule => ({
+  lock: LOCKS.jiraSchedule,
+  queue: JIRA_QUEUE,
+  key: jiraSyncKey(organizationId),
+  payload: { kind: 'sync', organizationId } satisfies JiraJobPayload,
+});
+
 /**
  * Queues the organisation's next pass `delaySeconds` from now unless one is queued (ruling P1:
  * a running pass does not count, so it reschedules itself from its own `finally`); true when
@@ -79,18 +78,7 @@ export async function scheduleJiraSync(
   organizationId: string,
   delaySeconds: number,
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    await lockSchedule(tx);
-    if ((await queuedJob(tx, jiraSyncKey(organizationId))) !== null) return false;
-    const payload: JiraJobPayload = { kind: 'sync', organizationId };
-    await enqueue(tx, {
-      queue: JIRA_QUEUE,
-      concurrencyKey: jiraSyncKey(organizationId),
-      payload,
-      runAt: after(delaySeconds),
-    });
-    return true;
-  });
+  return queuePass(db, syncPass(organizationId), delaySeconds);
 }
 
 /**
@@ -98,22 +86,7 @@ export async function scheduleJiraSync(
  * concurrency key holds back until it ends) when none waits.
  */
 export async function syncJiraNow(db: Executor, organizationId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await lockSchedule(tx);
-    const queued = await queuedJob(tx, jiraSyncKey(organizationId));
-    if (queued === null) {
-      const payload: JiraJobPayload = { kind: 'sync', organizationId };
-      await enqueue(tx, {
-        queue: JIRA_QUEUE,
-        concurrencyKey: jiraSyncKey(organizationId),
-        payload,
-      });
-      return;
-    }
-    await tx.execute(sql`
-      UPDATE jobs SET run_at = now(), updated_at = now()
-       WHERE id = ${queued} AND run_at > now()`);
-  });
+  await pullPassForward(db, syncPass(organizationId));
 }
 
 /**
@@ -123,7 +96,7 @@ export async function syncJiraNow(db: Executor, organizationId: string): Promise
  */
 export async function ensureJiraSyncScheduled(db: Db): Promise<number> {
   return db.transaction(async (tx) => {
-    await lockSchedule(tx);
+    await lockSchedule(tx, LOCKS.jiraSchedule);
     const missing = await tx.execute<{ organization_id: string }>(sql`
       SELECT c.organization_id FROM jira_connections c
        WHERE NOT EXISTS (

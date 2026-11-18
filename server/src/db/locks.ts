@@ -144,4 +144,6 @@ export const LOCKS = {
   vulnerabilityDigestSchedule: 7_310_037,
   /** `pg_advisory_xact_lock(key)`: schedule lock of the Jira create and sync jobs (0.16 Jira). */
   jiraSchedule: 7_310_038,
+  /** `pg_advisory_xact_lock(key)`: schedule lock of the fix MR jobs (0.16 fix MRs). */
+  fixSchedule: 7_310_039,
 } as const;

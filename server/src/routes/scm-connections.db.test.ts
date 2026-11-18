@@ -9,7 +9,15 @@ import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
 import { GITLAB_WEBHOOK_SECRET, PUBLIC_URL, scmTestConfig } from '../../test/scm';
 import { decryptSecret, encryptionKey, encryptSecret } from '../crypto/secrets';
-import { auditEvents, branches, jobs, organizations, projects, scmConnections } from '../db/schema';
+import {
+  auditEvents,
+  branches,
+  jobs,
+  organizations,
+  projectMemberships,
+  projects,
+  scmConnections,
+} from '../db/schema';
 import {
   MAX_SCM_CONNECTIONS_PER_ORGANIZATION,
   SCM_TOKEN_AAD,
@@ -127,6 +135,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         ciSetupAllowed: false,
       },
       ciSetup: { available: false, reason: 'no_public_url', missing: [] },
+      fixMrsAllowed: false,
     });
     const [row] = await h.ctx.db
       .select()
@@ -1414,5 +1423,91 @@ describe('GitLab connections: the CI-setup setting (onboarding)', () => {
     const patched = await patchConnection(h, github!.id, { ciSetupAllowed: true });
     expect(patched.statusCode, patched.body).toBe(422);
     expect(errorPaths(patched.body)).toEqual(['body.ciSetupAllowed']);
+  });
+});
+
+describe('SCM connections: fix merge requests (0.16 fix MRs B2)', () => {
+  let h: IngestHarness;
+  let fake: FakeGitHub;
+  const post = (payload: Record<string, unknown>) =>
+    h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: { organizationId: h.organizationId, ...payload },
+    });
+  const gitlab = (extra: Record<string, unknown> = {}) =>
+    post({ provider: 'gitlab', baseUrl: 'https://gitlab.example.com', token: 'glpat-x', ...extra });
+  const github = (extra: Record<string, unknown> = {}) =>
+    post({
+      provider: 'github',
+      baseUrl: fake.url,
+      appId: String(fake.appId),
+      privateKey: fake.privateKeyPem,
+      ...extra,
+    });
+  const updates = async (id: string) =>
+    (
+      await h.ctx.db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.action, 'scm_connection.updated'), eq(auditEvents.targetId, id)))
+    ).map((e) => e.details);
+
+  beforeAll(async () => {
+    fake = await createFakeGitHub();
+    h = await createIngestHarness({
+      config: githubTestConfig(fake),
+      pluginsFor: rbacPlugins({ now: () => new Date('2027-01-01T00:00:00Z') }),
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    await fake.close();
+  });
+  afterEach(async () => {
+    await h.ctx.db.delete(scmConnections);
+  });
+
+  it('is off on a GitLab and a GitHub connection created without the field, on when asked', async () => {
+    expect((await gitlab()).json().fixMrsAllowed).toBe(false);
+    expect((await github()).json().fixMrsAllowed).toBe(false);
+    const on = await gitlab({ fixMrsAllowed: true });
+    expect(on.statusCode, on.body).toBe(201);
+    expect(on.json().fixMrsAllowed).toBe(true);
+    const onGithub = await github({ fixMrsAllowed: true });
+    expect(onGithub.statusCode, onGithub.body).toBe(201);
+    expect(onGithub.json().fixMrsAllowed).toBe(true);
+  });
+
+  it('is changed on a GitHub connection on its own, with an audit entry naming it', async () => {
+    const id = (await github()).json().id as string;
+    const patched = await patchConnection(h, id, { fixMrsAllowed: true });
+    expect(patched.statusCode, patched.body).toBe(200);
+    expect(patched.json().fixMrsAllowed).toBe(true);
+    const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
+    expect(row!.fixMrsAllowed).toBe(true);
+    expect(await updates(id)).toEqual([{ changed: ['fixMrsAllowed'] }]);
+    expect((await patchConnection(h, id, { fixMrsAllowed: 'yes' })).statusCode).toBe(422);
+  });
+
+  it('is for organisation admins only: a project admin gets 403', async () => {
+    const id = (await gitlab()).json().id as string;
+    const user = await createUser(h.ctx, { username: 'scm-fix-padmin' });
+    await addMember(h.ctx, h.organizationId, user.id, 'member');
+    const project = await h.project('SCM-FIX');
+    await h.ctx.db
+      .insert(projectMemberships)
+      .values({ projectId: project.id, userId: user.id, role: 'project_admin' });
+    const session = await login(h.ctx, user.username, user.password);
+    const res = await h.ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/v0/scm-connections/${id}`,
+      headers: session.headers,
+      payload: { fixMrsAllowed: true },
+    });
+    expect(res.statusCode).toBe(403);
+    const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
+    expect(row!.fixMrsAllowed).toBe(false);
   });
 });

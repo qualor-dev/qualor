@@ -87,6 +87,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'PUT /organizations/:id/jira': 'org.jira.manage',
   'DELETE /organizations/:id/jira': 'org.jira.manage',
   'POST /organizations/:id/jira/test': 'org.jira.manage',
+  'GET /projects/:id/fixes/settings': 'project.read',
+  'PUT /projects/:id/fixes/settings': 'project.settings',
   'GET /projects/:id/jira': 'project.read',
   'PUT /projects/:id/jira': 'project.settings',
   'DELETE /projects/:id/jira': 'project.settings',

@@ -520,6 +520,8 @@ export async function runAuditScenario(
     token: S.scmTokenUpdated,
     webhookSecret: S.gitlabWebhookSecretUpdated,
   });
+  // 0.16 fix MRs B2: an organisation admin allows fix merge requests on the connection.
+  await call('PATCH', `/scm-connections/${scm}`, 200, { fixMrsAllowed: true });
   await call('DELETE', `/scm-connections/${scm}`, 204);
 
   // scm_connection.created, .updated (App id, private key and webhook secret), .deleted for a
@@ -581,6 +583,14 @@ export async function runAuditScenario(
     .where(eq(jiraLinks.id, linkId));
   await call('DELETE', `/jira-links/${linkId}`, 204);
   await call('DELETE', `/projects/${main.id}/jira`, 204);
+  // project.fixes_updated (0.16 fix MRs): switch on with a rule and a cap, then change the cap.
+  const fixSettings = {
+    enabled: true,
+    autoCreate: { minSeverity: 'high', exploited: false },
+    maxOpen: 3,
+  };
+  await call('PUT', `/projects/${main.id}/fixes/settings`, 200, fixSettings);
+  await call('PUT', `/projects/${main.id}/fixes/settings`, 200, { ...fixSettings, maxOpen: 4 });
   await call('PUT', `/organizations/${org}/jira`, 200, {
     deployment: 'cloud',
     siteUrl: 'https://scenario.atlassian.net',

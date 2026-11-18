@@ -103,6 +103,7 @@ export const SCM_CONNECTION_CHANGED_FIELDS = [
   'privateKey',
   'webhookSecret',
   'ciSetupAllowed',
+  'fixMrsAllowed',
 ] as const;
 /** 0.16 Jira §6.10: the names `jira_connection.updated` may list (names only, never the email or the token). */
 export const JIRA_CONNECTION_CHANGED_FIELDS = [
@@ -121,6 +122,8 @@ export const PROJECT_JIRA_CHANGED_FIELDS = [
   'priorities',
   'autoCreate',
 ] as const;
+/** 0.16 fix MRs §6.1: the names `project.fixes_updated` may list (names only). */
+export const PROJECT_FIXES_CHANGED_FIELDS = ['enabled', 'autoCreate', 'maxOpen'] as const;
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
 export const MAIL_SETTINGS_CHANGED_FIELDS = [
   'server',
@@ -475,6 +478,14 @@ export const AUDIT_CATALOGUE = {
     target: 'project',
     details: z.strictObject({
       changed: z.array(z.enum(PROJECT_JIRA_CHANGED_FIELDS)).max(PROJECT_JIRA_CHANGED_FIELDS.length),
+    }),
+  },
+  'project.fixes_updated': {
+    target: 'project',
+    details: z.strictObject({
+      changed: z
+        .array(z.enum(PROJECT_FIXES_CHANGED_FIELDS))
+        .max(PROJECT_FIXES_CHANGED_FIELDS.length),
     }),
   },
   'vulnerability.decision_changed': {

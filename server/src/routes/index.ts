@@ -15,6 +15,7 @@ import { gitlabWebhookRoutes } from './gitlab-webhooks';
 import { issueRoutes } from './issues';
 import { issueStatusImportRoutes } from './issue-status-import';
 import { licenseRoutes } from './license';
+import { fixSettingsRoutes } from './fix-settings';
 import { jiraRoutes } from './jira';
 import { jiraLinkRoutes } from './jira-links';
 import { jiraProjectRoutes } from './jira-projects';
@@ -97,6 +98,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(autoFixRoutes, { prefix: '/api/v0', deps });
   await app.register(reviewRoutes, { prefix: '/api/v0', deps, uploadSlots });
   await app.register(licensePolicyRoutes, { prefix: '/api/v0', deps });
+  await app.register(fixSettingsRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraProjectRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraLinkRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });

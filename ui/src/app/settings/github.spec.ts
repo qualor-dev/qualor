@@ -35,6 +35,7 @@ const GITHUB: Connection = {
   },
   gitlab: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
+  fixMrsAllowed: false,
 };
 const GITLAB: Connection = {
   ...GITHUB,

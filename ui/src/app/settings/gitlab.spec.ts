@@ -28,6 +28,7 @@ const CONNECTION: Connection = {
     ciSetupAllowed: false,
   },
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
+  fixMrsAllowed: false,
 };
 
 // Assembled at run time, so the repository's own Gitleaks check finds no fake secret here (.gitleaks.toml).
@@ -59,6 +60,7 @@ const GITHUB: Connection = {
   },
   gitlab: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
+  fixMrsAllowed: false,
 };
 
 function project(id: string, overrides: Record<string, unknown> = {}) {
