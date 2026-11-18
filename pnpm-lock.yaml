@@ -170,9 +170,15 @@ importers:
       '@renovatebot/pep440':
         specifier: ^5.0.1
         version: 5.0.1
+      saxes:
+        specifier: ^6.0.0
+        version: 6.0.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -4145,6 +4151,10 @@ packages:
   slice-ansi@9.0.1:
     resolution: {integrity: sha512-aBY19bn/XA+hKOKX0qL7Z0UfdBsbQvc9hn993U8ALUjzxCvDcuZqLoRXjGJrUARWAlwMnsRVD9sw2AFNOYvalA==}
     engines: {node: '>=22'}
+
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
 
   smtp-server@3.19.21:
     resolution: {integrity: sha512-d0wWijB5dK4gImQidwWMlcGsycqcDCJV0VdQbfz61rgkDqnzAx0Epvi0o5JN2nnr/YwriVC+XV0T8YgcoB0bng==}
@@ -8177,6 +8187,8 @@ snapshots:
     dependencies:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
+
+  smol-toml@1.9.1: {}
 
   smtp-server@3.19.21:
     dependencies:

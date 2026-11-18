@@ -4,7 +4,7 @@
  * file it cannot read; `checkJsLockfile` answers `unparsable` instead.
  */
 import { FIX_LIMITS } from '../families';
-import type { LockEntry, LockEntryKind } from './types';
+import type { FixFileChange, LockEntry, LockEntryKind } from './types';
 import { isObject, own, parseUrl, perArraySet, tupleKeys, type JsonObject } from './values';
 
 /** An entry before its dependents are known; `dependencies` are the slots it depends on. */
@@ -14,6 +14,24 @@ export type RawEntry = Omit<LockEntry, 'dependents'>;
 export interface ReadLock {
   format: string;
   entries: LockEntry[];
+}
+
+/**
+ * Both sides' entries; null when either cannot be read, or when `next` is not in the base's
+ * format (fix round 1, C4: a run for one package does not switch Yarn classic to Berry or change
+ * a lockfile's major version).
+ */
+export function readBoth(
+  read: (text: string) => ReadLock,
+  change: Pick<FixFileChange, 'base' | 'next'>,
+): [LockEntry[], LockEntry[]] | null {
+  try {
+    const base = read(change.base);
+    const next = read(change.next);
+    return base.format === next.format ? [base.entries, next.entries] : null;
+  } catch {
+    return null;
+  }
 }
 
 export function unreadable(what: string): never {

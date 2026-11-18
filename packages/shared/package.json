@@ -17,7 +17,9 @@
   },
   "dependencies": {
     "@renovatebot/pep440": "^5.0.1",
+    "saxes": "^6.0.0",
     "semver": "^7.8.5",
+    "smol-toml": "^1.9.1",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },

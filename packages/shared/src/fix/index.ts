@@ -14,3 +14,7 @@ export * from './check/types';
 export * from './check/lock-entries';
 export * from './check/js-manifest';
 export * from './check/js-lockfiles';
+export * from './check/go';
+export * from './check/maven';
+export * from './check/python';
+export * from './check/upload';

@@ -8,7 +8,7 @@
 import { checkLockEntries, lockfileBelowTarget, newLockEntries } from './lock-entries';
 import { parseNpmLock } from './lock-npm';
 import { parsePnpmLock } from './lock-pnpm';
-import type { ReadLock } from './lock-read';
+import { readBoth, type ReadLock } from './lock-read';
 import { parseYarnBerry } from './lock-yarn-berry';
 import { isYarnClassic, parseYarnClassic } from './lock-yarn-classic';
 import {
@@ -43,24 +43,6 @@ const READERS: ReadonlyMap<string, (text: string) => ReadLock> = new Map([
   ['pnpm-lock.yaml', parsePnpmLock],
   ['yarn.lock', parseYarnLock],
 ]);
-
-/**
- * Both sides' entries; null when either cannot be read, or when `next` is not in the base's
- * format (fix round 1, C4: a run for one package does not switch Yarn classic to Berry or change
- * a lockfile's major version).
- */
-function readBoth(
-  read: (text: string) => ReadLock,
-  change: FixFileChange,
-): [LockEntry[], LockEntry[]] | null {
-  try {
-    const base = read(change.base);
-    const next = read(change.next);
-    return base.format === next.format ? [base.entries, next.entries] : null;
-  } catch {
-    return null;
-  }
-}
 
 function readerFor(path: string): ((text: string) => ReadLock) | undefined {
   return READERS.get(path.slice(path.lastIndexOf('/') + 1));

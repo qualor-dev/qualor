@@ -18,6 +18,7 @@ import {
   isObject,
   own,
   parseYaml,
+  pruneCreated,
   sameValue,
   setOwn,
   stripBom,
@@ -118,18 +119,6 @@ function restorePin(pins: JsonObject, basePins: JsonObject | null, selector: str
     setOwn(pins, selector, basePins[selector]);
   } else {
     Reflect.deleteProperty(pins, selector);
-  }
-}
-
-/** Drops the containers the change created for its pins alone (`pnpm: { overrides: {} }`). */
-function pruneCreated(base: JsonObject, next: JsonObject, path: readonly string[]): void {
-  for (let depth = path.length; depth > 0; depth--) {
-    const prefix = path.slice(0, depth);
-    const container = at(next, prefix);
-    const created = at(base, prefix) === undefined && isObject(container);
-    if (!created || Object.keys(container).length > 0) return;
-    const parent = at(next, prefix.slice(0, -1));
-    if (isObject(parent)) Reflect.deleteProperty(parent, prefix[depth - 1] ?? '');
   }
 }
 

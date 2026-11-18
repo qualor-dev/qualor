@@ -160,8 +160,25 @@ function pushObjects(a: JsonObject, b: unknown, pending: Pair[]): boolean {
 }
 
 /**
- * Deep equality of parsed JSON or YAML values, ignoring key order. It keeps its own stack, so a
- * deeply nested document cannot overflow the call stack.
+ * Two dates (TOML dates and times, `smol-toml`'s `TomlDate`) of one class that print the same;
+ * two invalid dates are equal.
+ */
+function sameDate(x: Date, y: unknown): boolean {
+  if (!(y instanceof Date) || Object.getPrototypeOf(x) !== Object.getPrototypeOf(y)) return false;
+  const invalid = Number.isNaN(x.getTime());
+  if (invalid || Number.isNaN(y.getTime())) return invalid && Number.isNaN(y.getTime());
+  return x.toISOString() === y.toISOString();
+}
+
+/** Equal leaves: `===`, NaN and NaN (TOML `nan`), or {@link sameDate}. */
+function sameLeaf(x: unknown, y: unknown): boolean {
+  if (x === y || (Number.isNaN(x) && Number.isNaN(y))) return true;
+  return x instanceof Date && sameDate(x, y);
+}
+
+/**
+ * Deep equality of parsed JSON, YAML or TOML values, ignoring key order. It keeps its own stack,
+ * so a deeply nested document cannot overflow the call stack.
  */
 export function sameValue(a: unknown, b: unknown): boolean {
   const pending: Pair[] = [[a, b]];
@@ -170,10 +187,25 @@ export function sameValue(a: unknown, b: unknown): boolean {
     let same: boolean;
     if (Array.isArray(x)) same = pushArrays(x, y, pending);
     else if (isObject(x)) same = pushObjects(x, y, pending);
-    else same = x === y;
+    else same = sameLeaf(x, y);
     if (!same) return false;
   }
   return true;
+}
+
+/**
+ * Drops the containers along `path` (deepest first) that the change created for its own entries
+ * alone, so the final comparison does not see them: each one the base lacks and that is empty.
+ */
+export function pruneCreated(base: JsonObject, next: JsonObject, path: readonly string[]): void {
+  for (let depth = path.length; depth > 0; depth--) {
+    const prefix = path.slice(0, depth);
+    const container = at(next, prefix);
+    const created = at(base, prefix) === undefined && isObject(container);
+    if (!created || Object.keys(container).length > 0) return;
+    const parent = at(next, prefix.slice(0, -1));
+    if (isObject(parent)) Reflect.deleteProperty(parent, prefix[depth - 1] ?? '');
+  }
 }
 
 export interface YamlReadOptions {
