@@ -1,4 +1,5 @@
 import type { DependencyIgnore, LlmFeature, RuleScope, Severity } from '@qualor/shared';
+import { FIX_FAMILIES, type FixFamily } from '@qualor/shared/fix';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -62,6 +63,50 @@ export interface JiraFailure {
 }
 /** The Jira priority name for a Qualor severity; a severity without one sets none. */
 export type JiraPriorities = Partial<Record<Severity, string>>;
+
+/** 0.16 fix MRs (spec §6.4): the states of a dependency fix. */
+export const FIX_STATES = [
+  'requested',
+  'preparing',
+  'committing',
+  'open',
+  'failed',
+  'no_fix',
+  'merged',
+  'fixed',
+  'declined',
+  'taken_over',
+  'cancelled',
+] as const;
+export type FixState = (typeof FIX_STATES)[number];
+/** The states that count against a project's cap on fix MRs (R9) and answer a duplicate request. */
+export const ACTIVE_FIX_STATES = ['requested', 'preparing', 'committing', 'open'] as const;
+export type FixOrigin = 'manual' | 'auto';
+export type FixAutoSeverity = JiraAutoSeverity;
+/** Why a fix failed or has no fix: a code and its fixed text. */
+export interface FixFailure {
+  code: string;
+  message: string;
+}
+/** One vulnerable installed version, the version it is raised to and its lockfile (B3). */
+export interface FixTargetValue {
+  installed: string;
+  target: string;
+  lockfile: string;
+}
+/** The files the fix job uploaded, kept on the row until the commit job has written them. */
+export interface FixPreparedValue {
+  baseSha: string;
+  /** `content` is UTF-8 text. */
+  files: { path: string; content: string }[];
+  lockfiles: {
+    path: string;
+    relation: 'direct' | 'transitive';
+    mechanism: string | null;
+    dependents: string[];
+  }[];
+  unfixable: string[];
+}
 export interface FieldIssue {
   path: string;
   message: string;
@@ -190,6 +235,8 @@ export const scmConnections = pgTable(
     webhookSecretEnc: jsonb('webhook_secret_enc').$type<EncryptedValue>(),
     /** Onboarding (migration 0019): whether Qualor may open CI-setup merge requests; GitLab only. */
     ciSetupAllowed: boolean('ci_setup_allowed').notNull().default(false),
+    /** Fix MRs (migration 0033): whether Qualor may open fix merge requests; an org admin sets it. */
+    fixMrsAllowed: boolean('fix_mrs_allowed').notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1441,6 +1488,96 @@ export const jiraLinks = pgTable(
     check(
       'jira_links_status_category_check',
       sql`status_category IS NULL OR status_category IN ('new','indeterminate','done')`,
+    ),
+  ],
+);
+
+// ─── Fix merge requests (0.16, migration 0033) ──────────────────────────────
+
+const fixFamilyList = sql.raw(FIX_FAMILIES.map((f) => `'${f}'`).join(','));
+const fixStateList = sql.raw(FIX_STATES.map((s) => `'${s}'`).join(','));
+
+export const projectFixSettings = pgTable(
+  'project_fix_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    enabled: boolean('enabled').notNull().default(false),
+    /** The automatic rule: off while this is NULL and `auto_exploited` is false. */
+    autoMinSeverity: text('auto_min_severity').$type<FixAutoSeverity>(),
+    autoExploited: boolean('auto_exploited').notNull().default(false),
+    autoSince: at('auto_since'),
+    maxOpen: smallint('max_open').notNull().default(5),
+    lastClaimAt: at('last_claim_at'),
+    updatedAt: updatedAt(),
+  },
+  () => [
+    check(
+      'project_fix_settings_auto_severity_check',
+      sql`auto_min_severity IS NULL OR auto_min_severity IN ('critical','high','medium','low')`,
+    ),
+    check(
+      'project_fix_settings_auto_since_check',
+      sql`(auto_min_severity IS NULL AND NOT auto_exploited) OR auto_since IS NOT NULL`,
+    ),
+    check('project_fix_settings_max_open_check', sql`max_open BETWEEN 1 AND 20`),
+  ],
+);
+
+export const dependencyFixes = pgTable(
+  'dependency_fixes',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    family: text('family').notNull().$type<FixFamily>(),
+    packageName: text('package_name').notNull(),
+    state: text('state').notNull().$type<FixState>(),
+    /** Set on an open MR that must be rebuilt from the current main (spec §6.4). */
+    refresh: boolean('refresh').notNull().default(false),
+    origin: text('origin').notNull().$type<FixOrigin>(),
+    requestedBy: uuid('requested_by').references(() => users.id, { onDelete: 'set null' }),
+    /** Raised on each re-arm and release; an upload must carry the current one. */
+    generation: smallint('generation').notNull().default(1),
+    leaseTokenHash: text('lease_token_hash'),
+    leaseUntil: at('lease_until'),
+    baseSha: text('base_sha'),
+    headSha: text('head_sha'),
+    branch: text('branch').notNull(),
+    mrNumber: integer('mr_number'),
+    mrUrl: text('mr_url'),
+    installedVersion: text('installed_version'),
+    targetVersion: text('target_version'),
+    targets: jsonb('targets').$type<FixTargetValue[]>().notNull().default(emptyJsonArray),
+    vulnerabilityIds: text('vulnerability_ids').array().notNull().default(emptyTextArray),
+    declinedTarget: text('declined_target'),
+    failure: jsonb('failure').$type<FixFailure>(),
+    prepared: jsonb('prepared').$type<FixPreparedValue>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // One row per package; it also serves the project's cascade.
+    uniqueIndex('dependency_fixes_package_uq').on(t.projectId, t.family, t.packageName),
+    // The claim and the lease expiry read by state and deadline.
+    index('dependency_fixes_lease_idx').on(t.state, t.leaseUntil),
+    index('dependency_fixes_requested_by_idx')
+      .on(t.requestedBy)
+      .where(sql`requested_by IS NOT NULL`),
+    check('dependency_fixes_family_check', sql`family IN (${fixFamilyList})`),
+    check('dependency_fixes_state_check', sql`state IN (${fixStateList})`),
+    check('dependency_fixes_origin_check', sql`origin IN ('manual','auto')`),
+    check('dependency_fixes_generation_check', sql`generation >= 1`),
+    check(
+      'dependency_fixes_lease_check',
+      sql`state <> 'preparing' OR (lease_token_hash IS NOT NULL AND lease_until IS NOT NULL)`,
+    ),
+    check('dependency_fixes_committing_check', sql`state <> 'committing' OR prepared IS NOT NULL`),
+    check(
+      'dependency_fixes_open_check',
+      sql`state <> 'open' OR (mr_number IS NOT NULL AND head_sha IS NOT NULL)`,
     ),
   ],
 );

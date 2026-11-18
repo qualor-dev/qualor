@@ -71,8 +71,9 @@ describe('runMigrations / pendingMigrations', () => {
     // project's vulnerability alerts, approved 2026-11-15), 0030_vulnerability_alert_items_checked
     // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15),
     // 0031_sbom_versions (0.16, SBOM versions, source packages and the package search, approved
-    // 2026-11-16), 0032_jira (0.16, Jira connections, mappings and links, approved 2026-11-17).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(33);
+    // 2026-11-16), 0032_jira (0.16, Jira connections, mappings and links, approved 2026-11-17),
+    // 0033_fix_mrs (0.16, fix merge requests, approved 2026-11-18).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(34);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -329,6 +330,8 @@ describe('runMigrations / pendingMigrations', () => {
       'compliance_reports', // 0007_compliance_reports
       'jira_connections', // 0032_jira
       'jira_links', // 0032_jira
+      'dependency_fixes', // 0033_fix_mrs
+      'project_fix_settings', // 0033_fix_mrs
       'project_jira_settings', // 0032_jira
       'matched_packages', // 0021_vulndb
       'target_vulnerabilities', // 0021_vulndb
@@ -725,9 +728,9 @@ describe('runMigrations / pendingMigrations', () => {
 
     await runMigrations(db.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
-    // Dropping and adding two checks changed no row, and the runs only gained their empty column.
+    // Dropping and adding two checks changed no row, and the connections only gained their two flags (0019, 0033).
     expect(await rowsOf('scm_connections')).toEqual(
-      before.connections.map((c) => ({ ...c, ci_setup_allowed: false })),
+      before.connections.map((c) => ({ ...c, ci_setup_allowed: false, fix_mrs_allowed: false })),
     );
     expect(await rowsOf('llm_requests')).toEqual(before.requests);
     expect(await rowsOf('review_runs')).toEqual(
