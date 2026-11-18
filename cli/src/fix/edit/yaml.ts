@@ -149,12 +149,8 @@ function onlyThePin(before: string, after: string, key: string, value: string): 
   }
 }
 
-/**
- * `text` with `overrides[key]` set to `value`: an existing entry's value is replaced in its own
- * quoting, a new entry goes after the last one at the map's indent (an empty `overrides:` gets the
- * file's first indent). Null when the file has no block-style `overrides:` this can edit.
- */
-export function setYamlOverride(text: string, key: string, value: string): string | null {
+/** The edit of {@link setYamlOverride} on a text without a byte order mark, before the check. */
+function editOverrides(text: string, key: string, value: string): string | null {
   const lines = linesOf(text);
   const header = lines.findIndex((l) => HEADER.test(l.text));
   if (header < 0) return null;
@@ -172,6 +168,20 @@ export function setYamlOverride(text: string, key: string, value: string): strin
     const next = `${line.text.slice(0, found.valueStart)}${renderValue(value, style)}${line.text.slice(found.valueEnd)}`;
     lines[found.index] = { text: next, crlf: line.crlf };
   }
-  const edited = joinLines(lines);
-  return onlyThePin(text, edited, key, value) ? edited : null;
+  return joinLines(lines);
+}
+
+const BOM = String.fromCodePoint(0xfeff);
+
+/**
+ * `text` with `overrides[key]` set to `value`: an existing entry's value is replaced in its own
+ * quoting, a new entry goes after the last one at the map's indent (an empty `overrides:` gets the
+ * file's first indent). A leading byte order mark is kept (ruling T13e). Null when the file has no
+ * block-style `overrides:` this can edit.
+ */
+export function setYamlOverride(text: string, key: string, value: string): string | null {
+  const bom = text.startsWith(BOM) ? BOM : '';
+  const body = text.slice(bom.length);
+  const edited = editOverrides(body, key, value);
+  return edited !== null && onlyThePin(body, edited, key, value) ? `${bom}${edited}` : null;
 }

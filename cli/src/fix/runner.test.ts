@@ -63,13 +63,15 @@ describe('createToolRunner', () => {
       'node',
       [
         '-e',
-        'process.stdout.write(JSON.stringify({ cwd: process.cwd(), q: process.env.QUALOR_TOKEN ?? null, n: process.env.NPM_TOKEN ?? null, extra: process.env.EXTRA ?? null }))',
+        // NPM_TOKEN comes back reversed: the runner replaces the value itself in stdout (T13e).
+        'process.stdout.write(JSON.stringify({ cwd: process.cwd(), q: process.env.QUALOR_TOKEN ?? null, n: [...(process.env.NPM_TOKEN ?? "")].reverse().join(""), extra: process.env.EXTRA ?? null }))',
       ],
       { cwd, env: { EXTRA: 'yes', QUALOR_URL: 'https://smuggled.example' }, timeoutMs: 30_000 },
     );
     expect(r.exitCode).toBe(0);
     const seen = JSON.parse(r.stdout) as Record<string, string | null>;
-    expect(seen).toEqual({ cwd: expect.any(String), q: null, n: NPM_SECRET, extra: 'yes' });
+    const reversed = [...NPM_SECRET].reverse().join('');
+    expect(seen).toEqual({ cwd: expect.any(String), q: null, n: reversed, extra: 'yes' });
   });
 
   it('replaces the known secrets in stderr and never logs a tool’s output', async () => {
@@ -91,6 +93,32 @@ describe('createToolRunner', () => {
     expect(r.stderr).toContain('[redacted]');
     expect(lines.join('')).not.toContain(NPM_SECRET);
     expect(lines.join('')).not.toContain(PROJECT_TOKEN);
+  });
+
+  it('replaces the known secrets in stdout too, before any cut (Ruling T13e)', async () => {
+    const run = createToolRunner({
+      env: { ...process.env } as Record<string, string>,
+      root: tmp(),
+      log: spy().log,
+      secrets: [PROJECT_TOKEN],
+    });
+    // pnpm and Berry print their errors on stdout. Without the runner's replacement, the 2 KiB
+    // cut of `toolFailure` would start inside the token and keep its last characters.
+    const filler = 'y'.repeat(2048 - '`node` exited with 1: '.length - 6);
+    const r = await run(
+      'node',
+      [
+        '-e',
+        `process.stdout.write(process.env.LEAK + "\\n" + ${JSON.stringify(filler)}); process.exit(1)`,
+      ],
+      { cwd: tmp(), env: { LEAK: PROJECT_TOKEN }, timeoutMs: 30_000 },
+    );
+    expect(r.stdout).not.toContain(PROJECT_TOKEN);
+    expect(r.stdout).toContain('[redacted]');
+    const message = toolFailure('node', { ...r, stderr: r.stdout }, []).message;
+    for (let i = 0; i <= PROJECT_TOKEN.length - 4; i += 1) {
+      expect(message).not.toContain(PROJECT_TOKEN.slice(i));
+    }
   });
 
   it('stops a tool at its timeout', async () => {

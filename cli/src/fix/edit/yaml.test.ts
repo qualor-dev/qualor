@@ -49,6 +49,15 @@ describe('setYamlOverride (ruling F15)', () => {
     );
   });
 
+  it('finds overrides on the first line after a byte order mark, and keeps the mark (Ruling T13e)', () => {
+    expect(setYamlOverride('﻿overrides:\n  qf-x: 1.0.0\n', 'qf-a', '^1.2.6')).toBe(
+      '﻿overrides:\n  qf-x: 1.0.0\n  qf-a: ^1.2.6\n',
+    );
+    expect(setYamlOverride('﻿overrides:\r\n  qf-a: 1.2.5\r\n', 'qf-a', '^1.2.6')).toBe(
+      '﻿overrides:\r\n  qf-a: ^1.2.6\r\n',
+    );
+  });
+
   it('fills an empty overrides key with the indent the file uses elsewhere', () => {
     expect(setYamlOverride("packages:\n    - '.'\noverrides:\n", 'qf-a', '^1.2.6')).toBe(
       "packages:\n    - '.'\noverrides:\n    qf-a: ^1.2.6\n",

@@ -696,6 +696,49 @@ describe.runIf(AVAILABLE.npm && YARN_MAJOR !== null)('the JS adapter with npm an
 
 describe.runIf(AVAILABLE.pnpm)('the JS adapter with pnpm', () => {
   it(
+    'two lines: one pnpm.overrides key per line, each line reaches its own target (B3, R23, Ruling T13e)',
+    async () => {
+      const qfA: FakeNpmVersion[] = [{ version: '1.2.5' }, { version: '2.0.1' }];
+      const reg = await registry({
+        'qf-a': qfA,
+        p1: [{ version: '1.0.0', dependencies: { 'qf-a': '^1.2.0' } }],
+        p2: [{ version: '1.0.0', dependencies: { 'qf-a': '^2.0.0' } }],
+      });
+      const env = managerEnv(reg.url);
+      const app = json([
+        '{',
+        '  "name": "app",',
+        '  "private": true,',
+        '  "dependencies": {',
+        '    "p1": "^1.0.0",',
+        '    "p2": "^1.0.0"',
+        '  }',
+        '}',
+      ]);
+      const dir = await repository({ 'package.json': app }, ['pnpm'], env);
+      qfA.push({ version: '1.2.6' }, { version: '2.0.3' });
+      const item = claim(['1.2.5', '2.0.1'], '1.2.6, 2.0.3');
+
+      const r = await fix(dir, env, item);
+
+      const up = uploaded(r);
+      expect(up.targets).toEqual([
+        { installed: '1.2.5', target: '1.2.6', lockfile: 'pnpm-lock.yaml' },
+        { installed: '2.0.1', target: '2.0.3', lockfile: 'pnpm-lock.yaml' },
+      ]);
+      expect(JSON.parse(textOf(r, 'package.json'))).toMatchObject({
+        pnpm: { overrides: { 'qf-a@>=1.0.0 <2.0.0': '^1.2.6', 'qf-a@>=2.0.0 <3.0.0': '^2.0.3' } },
+      });
+      expect(up.lockfiles).toMatchObject([
+        { path: 'pnpm-lock.yaml', relation: 'transitive', mechanism: 'pnpm.overrides' },
+      ]);
+      expect(versionsIn('pnpm-lock.yaml', textOf(r, 'pnpm-lock.yaml'))).toEqual(['1.2.6', '2.0.3']);
+      expect(contentCheck(r, item)).toEqual({ ok: true });
+    },
+    SLOW,
+  );
+
+  it(
     'pins through pnpm-workspace.yaml overrides when that file has them (ruling F15)',
     async () => {
       const qfA: FakeNpmVersion[] = [{ version: '1.2.5' }];
@@ -849,6 +892,63 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
 
     expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
     if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('.yarn/cache');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('Yarn Berry with a git dependency in yarn.lock: failure manifest_unsupported naming it (Ruling T13c)', async () => {
+    const app = json([
+      '{',
+      '  "name": "app",',
+      '  "dependencies": {',
+      '    "gitdep": "https://github.com/acme/gitdep.git",',
+      '    "qf-a": "^1.2.5"',
+      '  }',
+      '}',
+    ]);
+    const withGit = BERRY_LOCK.replace(
+      '    qf-a: "npm:^1.2.5"\n',
+      '    gitdep: "https://github.com/acme/gitdep.git"\n    qf-a: "npm:^1.2.5"\n',
+    ).concat(`
+"gitdep@https://github.com/acme/gitdep.git":
+  version: 1.0.0
+  resolution: "gitdep@https://github.com/acme/gitdep.git#commit=0123456789abcdef0123456789abcdef01234567"
+  checksum: 10c0/fedcba9876543210
+  languageName: node
+  linkType: hard
+`);
+    const dir = committed({ 'package.json': app, 'yarn.lock': withGit });
+    const env = managerEnv('http://127.0.0.1:9', pathWithoutYarn());
+
+    const r = await fix(dir, env, claim(['1.2.5'], '1.2.6'));
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('gitdep');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('a workspace manifest that is not a JSON object: failure manifest_unsupported (Ruling T13e)', async () => {
+    const root = json([
+      '{',
+      '  "name": "root",',
+      '  "private": true,',
+      '  "workspaces": ["packages/*"],',
+      '  "dependencies": { "qf-a": "^1.2.5" }',
+      '}',
+    ]);
+    const dir = committed({
+      'package.json': root,
+      'packages/b/package.json': '[]\n',
+      'package-lock.json': npmLock({ 'node_modules/qf-a': { version: '1.2.5' } }),
+    });
+    const failing: ToolRunner = () =>
+      Promise.resolve({ exitCode: 1, timedOut: false, stdout: '', stderr: 'npm error' });
+
+    const r = await fix(dir, managerEnv('http://127.0.0.1:9'), claim(['1.2.5'], '1.2.6'), failing);
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) {
+      expect(r.outcome.failure.message).toContain('packages/b/package.json');
+    }
     expect(r.calls).toEqual([]);
   });
 

@@ -15,7 +15,10 @@ import { resolveTool } from './shim';
 export interface ToolResult {
   exitCode: number | null;
   timedOut: boolean;
-  /** The end of standard output (64 KiB unless the call asks for more), as the tool wrote it. */
+  /**
+   * The end of standard output (64 KiB unless the call asks for more), the job's known secrets
+   * replaced by `[redacted]` (ruling T13e).
+   */
   stdout: string;
   /** The end of standard error, the job's known secrets replaced by `[redacted]`. */
   stderr: string;
@@ -57,9 +60,9 @@ export class MissingToolError extends Error {
  * call can hand a tool the Qualor or CI job credentials. The tool is resolved like an analyzer
  * (`resolveBinary`: `PATH`, never under `root`; on Windows an npm node shim as node and its
  * script, ruling T12a, `resolveTool`) and never from the directory it runs in. A call
- * without time left does not start. The tools' output is never logged; their stderr comes back
- * with the job's known secrets (`secrets`, and the values of the environment's secret-named
- * variables) replaced, so whatever an adapter makes of it holds none of them.
+ * without time left does not start. The tools' output is never logged; their stdout and stderr
+ * come back with the job's known secrets (`secrets`, and the values of the environment's
+ * secret-named variables) replaced, so whatever an adapter makes of them holds none of them.
  */
 export function createToolRunner(o: {
   env: Record<string, string>;
@@ -93,11 +96,13 @@ export function createToolRunner(o: {
       `${tool} exited ${r.exitCode ?? 'without an exit code'} after ${Math.round(r.durationMs)} ms`,
     );
     const stderr = r.spawnError === undefined ? r.stderr : `${r.stderr}${r.spawnError}`;
+    const known = [...(o.secrets ?? []), ...secretEnvValues(env)];
     return {
       exitCode: r.exitCode,
       timedOut: r.timedOut,
-      stdout: r.stdout,
-      stderr: replaceSecrets(stderr, [...(o.secrets ?? []), ...secretEnvValues(env)]),
+      // Ruling T13e: pnpm and Berry print their errors on stdout, which an adapter may cut.
+      stdout: replaceSecrets(r.stdout, known),
+      stderr: replaceSecrets(stderr, known),
     };
   };
 }
@@ -106,8 +111,8 @@ export function createToolRunner(o: {
  * A package manager's failure as a fix's `failure` (§6.5 step 5, §6.9): `timeout` when it ran out
  * of time, else `package_manager` with "`<tool>` exited with <code>: " and the tail of its stderr,
  * scrubbed (`scrubToolOutput`: `secrets`, the B9 shapes, Qualor's secret redaction). The whole
- * message is at most 2 KiB. The job's runner already replaced the job's known secrets in stderr;
- * `secrets` names any other.
+ * message is at most 2 KiB. The job's runner already replaced the job's known secrets in both
+ * streams; `secrets` names any other.
  */
 export function toolFailure(
   tool: string,

@@ -297,6 +297,25 @@ function zeroInstallStop(ws: FixWorkspace, projects: readonly Project[]): FixSto
   return null;
 }
 
+/**
+ * Ruling T13c: Yarn Berry prepares a git dependency by installing and packing it, and
+ * `enableScripts: false` may not cover that step, so a project whose Berry lockfile holds any git
+ * entry is left to a person. npm and pnpm skip the prepare step under `--ignore-scripts`.
+ */
+function berryGitStop(ws: FixWorkspace, projects: readonly Project[]): FixStop | null {
+  for (const project of projects) {
+    for (const lockfile of project.lockfiles.filter((l) => l.manager === 'yarn-berry')) {
+      const git = lockEntries(ws, lockfile.path).find((e) => e.kind === 'git');
+      if (git !== undefined) {
+        return unsupported(
+          `${lockfile.path} holds the git dependency ${git.name} (${specText(git.source ?? '')}); Yarn Berry may run its scripts to prepare it, so Qualor does not regenerate this lockfile.`,
+        );
+      }
+    }
+  }
+  return null;
+}
+
 // ─── Edits ──────────────────────────────────────────────────────────────────
 
 /** The manifests' texts as the edits leave them, each read once, written back together. */
@@ -380,7 +399,8 @@ function editManifest(
   packageName: string,
   targets: readonly FixTarget[],
 ): FixStop | null {
-  const manifest = parseManifest(edits.get(file)) ?? {};
+  const manifest = parseManifest(edits.get(file));
+  if (manifest === null) return unsupported(`${file} is not a JSON object.`);
   for (const { section, spec } of declaredSpecs(manifest, packageName)) {
     if (typeof spec !== 'string' || !isRewritableRange(spec)) {
       return unsupported(
@@ -905,8 +925,8 @@ async function apply(
 ): Promise<AppliedFix | FixStop> {
   const projects = projectsOf(ws, plan);
   if (isStop(projects)) return projects;
-  const zero = zeroInstallStop(ws, projects);
-  if (zero !== null) return zero;
+  const refused = zeroInstallStop(ws, projects) ?? berryGitStop(ws, projects);
+  if (refused !== null) return refused;
   const edits = new ManifestEdits(ws);
   const plans = planAll(ws, edits, projects, fix, plan);
   if (isStop(plans)) return plans;
