@@ -107,8 +107,12 @@ export const FIX_LIMITS = {
   /** Fixes one claim may hand out. */
   claimMax: 10,
   /**
-   * Dependency names one lockfile read may carry, summed over its entries, alias copies
-   * included; above it the file is unparsable. A real 32 MiB lockfile stays well below it.
+   * The bound on the dependency names a lockfile read expands, checked separately for:
+   * - the raw entries, alias copies included, counted as a reader makes them where it can;
+   * - the merged entries, each holding the union of its package's copies;
+   * - every set or array of names a read or a check builds.
+   *
+   * Above it the file is unparsable. A real 32 MiB lockfile stays well below it.
    */
   lockDependencyRefs: 8_000_000,
   /** Characters of one lockfile source (`resolved`, `tarball`, `__archiveUrl`, …). */

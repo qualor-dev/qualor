@@ -565,13 +565,13 @@ describe('checkJsLockfile: pnpm', () => {
     expect(check('pnpm-lock.yaml', pnpmV6('1.2.5'), git)).toMatchObject({ rule: 'source_kind' });
   });
 
-  it('applies merge keys as pnpm’s YAML reader does', () => {
+  it('refuses a merge key, which pnpm never writes (Ruling T3o)', () => {
     const merged = pnpmV9('1.2.6').replace(
       'resolution: {integrity: sha512-a1.2.6}',
       'resolution: {integrity: sha512-x, <<: {tarball: https://evil.example/qf-a.tgz}}',
     );
     expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), merged)).toMatchObject({
-      rule: 'source_kind',
+      rule: 'unparsable',
     });
   });
 
@@ -2129,5 +2129,185 @@ describe('fix round 4: the base’s (slot, name) pairs are what is known (Ruling
       rule: 'new_dependency',
       path: 'package-lock.json',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 5 (task-3-fix-5.md): the union fan-out after the merge (R5-1), and YAML anchors,
+// aliases and merge keys in pnpm and Berry lockfiles (R5-2, Ruling T3o)
+
+describe('fix round 5: the union fan-out after the merge (R5-1)', () => {
+  const Y = 'https://registry.yarnpkg.com';
+  const raw = (slot: string, version: string, dependencies: string[]) => ({
+    slot,
+    name: 'p',
+    version,
+    source: null,
+    kind: 'registry' as const,
+    integrity: 'sha512-p',
+    dependencies,
+  });
+
+  it('counts the names each merged copy ends up with: up to FIX_LIMITS.lockDependencyRefs, not one more', () => {
+    // 2 000 copies of one package, 2 names each: 4 000 raw names, but every copy gets the union
+    // of 4 000 names, 8 000 000 in all.
+    const copies = Array.from({ length: 2000 }, (_, i) =>
+      raw(`s${i}`, '1.0.0', [`d${2 * i}`, `d${2 * i + 1}`]),
+    );
+    expect(withDependents(copies)).toHaveLength(2000);
+    expect(() => withDependents([...copies, raw('extra', '1.0.0', ['d-extra'])])).toThrow(
+      /unreadable/,
+    );
+  });
+
+  /** k alias copies of p@1.0.0 with one name each, and in each slot a p@2.0.i of its own. */
+  const npmUnion = (k: number, a: string) => {
+    const packages: Record<string, unknown> = {
+      '': { name: 'root', version: '0.0.0', dependencies: { 'qf-a': '^1.2.5' } },
+      'node_modules/qf-a': reg('qf-a', a),
+    };
+    for (let i = 0; i < k; i++) {
+      packages[`node_modules/s${i}`] = {
+        ...reg('p', '1.0.0'),
+        name: 'p',
+        dependencies: { [`d${i}`]: '*' },
+      };
+      packages[`node_modules/q/node_modules/s${i}`] = { ...reg('p', `2.0.${i}`), name: 'p' };
+    }
+    return JSON.stringify({ name: 'root', lockfileVersion: 3, packages });
+  };
+  const classicUnion = (k: number, a: string) => {
+    const lines = ['# yarn lockfile v1', '', 'qf-a@^1.2.5:', `  version "${a}"`];
+    lines.push(`  resolved "${Y}/qf-a/-/qf-a-${a}.tgz#abc"`, '  integrity sha512-a', '');
+    for (let i = 0; i < k; i++) {
+      lines.push(
+        `"s${i}@npm:p@^1.0.0":`,
+        '  version "1.0.0"',
+        `  resolved "${Y}/p/-/p-1.0.0.tgz#a"`,
+      );
+      lines.push('  integrity sha512-p', '  dependencies:', `    d${i} "^1.0.0"`, '');
+      lines.push(`"s${i}@npm:p@~2.0.${i}":`, `  version "2.0.${i}"`);
+      lines.push(`  resolved "${Y}/p/-/p-2.0.${i}.tgz#b"`, '  integrity sha512-q', '');
+    }
+    return lines.join('\n');
+  };
+
+  it.each([
+    ['package-lock.json', npmUnion],
+    ['yarn.lock', classicUnion],
+  ])(
+    '%s: refuses 16 000 alias copies whose union fans out, in under 3 s',
+    { timeout: 120_000 },
+    (path, lock) => {
+      const { result, ms } = timedCheck(path, lock(16_000, '1.2.5'), lock(16_000, '1.2.6'));
+      expect(result).toEqual({ ok: false, rule: 'unparsable', path });
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it('still accepts the same shape at 1 000 copies', { timeout: 60_000 }, () => {
+    const { result, ms } = timedCheck(
+      'package-lock.json',
+      npmUnion(1000, '1.2.5'),
+      npmUnion(1000, '1.2.6'),
+    );
+    expect(result).toEqual({ ok: true });
+    expect(ms).toBeLessThan(3000);
+  });
+});
+
+describe('fix round 5: no YAML anchors, aliases or merge keys in a lockfile (R5-2, Ruling T3o)', () => {
+  /** pnpm v6: one anchored dependencies map of m names, used by u more packages as `*a`. */
+  const pnpmAliases = (m: number, u: number, a: string) => {
+    const lines = [
+      "lockfileVersion: '6.0'",
+      '',
+      'dependencies:',
+      '  qf-a:',
+      '    specifier: ^1.2.5',
+    ];
+    lines.push(`    version: ${a}`, '', 'packages:', '', `  /qf-a@${a}:`);
+    lines.push('    resolution: {integrity: sha512-a}', '    dev: false', '');
+    lines.push('  /p0@1.0.0:', '    resolution: {integrity: sha512-p}', '    dependencies: &a');
+    for (let j = 0; j < m; j++) lines.push(`      d${j}: 1.0.0`);
+    for (let i = 1; i <= u; i++) {
+      lines.push(
+        `  /p${i}@1.0.0:`,
+        '    resolution: {integrity: sha512-p}',
+        '    dependencies: *a',
+      );
+    }
+    return lines.join('\n') + '\n';
+  };
+  /** Berry: the same through `dependencies: &a` and `*a`. */
+  const berryAliases = (m: number, u: number, a: string) => {
+    const lines = ['__metadata:', '  version: 8', '  cacheKey: 10', '', '"qf-a@npm:^1.2.5":'];
+    lines.push(`  version: ${a}`, `  resolution: "qf-a@npm:${a}"`, '  checksum: 10/abc', '');
+    lines.push('"p0@npm:1.0.0":', '  version: 1.0.0', '  resolution: "p0@npm:1.0.0"');
+    lines.push('  checksum: 10/p', '  dependencies: &a');
+    for (let j = 0; j < m; j++) lines.push(`    d${j}: "npm:1.0.0"`);
+    lines.push('');
+    for (let i = 1; i <= u; i++) {
+      lines.push(`"p${i}@npm:1.0.0":`, '  version: 1.0.0', `  resolution: "p${i}@npm:1.0.0"`);
+      lines.push('  checksum: 10/p', '  dependencies: *a', '');
+    }
+    return lines.join('\n') + '\n';
+  };
+
+  it.each([
+    ['pnpm-lock.yaml', 70_000, pnpmAliases],
+    ['yarn.lock', 70_000, berryAliases],
+    ['pnpm-lock.yaml', 300_000, pnpmAliases],
+  ])(
+    '%s: refuses one map of %i names used 99 more times through aliases, in under 3 s',
+    { timeout: 120_000 },
+    (path, m, lock) => {
+      const { result, ms } = timedCheck(path, lock(m, 99, '1.2.5'), lock(m, 99, '1.2.6'));
+      expect(result).toEqual({ ok: false, rule: 'unparsable', path });
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it('refuses a pnpm-lock.yaml with a single anchor, with or without an alias', () => {
+    const anchored = pnpmV9('1.2.6').replace(
+      'resolution: {integrity: sha512-a1.2.6}',
+      'resolution: &r {integrity: sha512-a1.2.6}',
+    );
+    const unparsable = { ok: false, rule: 'unparsable', path: 'pnpm-lock.yaml' };
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), anchored)).toEqual(unparsable);
+    const aliased = anchored.replace('resolution: {integrity: sha512-bbb}', 'resolution: *r');
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), aliased)).toEqual(unparsable);
+    expect(() => readPnpmLock(aliased)).toThrow();
+  });
+
+  it('refuses a Berry yarn.lock with a merge key', () => {
+    const merged = berry('1.2.6').replace(
+      '  checksum: 10c0/a1.2.6\n',
+      '  checksum: 10c0/a1.2.6\n  <<:\n    checksum: 10c0/evil\n',
+    );
+    expect(check('yarn.lock', berry('1.2.5'), merged)).toEqual({
+      ok: false,
+      rule: 'unparsable',
+      path: 'yarn.lock',
+    });
+  });
+
+  it('still accepts ordinary pnpm v6, v9 and Berry lockfiles', () => {
+    expect(check('pnpm-lock.yaml', pnpmV6('1.2.5'), pnpmV6('1.2.6'))).toEqual({ ok: true });
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmV9('1.2.6'))).toEqual({ ok: true });
+    expect(check('yarn.lock', berry('1.2.5'), berry('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('pnpm: stops counting references while walking them, not after', () => {
+    // 3 000 references to a package of 3 000 dependencies: 9 000 000 names.
+    const lines = ["lockfileVersion: '9.0'", '', 'importers:', '  .:', '    dependencies:'];
+    lines.push('      qf-a:', '        specifier: ^1.2.5', '        version: 1.2.6', '');
+    lines.push('packages:', '  qf-a@1.2.6:', '    resolution: {integrity: sha512-a}');
+    lines.push('  evil@1.0.0:', '    resolution: {integrity: sha512-e}', '', 'snapshots:');
+    lines.push('  qf-a@1.2.6:', '    dependencies:');
+    lines.push(...Array.from({ length: 3000 }, (_, i) => `      s${i}: evil@1.0.0`));
+    lines.push('  evil@1.0.0:', '    dependencies:');
+    lines.push(...Array.from({ length: 3000 }, (_, j) => `      d${j}: 1.0.0`));
+    expect(() => readPnpmLock(lines.join('\n') + '\n')).toThrow(/pnpm packages and references/);
   });
 });

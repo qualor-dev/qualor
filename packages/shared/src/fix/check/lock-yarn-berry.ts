@@ -144,11 +144,12 @@ function berryEntries(key: string, entry: JsonObject): RawEntry[] {
 }
 
 /**
- * Yarn Berry: YAML with every scalar a string, as Berry reads it; dependents from `dependencies`
- * and `peerDependencies`. The format is `yarn-berry-<__metadata.version>`.
+ * Yarn Berry: YAML with every scalar a string, as Berry reads it, and no anchors, aliases or merge
+ * keys (Ruling T3o: Berry's writer emits none); dependents from `dependencies` and
+ * `peerDependencies`. The format is `yarn-berry-<__metadata.version>`.
  */
 export function parseYarnBerry(source: string): ReadLock {
-  const lock = objectAt(parseYaml(source, { schema: 'failsafe' }), 'yarn.lock');
+  const lock = objectAt(parseYaml(source, { schema: 'failsafe', lockfile: true }), 'yarn.lock');
   const metadata = objectAt(own(lock, '__metadata'), '__metadata');
   const entries: RawEntry[] = [];
   for (const [key, value] of Object.entries(lock)) {

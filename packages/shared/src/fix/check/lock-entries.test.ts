@@ -390,6 +390,27 @@ describe('checkLockEntries: work per distinct dependency array (fix round 4, R4-
   });
 });
 
+describe('checkLockEntries: a bound on the sets it builds (fix round 5, R5-1)', () => {
+  it('answers unparsable before building allowed sets of more than FIX_LIMITS.lockDependencyRefs names', () => {
+    // k alias copies of p@1.0.0 share one array U of k names; each slot s_i also holds its own
+    // p@2.0.i with an empty array, so every (s_i, p) scope has its own set of arrays {U, E_i}.
+    const k = 3000;
+    const shared = Array.from({ length: k }, (_, j) => `d${j}`);
+    const base = [entry({ version: '1.2.5' })];
+    for (let i = 0; i < k; i++) {
+      base.push(entry({ slot: `s${i}`, name: 'p', version: '1.0.0', dependencies: shared }));
+      base.push(entry({ slot: `s${i}`, name: 'p', version: `2.0.${i}`, dependencies: [] }));
+    }
+    const started = performance.now();
+    expect(checkLockEntries(base, [entry()], ctx)).toEqual({
+      ok: false,
+      rule: 'unparsable',
+      path: 'apps/web/package-lock.json',
+    });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
 describe('newLockEntries (Ruling T3i)', () => {
   it('lists the entries of next that the base does not have, with slot, name and version', () => {
     const alias = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });

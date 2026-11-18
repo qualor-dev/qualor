@@ -2,7 +2,17 @@
  * Reading parsed documents of a fix upload, which come from an untrusted run: own keys only (never
  * a prototype's), plain objects only, and no recursion over the document's depth.
  */
-import { isScalar, parseDocument, visit, type YAMLMap } from 'yaml';
+import {
+  Composer,
+  isScalar,
+  Lexer,
+  parseDocument,
+  Parser,
+  visit,
+  type CST,
+  type Document,
+  type YAMLMap,
+} from 'yaml';
 
 export type JsonObject = Record<string, unknown>;
 
@@ -60,29 +70,46 @@ export function idOf<T>(ids: Map<T, number>, value: T): number {
 
 type Arrays = ReadonlySet<readonly string[]>;
 
+/** The key of a set of arrays, by reference: their ids, sorted. */
+function arraySetKey(arrays: Arrays, ids: Map<readonly string[], number>): string {
+  const [only] = arrays;
+  if (arrays.size === 1 && only !== undefined) return String(idOf(ids, only));
+  const numbers = [...arrays].map((array) => idOf(ids, array));
+  return numbers.sort((a, b) => a - b).join(',');
+}
+
 /**
- * One value per distinct set of arrays, by reference, built once (fix round 4, R4-1): entries
- * that share their dependencies arrays share what is built from them, whatever their names.
+ * One value per distinct set of arrays among the groups, built once (fix round 4, R4-1): groups
+ * that share their arrays share what is built from them, whatever their names. Fix round 5
+ * (R5-1): the distinct sets' total length is summed first, and above `limit` nothing is built
+ * and the answer is null.
  */
-export function perArraySet<T>(
+export function perArraySet<K, T>(
+  groups: ReadonlyMap<K, Arrays>,
+  limit: number,
   build: (arrays: readonly (readonly string[])[]) => T,
-): (arrays: Arrays) => T {
-  const byArray = new Map<readonly string[], T>();
-  const arrayIds = new Map<readonly string[], number>();
-  const bySet = new Map<string, T>();
-  return (arrays) => {
-    const [only] = arrays;
-    if (arrays.size === 1 && only !== undefined) {
-      const value = byArray.get(only) ?? build([only]);
-      byArray.set(only, value);
-      return value;
+): Map<K, T> | null {
+  const ids = new Map<readonly string[], number>();
+  const distinct = new Map<string, Arrays>();
+  const keys = new Map<K, string>();
+  let planned = 0;
+  for (const [group, arrays] of groups) {
+    const key = arraySetKey(arrays, ids);
+    if (!distinct.has(key)) {
+      distinct.set(key, arrays);
+      for (const array of arrays) planned += array.length;
     }
-    const ids = [...arrays].map((array) => idOf(arrayIds, array));
-    const key = ids.sort((a, b) => a - b).join(',');
-    const value = bySet.get(key) ?? build([...arrays]);
-    bySet.set(key, value);
-    return value;
-  };
+    keys.set(group, key);
+  }
+  if (planned > limit) return null;
+  const built = new Map<string, T>();
+  for (const [key, arrays] of distinct) built.set(key, build([...arrays]));
+  const result = new Map<K, T>();
+  for (const [group, key] of keys) {
+    const value = built.get(key);
+    if (value !== undefined) result.set(group, value);
+  }
+  return result;
 }
 
 /** A key of a tuple of strings, made by {@link tupleKeys}. */
@@ -149,35 +176,72 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 export interface YamlReadOptions {
   /**
-   * Applies `<<` merge keys. pnpm reads its files with js-yaml's default schema, which merges, so
-   * the check must see the merged mapping pnpm sees.
+   * Applies `<<` merge keys. pnpm reads `pnpm-workspace.yaml` with js-yaml's default schema,
+   * which merges, so the check must see the merged mapping pnpm sees.
    */
   merge?: boolean;
   /** `failsafe` reads every scalar as a string, as Yarn Berry reads `yarn.lock`. */
   schema?: 'core' | 'failsafe';
+  /**
+   * Ruling T3o: a lockfile (`pnpm-lock.yaml`, Berry `yarn.lock`) may hold no anchor (`&`), alias
+   * (`*`) or merge key (`<<`); pnpm and Yarn never write them. The first anchor or alias stops
+   * the read as soon as it is lexed, before the document is built.
+   */
+  lockfile?: boolean;
 }
 
 /**
  * Refuses a mapping with two equal keys, compared as text (so `1` and `'1'` collide, as they do
  * in the parsed object), with one set per mapping: linear, unlike `yaml`'s own `uniqueKeys` check.
+ * In a lockfile it also refuses a merge key (Ruling T3o), quoted or not.
  */
-function assertUniqueKeys(map: YAMLMap): void {
+function assertKeys(map: YAMLMap, lockfile: boolean): void {
   const seen = new Set<string>();
   for (const { key } of map.items) {
     const text = isScalar(key) ? String(key.value) : String(key);
+    if (lockfile && text === '<<') throw new Error('a YAML merge key in a lockfile');
     if (seen.has(text)) throw new Error(`duplicate YAML key ${text.slice(0, 100)}`);
     seen.add(text);
   }
 }
 
+/** Ruling T3o: a lockfile's tokens, refusing an anchor or an alias as soon as it is lexed. */
+function* lockfileTokens(text: string): Generator<CST.Token> {
+  const parser = new Parser();
+  for (const lexeme of new Lexer().lex(text)) {
+    if (lexeme.startsWith('&') || lexeme.startsWith('*')) {
+      throw new Error('a YAML anchor or alias in a lockfile');
+    }
+    yield* parser.next(lexeme);
+  }
+  yield* parser.end();
+}
+
+/** One document from the lockfile's tokens, as `parseDocument` composes it. */
+function lockfileDocument(text: string, options: YamlReadOptions): Document.Parsed {
+  const composer = new Composer({ ...options, uniqueKeys: false });
+  let doc: Document.Parsed | undefined;
+  for (const next of composer.compose(lockfileTokens(text), true, text.length)) {
+    if (doc !== undefined) throw new Error('several YAML documents in a lockfile');
+    doc = next;
+  }
+  if (doc === undefined) throw new Error('no YAML document');
+  return doc;
+}
+
 /**
  * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases)
- * and unique keys (checked in linear time, fix round 1 I1). Errors throw; warnings are not printed.
+ * and unique keys (checked in linear time, fix round 1 I1); a lockfile with no anchors, aliases
+ * or merge keys at all (Ruling T3o). Errors throw; warnings are not printed.
  */
 export function parseYaml(text: string, options: YamlReadOptions = {}): unknown {
-  const doc = parseDocument(stripBom(text), { ...options, uniqueKeys: false });
+  const source = stripBom(text);
+  const lockfile = options.lockfile === true;
+  const doc = lockfile
+    ? lockfileDocument(source, options)
+    : parseDocument(source, { ...options, uniqueKeys: false });
   const [error] = doc.errors;
   if (error !== undefined) throw error;
-  visit(doc, { Map: (_key, map) => assertUniqueKeys(map) });
-  return doc.toJS({ maxAliasCount: 100 });
+  visit(doc, { Map: (_key, map) => assertKeys(map, lockfile) });
+  return doc.toJS({ maxAliasCount: lockfile ? 0 : 100 });
 }

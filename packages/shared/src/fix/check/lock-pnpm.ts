@@ -6,6 +6,7 @@
 import { versionParses } from '../versions';
 import {
   dependencyNames,
+  entryCounter,
   objectAt,
   sectionOf,
   splitDescriptor,
@@ -191,6 +192,8 @@ interface References {
   packages: ReadonlyMap<string, RawEntry>;
   /** The `packages` entries by their key (depPath). */
   byKey: ReadonlyMap<string, RawEntry>;
+  /** Counts each entry made against the budget, and stops the read over it (fix round 5). */
+  count: (entry: RawEntry) => RawEntry;
 }
 
 /**
@@ -241,7 +244,7 @@ function holderReferences(holder: unknown, refs: References): RawEntry[] {
     if (!isObject(deps)) continue;
     for (const [slot, value] of Object.entries(deps)) {
       const entry = referenceEntry(slot, value, refs);
-      if (entry !== null) entries.push(entry);
+      if (entry !== null) entries.push(refs.count(entry));
     }
   }
   return entries;
@@ -250,11 +253,14 @@ function holderReferences(holder: unknown, refs: References): RawEntry[] {
 /**
  * The links and aliases among the dependencies of the importers (and of a single-project v5 or
  * v6 lockfile's top level) and of every package instance (v9 `snapshots`, v5/v6 `packages`).
+ * Each entry is counted as it is made, so the walk stops as soon as the budget is spent (fix
+ * round 5, R5-2).
  */
 function pnpmReferences(
   lock: JsonObject,
   major: number,
   byKey: ReadonlyMap<string, RawEntry>,
+  count: (entry: RawEntry) => RawEntry,
 ): RawEntry[] {
   const entries = [...byKey.values()];
   const packages = new Map(entries.map((entry) => [`${entry.name}@${entry.version}`, entry]));
@@ -264,23 +270,27 @@ function pnpmReferences(
     lock,
     ...Object.values(instances),
   ];
-  return holders.flatMap((holder) => holderReferences(holder, { major, packages, byKey }));
+  const refs = { major, packages, byKey, count };
+  return holders.flatMap((holder) => holderReferences(holder, refs));
 }
 
 /**
  * `pnpm-lock.yaml`: v5 `/a/1.0.0`, v6 `/a@1.0.0` and v9 `a@1.0.0` package keys with their
  * dependencies (v9 `snapshots`, or the v5/v6 packages' own), and the links and aliases of the
- * references. The format is `pnpm-<major>`.
+ * references. The format is `pnpm-<major>`. Ruling T3o: no YAML anchors, aliases or merge keys
+ * (pnpm writes none). Fix round 5 (R5-2): the dependency names of the entries are counted while
+ * they are made, and the read stops as soon as the count is over the budget.
  */
 export function parsePnpmLock(text: string): ReadLock {
-  const lock = objectAt(parseYaml(text, { merge: true }), 'pnpm-lock.yaml');
+  const lock = objectAt(parseYaml(text, { lockfile: true }), 'pnpm-lock.yaml');
   const major = pnpmMajor(lock);
+  const count = entryCounter('pnpm packages and references');
   const snapshots = major >= 9 ? snapshotDependencies(sectionOf(lock, 'snapshots')) : null;
   const byKey = new Map<string, RawEntry>();
   for (const [key, value] of Object.entries(sectionOf(lock, 'packages'))) {
-    byKey.set(key, pnpmEntry(key, value, major, snapshots));
+    byKey.set(key, count(pnpmEntry(key, value, major, snapshots)));
   }
-  const all = [...byKey.values(), ...pnpmReferences(lock, major, byKey)];
+  const all = [...byKey.values(), ...pnpmReferences(lock, major, byKey, count)];
   return { format: `pnpm-${major}`, entries: withDependents(all) };
 }
 

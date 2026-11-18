@@ -2,6 +2,7 @@
  * Lockfile entries (spec §12 B1, B3): what a fix may add to a lockfile, whatever its format, and
  * whether the package still resolves below its targets.
  */
+import { FIX_LIMITS } from '../families';
 import {
   compareVersions,
   releaseLine,
@@ -273,14 +274,16 @@ function dependencyScope(entry: LockEntry, packageName: string, keyOf: TupleKey)
 }
 
 /**
- * The names the base's entries depend on, per scope. Scopes that hold the same set of
- * dependencies arrays share one set (fix round 4, R4-1), so alias copies cost no copies.
+ * The names the base's entries depend on, per scope: one set per distinct set of dependencies
+ * arrays, shared by the scopes that hold it (fix round 4, R4-1). Scopes whose sets of arrays
+ * differ each get their own set. Fix round 5 (R5-1): the sets' total size is summed before any is
+ * built, and above `FIX_LIMITS.lockDependencyRefs` the answer is null (`unparsable`).
  */
 function baseDependencies(
   base: readonly LockEntry[],
   packageName: string,
   keyOf: TupleKey,
-): Map<string, ReadonlySet<string>> {
+): Map<string, ReadonlySet<string>> | null {
   const arrays = new Map<string, Set<readonly string[]>>();
   for (const entry of base) {
     const key = dependencyScope(entry, packageName, keyOf);
@@ -288,10 +291,9 @@ function baseDependencies(
     if (list === undefined) arrays.set(key, new Set([entry.dependencies]));
     else list.add(entry.dependencies);
   }
-  const setOf = perArraySet((lists): ReadonlySet<string> => new Set(lists.flat()));
-  const allowed = new Map<string, ReadonlySet<string>>();
-  for (const [key, lists] of arrays) allowed.set(key, setOf(lists));
-  return allowed;
+  const build = (lists: readonly (readonly string[])[]): ReadonlySet<string> =>
+    new Set(lists.flat());
+  return perArraySet(arrays, FIX_LIMITS.lockDependencyRefs, build);
 }
 
 /** Whether `names` holds a name `allowed` lacks; each (set, array) pair is computed once. */
@@ -314,20 +316,23 @@ function widens(
  * some base entry of it depended on, whatever its new version, source or integrity; an existing
  * version of the package itself, by (slot, name, version), likewise. Fewer names are fine. Not
  * covered here: new versions of the package (the residual T3i discloses) and brand-new pairs,
- * which have no base scope; Rulings T3m and T3n restrict how those are reached.
+ * which have no base scope; Rulings T3m and T3n restrict how those are reached. `unparsable` when
+ * the base's allowed sets would be too large to build (fix round 5, R5-1).
  */
-function dependenciesWidened(
+function dependenciesRule(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
   packageName: string,
   keyOf: TupleKey,
-): boolean {
+): FixRule | null {
   const allowed = baseDependencies(base, packageName, keyOf);
+  if (allowed === null) return 'unparsable';
   const verdicts = new Map<ReadonlySet<string>, Map<readonly string[], boolean>>();
-  return next.some((entry) => {
+  const widened = next.some((entry) => {
     const names = allowed.get(dependencyScope(entry, packageName, keyOf));
     return names !== undefined && widens(entry.dependencies, names, verdicts);
   });
+  return widened ? 'other_change' : null;
 }
 
 /**
@@ -339,10 +344,11 @@ function dependenciesWidened(
  * T3l), and, with `reachableOnly`, every new entry's `(slot, name)` pair must be reachable from
  * the package (`new_dependency`, Rulings T3e, T3m and T3n).
  *
- * The work is linear in the entries and their distinct dependencies arrays: every key is a tuple
- * of interned ids, and origins, allowed sets and verdicts are computed once per distinct source,
- * set of arrays and (set, array) pair. The readers bound the arrays' total length
- * (`FIX_LIMITS.lockDependencyRefs`, fix round 4).
+ * The work is linear in the entries and in the total length of their dependencies arrays, which
+ * the readers hold to `FIX_LIMITS.lockDependencyRefs` after the merge (fix rounds 4 and 5): every
+ * key is a tuple of interned ids; origins and verdicts are computed once per distinct source and
+ * (set, array) pair; the allowed sets are built once per distinct set of arrays, and only when
+ * their total size is within the same limit, else the answer is `unparsable` (fix round 5).
  */
 export function checkLockEntries(
   base: readonly LockEntry[],
@@ -356,9 +362,8 @@ export function checkLockEntries(
     const rule = newEntryRule(entry, facts);
     if (rule !== null) return fixRefused(rule, ctx.lockfile);
   }
-  if (dependenciesWidened(base, next, ctx.packageName, keyOf)) {
-    return fixRefused('other_change', ctx.lockfile);
-  }
+  const dependencies = dependenciesRule(base, next, ctx.packageName, keyOf);
+  if (dependencies !== null) return fixRefused(dependencies, ctx.lockfile);
   if (ctx.reachableOnly) {
     const reached = reachablePairs(next, ctx.packageName, facts);
     if (added.some((entry) => !reached.has(pairOf(entry, keyOf)))) {
