@@ -340,6 +340,56 @@ describe('checkLockEntries: brand-new names (Ruling T3m)', () => {
   });
 });
 
+describe('checkLockEntries: the (slot, name) pairs of the base (Ruling T3n)', () => {
+  const on = { ...ctx, reachableOnly: true };
+  const named = (name: string, dependencies: string[] = [], over: Partial<LockEntry> = {}) =>
+    entry({ name, version: '1.0.0', source: null, dependencies, ...over });
+  // `string-width-cjs` is only an alias slot in the base (`npm:string-width`), as through
+  // `@isaacs/cliui`; anyone can publish a real package of that name.
+  const cliui = named('cliui', ['string-width-cjs']);
+  const base = [
+    ...baseEntries,
+    cliui,
+    named('string-width', [], { slot: 'string-width-cjs', version: '4.2.3' }),
+  ];
+  const impostor = named('string-width-cjs', [], { version: '6.6.6' });
+
+  it('refuses a pair the base lacks, in a slot the base used for an alias, through an existing package', () => {
+    const next = [entry({ dependencies: ['cliui'] }), cliui, impostor];
+    expect(checkLockEntries(base, next, on)).toEqual({
+      ok: false,
+      rule: 'new_dependency',
+      path: 'apps/web/package-lock.json',
+    });
+  });
+
+  it('reaches such a pair from the package itself', () => {
+    const next = [entry({ dependencies: ['cliui', 'string-width-cjs'] }), cliui, impostor];
+    expect(checkLockEntries(base, next, on)).toEqual({ ok: true });
+  });
+});
+
+describe('checkLockEntries: work per distinct dependency array (fix round 4, R4-1)', () => {
+  it('builds one allowed set per distinct set of base arrays (6 000 × 6 000 in under 1 s)', () => {
+    const n = 6000;
+    const names = Array.from({ length: n }, (_, j) => `d${j}`);
+    const none: string[] = [];
+    // `p@1.0.0` (n names) and `p@2.0.0` aliased into the same n slots: n scopes of two arrays.
+    const copies = (version: string, dependencies: string[]) =>
+      Array.from({ length: n }, (_, i) =>
+        entry({ slot: `s${i}`, name: 'p', version, source: null, dependencies }),
+      );
+    const shared = [...copies('1.0.0', names), ...copies('2.0.0', none)];
+    const started = performance.now();
+    expect(
+      checkLockEntries([entry({ version: '1.2.5' }), ...shared], [entry(), ...shared], ctx),
+    ).toEqual({
+      ok: true,
+    });
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
 describe('newLockEntries (Ruling T3i)', () => {
   it('lists the entries of next that the base does not have, with slot, name and version', () => {
     const alias = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });

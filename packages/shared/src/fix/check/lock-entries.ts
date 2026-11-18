@@ -18,7 +18,7 @@ import {
   type FixTarget,
   type LockEntry,
 } from './types';
-import { parseUrl } from './values';
+import { parseUrl, perArraySet, tupleKeys, type TupleKey } from './values';
 
 /** What a lockfile check adds to the fix: the file, the format's public registries and hashes. */
 export interface LockCheckOptions {
@@ -28,8 +28,9 @@ export interface LockCheckOptions {
   /** Whether a new entry needs an integrity hash (the format has them). */
   integrityRequired: boolean;
   /**
-   * Rulings T3e and T3m: a new entry must be reachable from the package through the entries'
-   * forward `dependencies`. Off for a format without a dependency graph (go.sum).
+   * Rulings T3e, T3m and T3n: a new entry's `(slot, name)` pair must be reachable from the
+   * package through the entries' forward `dependencies`. Off for a format without a dependency
+   * graph (go.sum).
    */
   reachableOnly: boolean;
 }
@@ -65,8 +66,20 @@ function isAlias(entry: LockEntry): boolean {
   return slotOf(entry) !== entry.name;
 }
 
-function aliasKey(entry: LockEntry): string {
-  return JSON.stringify([slotOf(entry), entry.name]);
+/**
+ * A key of an entry's fields (fix round 4, R4-4): their interned ids, so no key copies a string
+ * that copies of an entry share, such as its source. Only an alias's slot is written out, last
+ * and after a `|` that ids never hold: it is each copy's own text in the lockfile (its folder,
+ * pattern, descriptor or reference), and may hold any character.
+ */
+function keyWithSlot(entry: LockEntry, keyOf: TupleKey, ...parts: (string | null)[]): string {
+  const key = keyOf(...parts);
+  return isAlias(entry) ? `${key}|${entry.slot}` : key;
+}
+
+/** An entry's `(slot, name)` pair key (fix round 1 C1, Ruling T3n). */
+function pairOf(entry: LockEntry, keyOf: TupleKey): string {
+  return keyWithSlot(entry, keyOf, entry.name);
 }
 
 /**
@@ -74,152 +87,164 @@ function aliasKey(entry: LockEntry): string {
  * (Ruling T3b, fix round 1 C1), so a base entry whose kind, integrity or slot changed is checked
  * again.
  */
-function entryKey(entry: LockEntry): string {
-  return JSON.stringify([
-    slotOf(entry),
-    entry.name,
-    entry.version,
-    entry.source,
-    entry.kind,
-    entry.integrity,
-  ]);
+function entryKey(entry: LockEntry, keyOf: TupleKey): string {
+  const { name, version, source, kind, integrity } = entry;
+  return keyWithSlot(entry, keyOf, name, version, source, kind, integrity);
 }
 
-function originOf(entry: LockEntry): string | null {
-  return entry.source === null ? null : sourceOrigin(entry.source);
-}
-
-/** What the base allows a new entry: origins (Ruling T3f: of registry entries only) and aliases. */
+/** What the base allows a new entry: origins (Ruling T3f: of registry entries only) and pairs. */
 interface BaseFacts {
+  keyOf: TupleKey;
   origins: ReadonlySet<string>;
-  aliases: ReadonlySet<string>;
+  /** The base's `(slot, name)` pairs: aliases (C1) and what Ruling T3n counts as known. */
+  pairs: ReadonlySet<string>;
+  /** {@link sourceOrigin} of an entry's source, once per distinct source. */
+  originOf: (entry: LockEntry) => string | null;
   integrityRequired: boolean;
 }
 
-function baseFacts(base: readonly LockEntry[], ctx: LockCheckOptions): BaseFacts {
+function originsBySource(): (entry: LockEntry) => string | null {
+  const origins = new Map<string, string | null>();
+  return ({ source }) => {
+    if (source === null) return null;
+    const known = origins.get(source);
+    if (known !== undefined) return known;
+    const origin = sourceOrigin(source);
+    origins.set(source, origin);
+    return origin;
+  };
+}
+
+function baseFacts(base: readonly LockEntry[], ctx: LockCheckOptions, keyOf: TupleKey): BaseFacts {
+  const originOf = originsBySource();
   const origins = new Set(ctx.publicHosts.map((host) => sourceOrigin(host) ?? host));
   for (const entry of base) {
     const origin = entry.kind === 'registry' ? originOf(entry) : null;
     if (origin !== null) origins.add(origin);
   }
-  const aliases = new Set(base.filter(isAlias).map(aliasKey));
-  return { origins, aliases, integrityRequired: ctx.integrityRequired };
+  const pairs = new Set(base.map((entry) => pairOf(entry, keyOf)));
+  return { keyOf, origins, pairs, originOf, integrityRequired: ctx.integrityRequired };
 }
 
 function newEntryRule(entry: LockEntry, facts: BaseFacts): FixRule | null {
   if (entry.kind !== 'registry') return 'source_kind';
   // Fix round 1, C1: another package in a slot only where the base had that alias.
-  if (isAlias(entry) && !facts.aliases.has(aliasKey(entry))) return 'source_kind';
+  if (isAlias(entry) && !facts.pairs.has(pairOf(entry, facts.keyOf))) return 'source_kind';
   if (entry.source !== null) {
     // Ruling T3c: a source that gives no origin fails closed; the readers write null, not a
     // reference, for a registry entry the format names no URL for.
-    const origin = originOf(entry);
+    const origin = facts.originOf(entry);
     if (origin === null || !facts.origins.has(origin)) return 'new_source';
   }
   if (facts.integrityRequired && (entry.integrity ?? '') === '') return 'missing_integrity';
   return null;
 }
 
-function groupBy(
-  entries: readonly LockEntry[],
-  keyOf: (entry: LockEntry) => string,
-): Map<string, LockEntry[]> {
-  const groups = new Map<string, LockEntry[]>();
-  for (const entry of entries) {
-    const key = keyOf(entry);
-    const group = groups.get(key);
-    if (group === undefined) groups.set(key, [entry]);
-    else group.push(entry);
-  }
-  return groups;
-}
-
-/** The slots and names of the base's entries: a name in neither is brand-new (Ruling T3m). */
-function baseNames(base: readonly LockEntry[]): Set<string> {
-  const names = new Set<string>();
-  for (const entry of base) {
-    names.add(entry.name);
-    names.add(slotOf(entry));
-  }
-  return names;
-}
-
 /**
- * A walk over the forward dependencies. Each name is expanded once, each slot at most twice
- * (closed, then open), and each dependencies array at most once per mode, so the walk is linear
- * in the entries and their distinct arrays (fix rounds 2 and 3, N1 and NB1).
+ * A walk over the forward dependencies, by `(slot, name)` pair. Each entry's pair is computed
+ * once, each pair expanded once, each slot followed at most twice (closed, then open), and each
+ * dependencies array walked at most once per mode, so the walk is linear in the entries and their
+ * distinct arrays (fix rounds 2 and 3, N1 and NB1).
  */
 interface Walk {
   packageName: string;
+  /** The base's pairs: an entry with another pair is brand-new (Ruling T3n). */
   known: ReadonlySet<string>;
-  byName: ReadonlyMap<string, LockEntry[]>;
-  bySlot: ReadonlyMap<string, LockEntry[]>;
-  names: Set<string>;
-  /** Slot → whether it was followed open (may reach brand-new names). */
+  byPair: ReadonlyMap<string, LockEntry[]>;
+  /** The distinct pairs of the entries in each slot (an alias's slot holds another name). */
+  slotPairs: ReadonlyMap<string, ReadonlySet<string>>;
+  pairs: Set<string>;
+  /** Slot → whether it was followed open (may reach brand-new pairs). */
   slots: Map<string, boolean>;
   walked: { open: Set<readonly string[]>; closed: Set<readonly string[]> };
   queue: string[];
 }
 
-function reachName(walk: Walk, name: string): void {
-  if (walk.names.has(name)) return;
-  walk.names.add(name);
-  walk.queue.push(name);
+function reachPair(walk: Walk, pair: string): void {
+  if (walk.pairs.has(pair)) return;
+  walk.pairs.add(pair);
+  walk.queue.push(pair);
 }
 
-/**
- * The names of the entries in a slot (an alias's slot holds another name). A closed edge reaches
- * only names the base has.
- */
+/** The pairs in a slot. A closed edge reaches only pairs the base has. */
 function followSlot(walk: Walk, slot: string, open: boolean): void {
   const followed = walk.slots.get(slot);
   if (followed === true || (followed === false && !open)) return;
   walk.slots.set(slot, open);
-  for (const entry of walk.bySlot.get(slot) ?? []) {
-    if (open || walk.known.has(entry.name)) reachName(walk, entry.name);
+  for (const pair of walk.slotPairs.get(slot) ?? []) {
+    if (open || walk.known.has(pair)) reachPair(walk, pair);
   }
 }
 
 /**
- * Ruling T3m: the edges of the package's own entries, and of entries whose name is brand-new,
- * may reach brand-new names; edges of other entries reach only names the base has.
+ * Rulings T3m and T3n: the edges of the package's own entries, and of brand-new entries (whose
+ * pair the base lacks), may reach brand-new pairs; edges of other entries reach only pairs the
+ * base has.
  */
-function expandEntry(walk: Walk, entry: LockEntry): void {
-  const open = isPackageEntry(entry, walk.packageName) || !walk.known.has(entry.name);
+function expandEntry(walk: Walk, entry: LockEntry, pair: string): void {
+  const open = isPackageEntry(entry, walk.packageName) || !walk.known.has(pair);
   const walked = open ? walk.walked.open : walk.walked.closed;
   if (walked.has(entry.dependencies)) return;
   walked.add(entry.dependencies);
   for (const slot of entry.dependencies) followSlot(walk, slot, open);
 }
 
-/**
- * Rulings T3e and T3m: the names reachable from the package. They are its name and the names
- * held in its slot, then, for every reachable name, the names in the slots its entries depend on;
- * a brand-new name (no base entry has it as slot or name) only through the package's own entries
- * or other brand-new names. Names the base has are reached through any entry, so a package that
- * moves to another folder is no new dependency.
- */
-function reachableNames(
-  base: readonly LockEntry[],
-  next: readonly LockEntry[],
-  packageName: string,
-): Set<string> {
+/** The walk over `next`, each entry's pair computed once; the package's pairs are reached. */
+function startWalk(next: readonly LockEntry[], packageName: string, facts: BaseFacts): Walk {
+  const byPair = new Map<string, LockEntry[]>();
+  const slotPairs = new Map<string, Set<string>>();
+  const start: string[] = [];
+  for (const entry of next) {
+    const pair = pairOf(entry, facts.keyOf);
+    const group = byPair.get(pair);
+    if (group === undefined) byPair.set(pair, [entry]);
+    else group.push(entry);
+    const inSlot = slotPairs.get(slotOf(entry));
+    if (inSlot === undefined) slotPairs.set(slotOf(entry), new Set([pair]));
+    else inSlot.add(pair);
+    if (isPackageEntry(entry, packageName)) start.push(pair);
+  }
   const walk: Walk = {
     packageName,
-    known: baseNames(base),
-    byName: groupBy(next, (entry) => entry.name),
-    bySlot: groupBy(next, slotOf),
-    names: new Set(),
+    known: facts.pairs,
+    byPair,
+    slotPairs,
+    pairs: new Set(),
     slots: new Map(),
     walked: { open: new Set(), closed: new Set() },
     queue: [],
   };
-  reachName(walk, packageName);
-  followSlot(walk, packageName, true);
-  for (let name = walk.queue.pop(); name !== undefined; name = walk.queue.pop()) {
-    for (const entry of walk.byName.get(name) ?? []) expandEntry(walk, entry);
+  for (const pair of start) reachPair(walk, pair);
+  return walk;
+}
+
+/**
+ * Rulings T3e, T3m and T3n: the `(slot, name)` pairs reachable from the package. They are the
+ * pairs of the package's entries (its name, or its slot), then, for every reachable pair, the
+ * pairs in the slots its entries depend on. A pair the base lacks (brand-new, even when its slot
+ * or its name is in the base, as an alias slot is) is reached only through the package's own
+ * entries or other brand-new ones. A pair the base has is reached through any entry, so a
+ * package that moves to another folder (npm keeps the pair) is no new dependency.
+ */
+function reachablePairs(
+  next: readonly LockEntry[],
+  packageName: string,
+  facts: BaseFacts,
+): Set<string> {
+  const walk = startWalk(next, packageName, facts);
+  for (let pair = walk.queue.pop(); pair !== undefined; pair = walk.queue.pop()) {
+    for (const entry of walk.byPair.get(pair) ?? []) expandEntry(walk, entry, pair);
   }
-  return walk.names;
+  return walk.pairs;
+}
+
+function addedEntries(
+  base: readonly LockEntry[],
+  next: readonly LockEntry[],
+  keyOf: TupleKey,
+): LockEntry[] {
+  const known = new Set(base.map((entry) => entryKey(entry, keyOf)));
+  return next.filter((entry) => !known.has(entryKey(entry, keyOf)));
 }
 
 /**
@@ -230,8 +255,7 @@ export function newLockEntries(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
 ): LockEntry[] {
-  const known = new Set(base.map(entryKey));
-  return next.filter((entry) => !known.has(entryKey(entry)));
+  return addedEntries(base, next, tupleKeys());
 }
 
 function isPackageEntry(entry: LockEntry, packageName: string): boolean {
@@ -242,39 +266,31 @@ function isPackageEntry(entry: LockEntry, packageName: string): boolean {
  * Where Ruling T3l compares an entry's dependencies: by (slot, name), and for an entry of the
  * package by (slot, name, version).
  */
-function dependencyScope(entry: LockEntry, packageName: string): string {
-  const scope = [slotOf(entry), entry.name];
-  return JSON.stringify(isPackageEntry(entry, packageName) ? [...scope, entry.version] : scope);
+function dependencyScope(entry: LockEntry, packageName: string, keyOf: TupleKey): string {
+  return isPackageEntry(entry, packageName)
+    ? keyWithSlot(entry, keyOf, entry.name, entry.version)
+    : pairOf(entry, keyOf);
 }
 
 /**
- * The names the base's entries depend on, per scope. A scope with one dependencies array (the
- * alias copies of a package share theirs) gets that array's set, shared between scopes, so alias
- * fan-out costs no copies (fix round 3, NB1).
+ * The names the base's entries depend on, per scope. Scopes that hold the same set of
+ * dependencies arrays share one set (fix round 4, R4-1), so alias copies cost no copies.
  */
 function baseDependencies(
   base: readonly LockEntry[],
   packageName: string,
+  keyOf: TupleKey,
 ): Map<string, ReadonlySet<string>> {
   const arrays = new Map<string, Set<readonly string[]>>();
   for (const entry of base) {
-    const key = dependencyScope(entry, packageName);
+    const key = dependencyScope(entry, packageName, keyOf);
     const list = arrays.get(key);
     if (list === undefined) arrays.set(key, new Set([entry.dependencies]));
     else list.add(entry.dependencies);
   }
-  const sets = new Map<readonly string[], ReadonlySet<string>>();
+  const setOf = perArraySet((lists): ReadonlySet<string> => new Set(lists.flat()));
   const allowed = new Map<string, ReadonlySet<string>>();
-  for (const [key, lists] of arrays) {
-    const [only] = lists;
-    if (lists.size === 1 && only !== undefined) {
-      const set = sets.get(only) ?? new Set(only);
-      sets.set(only, set);
-      allowed.set(key, set);
-    } else {
-      allowed.set(key, new Set([...lists].flat()));
-    }
-  }
+  for (const [key, lists] of arrays) allowed.set(key, setOf(lists));
   return allowed;
 }
 
@@ -297,18 +313,19 @@ function widens(
  * Ruling T3l (refining T3j): a package the base has, by (slot, name), may depend only on names
  * some base entry of it depended on, whatever its new version, source or integrity; an existing
  * version of the package itself, by (slot, name, version), likewise. Fewer names are fine. Not
- * covered here: new versions of the package (the residual T3i discloses) and brand-new names,
- * which have no base scope; Ruling T3m restricts how those are reached.
+ * covered here: new versions of the package (the residual T3i discloses) and brand-new pairs,
+ * which have no base scope; Rulings T3m and T3n restrict how those are reached.
  */
 function dependenciesWidened(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
   packageName: string,
+  keyOf: TupleKey,
 ): boolean {
-  const allowed = baseDependencies(base, packageName);
+  const allowed = baseDependencies(base, packageName, keyOf);
   const verdicts = new Map<ReadonlySet<string>, Map<readonly string[], boolean>>();
   return next.some((entry) => {
-    const names = allowed.get(dependencyScope(entry, packageName));
+    const names = allowed.get(dependencyScope(entry, packageName, keyOf));
     return names !== undefined && widens(entry.dependencies, names, verdicts);
   });
 }
@@ -319,26 +336,32 @@ function dependenciesWidened(
  * entries or a public registry of the format (`new_source`), with an integrity hash where the
  * format has them (`missing_integrity`); the first failing new entry, in `next` order, names the
  * rule. Then no package the base has may depend on a name it did not (`other_change`, Ruling
- * T3l), and, with `reachableOnly`, every new entry must be reachable from the package
- * (`new_dependency`, Rulings T3e and T3m).
+ * T3l), and, with `reachableOnly`, every new entry's `(slot, name)` pair must be reachable from
+ * the package (`new_dependency`, Rulings T3e, T3m and T3n).
+ *
+ * The work is linear in the entries and their distinct dependencies arrays: every key is a tuple
+ * of interned ids, and origins, allowed sets and verdicts are computed once per distinct source,
+ * set of arrays and (set, array) pair. The readers bound the arrays' total length
+ * (`FIX_LIMITS.lockDependencyRefs`, fix round 4).
  */
 export function checkLockEntries(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
   ctx: FixCheckContext & LockCheckOptions,
 ): FixCheckResult {
-  const added = newLockEntries(base, next);
-  const facts = baseFacts(base, ctx);
+  const keyOf = tupleKeys();
+  const added = addedEntries(base, next, keyOf);
+  const facts = baseFacts(base, ctx, keyOf);
   for (const entry of added) {
     const rule = newEntryRule(entry, facts);
     if (rule !== null) return fixRefused(rule, ctx.lockfile);
   }
-  if (dependenciesWidened(base, next, ctx.packageName)) {
+  if (dependenciesWidened(base, next, ctx.packageName, keyOf)) {
     return fixRefused('other_change', ctx.lockfile);
   }
   if (ctx.reachableOnly) {
-    const reached = reachableNames(base, next, ctx.packageName);
-    if (added.some((entry) => !reached.has(entry.name))) {
+    const reached = reachablePairs(next, ctx.packageName, facts);
+    if (added.some((entry) => !reached.has(pairOf(entry, keyOf)))) {
       return fixRefused('new_dependency', ctx.lockfile);
     }
   }

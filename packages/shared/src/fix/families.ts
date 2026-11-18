@@ -106,6 +106,13 @@ export const FIX_LIMITS = {
   maxOpen: 20,
   /** Fixes one claim may hand out. */
   claimMax: 10,
+  /**
+   * Dependency names one lockfile read may carry, summed over its entries, alias copies
+   * included; above it the file is unparsable. A real 32 MiB lockfile stays well below it.
+   */
+  lockDependencyRefs: 8_000_000,
+  /** Characters of one lockfile source (`resolved`, `tarball`, `__archiveUrl`, …). */
+  lockSourceChars: 4096,
 } as const;
 
 /** §6.4: why a fix failed (`failure.code`). */

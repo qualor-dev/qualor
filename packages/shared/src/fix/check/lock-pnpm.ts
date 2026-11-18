@@ -3,6 +3,7 @@
  * the importers' links, and every reference that puts another package in a slot
  * (`qf-a: evil@1.2.6`, fix round 1 C1).
  */
+import { versionParses } from '../versions';
 import {
   dependencyNames,
   objectAt,
@@ -150,6 +151,14 @@ function referenceOf(value: unknown): string | null {
 }
 
 /**
+ * A reference without its v5 peers. Fix round 2, N2: a v5 reference carries them after the first
+ * `_` (`1.0.0_react@18.2.0`), as v5 keys do; v6 and v9 put them in `(…)`, cut off before.
+ */
+function withoutV5Peers(bare: string, major: number): string {
+  return major < 6 ? (bare.split('_', 1)[0] ?? '') : bare;
+}
+
+/**
  * The package a reference names when it is more than a version: `evil@1.2.6` (v9),
  * `/evil@1.2.6` (v6) or `/evil/1.2.6` (v5), a peer suffix cut off. A reference with an `@` that
  * names no package (a git URL, say) is read the same way, so it fails closed: an alias, refused
@@ -158,9 +167,22 @@ function referenceOf(value: unknown): string | null {
 function referencedPackage(reference: string, major: number): PackageId | null {
   const bare = reference.split('(', 1)[0] ?? '';
   if (bare.startsWith('/')) return pnpmKeyParts(bare, major);
-  // Fix round 2, N2: a v5 reference carries its peers after the first `_`
-  // (`1.0.0_react@18.2.0`), as v5 keys do.
-  return splitAtVersion(major < 6 ? (bare.split('_', 1)[0] ?? '') : bare);
+  return splitAtVersion(withoutV5Peers(bare, major));
+}
+
+/**
+ * Whether pnpm takes a reference as the depPath itself, whatever the slot: in v5 and v6, one
+ * with a path (fix round 3, NB3) or a `file:` one (fix round 4, R4-2), as pnpm's `refToRelative`
+ * does. v9 puts the slot's name in front of both.
+ */
+function isDepPath(bare: string, major: number): boolean {
+  return major < 9 && !bare.startsWith('/') && (bare.includes('/') || bare.startsWith('file:'));
+}
+
+/** A reference that stands for no `packages` entry: an alias of kind `other` (fail closed). */
+function unknownReference(slot: string, reference: string): RawEntry {
+  const unknown = { name: reference, version: '', source: null, integrity: null };
+  return { ...unknown, kind: 'other', dependencies: [], slot };
 }
 
 interface References {
@@ -172,23 +194,23 @@ interface References {
 }
 
 /**
- * Fix round 3, NB3: a v5 or v6 reference with a path (`registry.example.com/foo/1.0.0_react@…`,
- * `github.com/x/foo/<sha>`) is a depPath, the key of a `packages` entry, whatever the slot; an
- * alias when that entry is another package, an unknown alias (fail closed) when there is none.
- * v9 keys hold the slot's name, so a v9 reference cannot point a slot elsewhere this way.
+ * Fix round 3 NB3, fix round 4 R4-2: a v5 or v6 depPath reference
+ * (`registry.example.com/foo/1.0.0_react@…`, `github.com/x/foo/<sha>`, `file:foo-1.0.0.tgz`) is
+ * the key of a `packages` entry, whatever the slot; an alias when that entry is another package,
+ * an unknown alias (fail closed) when there is none. v9 keys hold the slot's name, so a v9
+ * reference cannot point a slot elsewhere this way.
  */
 function depPathEntry(slot: string, depPath: string, refs: References): RawEntry | null {
   const found = refs.byKey.get(depPath);
-  if (found === undefined) {
-    const missing = { name: depPath, version: '', source: null, integrity: null };
-    return { ...missing, kind: 'other', dependencies: [], slot };
-  }
+  if (found === undefined) return unknownReference(slot, depPath);
   return found.name === slot ? null : { ...found, slot };
 }
 
 /**
  * One dependency as an entry of its own when it is a link (`link:…`, no `packages` entry) or puts
- * another package in its slot (an alias: the referenced entry, in that slot).
+ * another package in its slot (an alias: the referenced entry, in that slot). A reference that
+ * names no package must be a plain version; anything else is an unknown alias (fix round 4, R4-2:
+ * fail closed).
  */
 function referenceEntry(slot: string, value: unknown, refs: References): RawEntry | null {
   const reference = referenceOf(value);
@@ -198,11 +220,15 @@ function referenceEntry(slot: string, value: unknown, refs: References): RawEntr
     return { ...link, kind: 'link', dependencies: [] };
   }
   const bare = reference.split('(', 1)[0] ?? '';
-  if (refs.major < 9 && !bare.startsWith('/') && bare.includes('/')) {
+  if (isDepPath(bare, refs.major)) {
     return depPathEntry(slot, refs.byKey.has(reference) ? reference : bare, refs);
   }
   const target = referencedPackage(reference, refs.major);
-  if (target === null || target.name === slot) return null;
+  if (target === null) {
+    const plain = versionParses('semver', withoutV5Peers(bare, refs.major));
+    return plain ? null : unknownReference(slot, bare);
+  }
+  if (target.name === slot) return null;
   const found = refs.packages.get(`${target.name}@${target.version}`);
   const missing = { ...target, kind: 'other' as const, source: null, integrity: null };
   return { ...(found ?? { ...missing, dependencies: [] }), slot };

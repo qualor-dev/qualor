@@ -123,6 +123,8 @@ describe('fix constants', () => {
       defaultMaxOpen: 5,
       maxOpen: 20,
       claimMax: 10,
+      lockDependencyRefs: 8_000_000,
+      lockSourceChars: 4096,
     });
     expect(FIX_FAILURE_CODES).toEqual([
       'manifest_unsupported',

@@ -1,10 +1,11 @@
 /**
- * What the JS lockfile readers share: entries before their dependents are known, source kinds
- * and the registry tarball rule. A reader throws on a file it cannot read; `checkJsLockfile`
- * answers `unparsable` instead.
+ * What the JS lockfile readers share: entries before their dependents are known, the bound on the
+ * work of a read (fix round 4), source kinds and the registry tarball rule. A reader throws on a
+ * file it cannot read; `checkJsLockfile` answers `unparsable` instead.
  */
+import { FIX_LIMITS } from '../families';
 import type { LockEntry, LockEntryKind } from './types';
-import { isObject, own, parseUrl, type JsonObject } from './values';
+import { isObject, own, parseUrl, perArraySet, tupleKeys, type JsonObject } from './values';
 
 /** An entry before its dependents are known; `dependencies` are the slots it depends on. */
 export type RawEntry = Omit<LockEntry, 'dependents'>;
@@ -48,80 +49,127 @@ function sorted(names: Iterable<string>): string[] {
   return [...new Set(names)].sort((a, b) => a.localeCompare(b));
 }
 
-/** The identity `checkLockEntries` compares entries by. */
-function identityOf({ slot, name, version, source, kind, integrity }: RawEntry): string {
-  return JSON.stringify([slot, name, version, source, kind, integrity]);
+/**
+ * Fix round 4 (R4-1, R4-4): a hard bound on the work of a read, whatever the input's shape,
+ * checked before any structure per entry is built. The dependency names of all raw entries are
+ * counted, alias copies included; above `FIX_LIMITS.lockDependencyRefs` the file is unreadable.
+ * So is a source longer than `FIX_LIMITS.lockSourceChars`.
+ */
+function assertWithinLimits(raw: readonly RawEntry[]): void {
+  let references = 0;
+  for (const { dependencies, source } of raw) {
+    references += dependencies.length;
+    if (references > FIX_LIMITS.lockDependencyRefs) unreadable('dependencies (too many names)');
+    if (source !== null && source.length > FIX_LIMITS.lockSourceChars) {
+      unreadable(`a source of ${source.length} characters`);
+    }
+  }
 }
 
-/** A package's identity without its slot: the alias copies of one package share it. */
-function packageKeyOf({ name, version, source, kind, integrity }: RawEntry): string {
-  return JSON.stringify([name, version, source, kind, integrity]);
-}
-
-/** The union of a package's dependencies, each dependencies array read once. */
-interface PackageDependencies {
+/** A package (an entry's identity without its slot): its name and its copies' raw arrays. */
+interface PackageCopies {
   name: string;
-  names: Set<string>;
   arrays: Set<readonly string[]>;
 }
 
-function mergeDependencies(packages: Map<string, PackageDependencies>, entry: RawEntry): string {
-  const key = packageKeyOf(entry);
-  let known = packages.get(key);
-  if (known === undefined) {
-    known = { name: entry.name, names: new Set(), arrays: new Set() };
-    packages.set(key, known);
-  }
-  // Fix round 3, NB1: alias copies share one array, which is read once, not once per copy.
-  if (!known.arrays.has(entry.dependencies)) {
-    known.arrays.add(entry.dependencies);
-    for (const name of entry.dependencies) known.names.add(name);
-  }
-  return key;
+function addTo<K>(map: Map<K, Set<string>>, key: K, value: string): void {
+  const set = map.get(key);
+  if (set === undefined) map.set(key, new Set([value]));
+  else set.add(value);
 }
 
-/** Each package's sorted dependencies, and the names of the packages depending on each slot. */
-function indexPackages(packages: ReadonlyMap<string, PackageDependencies>): {
-  dependencies: Map<string, string[]>;
-  dependents: Map<string, Set<string>>;
+/**
+ * Each package's dependencies, sorted: one array per distinct set of raw arrays, so packages that
+ * hold the same raw arrays share one sorted array, whatever their names (fix round 4, R4-1).
+ */
+function sortedDependencies(packages: ReadonlyMap<string, PackageCopies>): Map<string, string[]> {
+  const sortedOf = perArraySet((arrays) => sorted(arrays.flat()));
+  const result = new Map<string, string[]>();
+  for (const [key, { arrays }] of packages) result.set(key, sortedOf(arrays));
+  return result;
+}
+
+/** For each raw array, the names of the packages holding it; and for each slot, those arrays. */
+function slotHolders(packages: Iterable<PackageCopies>): {
+  holders: Set<string>[];
+  bySlot: Map<string, number[]>;
 } {
-  const dependencies = new Map<string, string[]>();
-  const dependents = new Map<string, Set<string>>();
-  for (const [key, { name, names }] of packages) {
-    dependencies.set(key, sorted(names));
-    for (const slot of names) {
-      const set = dependents.get(slot);
-      if (set === undefined) dependents.set(slot, new Set([name]));
-      else set.add(name);
+  const byArray = new Map<readonly string[], Set<string>>();
+  for (const { name, arrays } of packages) {
+    for (const array of arrays) addTo(byArray, array, name);
+  }
+  const holders: Set<string>[] = [];
+  const bySlot = new Map<string, number[]>();
+  for (const [array, names] of byArray) {
+    const id = holders.push(names) - 1;
+    for (const slot of array) {
+      const ids = bySlot.get(slot);
+      if (ids === undefined) bySlot.set(slot, [id]);
+      else if (ids.at(-1) !== id) ids.push(id);
     }
   }
-  return { dependencies, dependents };
+  return { holders, bySlot };
+}
+
+/**
+ * The sorted names of the packages depending on each slot (fix round 4, R4-1). Each distinct raw
+ * array contributes once, to the slots it lists; slots that the same arrays list share one sorted
+ * array of their holders' names.
+ */
+function dependentsBySlot(packages: Iterable<PackageCopies>): Map<string, string[]> {
+  const { holders, bySlot } = slotHolders(packages);
+  const bySet = new Map<string, string[]>();
+  const dependents = new Map<string, string[]>();
+  for (const [slot, ids] of bySlot) {
+    const key = ids.join(',');
+    const names = bySet.get(key) ?? sorted(ids.flatMap((id) => [...(holders[id] ?? [])]));
+    bySet.set(key, names);
+    dependents.set(slot, names);
+  }
+  return dependents;
 }
 
 /**
  * Entries with one identity become one. Every copy of a package (its alias copies in other slots
- * included) gets the union of its copies' dependencies, as one sorted array shared by them all;
- * Ruling T3l compares those, so a second copy cannot hide an added dependency. Each entry also
- * gets the sorted names of the packages that depend on its slot (its name when it has none), one
- * array per slot, shared too. Each dependencies array is read once, so the work stays linear in
- * the input (fix rounds 2 and 3, N1 and NB1). Do not mutate the shared arrays.
+ * included) gets the union of its copies' dependencies, as one sorted array; Ruling T3l compares
+ * those, so a second copy cannot hide an added dependency. Each entry also gets the sorted names
+ * of the packages that depend on its slot (its name when it has none), one array per slot.
+ *
+ * The work is bounded, whatever the shape (fix round 4, R4-1 and R4-4):
+ * - {@link assertWithinLimits} first: at most `FIX_LIMITS.lockDependencyRefs` dependency names
+ *   over all raw entries, alias copies counted, and no source over `FIX_LIMITS.lockSourceChars`;
+ * - packages that hold the same raw arrays, whatever their names, share one sorted dependencies
+ *   array, and each raw array contributes once to the dependents of the slots it lists;
+ * - keys are interned ids ({@link tupleKeys}), so no key copies a source or another string the
+ *   copies share.
+ *
+ * The arrays are shared between entries: do not mutate them.
  */
 export function withDependents(raw: readonly RawEntry[]): LockEntry[] {
+  assertWithinLimits(raw);
+  const keyOf = tupleKeys();
   const merged = new Map<string, [RawEntry, string]>();
-  const packages = new Map<string, PackageDependencies>();
+  const packages = new Map<string, PackageCopies>();
   for (const entry of raw) {
-    const packageKey = mergeDependencies(packages, entry);
-    const key = identityOf(entry);
+    const { name, version, source, kind, integrity, dependencies } = entry;
+    const packageKey = keyOf(name, version, source, kind, integrity);
+    const copies = packages.get(packageKey);
+    if (copies === undefined) packages.set(packageKey, { name, arrays: new Set([dependencies]) });
+    else copies.arrays.add(dependencies);
+    // A slot is each copy's own text in the lockfile, so the key may hold it: last, after a `|`
+    // that ids never hold.
+    const alias = entry.slot !== undefined && entry.slot !== name;
+    const key = alias ? `${packageKey}|${entry.slot}` : packageKey;
     if (!merged.has(key)) merged.set(key, [entry, packageKey]);
   }
-  const { dependencies, dependents } = indexPackages(packages);
-  const shared = new Map<string, string[]>();
-  return [...merged.values()].map(([entry, packageKey]) => {
-    const slot = entry.slot ?? entry.name;
-    const names = shared.get(slot) ?? sorted(dependents.get(slot) ?? []);
-    shared.set(slot, names);
-    return { ...entry, dependencies: dependencies.get(packageKey) ?? [], dependents: names };
-  });
+  const dependencies = sortedDependencies(packages);
+  const dependents = dependentsBySlot(packages.values());
+  const none: string[] = [];
+  return [...merged.values()].map(([entry, packageKey]) => ({
+    ...entry,
+    dependencies: dependencies.get(packageKey) ?? none,
+    dependents: dependents.get(entry.slot ?? entry.name) ?? none,
+  }));
 }
 
 /** `name@range`, the name possibly scoped; null without an `@` after the first character. */

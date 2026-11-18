@@ -48,6 +48,59 @@ export function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/** A value's number in `ids`, given on first sight. */
+export function idOf<T>(ids: Map<T, number>, value: T): number {
+  let id = ids.get(value);
+  if (id === undefined) {
+    id = ids.size;
+    ids.set(value, id);
+  }
+  return id;
+}
+
+type Arrays = ReadonlySet<readonly string[]>;
+
+/**
+ * One value per distinct set of arrays, by reference, built once (fix round 4, R4-1): entries
+ * that share their dependencies arrays share what is built from them, whatever their names.
+ */
+export function perArraySet<T>(
+  build: (arrays: readonly (readonly string[])[]) => T,
+): (arrays: Arrays) => T {
+  const byArray = new Map<readonly string[], T>();
+  const arrayIds = new Map<readonly string[], number>();
+  const bySet = new Map<string, T>();
+  return (arrays) => {
+    const [only] = arrays;
+    if (arrays.size === 1 && only !== undefined) {
+      const value = byArray.get(only) ?? build([only]);
+      byArray.set(only, value);
+      return value;
+    }
+    const ids = [...arrays].map((array) => idOf(arrayIds, array));
+    const key = ids.sort((a, b) => a - b).join(',');
+    const value = bySet.get(key) ?? build([...arrays]);
+    bySet.set(key, value);
+    return value;
+  };
+}
+
+/** A key of a tuple of strings, made by {@link tupleKeys}. */
+export type TupleKey = (...parts: (string | null | undefined)[]) => string;
+
+/**
+ * Short keys for tuples of strings: each distinct string gets a number, so a key never copies a
+ * long string that many entries share (fix round 4, R4-4). Keys of one returned function compare.
+ */
+export function tupleKeys(): TupleKey {
+  const ids = new Map<string | null | undefined, number>();
+  return (...parts) => {
+    let key = '';
+    for (const part of parts) key += `${idOf(ids, part)},`;
+    return key;
+  };
+}
+
 /** Sets an own data property, also for a key such as `__proto__`. */
 export function setOwn(object: JsonObject, key: string, value: unknown): void {
   Object.defineProperty(object, key, {

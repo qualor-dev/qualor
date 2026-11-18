@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FIX_LIMITS } from '../families';
 import {
   checkJsLockfile,
   jsLockfileAdditions,
@@ -6,6 +7,7 @@ import {
   readPnpmLock,
   readYarnLock,
 } from './js-lockfiles';
+import { withDependents } from './lock-read';
 import type { FixCheckContext, FixFileChange, LockEntry } from './types';
 
 /** The `(name, version, kind)`, alias slot and dependents of each entry, sorted. */
@@ -1561,18 +1563,24 @@ describe('fix round 2: the dependents graph in linear time (N1)', () => {
 // ---------------------------------------------------------------------------------------------
 // Fix round 3 (task-3-fix-3.md): the re-reviewer's probes (t3rr2) and Ruling T3m
 
+/** {@link check} and the time it took. */
+function timedCheck(path: string, base: string, next: string) {
+  const started = performance.now();
+  const result = check(path, base, next);
+  return { result, ms: performance.now() - started };
+}
+
 describe('fix round 3: alias fan-out in linear time (NB1)', () => {
   const R = 'https://registry.yarnpkg.com';
-  const timed = (path: string, base: string, next: string) => {
-    const started = performance.now();
-    const result = check(path, base, next);
-    return { result, ms: performance.now() - started };
-  };
-
-  it(
-    'checks a Yarn classic block of 15 000 aliases with 15 000 dependencies in under 3 s',
+  // Fix round 4 (R4-1): n × m dependency references above FIX_LIMITS.lockDependencyRefs make the
+  // file unparsable; below it the fan-out still runs in linear time.
+  it.each([
+    [2000, 'source_kind'],
+    [15_000, 'unparsable'],
+  ] as const)(
+    'checks a Yarn classic block of %i aliases with as many dependencies in under 3 s: %s',
     { timeout: 120_000 },
-    () => {
+    (size, rule) => {
       const lock = (n: number) => {
         const lines = ['# yarn lockfile v1', '', 'qf-a@^1.2.5:', '  version "1.2.6"'];
         lines.push(`  resolved "${R}/qf-a/-/qf-a-1.2.6.tgz#abc"`, '  integrity sha512-a', '');
@@ -1587,16 +1595,19 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
         }
         return lines.join('\n') + '\n';
       };
-      const { result, ms } = timed('yarn.lock', lock(0), lock(15_000));
-      expect(result).toMatchObject({ rule: 'source_kind' });
+      const { result, ms } = timedCheck('yarn.lock', lock(0), lock(size));
+      expect(result).toMatchObject({ rule });
       expect(ms).toBeLessThan(3000);
     },
   );
 
-  it(
-    'checks 5 000 pnpm references to one package with 5 000 dependencies in under 3 s',
+  it.each([
+    [2000, 'source_kind'],
+    [5000, 'unparsable'],
+  ] as const)(
+    'checks %i pnpm references to one package with as many dependencies in under 3 s: %s',
     { timeout: 120_000 },
-    () => {
+    (size, rule) => {
       const lock = (n: number) => {
         const lines = ["lockfileVersion: '9.0'", '', 'importers:', '  .:', '    dependencies:'];
         lines.push('      qf-a:', '        specifier: ^1.2.5', '        version: 1.2.6', '');
@@ -1613,16 +1624,19 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
         }
         return lines.join('\n') + '\n';
       };
-      const { result, ms } = timed('pnpm-lock.yaml', lock(0), lock(5000));
-      expect(result).toMatchObject({ rule: 'source_kind' });
+      const { result, ms } = timedCheck('pnpm-lock.yaml', lock(0), lock(size));
+      expect(result).toMatchObject({ rule });
       expect(ms).toBeLessThan(3000);
     },
   );
 
-  it(
-    'checks a Berry key of 5 000 aliases with 5 000 dependencies in under 3 s',
+  it.each([
+    [2000, 'source_kind'],
+    [5000, 'unparsable'],
+  ] as const)(
+    'checks a Berry key of %i aliases with as many dependencies in under 3 s: %s',
     { timeout: 120_000 },
-    () => {
+    (size, rule) => {
       const lock = (n: number) => {
         const lines = ['__metadata:', '  version: 8', '  cacheKey: 10', '', '"qf-a@npm:^1.2.5":'];
         lines.push('  version: 1.2.6', '  resolution: "qf-a@npm:1.2.6"', '  checksum: 10/abc', '');
@@ -1635,8 +1649,8 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
         }
         return lines.join('\n') + '\n';
       };
-      const { result, ms } = timed('yarn.lock', lock(0), lock(5000));
-      expect(result).toMatchObject({ rule: 'source_kind' });
+      const { result, ms } = timedCheck('yarn.lock', lock(0), lock(size));
+      expect(result).toMatchObject({ rule });
       expect(ms).toBeLessThan(3000);
     },
   );
@@ -1726,18 +1740,29 @@ ${extra}`;
     expect(check('package-lock.json', base, next)).toEqual({ ok: true });
   });
 
-  it('accepts an existing package moved to another folder', () => {
+  it('accepts an existing package hoisted to another folder at a new version, reached only through an existing package (Rulings T3m, T3n)', () => {
+    // Fix round 4, R4-5: the hoisted qf-x@1.0.1 is a new entry with the base's (slot, name)
+    // pair. The new qf-a no longer depends on it; only qf-b, an existing package qf-a depends
+    // on, does: a closed edge reaches it.
+    const qfB = reg('qf-b', '2.0.0', { dependencies: { 'qf-x': '^1.0.0' } });
     const before = npmOnly({
-      'node_modules/qf-a': reg('qf-a', '1.2.5', { dependencies: { 'qf-x': '^1.0.0' } }),
+      'node_modules/qf-a': reg('qf-a', '1.2.5', {
+        dependencies: { 'qf-b': '^2.0.0', 'qf-x': '^1.0.0' },
+      }),
       'node_modules/qf-a/node_modules/qf-x': qfX,
-      'node_modules/qf-b': reg('qf-b', '2.0.0', { dependencies: { 'qf-x': '^1.0.0' } }),
+      'node_modules/qf-b': qfB,
       'node_modules/qf-b/node_modules/qf-x': qfX,
     });
     const hoisted = npmOnly({
-      'node_modules/qf-a': qfA,
-      'node_modules/qf-b': reg('qf-b', '2.0.0', { dependencies: { 'qf-x': '^1.0.0' } }),
-      'node_modules/qf-x': qfX,
+      'node_modules/qf-a': reg('qf-a', '1.2.6', { dependencies: { 'qf-b': '^2.0.0' } }),
+      'node_modules/qf-b': qfB,
+      'node_modules/qf-x': { ...qfX, ...reg('qf-x', '1.0.1') },
     });
+    expect(
+      jsLockfileAdditions({ path: 'package-lock.json', base: before, next: hoisted })?.map(
+        (e) => `${e.name}@${e.version}`,
+      ),
+    ).toEqual(['qf-a@1.2.6', 'qf-x@1.0.1']);
     expect(check('package-lock.json', before, hoisted)).toEqual({ ok: true });
   });
 });
@@ -1827,5 +1852,282 @@ packages:
     dev: false
 `;
     expect(check('pnpm-lock.yaml', scoped('1.2.5'), scoped('1.2.6'))).toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 4 (task-3-fix-4.md): a bound on the work, whatever the shape (R4-1, R4-4), pnpm
+// `file:` references (R4-2) and the base's (slot, name) pairs (Ruling T3n)
+
+describe('fix round 4: a bound on the work of a read (R4-1, R4-4)', () => {
+  const raw = (n: number, dependencies: string[], source: string | null = null) =>
+    Array.from({ length: n }, (_, i) => ({
+      slot: `s${i}`,
+      name: 'p',
+      version: '1.0.0',
+      source,
+      kind: 'registry' as const,
+      integrity: 'sha512-p',
+      dependencies,
+    }));
+
+  it('reads up to FIX_LIMITS.lockDependencyRefs dependency names, alias copies counted, not one more', () => {
+    const names = Array.from({ length: 1000 }, (_, j) => `d${j}`);
+    const full = raw(FIX_LIMITS.lockDependencyRefs / names.length, names);
+    expect(withDependents(full)).toHaveLength(full.length);
+    const extra = { ...full[0]!, slot: 'extra', dependencies: ['d0'] };
+    expect(() => withDependents([...full, extra])).toThrow(/unreadable/);
+  });
+
+  it('shares one sorted dependencies array between entries of any name that hold one raw array', () => {
+    const names = ['qf-y', 'qf-x'];
+    const [one] = raw(1, names);
+    const [first, second] = withDependents([
+      { ...one!, slot: undefined, name: 'e1' },
+      { ...one!, slot: undefined, name: 'e2' },
+    ]);
+    expect(first?.dependencies).toEqual(['qf-x', 'qf-y']);
+    expect(second?.dependencies).toBe(first?.dependencies);
+  });
+
+  it('contributes each raw array once: the slots it lists share one dependents array', () => {
+    const names = ['qf-x', 'qf-y'];
+    const [one] = raw(1, names);
+    const leaf = (name: string) => ({ ...one!, slot: undefined, name, dependencies: [] });
+    const entries = withDependents([
+      { ...one!, slot: undefined, name: 'e2' },
+      { ...one!, slot: undefined, name: 'e1' },
+      leaf('qf-x'),
+      leaf('qf-y'),
+    ]);
+    const x = entries.find((e) => e.name === 'qf-x');
+    expect(x?.dependents).toEqual(['e1', 'e2']);
+    expect(entries.find((e) => e.name === 'qf-y')?.dependents).toBe(x?.dependents);
+  });
+
+  it('refuses a source longer than FIX_LIMITS.lockSourceChars at once, however many copies share it', () => {
+    const source = `https://r.example/evil/-/evil-1.0.0.tgz#${'a'.repeat(100_000)}`;
+    const started = performance.now();
+    expect(() => withDependents(raw(3000, [], source))).toThrow(/unreadable/);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('builds no key per copy that holds the source (100 000 copies of a 4 096-character source)', () => {
+    const head = 'https://r.example/evil/-/evil-1.0.0.tgz#';
+    const source = head + 'a'.repeat(FIX_LIMITS.lockSourceChars - head.length);
+    const started = performance.now();
+    expect(withDependents(raw(100_000, [], source))).toHaveLength(100_000);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('accepts a resolved URL of FIX_LIMITS.lockSourceChars characters, and refuses one more', () => {
+    const resolved = (length: number) => {
+      const url = `${NPM}/qf-a/-/qf-a-1.2.6.tgz#`;
+      return url + 'a'.repeat(length - url.length);
+    };
+    const next = (length: number) => npmV3(npmQfA('1.2.6', { resolved: resolved(length) }));
+    expect(check('package-lock.json', NPM_V3_BASE, next(FIX_LIMITS.lockSourceChars))).toEqual({
+      ok: true,
+    });
+    expect(check('package-lock.json', NPM_V3_BASE, next(FIX_LIMITS.lockSourceChars + 1))).toEqual({
+      ok: false,
+      rule: 'unparsable',
+      path: 'package-lock.json',
+    });
+  });
+});
+
+describe('fix round 4: fan-out shapes are unparsable, real lockfiles are not (R4-1, R4-4)', () => {
+  const R = 'https://registry.yarnpkg.com';
+  const unparsable = { ok: false, rule: 'unparsable', path: 'yarn.lock' };
+  /** A Yarn classic lockfile: the bumped qf-a, then a block with this header and m dependencies. */
+  const classic = (header: string | null, m = 0, resolved = `${R}/evil/-/evil-1.0.0.tgz#abc`) => {
+    const lines = ['# yarn lockfile v1', '', 'qf-a@^1.2.5:', '  version "1.2.6"'];
+    lines.push(`  resolved "${R}/qf-a/-/qf-a-1.2.6.tgz#abc"`, '  integrity sha512-a', '');
+    if (header !== null) {
+      lines.push(`${header}:`, '  version "1.0.0"', `  resolved "${resolved}"`);
+      lines.push('  integrity sha512-e');
+      if (m > 0) {
+        lines.push('  dependencies:', ...Array.from({ length: m }, (_, j) => `    d${j} "^1.0.0"`));
+      }
+    }
+    return lines.join('\n') + '\n';
+  };
+  const header = (n: number, pattern: (i: number) => string) =>
+    Array.from({ length: n }, (_, i) => JSON.stringify(pattern(i))).join(', ');
+
+  it('refuses a Yarn classic block whose patterns name more than one package', () => {
+    expect(() => readYarnLock(classic('"s1@npm:e1@^1.0.0", "s2@npm:e2@^1.0.0"'))).toThrow();
+    expect(() => readYarnLock(classic('"e1@^1.0.0", "e2@^1.0.0"'))).toThrow();
+    expect(() => readYarnLock(classic('"qf-x@^1.0.0", "qf-y@npm:qf-z@^1.0.0"'))).toThrow();
+    const one = readYarnLock(classic('"evil@^1.0.0", "evil@^1.0"'));
+    expect(one.filter((e) => e.name === 'evil')).toHaveLength(1);
+    const alias = readYarnLock(classic('"evil-cjs@npm:evil@^1.0.0", "evil@^1.0.0"'));
+    expect(alias.filter((e) => e.name === 'evil').map((e) => e.slot)).toEqual([
+      'evil-cjs',
+      undefined,
+    ]);
+  });
+
+  it.each([
+    ['10 000 aliases of different packages', 10_000, (i: number) => `s${i}@npm:e${i}@^1.0.0`],
+    ['5 000 different packages', 5000, (i: number) => `e${i}@^1.0.0`],
+  ])(
+    'refuses a Yarn classic block of %s sharing as many dependencies, in under 3 s',
+    { timeout: 120_000 },
+    (_name, n, pattern) => {
+      const { result, ms } = timedCheck('yarn.lock', classic(null), classic(header(n, pattern), n));
+      expect(result).toEqual(unparsable);
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it(
+    'refuses a base whose alias copies share 6 000 × 6 000 dependency names, in under 3 s',
+    { timeout: 120_000 },
+    () => {
+      const n = 6000;
+      const p1 = header(n, (i) => 's' + i + '@npm:p@^1.0.0');
+      const p2 = header(n, (i) => 's' + i + '@npm:p@^2.0.0');
+      const lock = (a: string) => {
+        const lines = ['# yarn lockfile v1', '', 'qf-a@^1.2.5:', `  version "${a}"`];
+        lines.push(`  resolved "${R}/qf-a/-/qf-a-${a}.tgz#abc"`, '  integrity sha512-a', '');
+        lines.push(`${p1}:`, '  version "1.0.0"');
+        lines.push(`  resolved "${R}/p/-/p-1.0.0.tgz#abc"`, '  integrity sha512-p1');
+        lines.push('  dependencies:', ...Array.from({ length: n }, (_, j) => `    d${j} "^1.0.0"`));
+        lines.push('', `${p2}:`, '  version "2.0.0"');
+        lines.push(`  resolved "${R}/p/-/p-2.0.0.tgz#abc"`, '  integrity sha512-p2', '');
+        return lines.join('\n');
+      };
+      const { result, ms } = timedCheck('yarn.lock', lock('1.2.5'), lock('1.2.6'));
+      expect(result).toEqual(unparsable);
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it('refuses 5 000 alias copies of a package with a 200 000-character resolved URL, in under 1 s', () => {
+    const long = `${R}/evil/-/evil-1.0.0.tgz#${'a'.repeat(200_000)}`;
+    const aliases = header(5000, (i) => `s${i}@npm:evil@^1.0.0`);
+    const { result, ms } = timedCheck('yarn.lock', classic(null), classic(aliases, 0, long));
+    expect(result).toEqual(unparsable);
+    expect(ms).toBeLessThan(1000);
+  });
+
+  it.each([
+    [
+      '20 000 parents of 20 000 copies of x',
+      (packages: Record<string, unknown>) => {
+        for (let i = 0; i < 20_000; i++) {
+          packages[`node_modules/p${i}`] = reg(`p${i}`, '1.0.0', { dependencies: { x: '*' } });
+          packages[`node_modules/p${i}/node_modules/x`] = reg('x', `1.0.${i}`);
+        }
+      },
+    ],
+    [
+      '80 000 nested copies of x, each depending on x',
+      (packages: Record<string, unknown>) => {
+        for (let i = 0; i < 80_000; i++) {
+          packages[`node_modules/p${i}/node_modules/x`] = reg('x', `1.0.${i}`, {
+            dependencies: { x: '*' },
+          });
+        }
+      },
+    ],
+  ])(
+    'still accepts the bump in a lockfile of %s, in under 3 s',
+    { timeout: 60_000 },
+    (_n, fill) => {
+      const lock = (a: string) => {
+        const packages: Record<string, unknown> = { 'node_modules/qf-a': reg('qf-a', a) };
+        fill(packages);
+        return JSON.stringify({ lockfileVersion: 3, packages });
+      };
+      const { result, ms } = timedCheck('package-lock.json', lock('1.2.5'), lock('1.2.6'));
+      expect(result).toEqual({ ok: true });
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+});
+
+describe('fix round 4: pnpm file: references (R4-2)', () => {
+  /** v5.4 or v6.0: the root depends on qf-a (by `qfA`) and on `foo: file:foo-1.0.0.tgz`. */
+  const fileLock = (major: string, qfA: string, packaged: string | null) => {
+    const v5 = major === '5.4';
+    const importer = v5
+      ? `specifiers:\n  qf-a: ^1.2.5\n  foo: file:foo-1.0.0.tgz\n\ndependencies:\n  qf-a: ${qfA}\n  foo: file:foo-1.0.0.tgz`
+      : `dependencies:\n  qf-a:\n    specifier: ^1.2.5\n    version: ${qfA}\n  foo:\n    specifier: file:foo-1.0.0.tgz\n    version: file:foo-1.0.0.tgz`;
+    const qfAKey = v5 ? `/qf-a/${packaged}` : `/qf-a@${packaged}`;
+    const qfAEntry =
+      packaged === null
+        ? ''
+        : `\n  ${qfAKey}:\n    resolution: {integrity: sha512-a${packaged}}\n    dev: false\n`;
+    return `lockfileVersion: ${v5 ? '5.4' : "'6.0'"}
+
+${importer}
+
+packages:
+${qfAEntry}
+  file:foo-1.0.0.tgz:
+    resolution: {integrity: sha512-f, tarball: file:foo-1.0.0.tgz}
+    name: foo
+    version: 1.0.0
+    dev: false
+`;
+  };
+
+  it.each(['5.4', '6.0'])(
+    'v%s: refuses the package’s slot pointed at an existing file: package, accepts the bump',
+    (major) => {
+      const base = fileLock(major, '1.2.5', '1.2.5');
+      const moved = fileLock(major, 'file:foo-1.0.0.tgz', null);
+      expect(readPnpmLock(moved).find((e) => e.slot === 'qf-a')).toMatchObject({
+        name: 'foo',
+        kind: 'file',
+      });
+      expect(check('pnpm-lock.yaml', base, moved)).toEqual({
+        ok: false,
+        rule: 'source_kind',
+        path: 'pnpm-lock.yaml',
+      });
+      expect(check('pnpm-lock.yaml', base, fileLock(major, '1.2.6', '1.2.6'))).toEqual({
+        ok: true,
+      });
+    },
+  );
+
+  it('reads a reference that names no package and is no plain version as an unknown alias (fail closed)', () => {
+    const odd = (qfA: string) =>
+      pnpmV9(qfA).replace('        version: 2.0.0\n', '        version: evil\n');
+    expect(readPnpmLock(odd('1.2.6')).find((e) => e.slot === 'qf-b')).toMatchObject({
+      name: 'evil',
+      kind: 'other',
+    });
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), odd('1.2.6'))).toMatchObject({
+      rule: 'source_kind',
+    });
+    expect(readPnpmLock(pnpmV9('1.2.5')).filter((e) => e.slot !== undefined)).toEqual([]);
+  });
+});
+
+describe('fix round 4: the base’s (slot, name) pairs are what is known (Ruling T3n)', () => {
+  it('refuses a real package in a slot the base used only for an alias', () => {
+    const cliui = reg('cliui', '8.0.0', {
+      dependencies: { 'string-width-cjs': 'npm:string-width@^4.2.0' },
+    });
+    const base = npmOnly({
+      'node_modules/qf-a': reg('qf-a', '1.2.5', { dependencies: { cliui: '^8' } }),
+      'node_modules/cliui': cliui,
+      'node_modules/string-width-cjs': { ...reg('string-width', '4.2.3'), name: 'string-width' },
+    });
+    const next = npmOnly({
+      'node_modules/qf-a': reg('qf-a', '1.2.6', { dependencies: { cliui: '^8' } }),
+      'node_modules/cliui': cliui,
+      'node_modules/string-width-cjs': reg('string-width-cjs', '6.6.6'),
+    });
+    expect(check('package-lock.json', base, next)).toEqual({
+      ok: false,
+      rule: 'new_dependency',
+      path: 'package-lock.json',
+    });
   });
 });
