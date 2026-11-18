@@ -203,8 +203,8 @@ require (
 
   it('refuses the package below its target as below_target', () => {
     expect(mod('go.mod', BASE, BASE)).toEqual({ ok: false, rule: 'below_target', path: 'go.mod' });
-    const pseudo = GO_MOD('v1.2.6-0.20240101000000-abcdefabcdef');
-    expect(mod('go.mod', BASE, pseudo)).toMatchObject({ rule: 'below_target' });
+    // A pre-release below the target (a pseudo-version is refused before, Ruling T4g).
+    expect(mod('go.mod', BASE, GO_MOD('v1.2.6-rc.1'))).toMatchObject({ rule: 'below_target' });
     expect(mod('go.mod', BASE, GO_MOD('v1.3.0'))).toEqual({ ok: true });
   });
 
@@ -297,5 +297,93 @@ describe('checkGoSum', () => {
 
   it('answers unparsable for a malformed line', () => {
     expect(sum('go.sum', GO_SUM('v1.2.5'), `${PKG}\n`)).toMatchObject({ rule: 'unparsable' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 1 (task-4-fix-1.md): M4 `// indirect` as modfile reads it, Ruling T4g pseudo-versions
+
+describe('fix round 1: // indirect as modfile reads it (M4)', () => {
+  const NEL = String.fromCharCode(0x85);
+  const FEFF = String.fromCharCode(0xfeff);
+
+  it('reads "// indirect;" alone as direct (P5), so a new module there is new_dependency', () => {
+    expect(readGoMod('module a\nrequire b v1.0.0 // indirect;\n').requires[0]?.indirect).toBe(
+      false,
+    );
+    const next = GO_MOD('v1.2.6', 'require example.com/evil v1.0.0 // indirect;\n');
+    expect(mod('go.mod', BASE, next)).toEqual({
+      ok: false,
+      rule: 'new_dependency',
+      path: 'go.mod',
+    });
+  });
+
+  it.each([
+    ['// indirect', true],
+    ['//indirect', true],
+    ['//\tindirect\t', true],
+    ['// indirect; for tests', true],
+    [`// indirect${NEL}`, true],
+    ['// indirect x', false],
+    ['// indirect;', false],
+    [`// indirect${FEFF}`, false],
+    ['// Indirect', false],
+  ])('reads the comment %j as indirect: %s', (comment, indirect) => {
+    expect(readGoMod(`module a\nrequire b v1.0.0 ${comment}\n`).requires[0]?.indirect).toBe(
+      indirect,
+    );
+  });
+});
+
+describe('fix round 1: no new Go pseudo-versions (Ruling T4g)', () => {
+  const PSEUDO = 'v0.0.0-20240101000000-abcdefabcdef';
+
+  it.each([
+    ['an existing require raised to', 'golang.org/x/text v0.14.1-0.20240101000000-abcdefabcdef'],
+    ['the package raised to', `${PKG} v1.2.7-0.20240101000000-abcdefabcdef`],
+    ['a prerelease-based', `${PKG} v1.3.0-rc.1.0.20240101000000-abcdefabcdef`],
+  ])('refuses %s a pseudo-version as bad_spec', (_name, line) => {
+    const [path, version] = line.split(' ');
+    const next = GO_MOD('v1.2.6').replace(
+      path === PKG ? `${PKG} v1.2.6` : 'golang.org/x/text v0.14.0',
+      `${path} ${version}`,
+    );
+    expect(next).not.toBe(GO_MOD('v1.2.6'));
+    expect(mod('go.mod', BASE, next)).toEqual({ ok: false, rule: 'bad_spec', path: 'go.mod' });
+  });
+
+  it('refuses a new // indirect require at a pseudo-version as bad_spec', () => {
+    const next = GO_MOD('v1.2.6', `require example.com/dep ${PSEUDO} // indirect\n`);
+    expect(mod('go.mod', BASE, next)).toEqual({ ok: false, rule: 'bad_spec', path: 'go.mod' });
+    const incompatible = GO_MOD(
+      'v1.2.6',
+      'require example.com/dep v2.0.1-0.20240101000000-abcdefabcdef+incompatible // indirect\n',
+    );
+    expect(mod('go.mod', BASE, incompatible)).toMatchObject({ rule: 'bad_spec' });
+  });
+
+  it('accepts a pseudo-version require the base already has, unchanged', () => {
+    const extra = `require example.com/dep ${PSEUDO} // indirect\n`;
+    expect(mod('go.mod', GO_MOD('v1.2.5', extra), GO_MOD('v1.2.6', extra))).toEqual({ ok: true });
+  });
+
+  it('refuses go.sum lines of a pseudo-version the base lacks as bad_spec, keeps old ones', () => {
+    const line = `example.com/dep ${PSEUDO} ${H('e')}\nexample.com/dep ${PSEUDO}/go.mod ${H('f')}\n`;
+    expect(sum('go.sum', GO_SUM('v1.2.5'), `${GO_SUM('v1.2.6')}${line}`)).toEqual({
+      ok: false,
+      rule: 'bad_spec',
+      path: 'go.sum',
+    });
+    expect(sum('go.sum', `${GO_SUM('v1.2.5')}${line}`, `${GO_SUM('v1.2.6')}${line}`)).toEqual({
+      ok: true,
+    });
+    // A pseudo-version of the base's /go.mod line only does not cover its zip line.
+    const goModOnly = `example.com/dep ${PSEUDO}/go.mod ${H('f')}\n`;
+    expect(
+      sum('go.sum', `${GO_SUM('v1.2.5')}${goModOnly}`, `${GO_SUM('v1.2.6')}${line}`),
+    ).toMatchObject({
+      rule: 'bad_spec',
+    });
   });
 });

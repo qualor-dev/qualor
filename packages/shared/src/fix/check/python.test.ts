@@ -658,26 +658,32 @@ describe('readPoetryLock', () => {
         'type = "legacy"\nurl = "https://pypi.internal.example/simple"\nreference = "internal"',
       ),
     ).toEqual([
-      ['registry', 'https://pypi.internal.example/simple'],
-      ['registry', 'https://pypi.internal.example/simple'],
+      ['registry', 'https://pypi.internal.example/simple#poetry-reference=internal'],
+      ['registry', 'https://pypi.internal.example/simple#poetry-reference=internal'],
     ]);
     expect(
       kinds(
         'type = "git"\nurl = "https://github.com/x/x.git"\nreference = "main"\nresolved_reference = "abc"',
       )[0],
-    ).toEqual(['git', 'https://github.com/x/x.git']);
+    ).toEqual([
+      'git',
+      'https://github.com/x/x.git#reference=main&resolved_reference=abc&subdirectory=',
+    ]);
     expect(kinds('type = "file"\nurl = "dist/x-1.0.tar.gz"')[0]).toEqual([
       'file',
-      'dist/x-1.0.tar.gz',
+      'dist/x-1.0.tar.gz#reference=&resolved_reference=&subdirectory=',
     ]);
-    expect(kinds('type = "directory"\nurl = "../x"')[0]).toEqual(['path', '../x']);
+    expect(kinds('type = "directory"\nurl = "../x"')[0]).toEqual([
+      'path',
+      '../x#reference=&resolved_reference=&subdirectory=',
+    ]);
     expect(kinds('type = "url"\nurl = "https://example.com/x-1.0.tar.gz"')[0]).toEqual([
       'tarball',
-      'https://example.com/x-1.0.tar.gz',
+      'https://example.com/x-1.0.tar.gz#reference=&resolved_reference=&subdirectory=',
     ]);
     expect(kinds('type = "evil"\nurl = "https://example.com/"')[0]).toEqual([
       'other',
-      'https://example.com/',
+      'https://example.com/#reference=&resolved_reference=&subdirectory=',
     ]);
   });
 
@@ -804,5 +810,155 @@ describe('pythonLockfileAdditions (Ruling T3i)', () => {
     expect(
       pythonLockfileAdditions({ path: 'uv.lock', base: UV_LOCK('1.2.5'), next: '[[package]\n' }),
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 1 (task-4-fix-1.md): C1 Poetry source fields, I2 Poetry legacy references, Ruling T4f
+// a package keeps its registry, M1 uv overrides take no extras or markers
+
+describe('fix round 1: Poetry sources keep their reference and subdirectory (C1)', () => {
+  const COMMIT = 'a'.repeat(40);
+  const lib = (kind: string, fields: string) =>
+    poetryPackage('lib', '0.1.0', {
+      files: ' ',
+      source: `type = "${kind}"\nurl = "https://github.com/org/lib.git"\n${fields}`,
+    });
+  const at = (qfA: string, kind: string, fields: string) => POETRY_LOCK(qfA, lib(kind, fields));
+  const GIT = `reference = "main"\nresolved_reference = "${COMMIT}"`;
+
+  it('accepts a bump next to an unchanged git dependency', () => {
+    expect(lock('poetry.lock', at('1.2.5', 'git', GIT), at('1.2.6', 'git', GIT))).toEqual({
+      ok: true,
+    });
+  });
+
+  it.each([
+    ['resolved_reference changed (P1)', GIT.replace(COMMIT, 'e'.repeat(40))],
+    ['reference changed', GIT.replace('"main"', '"evil"')],
+    ['subdirectory added (P1b)', `${GIT}\nsubdirectory = "evil"`],
+  ])('refuses a git dependency with its %s as source_kind', (_name, fields) => {
+    expect(lock('poetry.lock', at('1.2.5', 'git', GIT), at('1.2.6', 'git', fields))).toEqual(
+      refused('source_kind', 'poetry.lock'),
+    );
+  });
+
+  it.each(['url', 'file', 'directory'])(
+    'refuses a %s dependency whose subdirectory changed as source_kind',
+    (kind) => {
+      const before = at('1.2.5', kind, 'subdirectory = "a"');
+      expect(lock('poetry.lock', before, at('1.2.6', kind, 'subdirectory = "b"'))).toEqual(
+        refused('source_kind', 'poetry.lock'),
+      );
+    },
+  );
+
+  it('reads the fields into the source', () => {
+    const entry = readPoetryLock(at('1.2.6', 'git', `${GIT}\nsubdirectory = "pkg"`)).find(
+      (e) => e.name === 'lib',
+    );
+    expect(entry?.source).toBe(
+      `https://github.com/org/lib.git#reference=main&resolved_reference=${COMMIT}&subdirectory=pkg`,
+    );
+  });
+});
+
+describe('fix round 1: a Poetry legacy source by its reference and url (I2, Ruling T4f)', () => {
+  const PRIVATE = 'https://pypi.internal.example/simple';
+  const legacy = (reference: string, url = PRIVATE) =>
+    `type = "legacy"\nurl = "${url}"\nreference = "${reference}"`;
+  const at = (qfA: string, source: string, more = '') =>
+    POETRY_LOCK('1.2.5', more).replace(
+      poetryPackage('qf-a', '1.2.5'),
+      poetryPackage('qf-a', qfA, source === '' ? {} : { source }),
+    );
+
+  it('accepts the package bumped on its own legacy source', () => {
+    const before = at('1.2.5', legacy('internal'));
+    expect(lock('poetry.lock', before, at('1.2.6', legacy('internal')))).toEqual({ ok: true });
+  });
+
+  it('refuses another reference on the same url as new_source (P3)', () => {
+    const before = at('1.2.5', legacy('internal'));
+    expect(lock('poetry.lock', before, at('1.2.6', legacy('other')))).toEqual(
+      refused('new_source', 'poetry.lock'),
+    );
+  });
+
+  it('refuses a legacy reference the base has none of, also for a brand-new name', () => {
+    const fresh = poetryPackage('qf-n', '1.0.0', { source: legacy('internal') });
+    const next = at('1.2.6', '', fresh).replace('qf-a = ">=1.2"', 'qf-a = ">=1.2"\nqf-n = "*"');
+    expect(next).toContain('qf-n = "*"');
+    expect(lock('poetry.lock', at('1.2.5', ''), next)).toEqual(
+      refused('new_source', 'poetry.lock'),
+    );
+  });
+
+  it('refuses the package moved from its legacy source to PyPI as new_source (Ruling T4f)', () => {
+    expect(lock('poetry.lock', at('1.2.5', legacy('internal')), at('1.2.6', ''))).toEqual(
+      refused('new_source', 'poetry.lock'),
+    );
+  });
+
+  it('reads a legacy url with a fragment, which would blur the reference, as other', () => {
+    const entries = readPoetryLock(at('1.2.6', legacy('internal', `${PRIVATE}#x`)));
+    expect(entries.find((e) => e.name === 'qf-a')?.kind).toBe('other');
+  });
+});
+
+describe('fix round 1: a package keeps its index in uv.lock (Ruling T4f)', () => {
+  const PRIVATE = 'https://pypi.internal.example';
+  const privately = (v: string, deps: string[] = []) =>
+    uvPackage('qf-a', v, {
+      deps,
+      registry: `${PRIVATE}/simple`,
+      sdist: `${PRIVATE}/files/qf_a-${v}.tar.gz`,
+      wheel: `${PRIVATE}/files/qf_a-${v}-py3-none-any.whl`,
+    });
+  const at = (pkg: string, more = '') =>
+    UV_LOCK('1.2.5', more).replace(uvPackage('qf-a', '1.2.5'), pkg);
+
+  it('refuses the package moved from its private index to PyPI as new_source', () => {
+    const next = at(uvPackage('qf-a', '1.2.6'));
+    expect(lock('uv.lock', at(privately('1.2.5')), next)).toEqual(refused('new_source', 'uv.lock'));
+  });
+
+  it('accepts a brand-new dependency from PyPI next to the private package', () => {
+    const next = at(privately('1.2.6', ['qf-c']), uvPackage('qf-c', '1.0.0'));
+    expect(lock('uv.lock', at(privately('1.2.5')), next)).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 1: uv overrides take no extras or markers (M1)', () => {
+  const base = UV_PYPROJECT('requests-toolbelt>=1');
+  const override = (entry: string) => `${base}\n[tool.uv]\noverride-dependencies = ["${entry}"]\n`;
+
+  it.each([
+    ['extras and a marker (P4)', "qf-a[all]>=1.2.6 ; python_version < '2'"],
+    ['a marker', "qf-a>=1.2.6 ; python_version < '2'"],
+    ['extras', 'qf-a[all]>=1.2.6'],
+  ])('refuses an added override with %s as other_change', (_name, entry) => {
+    expect(pyproject(base, override(entry))).toEqual(refused('other_change', 'pyproject.toml'));
+  });
+
+  it('accepts a changed override that keeps its marker, refuses one that changes it', () => {
+    const before = override("qf-a>=1.2.5 ; sys_platform == 'linux'");
+    expect(pyproject(before, override("qf-a>=1.2.6 ; sys_platform == 'linux'"))).toEqual({
+      ok: true,
+    });
+    expect(pyproject(before, override("qf-a>=1.2.6 ; sys_platform == 'win32'"))).toEqual(
+      refused('other_change', 'pyproject.toml'),
+    );
+  });
+});
+
+describe('fix round 1: PEP 508 white space is space and tab only (I1)', () => {
+  it('refuses the package requirement with another white space as bad_spec', () => {
+    const NBSP = String.fromCharCode(0xa0);
+    const base = UV_PYPROJECT('qf-a>=1.2.5');
+    expect(pyproject(base, UV_PYPROJECT(`qf-a>=1.2.6${NBSP}`))).toEqual(
+      refused('bad_spec', 'pyproject.toml'),
+    );
+    expect(pyproject(base, UV_PYPROJECT('qf-a >=\t1.2.6 '))).toEqual({ ok: true });
   });
 });

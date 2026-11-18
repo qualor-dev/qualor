@@ -73,7 +73,13 @@ const entry = (over: Partial<LockEntry> = {}): LockEntry => ({
 });
 
 const baseEntries: LockEntry[] = [
-  entry({ version: '1.2.5', source: 'https://npm.example.com/qf-a/-/qf-a-1.2.5.tgz' }),
+  entry({ version: '1.2.5', source: 'https://registry.npmjs.org/qf-a/-/qf-a-1.2.5.tgz' }),
+  // A package of a private registry: its host is an origin of the base.
+  entry({
+    name: 'qf-p',
+    version: '1.0.0',
+    source: 'https://npm.example.com/qf-p/-/qf-p-1.0.0.tgz',
+  }),
   entry({
     name: 'qf-git',
     version: '1.0.0',
@@ -98,13 +104,17 @@ describe('checkLockEntries', () => {
   });
 
   it('accepts a new registry entry on a host of the base or a public registry', () => {
-    const onBaseHost = entry({ source: 'https://npm.example.com/qf-a/-/qf-a-1.2.6.tgz' });
+    const onBaseHost = entry({
+      name: 'qf-n',
+      version: '1.0.0',
+      source: 'https://npm.example.com/qf-n/-/qf-n-1.0.0.tgz',
+    });
     expect(checkLockEntries(baseEntries, [...baseEntries, onBaseHost], ctx)).toEqual({ ok: true });
     expect(checkLockEntries(baseEntries, [...baseEntries, entry()], ctx)).toEqual({ ok: true });
   });
 
   it('compares scheme and host only, case-insensitively', () => {
-    const next = entry({ source: 'HTTPS://NPM.example.com/other/path.tgz' });
+    const next = entry({ name: 'qf-p', source: 'HTTPS://NPM.example.com/other/path.tgz' });
     expect(checkLockEntries(baseEntries, [next], ctx)).toEqual({ ok: true });
   });
 
@@ -188,7 +198,8 @@ describe('checkLockEntries', () => {
   });
 
   it('checks no host for an entry without a source', () => {
-    expect(checkLockEntries(baseEntries, [entry({ source: null })], ctx)).toEqual({ ok: true });
+    const fresh = entry({ name: 'qf-n', source: null });
+    expect(checkLockEntries(baseEntries, [fresh], ctx)).toEqual({ ok: true });
   });
 
   it.each([
@@ -408,6 +419,78 @@ describe('checkLockEntries: a bound on the sets it builds (fix round 5, R5-1)', 
       path: 'apps/web/package-lock.json',
     });
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe('checkLockEntries: a package keeps its registry (Ruling T4f)', () => {
+  const CORP = 'https://npm.corp.example';
+  const corp = (version: string) =>
+    entry({ version, source: `${CORP}/qf-a/-/qf-a-${version}.tgz` });
+  const newSource = { ok: false, rule: 'new_source', path: 'apps/web/package-lock.json' };
+
+  it('refuses a name of the base moved from its private registry to a public one', () => {
+    expect(checkLockEntries([corp('1.2.5')], [entry()], ctx)).toEqual(newSource);
+  });
+
+  it('refuses it moved to the default registry (an entry without a URL)', () => {
+    expect(checkLockEntries([corp('1.2.5')], [entry({ source: null })], ctx)).toEqual(newSource);
+  });
+
+  it('keeps a name of the default registry there', () => {
+    const corpOrigin = entry({ name: 'qf-p', source: `${CORP}/qf-p/-/qf-p-1.0.0.tgz` });
+    const base = [entry({ version: '1.2.5', source: null }), corpOrigin];
+    expect(checkLockEntries(base, [entry({ source: null })], ctx)).toEqual({ ok: true });
+    expect(checkLockEntries(base, [entry()], ctx)).toEqual(newSource);
+    expect(checkLockEntries(base, [corp('1.2.6')], ctx)).toEqual(newSource);
+  });
+
+  it('accepts the package moving within its own registry', () => {
+    expect(checkLockEntries([corp('1.2.5')], [corp('1.2.6')], ctx)).toEqual({ ok: true });
+  });
+
+  it('treats the public registries as one', () => {
+    const yarn = entry({
+      version: '1.2.5',
+      source: 'https://registry.yarnpkg.com/qf-a/-/qf-a-1.2.5.tgz',
+    });
+    const both = {
+      ...ctx,
+      publicHosts: ['https://registry.npmjs.org', 'https://registry.yarnpkg.com'],
+    };
+    expect(checkLockEntries([yarn], [entry()], both)).toEqual({ ok: true });
+  });
+
+  it('accepts a brand-new name from a public registry next to a private package', () => {
+    const fresh = entry({
+      name: 'qf-new',
+      version: '1.0.0',
+      source: 'https://registry.npmjs.org/qf-new/-/qf-new-1.0.0.tgz',
+    });
+    expect(checkLockEntries([corp('1.2.5')], [corp('1.2.6'), fresh], ctx)).toEqual({ ok: true });
+  });
+
+  it('counts only the base’s registry entries of the name', () => {
+    const git = entry({
+      version: '1.2.5',
+      source: 'git+https://github.com/x/qf-a.git',
+      kind: 'git',
+    });
+    expect(checkLockEntries([git, corp('9.9.9')], [entry()], { ...ctx })).toMatchObject({
+      rule: 'new_source',
+    });
+    expect(checkLockEntries([git], [entry()], ctx)).toEqual({ ok: true });
+  });
+
+  it('compares the origin keys an originOf option gives', () => {
+    const pinned = (version: string, reference: string) =>
+      entry({ version, source: `${CORP}/simple#ref=${reference}` });
+    const byReference = { ...ctx, originOf: (source: string) => source };
+    expect(checkLockEntries([pinned('1.2.5', 'a')], [pinned('1.2.6', 'a')], byReference)).toEqual({
+      ok: true,
+    });
+    expect(checkLockEntries([pinned('1.2.5', 'a')], [pinned('1.2.6', 'b')], byReference)).toEqual(
+      newSource,
+    );
   });
 });
 

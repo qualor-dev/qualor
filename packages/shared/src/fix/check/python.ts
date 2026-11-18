@@ -9,7 +9,12 @@
 import { parse as parseToml } from 'smol-toml';
 import { compareVersions } from '../versions';
 import { parsePep440 } from '../versions/pep440';
-import { checkLockEntries, lockfileBelowTarget, newLockEntries } from './lock-entries';
+import {
+  checkLockEntries,
+  lockfileBelowTarget,
+  newLockEntries,
+  sourceOrigin,
+} from './lock-entries';
 import {
   objectAt,
   readBoth,
@@ -70,6 +75,13 @@ interface Requirement {
 const NAME_CHARS = /^[A-Za-z\d._-]+/;
 const ALPHANUMERIC = /^[A-Za-z\d]$/;
 
+/**
+ * Task 4 fix round 1 (I1): PEP 508's white space is space and tab. Any other (a Unicode space,
+ * NBSP, U+FEFF, a line break) makes a requirement or constraint unreadable, so no tool can read
+ * it differently from this check.
+ */
+const NOT_PEP508_SPACE = /[^\P{White_Space} \t]|[^\S \t]/u;
+
 function normalizeExtras(text: string): string {
   return text
     .split(',')
@@ -82,6 +94,7 @@ function normalizeExtras(text: string): string {
 
 /** `name [extras] (specifier | @ url) ; marker`; null without a valid name or with a bad `[`. */
 function parseRequirement(text: string): Requirement | null {
+  if (NOT_PEP508_SPACE.test(text)) return null;
   const s = text.trim();
   const name = NAME_CHARS.exec(s)?.[0];
   if (name === undefined || !ALPHANUMERIC.test(name.charAt(0))) return null;
@@ -124,12 +137,6 @@ function isPlainSpecifier(spec: string): boolean {
 function namesPackage(entry: unknown, pkg: string): boolean {
   const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
   return requirement !== null && normalizePythonName(requirement.name) === pkg;
-}
-
-/** A requirement with a plain specifier and no direct reference. */
-function isPlainRequirement(entry: unknown): boolean {
-  const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
-  return requirement !== null && requirement.url === null && isPlainSpecifier(requirement.spec);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -213,10 +220,41 @@ function projectRequirementsRule(base: JsonObject, next: JsonObject, pkg: string
 const UV_PATH = ['tool', 'uv'];
 const OVERRIDES = 'override-dependencies';
 
+/** A requirement's extras and marker, as one key. */
+function shapeOf({ extras, marker }: Pick<Requirement, 'extras' | 'marker'>): string {
+  return JSON.stringify([extras, marker]);
+}
+
+/**
+ * Fix round 1, M1: the extras and markers a new or changed override of the package may have:
+ * those of the base's overrides of it, or none when the base has none (a never-true marker would
+ * drop the package).
+ */
+function overrideShapes(before: readonly unknown[], pkg: string): Set<string> {
+  const shapes = new Set<string>();
+  for (const entry of before) {
+    const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
+    if (requirement !== null && normalizePythonName(requirement.name) === pkg) {
+      shapes.add(shapeOf(requirement));
+    }
+  }
+  if (shapes.size === 0) shapes.add(shapeOf({ extras: '', marker: '' }));
+  return shapes;
+}
+
+/** A new or changed override of the package: no URL and plain (`bad_spec`), a known shape. */
+function overrideRule(entry: unknown, shapes: ReadonlySet<string>): FixRule | null {
+  const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
+  if (requirement === null || requirement.url !== null) return 'bad_spec';
+  if (!shapes.has(shapeOf(requirement))) return 'other_change';
+  return isPlainSpecifier(requirement.spec) ? null : 'bad_spec';
+}
+
 /**
  * `tool.uv.override-dependencies`: the package's entries may be added or changed, each plain
- * (`bad_spec`); they are taken out of both sides, the array and tables dropped when the change
- * created them for those entries alone.
+ * (`bad_spec`) and with the extras and marker of the base's (none when the base has none,
+ * `other_change`, M1); they are taken out of both sides, the array and tables dropped when the
+ * change created them for those entries alone.
  */
 function uvOverridesRule(base: JsonObject, next: JsonObject, pkg: string): FixRule | null {
   const uv = at(next, UV_PATH);
@@ -224,9 +262,14 @@ function uvOverridesRule(base: JsonObject, next: JsonObject, pkg: string): FixRu
   if (!isObject(uv) || !Array.isArray(after)) return null;
   const baseUv = at(base, UV_PATH);
   const before = isObject(baseUv) ? own(baseUv, OVERRIDES) : undefined;
-  const old = new Set<unknown>(Array.isArray(before) ? before : []);
-  const changed = after.filter((entry) => namesPackage(entry, pkg) && !old.has(entry));
-  if (changed.some((entry) => !isPlainRequirement(entry))) return 'bad_spec';
+  const oldList: readonly unknown[] = Array.isArray(before) ? before : [];
+  const old = new Set<unknown>(oldList);
+  const shapes = overrideShapes(oldList, pkg);
+  for (const entry of after) {
+    if (!namesPackage(entry, pkg) || old.has(entry)) continue;
+    const rule = overrideRule(entry, shapes);
+    if (rule !== null) return rule;
+  }
   const rest = after.filter((entry) => !namesPackage(entry, pkg));
   if (isObject(baseUv) && Array.isArray(before)) {
     setOwn(uv, OVERRIDES, rest);
@@ -249,6 +292,7 @@ const POETRY_CLAUSE = /^(?:\^|~=?|[<>]=?|[=!]=|=)?(?:\*|\d[\w.*+!-]*)$/;
 
 /** A Poetry version constraint: clauses split by `,`, `||` or spaces, each an operator and version. */
 function isPlainConstraint(text: string): boolean {
+  if (NOT_PEP508_SPACE.test(text)) return false;
   const tokens = text.replaceAll('||', ',').replaceAll(',', ' ').trim().split(/\s+/);
   const clauses: string[] = [];
   for (const token of tokens) {
@@ -584,14 +628,48 @@ const POETRY_KINDS: ReadonlyMap<string, LockEntryKind> = new Map([
   ['url', 'tarball'],
 ]);
 
-/** No `[package.source]`: PyPI. A legacy source needs its URL; an unknown type is `other`. */
+/**
+ * What picks the code of a non-registry Poetry source besides its URL: Poetry clones
+ * `resolved_reference` (else `reference`) and builds `subdirectory` (task 4 fix round 1, C1).
+ */
+const SOURCE_FIELDS = ['reference', 'resolved_reference', 'subdirectory'];
+
+/** Marks the reference folded into a legacy source; Poetry picks the repository by it (I2). */
+const LEGACY_REFERENCE = '#poetry-reference=';
+
+function fieldOf(table: JsonObject, name: string): string {
+  return encodeURIComponent(str(own(table, name)) ?? '');
+}
+
+/**
+ * No `[package.source]`: PyPI, no source. A legacy source is its `url` with its `reference`
+ * folded in (a url that holds `#` already, or none, is `other`). Any other type's source is its
+ * `url` with `reference`, `resolved_reference` and `subdirectory` folded in, so moving any of them
+ * makes a new entry (C1); an unknown type is `other`.
+ */
 function poetrySource(pkg: JsonObject): Pick<RawEntry, 'kind' | 'source'> {
   const value = own(pkg, 'source');
   if (value === undefined) return { kind: 'registry', source: null };
   const table = objectAt(value, 'a poetry package source');
-  const source = str(own(table, 'url'));
+  const url = str(own(table, 'url'));
   const kind = POETRY_KINDS.get(str(own(table, 'type')) ?? '') ?? 'other';
-  return kind === 'registry' && source === null ? { kind: 'other', source } : { kind, source };
+  if (url === null) return { kind: 'other', source: null };
+  if (kind === 'registry') {
+    if (url.includes('#')) return { kind: 'other', source: url };
+    return { kind, source: `${url}${LEGACY_REFERENCE}${fieldOf(table, 'reference')}` };
+  }
+  const fields = SOURCE_FIELDS.map((name) => `${name}=${fieldOf(table, name)}`).join('&');
+  return { kind, source: `${url}#${fields}` };
+}
+
+/**
+ * The origin key of a Python lockfile source: its `scheme://host`, or, for a Poetry legacy
+ * source, the whole `(url, reference)` pair, since Poetry fetches from the source its reference
+ * names (task 4 fix round 1, I2; Ruling T4f).
+ */
+function pythonOrigin(source: string): string | null {
+  const origin = sourceOrigin(source);
+  return origin !== null && source.includes(LEGACY_REFERENCE) ? source : origin;
 }
 
 function poetryFiles(value: unknown): { file: string | null; hash: string | null }[] {
@@ -698,6 +776,7 @@ export function checkPythonLock(change: FixFileChange, ctx: FixCheckContext): Fi
     publicHosts: PYTHON_PUBLIC_HOSTS,
     integrityRequired: true,
     reachableOnly: true,
+    originOf: pythonOrigin,
   });
   if (!entries.ok) return entries;
   if (lockfileBelowTarget(base, next, named, change.path)) {

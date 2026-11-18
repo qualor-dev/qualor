@@ -34,7 +34,18 @@ export interface LockCheckOptions {
    * graph (go.sum).
    */
   reachableOnly: boolean;
+  /**
+   * The origin key of a registry entry's URL source; {@link sourceOrigin} unless set. Poetry sets
+   * it so a legacy source is keyed by its `(url, reference)` pair (task 4 fix round 1, I2).
+   */
+  originOf?: (source: string) => string | null;
 }
+
+/**
+ * Ruling T4f: the origin key of a registry entry without a URL source (pnpm integrity-only, Berry
+ * `npm:`, Poetry without `[package.source]`): the format's default registry.
+ */
+export const DEFAULT_ORIGIN = 'default';
 
 /** The raw authority of a URL: after the scheme and any `/` or `\`, up to `/`, `?`, `#` or `\`. */
 const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:[/\\]*([^/?#\\]*)/i;
@@ -93,50 +104,91 @@ function entryKey(entry: LockEntry, keyOf: TupleKey): string {
   return keyWithSlot(entry, keyOf, name, version, source, kind, integrity);
 }
 
+/** Ruling T4f: the origin keys a package name's registry entries in the base came from. */
+interface NameOrigins {
+  keys: Set<string>;
+  /** Whether one of them is a public registry (then every public registry may serve it). */
+  public: boolean;
+}
+
 /** What the base allows a new entry: origins (Ruling T3f: of registry entries only) and pairs. */
 interface BaseFacts {
   keyOf: TupleKey;
   origins: ReadonlySet<string>;
+  publicOrigins: ReadonlySet<string>;
+  /** Ruling T4f: the origin keys of the base's registry entries, per package name. */
+  byName: ReadonlyMap<string, NameOrigins>;
   /** The base's `(slot, name)` pairs: aliases (C1) and what Ruling T3n counts as known. */
   pairs: ReadonlySet<string>;
-  /** {@link sourceOrigin} of an entry's source, once per distinct source. */
+  /** The origin key of an entry's URL source, once per distinct source. */
   originOf: (entry: LockEntry) => string | null;
   integrityRequired: boolean;
 }
 
-function originsBySource(): (entry: LockEntry) => string | null {
+function originsBySource(origin: (source: string) => string | null) {
   const origins = new Map<string, string | null>();
-  return ({ source }) => {
+  return ({ source }: LockEntry): string | null => {
     if (source === null) return null;
     const known = origins.get(source);
     if (known !== undefined) return known;
-    const origin = sourceOrigin(source);
-    origins.set(source, origin);
-    return origin;
+    const key = origin(source);
+    origins.set(source, key);
+    return key;
   };
 }
 
+/** A registry entry's origin key: {@link DEFAULT_ORIGIN} without a URL source. */
+function registryKey(entry: LockEntry, originOf: BaseFacts['originOf']): string | null {
+  return entry.source === null ? DEFAULT_ORIGIN : originOf(entry);
+}
+
+function addOrigin(byName: Map<string, NameOrigins>, name: string, key: string, open: boolean) {
+  const known = byName.get(name);
+  if (known === undefined) byName.set(name, { keys: new Set([key]), public: open });
+  else {
+    known.keys.add(key);
+    known.public ||= open;
+  }
+}
+
 function baseFacts(base: readonly LockEntry[], ctx: LockCheckOptions, keyOf: TupleKey): BaseFacts {
-  const originOf = originsBySource();
-  const origins = new Set(ctx.publicHosts.map((host) => sourceOrigin(host) ?? host));
+  const originOf = originsBySource(ctx.originOf ?? sourceOrigin);
+  const publicOrigins = new Set(ctx.publicHosts.map((host) => sourceOrigin(host) ?? host));
+  const origins = new Set(publicOrigins);
+  const byName = new Map<string, NameOrigins>();
   for (const entry of base) {
-    const origin = entry.kind === 'registry' ? originOf(entry) : null;
-    if (origin !== null) origins.add(origin);
+    const key = entry.kind === 'registry' ? registryKey(entry, originOf) : null;
+    if (key === null) continue;
+    if (key !== DEFAULT_ORIGIN) origins.add(key);
+    addOrigin(byName, entry.name, key, publicOrigins.has(key));
   }
   const pairs = new Set(base.map((entry) => pairOf(entry, keyOf)));
-  return { keyOf, origins, pairs, originOf, integrityRequired: ctx.integrityRequired };
+  const integrityRequired = ctx.integrityRequired;
+  return { keyOf, origins, publicOrigins, byName, pairs, originOf, integrityRequired };
+}
+
+/**
+ * Ruling T4f: a name the base has registry entries of keeps an origin key those entries used, or
+ * moves between public registries when one of them was public. So a package of a private
+ * registry or index cannot be fetched from a public one (dependency confusion), nor from the
+ * default registry; a brand-new name is not bound.
+ */
+function keepsRegistry(entry: LockEntry, key: string, facts: BaseFacts): boolean {
+  const known = facts.byName.get(entry.name);
+  if (known === undefined || known.keys.has(key)) return true;
+  return known.public && facts.publicOrigins.has(key);
 }
 
 function newEntryRule(entry: LockEntry, facts: BaseFacts): FixRule | null {
   if (entry.kind !== 'registry') return 'source_kind';
   // Fix round 1, C1: another package in a slot only where the base had that alias.
   if (isAlias(entry) && !facts.pairs.has(pairOf(entry, facts.keyOf))) return 'source_kind';
-  if (entry.source !== null) {
-    // Ruling T3c: a source that gives no origin fails closed; the readers write null, not a
-    // reference, for a registry entry the format names no URL for.
-    const origin = facts.originOf(entry);
-    if (origin === null || !facts.origins.has(origin)) return 'new_source';
-  }
+  // Ruling T3c: a source that gives no origin fails closed; the readers write null, not a
+  // reference, for a registry entry the format names no URL for.
+  const key = registryKey(entry, facts.originOf);
+  if (key === null) return 'new_source';
+  if (key !== DEFAULT_ORIGIN && !facts.origins.has(key)) return 'new_source';
+  if (!keepsRegistry(entry, key, facts)) return 'new_source';
   if (facts.integrityRequired && (entry.integrity ?? '') === '') return 'missing_integrity';
   return null;
 }

@@ -109,10 +109,37 @@ function lexGoLine(line: string): GoLine {
 }
 
 /** `// indirect` or `// indirect; …`, as `modfile` reads it. */
+/**
+ * Go's `strings.Fields`: split at runs of `unicode.IsSpace`, which is the Unicode White_Space
+ * property (U+0085 included, U+FEFF not, unlike JS `\s`), empty fields dropped.
+ */
+function goFields(text: string): string[] {
+  return text.split(/\p{White_Space}+/u).filter((field) => field !== '');
+}
+
+/**
+ * `// indirect` exactly, or `// indirect;` followed by more, as `modfile`'s `isIndirect` reads the
+ * line's comment (fix round 1, M4: `// indirect;` alone is direct).
+ */
 function isIndirect(comment: string | null): boolean {
   if (comment === null) return false;
-  const fields = comment.trim().split(/\s+/);
-  return (fields.length === 1 && fields[0] === 'indirect') || fields[0] === 'indirect;';
+  const fields = goFields(comment);
+  return (
+    (fields.length === 1 && fields[0] === 'indirect') ||
+    (fields.length > 1 && fields[0] === 'indirect;')
+  );
+}
+
+/**
+ * A Go pseudo-version (`vX.0.0-yyyymmddhhmmss-abcdefabcdef`, `vX.Y.Z-pre.0.yyyymmddhhmmss-…`,
+ * `vX.Y.(Z+1)-0.yyyymmddhhmmss-…`, optionally `+incompatible`), as `module.IsPseudoVersion` tells
+ * them; anchored, with no nested quantifier.
+ */
+const PSEUDO_VERSION = /(?:^v\d+\.0\.0-|[.-]0\.)\d{14}-[A-Za-z\d]+(?:\+[\dA-Za-z.-]+)?$/;
+
+/** Ruling T4g: a pseudo-version can name any commit the origin serves, a fork's included. */
+function isPseudoVersion(version: string): boolean {
+  return versionParses('go', version) && PSEUDO_VERSION.test(version);
 }
 
 function argumentText(arg: string): string {
@@ -186,9 +213,9 @@ const H1 = /^h1:[A-Za-z\d+/]{43}=$/;
 export function readGoSum(text: string): LockEntry[] {
   const entries: LockEntry[] = [];
   for (const line of stripBom(text).split('\n')) {
-    const fields = line.trim().split(/\s+/);
+    const fields = goFields(line);
     const [name, version, hash] = fields;
-    if (name === undefined || name === '') continue;
+    if (name === undefined) continue;
     if (version === undefined || fields.length > 3) {
       throw new Error(`go.sum: a line of ${fields.length} fields`);
     }
@@ -254,7 +281,7 @@ function requireRule(
   packageName: string,
 ): FixRule | null {
   if (base?.version === next.version) return null;
-  if (!versionParses('go', next.version)) return 'bad_spec';
+  if (!versionParses('go', next.version) || isPseudoVersion(next.version)) return 'bad_spec';
   if (base === undefined) {
     return next.indirect || next.path === packageName ? null : 'new_dependency';
   }
@@ -321,6 +348,19 @@ export function checkGoMod(change: FixFileChange, ctx: FixCheckContext): FixChec
  * hosts, no graph to follow (no reachability, as Ruling F14 skips the targets), and old lines may
  * stay.
  */
+/**
+ * Ruling T4g: a `go.sum` line (zip or `/go.mod`) of a pseudo-version whose exact line form the
+ * base does not have.
+ */
+function newPseudoVersion(base: readonly LockEntry[], next: readonly LockEntry[]): boolean {
+  const known = new Set(base.map(({ name, version }) => JSON.stringify([name, version])));
+  return next.some(
+    ({ name, version }) =>
+      isPseudoVersion(version.replace(/\/go\.mod$/, '')) &&
+      !known.has(JSON.stringify([name, version])),
+  );
+}
+
 export function checkGoSum(change: FixFileChange, ctx: FixCheckContext): FixCheckResult {
   let base: LockEntry[];
   let next: LockEntry[];
@@ -330,6 +370,7 @@ export function checkGoSum(change: FixFileChange, ctx: FixCheckContext): FixChec
   } catch {
     return fixRefused('unparsable', change.path);
   }
+  if (newPseudoVersion(base, next)) return fixRefused('bad_spec', change.path);
   return checkLockEntries(base, next, {
     ...ctx,
     lockfile: change.path,

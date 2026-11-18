@@ -392,3 +392,78 @@ describe('checkPom', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 1 (task-4-fix-1.md): I1 Java's trim, M2 snapshots, M3 the XML declaration
+
+describe('fix round 1: Java trim, snapshot versions and the XML declaration (I1, M2, M3)', () => {
+  const NBSP = String.fromCharCode(0xa0);
+  const EMSP = String.fromCharCode(0x2003);
+  const refused = (rule: string) => ({ ok: false, rule, path: 'pom.xml' });
+  const other = (optional: string, exclusion = 'log4j-core') => `
+    <dependency>
+      <groupId>x</groupId>
+      <artifactId>y</artifactId>
+      <version>1.0</version>
+      <optional>${optional}</optional>
+      <exclusions><exclusion><groupId>org.apache.logging.log4j</groupId><artifactId>${exclusion}</artifactId></exclusion></exclusions>
+    </dependency>`;
+  const plugin = (skip: string) =>
+    `  <build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.1.0</version><configuration><skip>${skip}</skip></configuration></plugin></plugins></build>\n`;
+  const BASE_EXTRA = POM({ extra: other('true'), build: plugin('true') });
+  const at = (optional: string, skip = 'true', exclusion = 'log4j-core') =>
+    POM({ version: '5.2.21', extra: other(optional, exclusion), build: plugin(skip) });
+
+  it('accepts the bump next to these elements, and white space Java trims', () => {
+    expect(check(BASE_EXTRA, at('true'))).toEqual({ ok: true });
+    expect(check(BASE_EXTRA, at('\n        true\t', ' true '))).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['NBSP before true in <optional> (P2)', at(`${NBSP}true`)],
+    ['&#160; before true in <optional>', at('&#160;true')],
+    ['EM SPACE before true in a plugin <skip> (P2)', at('true', `${EMSP}true`)],
+    ['NBSP before the excluded artifactId', at('true', 'true', `${NBSP}log4j-core`)],
+  ])('refuses %s as other_change: Maven reads another value', (_name, next) => {
+    expect(check(BASE_EXTRA, next)).toEqual(refused('other_change'));
+  });
+
+  it('refuses a version with NBSP around it as bad_spec (P2b)', () => {
+    expect(check(BASE, POM({ version: `${NBSP}5.2.21${NBSP}` }))).toEqual(refused('bad_spec'));
+  });
+
+  it.each([
+    ['another version and encoding (P2c)', '<?xml version="1.1" encoding="ISO-8859-1"?>'],
+    ['another encoding', '<?xml version="1.0" encoding="ISO-8859-1"?>'],
+    ['an added standalone', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'],
+    ['no declaration', ''],
+  ])('refuses a changed XML declaration (%s) as other_change (M3)', (_name, declaration) => {
+    const next = POM({ version: '5.2.21' }).replace(
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      declaration,
+    );
+    expect(next).not.toBe(POM({ version: '5.2.21' }));
+    expect(check(BASE, next)).toEqual(refused('other_change'));
+  });
+
+  it.each(['5.2.22-SNAPSHOT', '5.2.22-snapshot', '5.2.22-20240101.123456-1'])(
+    'refuses the snapshot version %s as bad_spec (M2, P2d)',
+    (version) => {
+      expect(check(BASE, POM({ version }))).toEqual(refused('bad_spec'));
+      expect(check(BASE, POM({ managed: MANAGED(version) }))).toMatchObject({ rule: 'bad_spec' });
+      expect(check(viaProperty('5.2.20.RELEASE'), viaProperty(version))).toMatchObject({
+        rule: 'bad_spec',
+      });
+    },
+  );
+
+  it('accepts a snapshot version the base has, unchanged, on another dependency', () => {
+    const snapshot = (v: string) =>
+      POM({
+        version: v,
+        extra:
+          '\n    <dependency><groupId>x</groupId><artifactId>y</artifactId><version>1.0-SNAPSHOT</version></dependency>',
+      });
+    expect(check(snapshot('5.2.20.RELEASE'), snapshot('5.2.21'))).toEqual({ ok: true });
+  });
+});

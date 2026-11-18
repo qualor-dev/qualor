@@ -979,9 +979,14 @@ describe('fix round 1: Berry archive URLs and patches name the entry (C2)', () =
   });
 
   it('accepts an archive URL of the package itself on a public registry', () => {
-    const archive = encodeURIComponent('https://registry.yarnpkg.com/qf-a/-/qf-a-1.2.6.tgz');
-    const next = berry('1.2.6', `qf-a@npm:1.2.6::__archiveUrl=${archive}`);
-    expect(check('yarn.lock', berry('1.2.5'), next)).toEqual({ ok: true });
+    const archive = (v: string) => {
+      const url = encodeURIComponent(`https://registry.yarnpkg.com/qf-a/-/qf-a-${v}.tgz`);
+      return `qf-a@npm:${v}::__archiveUrl=${url}`;
+    };
+    const next = berry('1.2.6', archive('1.2.6'));
+    expect(check('yarn.lock', berry('1.2.5', archive('1.2.5')), next)).toEqual({ ok: true });
+    // From the default registry to an archive URL: Ruling T4f.
+    expect(check('yarn.lock', berry('1.2.5'), next)).toMatchObject({ rule: 'new_source' });
   });
 
   it('refuses a builtin patch of another package in the package’s entry', () => {
@@ -2755,5 +2760,45 @@ describe('Ruling T4b: a pnpm lockfile with a boot document', () => {
     expect(jsLockfileAdditions(change)?.map((e) => `${e.name}@${e.version}`)).toEqual([
       'qf-a@1.2.6',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 4 fix round 1, Ruling T4f: a package keeps its registry
+
+describe('Ruling T4f: a package keeps its registry in a JS lockfile', () => {
+  const CORP = 'https://npm.corp.example';
+  const corpQfA = (version: string) =>
+    npmQfA(version, { resolved: `${CORP}/qf-a/-/qf-a-${version}.tgz` });
+  const newSource = (path: string) => ({ ok: false, rule: 'new_source', path });
+
+  it('npm: refuses qf-a moved from its private registry to registry.npmjs.org', () => {
+    expect(check('package-lock.json', npmV3(corpQfA('1.2.5')), npmV3(npmQfA('1.2.6')))).toEqual(
+      newSource('package-lock.json'),
+    );
+  });
+
+  it('npm: accepts qf-a moving within its own registry, and a brand-new public dependency', () => {
+    expect(check('package-lock.json', npmV3(corpQfA('1.2.5')), npmV3(corpQfA('1.2.6')))).toEqual({
+      ok: true,
+    });
+    const withDep = { ...corpQfA('1.2.6'), dependencies: { 'qf-new': '^1.0.0' } };
+    const fresh = {
+      'node_modules/qf-new': {
+        version: '1.0.0',
+        resolved: `${NPM}/qf-new/-/qf-new-1.0.0.tgz`,
+        integrity: 'sha512-new',
+      },
+    };
+    expect(check('package-lock.json', npmV3(corpQfA('1.2.5')), npmV3(withDep, fresh))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('Berry: refuses qf-a moved from the default registry to an explicit archive URL', () => {
+    const archive = `qf-a@npm:1.2.6::__archiveUrl=${NPM}/qf-a/-/qf-a-1.2.6.tgz`;
+    expect(check('yarn.lock', berry('1.2.5'), berry('1.2.6', archive))).toEqual(
+      newSource('yarn.lock'),
+    );
   });
 });

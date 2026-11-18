@@ -38,17 +38,35 @@ function pomElement(name: string, attributes: Record<string, string>): PomElemen
 }
 
 /**
- * A pom read with saxes, which expands no external entity: a DOCTYPE throws, as does an entity
- * other than the predefined ones and character references, or anything that is not well formed.
- * Comments and processing instructions are dropped; each element's text is trimmed.
+ * Java's `String.trim()`, which Maven's readers apply: only characters up to U+0020 go (fix round
+ * 1, I1). JS `trim()` also strips NBSP, the other Unicode spaces and U+FEFF, which Maven keeps, so
+ * `<optional>&#160;true</optional>` is not `true` to Maven.
  */
-export function readPom(text: string): PomElement {
+function javaTrim(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && text.charCodeAt(start) <= 0x20) start++;
+  while (end > start && text.charCodeAt(end - 1) <= 0x20) end--;
+  return text.slice(start, end);
+}
+
+/** A pom and its XML declaration (`version`, `encoding`, `standalone`), or null without one. */
+interface PomDocument {
+  root: PomElement;
+  declaration: string | null;
+}
+
+function readPomDocument(text: string): PomDocument {
   const parser = new SaxesParser({ xmlns: false });
   const stack: PomElement[] = [];
   const texts: string[][] = [];
   let root: PomElement | null = null;
+  let declaration: string | null = null;
   parser.on('doctype', () => {
     throw new Error('a DOCTYPE in a pom');
+  });
+  parser.on('xmldecl', ({ version, encoding, standalone }) => {
+    declaration = JSON.stringify([version ?? null, encoding ?? null, standalone ?? null]);
   });
   parser.on('opentag', (tag) => {
     const element = pomElement(tag.name, tag.attributes as Record<string, string>);
@@ -64,11 +82,21 @@ export function readPom(text: string): PomElement {
   parser.on('closetag', () => {
     const element = stack.pop();
     const parts = texts.pop() ?? [];
-    if (element !== undefined) element.text = parts.join('').trim();
+    if (element !== undefined) element.text = javaTrim(parts.join(''));
   });
   parser.write(stripBom(text)).close();
   if (root === null) throw new Error('a pom without a root element');
-  return root;
+  return { root, declaration };
+}
+
+/**
+ * A pom read with saxes, which expands no external entity: a DOCTYPE throws, as does an entity
+ * other than the predefined ones and character references, or anything that is not well formed.
+ * Comments and processing instructions are dropped; each element's text is trimmed as Java trims
+ * (fix round 1, I1).
+ */
+export function readPom(text: string): PomElement {
+  return readPomDocument(text).root;
 }
 
 function childrenNamed(element: PomElement, name: string): PomElement[] {
@@ -201,9 +229,22 @@ export function pomDependencyVersion(
  */
 const MAVEN_VERSION = /^[\w.+-]+$/;
 
+/** A timestamped snapshot build (`1.0-20240101.123456-1`), as Maven's `ArtifactUtils` tells it. */
+const TIMESTAMPED_SNAPSHOT = /-\d{8}\.\d{6}-\d+$/;
+
+/**
+ * Fix round 1, M2: a snapshot version (`-SNAPSHOT` in any case, or a timestamped snapshot) moves
+ * with every deployment, so no new or changed version may be one.
+ */
 function isPlainMavenVersion(version: string): boolean {
   const upper = version.toUpperCase();
-  return MAVEN_VERSION.test(version) && upper !== 'LATEST' && upper !== 'RELEASE';
+  return (
+    MAVEN_VERSION.test(version) &&
+    upper !== 'LATEST' &&
+    upper !== 'RELEASE' &&
+    !upper.endsWith('-SNAPSHOT') &&
+    !TIMESTAMPED_SNAPSHOT.test(version)
+  );
 }
 
 const MANAGED_SCOPES = new Set(['compile', 'provided', 'runtime', 'test']);
@@ -375,11 +416,11 @@ function pomBelowTarget(
   return belowTarget(uploaded, targets, 'maven', packageVersions(base, ga));
 }
 
-function readBothPoms(change: FixFileChange): [PomElement, PomElement] | null {
+function readBothPoms(change: FixFileChange): [PomDocument, PomDocument] | null {
   try {
-    const base = readPom(change.base);
-    const next = readPom(change.next);
-    return base.name === 'project' && next.name === 'project' ? [base, next] : null;
+    const base = readPomDocument(change.base);
+    const next = readPomDocument(change.next);
+    return base.root.name === 'project' && next.root.name === 'project' ? [base, next] : null;
   } catch {
     return null;
   }
@@ -407,8 +448,11 @@ export function checkPom(change: FixFileChange, ctx: FixCheckContext): FixCheckR
   const both = readBothPoms(change);
   if (both === null) return fixRefused('unparsable', change.path);
   const ga = coordinates(ctx.packageName);
-  if (ga === null) return fixRefused('other_change', change.path);
-  const [base, next] = both;
+  // Fix round 1, M3: the XML declaration (version, encoding, standalone) stays as it is.
+  if (ga === null || both[0].declaration !== both[1].declaration) {
+    return fixRefused('other_change', change.path);
+  }
+  const [base, next] = [both[0].root, both[1].root];
   // Read before pomRule puts the allowed changes back.
   const uploaded = packageVersions(next, ga);
   const rule = pomRule(base, next, ga);
