@@ -10,7 +10,8 @@
     "./fix": "./src/fix/index.ts",
     "./test/trivy-archive": "./test/trivy-archive.ts",
     "./test/ci-cache": "./test/ci-cache.ts",
-    "./test/sbom": "./test/sbom.ts"
+    "./test/sbom": "./test/sbom.ts",
+    "./test/npm-registry": "./test/npm-registry.ts"
   },
   "scripts": {
     "schemas": "tsx scripts/export-schemas.ts"
