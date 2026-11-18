@@ -1098,6 +1098,70 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
     expect(r.calls).toEqual([]);
   });
 
+  describe('Yarn Berry nested workspaces (Ruling T13j)', () => {
+    const root = json([
+      '{',
+      '  "name": "app",',
+      '  "private": true,',
+      '  "workspaces": ["packages/*"],',
+      '  "dependencies": { "qf-a": "^1.2.5" }',
+      '}',
+    ]);
+    const member = (extra: string) =>
+      json(['{', '  "name": "group",', `  "private": true${extra},`, '  "version": "1.0.0"', '}']);
+
+    it('a workspace with its own workspaces field: failure manifest_unsupported naming it, nothing run', async () => {
+      const dir = committed({
+        'package.json': root,
+        'packages/group/package.json': member(',\n  "workspaces": ["sub/*"]'),
+        // Not a workspace of the root: only the nested group would bring it in.
+        'packages/group/sub/x/package.json': json([
+          '{',
+          '  "name": "x",',
+          '  "dependencies": { "evil": "exec:./gen.js" }',
+          '}',
+        ]),
+        'yarn.lock': BERRY_LOCK,
+      });
+
+      const r = await fix(
+        dir,
+        managerEnv('http://127.0.0.1:9'),
+        claim(['1.2.5'], '1.2.6'),
+        fakeBerry,
+      );
+
+      expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+      if ('failure' in r.outcome) {
+        expect(r.outcome.failure.message).toContain('packages/group/package.json');
+        expect(r.outcome.failure.message).toContain('workspaces');
+      }
+      expect(r.calls).toEqual([]);
+    });
+
+    it('a workspace without one: not refused by this check', async () => {
+      const dir = committed({
+        'package.json': root,
+        'packages/group/package.json': member(''),
+        'yarn.lock': BERRY_LOCK,
+      });
+
+      const r = await fix(
+        dir,
+        managerEnv('http://127.0.0.1:9'),
+        claim(['1.2.5'], '1.2.6'),
+        fakeBerry,
+      );
+
+      // Past the gates: the flavour check and the install ran (the fake install fails).
+      expect(r.calls.map((c) => [c.tool, ...c.args])).toEqual([
+        ['yarn', '--version'],
+        ['yarn', 'install', '--mode=update-lockfile'],
+      ]);
+      expect(r.outcome).toMatchObject({ failure: { code: 'package_manager' } });
+    });
+  });
+
   it('Yarn Berry with ranges, tags, npm: aliases, workspace:* and a patch: of npm: only: not refused by the spec gate (Ruling T13g)', async () => {
     const app = json([
       '{',

@@ -408,6 +408,12 @@ function berryManifestsStop(ws: FixWorkspace, project: Project): FixStop | null 
   for (const file of [project.manifest, ...project.members]) {
     const manifest = parseManifest(readText(ws, file));
     if (manifest === null) return unsupported(`${file} is not a JSON object.`);
+    // Ruling T13j: Berry nests workspaces, and the nested ones' manifests are never read here.
+    if (file !== project.manifest && Object.hasOwn(manifest, 'workspaces')) {
+      return unsupported(
+        `${file} is a workspace with its own workspaces field; under Yarn Berry, Qualor fixes only a project whose workspaces are all listed by its root package.json.`,
+      );
+    }
     const foreign = foreignSpec(manifest);
     if (foreign !== null) {
       return unsupported(
