@@ -125,40 +125,49 @@ function classicRangeKind(range: string): LockEntryKind | null {
   return specKind(range) ?? (range.includes('/') ? 'git' : null);
 }
 
-/** A block's kind for one package it holds: from its ranges, then from `resolved` (T3b). */
-function classicKind(ranges: readonly string[], entry: RawEntry): LockEntryKind {
+/** The first non-registry kind among a block's ranges; null when all are registry ranges. */
+function rangesKind(ranges: readonly string[]): LockEntryKind | null {
   for (const range of ranges) {
     const kind = classicRangeKind(range);
     if (kind !== null) return kind;
   }
-  if (entry.source === null) return 'registry';
-  return resolvedKind(entry.source, entry.name, entry.version);
+  return null;
 }
 
-/** The dependency maps of a block (Rulings T3e and T3j follow them all). */
+/** The dependency maps of a block (Rulings T3e and T3l follow them all). */
 const BLOCK_EDGES = ['dependencies', 'optionalDependencies'];
 
 /**
- * Yarn classic: one entry per `(slot, package)` pair its block's patterns name, an alias pattern
- * in its own slot (fix round 1, C1). The format is `yarn-classic`.
+ * One block's entries: one per `(slot, package)` pair its patterns name, an alias pattern in its
+ * own slot (fix round 1, C1). The kind comes from the block's ranges, then from `resolved` (T3b);
+ * both are worked out once per block and once per package, not once per pattern (fix round 3, NB1).
  */
+function blockEntries(block: ClassicBlock): RawEntry[] {
+  const patterns = block.patterns.map(classicPattern);
+  const fields = {
+    version: block.fields.get('version') ?? unreadable(block.patterns.join(', ')),
+    source: block.fields.get('resolved') ?? null,
+    integrity: block.fields.get('integrity') ?? null,
+    dependencies: BLOCK_EDGES.flatMap((key) => block.maps.get(key) ?? []),
+  };
+  const blockKind = rangesKind(patterns.map((p) => p.range));
+  const kinds = new Map<string, LockEntryKind>();
+  const kindOf = (name: string): LockEntryKind => {
+    if (blockKind !== null) return blockKind;
+    if (fields.source === null) return 'registry';
+    const kind = kinds.get(name) ?? resolvedKind(fields.source, name, fields.version);
+    kinds.set(name, kind);
+    return kind;
+  };
+  const pairs = new Map(patterns.map((p) => [JSON.stringify([p.slot, p.name]), p]));
+  return [...pairs.values()].map(({ slot, name }) =>
+    inSlot({ name, ...fields, kind: kindOf(name) }, slot),
+  );
+}
+
+/** Yarn classic: the entries of every block. The format is `yarn-classic`. */
 export function parseYarnClassic(source: string): ReadLock {
-  const entries: RawEntry[] = [];
-  for (const block of classicBlocks(source)) {
-    const patterns = block.patterns.map(classicPattern);
-    const ranges = patterns.map((p) => p.range);
-    const fields = {
-      version: block.fields.get('version') ?? unreadable(block.patterns.join(', ')),
-      source: block.fields.get('resolved') ?? null,
-      integrity: block.fields.get('integrity') ?? null,
-      dependencies: BLOCK_EDGES.flatMap((key) => block.maps.get(key) ?? []),
-    };
-    const pairs = new Map(patterns.map((p) => [JSON.stringify([p.slot, p.name]), p]));
-    for (const { slot, name } of pairs.values()) {
-      const entry: RawEntry = { name, ...fields, kind: 'registry' };
-      entries.push(inSlot({ ...entry, kind: classicKind(ranges, entry) }, slot));
-    }
-  }
+  const entries = classicBlocks(source).flatMap(blockEntries);
   return { format: 'yarn-classic', entries: withDependents(entries) };
 }
 

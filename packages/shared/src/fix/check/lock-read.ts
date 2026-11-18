@@ -53,42 +53,74 @@ function identityOf({ slot, name, version, source, kind, integrity }: RawEntry):
   return JSON.stringify([slot, name, version, source, kind, integrity]);
 }
 
-function addTo(map: Map<string, Set<string>>, key: string, values: Iterable<string>): void {
-  const set = map.get(key);
-  if (set === undefined) map.set(key, new Set(values));
-  else for (const value of values) set.add(value);
+/** A package's identity without its slot: the alias copies of one package share it. */
+function packageKeyOf({ name, version, source, kind, integrity }: RawEntry): string {
+  return JSON.stringify([name, version, source, kind, integrity]);
 }
 
-/** The names of the packages that depend on each slot, one set per slot. */
-function dependentsBySlot(raw: readonly RawEntry[]): Map<string, Set<string>> {
-  const dependents = new Map<string, Set<string>>();
-  for (const entry of raw) {
-    for (const slot of entry.dependencies) addTo(dependents, slot, [entry.name]);
+/** The union of a package's dependencies, each dependencies array read once. */
+interface PackageDependencies {
+  name: string;
+  names: Set<string>;
+  arrays: Set<readonly string[]>;
+}
+
+function mergeDependencies(packages: Map<string, PackageDependencies>, entry: RawEntry): string {
+  const key = packageKeyOf(entry);
+  let known = packages.get(key);
+  if (known === undefined) {
+    known = { name: entry.name, names: new Set(), arrays: new Set() };
+    packages.set(key, known);
   }
-  return dependents;
+  // Fix round 3, NB1: alias copies share one array, which is read once, not once per copy.
+  if (!known.arrays.has(entry.dependencies)) {
+    known.arrays.add(entry.dependencies);
+    for (const name of entry.dependencies) known.names.add(name);
+  }
+  return key;
+}
+
+/** Each package's sorted dependencies, and the names of the packages depending on each slot. */
+function indexPackages(packages: ReadonlyMap<string, PackageDependencies>): {
+  dependencies: Map<string, string[]>;
+  dependents: Map<string, Set<string>>;
+} {
+  const dependencies = new Map<string, string[]>();
+  const dependents = new Map<string, Set<string>>();
+  for (const [key, { name, names }] of packages) {
+    dependencies.set(key, sorted(names));
+    for (const slot of names) {
+      const set = dependents.get(slot);
+      if (set === undefined) dependents.set(slot, new Set([name]));
+      else set.add(name);
+    }
+  }
+  return { dependencies, dependents };
 }
 
 /**
- * Entries with one identity become one, with the union of their dependencies (Ruling T3l compares
- * those, so a second copy cannot hide an added dependency). Each then gets the sorted names of
- * the packages that depend on its slot (its name when it has none): one array per slot, shared by
- * all its entries (fix round 2, N1), so the result stays linear in the input. Do not mutate it.
+ * Entries with one identity become one. Every copy of a package (its alias copies in other slots
+ * included) gets the union of its copies' dependencies, as one sorted array shared by them all;
+ * Ruling T3l compares those, so a second copy cannot hide an added dependency. Each entry also
+ * gets the sorted names of the packages that depend on its slot (its name when it has none), one
+ * array per slot, shared too. Each dependencies array is read once, so the work stays linear in
+ * the input (fix rounds 2 and 3, N1 and NB1). Do not mutate the shared arrays.
  */
 export function withDependents(raw: readonly RawEntry[]): LockEntry[] {
-  const merged = new Map<string, RawEntry>();
-  const dependencies = new Map<string, Set<string>>();
+  const merged = new Map<string, [RawEntry, string]>();
+  const packages = new Map<string, PackageDependencies>();
   for (const entry of raw) {
+    const packageKey = mergeDependencies(packages, entry);
     const key = identityOf(entry);
-    if (!merged.has(key)) merged.set(key, entry);
-    addTo(dependencies, key, entry.dependencies);
+    if (!merged.has(key)) merged.set(key, [entry, packageKey]);
   }
-  const dependents = dependentsBySlot(raw);
+  const { dependencies, dependents } = indexPackages(packages);
   const shared = new Map<string, string[]>();
-  return [...merged].map(([key, entry]) => {
+  return [...merged.values()].map(([entry, packageKey]) => {
     const slot = entry.slot ?? entry.name;
     const names = shared.get(slot) ?? sorted(dependents.get(slot) ?? []);
     shared.set(slot, names);
-    return { ...entry, dependencies: sorted(dependencies.get(key) ?? []), dependents: names };
+    return { ...entry, dependencies: dependencies.get(packageKey) ?? [], dependents: names };
   });
 }
 

@@ -20,7 +20,7 @@ import { isObject, own, str, stripBom, type JsonObject } from './values';
 
 const NODE_MODULES = 'node_modules/';
 
-/** The dependency maps of a v2/v3 entry (Rulings T3e and T3j follow them all). */
+/** The dependency maps of a v2/v3 entry (Rulings T3e and T3l follow them all). */
 const PACKAGE_EDGES = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
 /** v1's `requires` lists every dependency, optional ones included. */

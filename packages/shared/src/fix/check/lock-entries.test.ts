@@ -303,6 +303,43 @@ describe('checkLockEntries: dependencies of existing packages (Rulings T3j, T3l)
     });
   });
 });
+describe('checkLockEntries: brand-new names (Ruling T3m)', () => {
+  const on = { ...ctx, reachableOnly: true };
+  const named = (name: string, dependencies: string[] = [], over: Partial<LockEntry> = {}) =>
+    entry({ name, version: '1.0.0', source: null, dependencies, ...over });
+  const existing = named('qf-x', ['opt-peer']);
+  const base = [...baseEntries, existing];
+
+  it('refuses a brand-new name reached only through an existing package', () => {
+    const next = [entry({ dependencies: ['qf-x'] }), existing, named('opt-peer')];
+    expect(checkLockEntries(base, next, on)).toEqual({
+      ok: false,
+      rule: 'new_dependency',
+      path: 'apps/web/package-lock.json',
+    });
+  });
+
+  it('reaches brand-new names from the package and from other brand-new names', () => {
+    const next = [
+      entry({ dependencies: ['qf-x', 'qf-z'] }),
+      existing,
+      named('qf-z', ['qf-w']),
+      named('qf-w'),
+    ];
+    expect(checkLockEntries(base, next, on)).toEqual({ ok: true });
+  });
+
+  it('still reaches a name the base has through an existing package', () => {
+    const before = [
+      ...baseEntries,
+      named('qf-x', ['qf-y']),
+      named('qf-y', [], { version: '0.9.0' }),
+    ];
+    const next = [entry({ dependencies: ['qf-x'] }), named('qf-x', ['qf-y']), named('qf-y')];
+    expect(checkLockEntries(before, next, on)).toEqual({ ok: true });
+  });
+});
+
 describe('newLockEntries (Ruling T3i)', () => {
   it('lists the entries of next that the base does not have, with slot, name and version', () => {
     const alias = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });

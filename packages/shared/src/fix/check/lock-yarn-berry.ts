@@ -116,7 +116,7 @@ function descriptorSlots(key: string): string[] {
   return [...new Set(slots)];
 }
 
-/** The dependency maps of an entry (Rulings T3e and T3j follow them all). */
+/** The dependency maps of an entry (Rulings T3e and T3l follow them all). */
 const ENTRY_EDGES = ['dependencies', 'peerDependencies'];
 
 /** Fix round 1, C4: Yarn 1 fields in a Berry entry would be read by Yarn 1 alone. */

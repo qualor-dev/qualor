@@ -24,7 +24,7 @@ interface PackageId {
 /** The dependency maps of an importer or a package instance (references are read from all). */
 const DEPENDENCY_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'];
 
-/** The dependency maps of a package (Rulings T3e and T3j follow them all). */
+/** The dependency maps of a package (Rulings T3e and T3l follow them all). */
 const INSTANCE_EDGES = ['dependencies', 'optionalDependencies'];
 
 function pnpmMajor(lock: JsonObject): number {
@@ -167,6 +167,23 @@ interface References {
   major: number;
   /** The `packages` entries by `name@version`. */
   packages: ReadonlyMap<string, RawEntry>;
+  /** The `packages` entries by their key (depPath). */
+  byKey: ReadonlyMap<string, RawEntry>;
+}
+
+/**
+ * Fix round 3, NB3: a v5 or v6 reference with a path (`registry.example.com/foo/1.0.0_react@…`,
+ * `github.com/x/foo/<sha>`) is a depPath, the key of a `packages` entry, whatever the slot; an
+ * alias when that entry is another package, an unknown alias (fail closed) when there is none.
+ * v9 keys hold the slot's name, so a v9 reference cannot point a slot elsewhere this way.
+ */
+function depPathEntry(slot: string, depPath: string, refs: References): RawEntry | null {
+  const found = refs.byKey.get(depPath);
+  if (found === undefined) {
+    const missing = { name: depPath, version: '', source: null, integrity: null };
+    return { ...missing, kind: 'other', dependencies: [], slot };
+  }
+  return found.name === slot ? null : { ...found, slot };
 }
 
 /**
@@ -179,6 +196,10 @@ function referenceEntry(slot: string, value: unknown, refs: References): RawEntr
   if (reference.startsWith('link:')) {
     const link = { name: slot, version: '', source: reference, integrity: null };
     return { ...link, kind: 'link', dependencies: [] };
+  }
+  const bare = reference.split('(', 1)[0] ?? '';
+  if (refs.major < 9 && !bare.startsWith('/') && bare.includes('/')) {
+    return depPathEntry(slot, refs.byKey.has(reference) ? reference : bare, refs);
   }
   const target = referencedPackage(reference, refs.major);
   if (target === null || target.name === slot) return null;
@@ -204,7 +225,12 @@ function holderReferences(holder: unknown, refs: References): RawEntry[] {
  * The links and aliases among the dependencies of the importers (and of a single-project v5 or
  * v6 lockfile's top level) and of every package instance (v9 `snapshots`, v5/v6 `packages`).
  */
-function pnpmReferences(lock: JsonObject, major: number, entries: readonly RawEntry[]): RawEntry[] {
+function pnpmReferences(
+  lock: JsonObject,
+  major: number,
+  byKey: ReadonlyMap<string, RawEntry>,
+): RawEntry[] {
+  const entries = [...byKey.values()];
   const packages = new Map(entries.map((entry) => [`${entry.name}@${entry.version}`, entry]));
   const instances = sectionOf(lock, major >= 9 ? 'snapshots' : 'packages');
   const holders = [
@@ -212,7 +238,7 @@ function pnpmReferences(lock: JsonObject, major: number, entries: readonly RawEn
     lock,
     ...Object.values(instances),
   ];
-  return holders.flatMap((holder) => holderReferences(holder, { major, packages }));
+  return holders.flatMap((holder) => holderReferences(holder, { major, packages, byKey }));
 }
 
 /**
@@ -224,9 +250,11 @@ export function parsePnpmLock(text: string): ReadLock {
   const lock = objectAt(parseYaml(text, { merge: true }), 'pnpm-lock.yaml');
   const major = pnpmMajor(lock);
   const snapshots = major >= 9 ? snapshotDependencies(sectionOf(lock, 'snapshots')) : null;
-  const packages = Object.entries(sectionOf(lock, 'packages'));
-  const entries = packages.map(([key, value]) => pnpmEntry(key, value, major, snapshots));
-  const all = [...entries, ...pnpmReferences(lock, major, entries)];
+  const byKey = new Map<string, RawEntry>();
+  for (const [key, value] of Object.entries(sectionOf(lock, 'packages'))) {
+    byKey.set(key, pnpmEntry(key, value, major, snapshots));
+  }
+  const all = [...byKey.values(), ...pnpmReferences(lock, major, byKey)];
   return { format: `pnpm-${major}`, entries: withDependents(all) };
 }
 
