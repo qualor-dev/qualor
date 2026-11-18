@@ -70,6 +70,27 @@ export async function syncFixesNow(db: Executor, organizationId: string): Promis
   await pullPassForward(db, syncPass(organizationId));
 }
 
+/** R18: the organisations a pass runs for: those with an enabled project or an active fix. */
+const PASS_ORGANIZATIONS = sql`
+  SELECT p.organization_id FROM project_fix_settings s
+    JOIN projects p ON p.id = s.project_id WHERE s.enabled
+  UNION
+  SELECT p.organization_id FROM dependency_fixes f
+    JOIN projects p ON p.id = f.project_id
+   WHERE f.state IN ('requested', 'preparing', 'committing', 'open')`;
+
+/**
+ * R18: whether the organisation still gets a pass (an enabled project or an active fix); a pass
+ * that ends reschedules itself only then.
+ */
+export async function fixPassWanted(db: Executor, organizationId: string): Promise<boolean> {
+  const found = await db.execute<{ wanted: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM (${PASS_ORGANIZATIONS}) o WHERE o.organization_id = ${organizationId}
+    ) AS wanted`);
+  return found.rows[0]?.wanted === true;
+}
+
 /**
  * Boot and reaping (R18): one pass at now for each organisation with an enabled project or an
  * active fix that has none queued or running. The schedule lock makes replicas that boot together
@@ -79,14 +100,7 @@ export async function ensureFixSyncScheduled(db: Db): Promise<number> {
   return db.transaction(async (tx) => {
     await lockSchedule(tx, LOCKS.fixSchedule);
     const missing = await tx.execute<{ organization_id: string }>(sql`
-      SELECT o.organization_id FROM (
-        SELECT p.organization_id FROM project_fix_settings s
-          JOIN projects p ON p.id = s.project_id WHERE s.enabled
-        UNION
-        SELECT p.organization_id FROM dependency_fixes f
-          JOIN projects p ON p.id = f.project_id
-         WHERE f.state IN ('requested', 'preparing', 'committing', 'open')
-      ) o
+      SELECT o.organization_id FROM (${PASS_ORGANIZATIONS}) o
       WHERE NOT EXISTS (
         SELECT 1 FROM jobs j
          WHERE j.queue = ${FIX_QUEUE} AND j.status IN ('queued', 'running')

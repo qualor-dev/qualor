@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { bearer } from '../../test/app';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
@@ -135,7 +135,17 @@ describe('the fix commit job on GitHub (0.16 fix MRs §6.7, B10, R14; Git Data A
     await db().update(dependencyFixes).set({ refresh: true }).where(eq(dependencyFixes.id, fixId));
     await upload(repo, await claim(repo));
   };
+  /** The queued commit and close jobs, run now; the organisation's passes are dropped first. */
   const runFixJobs = async () => {
+    await db()
+      .delete(jobs)
+      .where(
+        and(
+          eq(jobs.queue, FIX_QUEUE),
+          eq(jobs.status, 'queued'),
+          like(jobs.concurrencyKey, 'fix-sync:%'),
+        ),
+      );
     await db()
       .update(jobs)
       .set({ runAt: sql`now()` })

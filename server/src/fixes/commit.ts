@@ -75,8 +75,11 @@ async function fixOfJob(db: Db, job: FixJob, state: FixState): Promise<Loaded | 
   return found ?? null;
 }
 
-/** The fence of a job's writes: its fix, at its generation, still in the state it read. */
-const fence = (row: DependencyFixRow) =>
+/**
+ * The fence of a job's writes: its fix, at its generation, still in the state it read (the sync
+ * pass fences its writes the same way, ruling T8c).
+ */
+export const fence = (row: Pick<DependencyFixRow, 'id' | 'generation' | 'state'>) =>
   and(
     eq(dependencyFixes.id, row.id),
     eq(dependencyFixes.generation, row.generation),
@@ -154,11 +157,16 @@ const settle = (
   fencedWrite(db, row, { refresh: false, prepared: null, failure: null, ...set });
 
 /**
- * R8 (`hasOpenMr`), read from the row as it is stored now, not from the job's first read: an MR
- * adopted by its branch during the job counts (ruling T10d).
+ * R8 (`hasOpenMr`) as a statement's new state, read from the row as it is stored now, not from a
+ * job's first read (an MR adopted by its branch during the job counts, ruling T10d): `open` for a
+ * fix with an MR Qualor keeps, else `otherwise`. The sync pass ends lapsed leases and dead commits
+ * with it too.
  */
-const OPEN_WITH_MR = sql<FixState>`CASE WHEN ${dependencyFixes.mrNumber} IS NOT NULL
-  AND ${dependencyFixes.headSha} IS NOT NULL THEN 'open' ELSE 'failed' END`;
+export const openWithMrElse = (otherwise: 'failed' | 'requested') =>
+  sql<FixState>`CASE WHEN ${dependencyFixes.mrNumber} IS NOT NULL
+    AND ${dependencyFixes.headSha} IS NOT NULL THEN 'open' ELSE ${otherwise}::text END`;
+
+const OPEN_WITH_MR = openWithMrElse('failed');
 
 /**
  * The commit failed: `failed` with its failure, or (R8, ruling F7) for a fix with an MR Qualor
@@ -453,27 +461,43 @@ async function noteCloseFailure(db: Db, row: DependencyFixRow, failure: FixFailu
 }
 
 /**
- * R10, B10: the head read first; a person's head leaves the MR and the branch alone. Otherwise an
- * open MR gets the cancel comment and is closed (R29), then the branch is deleted when its head
- * is still Qualor's commit (re-read right before the delete).
+ * How {@link closeFixChange} left a fix's MR: closed by Qualor, found merged or closed by a person
+ * (`declined`), or `taken_over` (a person's head on the branch, which is kept).
  */
-async function closeCancelled(
+export type ClosedAs = 'closed' | 'merged' | 'declined' | 'taken_over';
+
+const CLOSED_AS: Readonly<Record<ChangeRequest['state'], ClosedAs>> = Object.freeze({
+  open: 'closed',
+  merged: 'merged',
+  closed: 'declined',
+});
+
+/**
+ * R10, B10, spec §6.7: the one close path of a fix's MR, for a cancel (the close job) and for a
+ * vulnerability gone from main (the sync pass). The head is read first; a person's head leaves
+ * the MR and the branch alone (`taken_over`). Otherwise an open MR gets `comment` and is closed,
+ * then the branch is deleted when its head is still Qualor's commit (re-read right before the
+ * delete; a person's push in between keeps the branch: `taken_over`).
+ */
+export async function closeFixChange(
   repo: FixRepository,
   row: DependencyFixRow,
   mrNumber: number,
-): Promise<void> {
+  comment: string,
+): Promise<ClosedAs> {
   const head = await repo.branchHead(row.branch);
-  if (head !== null && head !== row.headSha) return;
+  if (head !== null && head !== row.headSha) return 'taken_over';
   const change = await repo.readChange(mrNumber);
-  if (change.state === 'open') await repo.closeChange(mrNumber, cancelComment(repo.provider));
-  if (head !== null) await repo.deleteBranch(row.branch, head);
+  if (change.state === 'open') await repo.closeChange(mrNumber, comment);
+  const deleted = head === null ? 'gone' : await repo.deleteBranch(row.branch, head);
+  return deleted === 'taken_over' ? 'taken_over' : CLOSED_AS[change.state];
 }
 
 /**
  * The `close` job (R10): a `cancelled` fix with an MR, at the job's generation, has its MR closed
- * and its branch deleted ({@link closeCancelled}). A fix re-armed (Retry) since the cancel has a
- * new generation: the job drops quietly, and the re-armed fix's commit finds the MR still open
- * by its branch and updates it (ruling T8c).
+ * with the cancel comment (R29) and its branch deleted ({@link closeFixChange}). A fix re-armed
+ * (Retry) since the cancel has a new generation: the job drops quietly, and the re-armed fix's
+ * commit finds the MR still open by its branch and updates it (ruling T8c).
  */
 export async function runFixClose(deps: FixJobDeps, job: FixJob): Promise<void> {
   const loaded = await fixOfJob(deps.db, job, 'cancelled');
@@ -483,7 +507,7 @@ export async function runFixClose(deps: FixJobDeps, job: FixJob): Promise<void> 
   await untilMovedOn(deps, payload, () =>
     withSlot(deps, loaded.project, payload, () =>
       againstRepository(deps, loaded, payload, {
-        work: (repo) => closeCancelled(repo, loaded.row, mrNumber),
+        work: (repo) => closeFixChange(repo, loaded.row, mrNumber, cancelComment(repo.provider)),
         fail: (failure) => noteCloseFailure(deps.db, loaded.row, failure),
       }),
     ),

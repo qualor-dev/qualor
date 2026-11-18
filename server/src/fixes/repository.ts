@@ -320,7 +320,37 @@ export async function openFixRepository(
   project: ProjectRow,
   options: { signal?: AbortSignal } = {},
 ): Promise<FixRepository | { problem: FixRepositoryProblem }> {
-  const [row] = await deps.db
+  const row = await mappingOf(deps.db, project.id);
+  if (row === null) return { problem: 'scm_not_bound' };
+  if (!row.connection.fixMrsAllowed) return { problem: 'fixes_disabled' };
+  return repositoryOf(deps, row, options.signal);
+}
+
+/**
+ * R18: the project's fix repository for the sync pass, which tracks the open MRs of a project
+ * until they end even when its connection no longer allows fix MRs (B2): then `writable` is false
+ * and the pass reads only (no comment, close or branch delete). Otherwise as
+ * {@link openFixRepository}: the mapping read again, a GitHub repository bound with one request.
+ */
+export async function openTrackingRepository(
+  deps: FixScmDeps,
+  project: ProjectRow,
+): Promise<{ repo: FixRepository; writable: boolean } | { problem: FixRepositoryProblem }> {
+  const row = await mappingOf(deps.db, project.id);
+  if (row === null) return { problem: 'scm_not_bound' };
+  const repo = await repositoryOf(deps, row, undefined);
+  return 'problem' in repo ? repo : { repo, writable: row.connection.fixMrsAllowed };
+}
+
+interface Mapping {
+  ref: string;
+  mainBranch: string;
+  connection: ScmConnectionRow;
+}
+
+/** The project's repository reference, main branch and connection as stored now; null unmapped. */
+async function mappingOf(db: Db, projectId: string): Promise<Mapping | null> {
+  const [row] = await db
     .select({
       ref: projects.scmProjectRef,
       mainBranch: projects.mainBranchName,
@@ -328,10 +358,18 @@ export async function openFixRepository(
     })
     .from(projects)
     .innerJoin(scmConnections, eq(scmConnections.id, projects.scmConnectionId))
-    .where(eq(projects.id, project.id));
-  if (!row || row.ref === null) return { problem: 'scm_not_bound' };
-  if (!row.connection.fixMrsAllowed) return { problem: 'fixes_disabled' };
-  const bound = { ...deps, scm: boundTo(deps.scm, options.signal) };
+    .where(eq(projects.id, projectId));
+  if (!row || row.ref === null) return null;
+  return { ref: row.ref, mainBranch: row.mainBranch, connection: row.connection };
+}
+
+/** The repository of a mapping, its client bound to `signal` when one is given. */
+async function repositoryOf(
+  deps: FixScmDeps,
+  row: Mapping,
+  signal: AbortSignal | undefined,
+): Promise<FixRepository | { problem: FixRepositoryProblem }> {
+  const bound = { ...deps, scm: boundTo(deps.scm, signal) };
   return row.connection.provider === 'github'
     ? githubRepository(row.connection, bound, row.ref, row.mainBranch)
     : gitlabRepository(row.connection, bound, row.ref, row.mainBranch);

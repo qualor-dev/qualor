@@ -23,11 +23,11 @@ import type { JiraRunContext } from './run';
 export const AUTO_PER_PASS = 50;
 
 /** The severities at or above `min`, worst first: never `unknown` (spec §6.6). */
-const atOrAbove = (min: JiraAutoSeverity): string[] =>
+export const atOrAbove = (min: JiraAutoSeverity): string[] =>
   SEVERITIES.slice(0, SEVERITIES.indexOf(min) + 1);
 
 /** A {@link scopedRows} condition: the row is on one of the targets. */
-function onTargets(targets: readonly Target[]): SQL {
+export function onTargets(targets: readonly Target[]): SQL {
   const branchIds = targets.flatMap((t) => (t.kind === 'branch' ? [t.branchId] : []));
   const versionIds = targets.flatMap((t) => (t.kind === 'version' ? [t.versionId] : []));
   return sql`(tv.branch_id IN ${uuidList(branchIds)} OR tv.version_id IN ${uuidList(versionIds)})`;
@@ -38,9 +38,10 @@ function onTargets(targets: readonly Target[]): SQL {
  * effective-open and not ignored. New is the Vulnerabilities tab's own (`IS_NEW`: first seen after
  * its target's baseline) and at or after `since`. Severe: new, at or above `min`. Exploited: in
  * the KEV catalogue, not delisted, with CISA's `date_added` on or after the UTC day of `since` (not
- * Qualor's `listed_at`, which a refilled table sets to now), or new.
+ * Qualor's `listed_at`, which a refilled table sets to now), or new. The automatic fix mode uses
+ * it as it is (0.16 fix MRs §6.3, ruling F23).
  */
-function qualifyingRow(min: JiraAutoSeverity | null, exploited: boolean, since: Date): SQL {
+export function qualifyingRow(min: JiraAutoSeverity | null, exploited: boolean, since: Date): SQL {
   const at = sql`${since.toISOString()}::timestamptz`;
   const fresh = sql`(${IS_NEW} AND first_seen_at >= ${at})`;
   const severe =

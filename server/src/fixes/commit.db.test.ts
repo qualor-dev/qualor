@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, like, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { bearer } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab, type FakeMergeRequest } from '../../test/fake-gitlab';
@@ -145,8 +145,21 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
     await db().update(dependencyFixes).set({ refresh: true }).where(eq(dependencyFixes.id, fixId));
     await upload(repo, await claim(repo));
   };
-  /** Makes every queued fix job due now, then runs the queue until idle. */
+  /**
+   * Makes every queued commit and close job due now, then runs the queue until idle. The
+   * organisation's queued passes (a settings save queues one) are dropped first: the sync pass has
+   * tests of its own.
+   */
   const runFixJobs = async () => {
+    await db()
+      .delete(jobs)
+      .where(
+        and(
+          eq(jobs.queue, FIX_QUEUE),
+          eq(jobs.status, 'queued'),
+          like(jobs.concurrencyKey, 'fix-sync:%'),
+        ),
+      );
     await db()
       .update(jobs)
       .set({ runAt: sql`now()` })

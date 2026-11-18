@@ -73,13 +73,17 @@ interface MainRow extends Record<string, unknown> {
   kev_date_added: string | null;
 }
 
+/** Ruling T8b in SQL: a package name as a Python fix stores it (PEP 503, `normalizePythonName`). */
+export const pep503Name = (name: SQL): SQL =>
+  sql`lower(regexp_replace(${name}, '[-_.]+', '-', 'g'))`;
+
 /**
  * A {@link scopedRows} condition: the row is of the package. A Python package matches by its PEP
  * 503 name, every spelling of it (ruling T8b); any other exactly.
  */
 function ofPackage(family: FixFamily, packageName: string): SQL {
   return family === 'python'
-    ? sql`lower(regexp_replace(tv.package_name, '[-_.]+', '-', 'g')) = ${fixPackageName(family, packageName)}`
+    ? sql`${pep503Name(sql.raw('tv.package_name'))} = ${fixPackageName(family, packageName)}`
     : sql`tv.package_name = ${packageName}`;
 }
 
