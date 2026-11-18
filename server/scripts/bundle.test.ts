@@ -15,7 +15,12 @@ import { redactLongText } from '@qualor/shared';
 import { build } from 'esbuild';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../test/perf';
-import { buildPluginFileCheck, buildReviewMaskWorker, buildServer } from './bundle';
+import {
+  buildFixCheckWorker,
+  buildPluginFileCheck,
+  buildReviewMaskWorker,
+  buildServer,
+} from './bundle';
 
 describe('server bundle', () => {
   it('builds a runnable ESM file that refuses to start with bad configuration', async () => {
@@ -123,6 +128,8 @@ describe('the review mask worker bundle (6I-3)', () => {
     const outfile = path.join(dir, 'with-worker', 'main.js');
     await buildServer({ outfile });
     expect(existsSync(path.join(path.dirname(outfile), 'review-mask-worker.js'))).toBe(true);
+    // 0.16 fix MRs: the fix upload check's worker too (fixes/checker.ts).
+    expect(existsSync(path.join(path.dirname(outfile), 'fix-check-worker.js'))).toBe(true);
     expect(existsSync(path.join(path.dirname(outfile), 'main.js'))).toBe(true);
   }, 60_000);
 
@@ -180,5 +187,63 @@ describe('the review mask worker bundle (6I-3)', () => {
     expect(left.status, left.stderr).toBe(0);
     expect(JSON.parse(left.stdout)).toMatchObject({ workers: 1 });
     expect(performance.now() - started).toBeLessThan(budgetMs(8_000));
+  }, 60_000);
+});
+
+describe('the fix check worker bundle (0.16 fix MRs, rulings T3g, T3k)', () => {
+  const dir = fileURLToPath(new URL('../.tmp/bundle-test/', import.meta.url));
+
+  it('bundles the shared fix checks and nothing else of the server', async () => {
+    const outfile = path.join(dir, 'fix-worker-only', 'fix-check-worker.js');
+    const { inputs } = await buildFixCheckWorker({ outfile });
+    expect(inputs.filter((input) => input.startsWith('src/'))).toEqual([
+      'src/fixes/check-worker.ts',
+    ]);
+    expect(inputs.some((input) => input.endsWith('packages/shared/src/fix/check/upload.ts'))).toBe(
+      true,
+    );
+    expect(inputs.filter((input) => /(^|[\\/])enterprise[\\/]/.test(input))).toEqual([]);
+  }, 60_000);
+
+  it('is found by a checker that is bundled beside it, and checks an upload in it', async () => {
+    const outDir = path.join(dir, 'checker-beside-worker');
+    await buildFixCheckWorker({ outfile: path.join(outDir, 'fix-check-worker.js') });
+    // The checker as the server bundles it: its worker is looked for next to the bundle.
+    await build({
+      absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
+      entryPoints: ['src/fixes/checker.ts'],
+      outfile: path.join(outDir, 'checker.js'),
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      target: 'node22',
+      logLevel: 'warning',
+    });
+    const manifest = (range: string, extra = '') =>
+      `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }${extra}\n}\n`;
+    const job = (next: string) => ({
+      family: 'js',
+      packageName: 'qf-a',
+      targets: [],
+      files: [{ path: 'package.json', base: manifest('^1.2.5'), next }],
+    });
+    const script = `
+      import { checkUploadInWorker } from ${JSON.stringify(pathToFileURL(path.join(outDir, 'checker.js')).href)};
+      const good = await checkUploadInWorker(${JSON.stringify(job(manifest('^1.2.6')))});
+      const bad = await checkUploadInWorker(${JSON.stringify(job(manifest('^1.2.6', ',\n  "scripts": { "postinstall": "x" }')))});
+      process.stdout.write(JSON.stringify({ good, bad }));
+    `;
+    const started = performance.now();
+    const run = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    expect(run.status, run.stderr).toBe(0);
+    expect(JSON.parse(run.stdout)).toEqual({
+      good: { ok: true, additions: [] },
+      bad: { ok: false, rule: 'other_change', path: 'package.json' },
+    });
+    // Each check's worker is stopped after it: nothing keeps the process alive.
+    expect(performance.now() - started).toBeLessThan(budgetMs(15_000));
   }, 60_000);
 });

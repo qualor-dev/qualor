@@ -93,6 +93,9 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'POST /projects/:id/fixes': 'issue.triage',
   'POST /fixes/:id/retry': 'issue.triage',
   'DELETE /fixes/:id': 'issue.triage',
+  // 0.16 fix MRs B1: the fix job's claim and upload, project analysis tokens only.
+  'POST /projects/fixes/claim': 'project.analyze',
+  'PUT /fixes/:id/result': 'project.analyze',
   'GET /projects/:id/jira': 'project.read',
   'PUT /projects/:id/jira': 'project.settings',
   'DELETE /projects/:id/jira': 'project.settings',
@@ -211,6 +214,7 @@ export const GUARDED_HELPERS = [
   'aiRequestFor',
   'jiraLinkFor',
   'dependencyFixFor',
+  'dependencyFixForUpload',
   'gateFor',
   'profileFor',
   'connectionFor',
@@ -225,6 +229,7 @@ export const GUARDED_HELPERS = [
 export const IMPLICIT_PERMISSIONS: Readonly<Record<string, Permission>> = Object.freeze({
   projectForUpload: 'project.analyze',
   projectForExport: 'project.read',
+  dependencyFixForUpload: 'project.analyze',
   analysisForPrincipal: 'project.read',
   connectionFor: 'org.scm.manage',
   webhookFor: 'org.webhooks.manage',

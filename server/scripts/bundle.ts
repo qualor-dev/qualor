@@ -18,11 +18,13 @@ function externalDependencies(): string[] {
 
 /** The file the review's masker starts its worker thread from, next to the server bundle. */
 export const REVIEW_MASK_WORKER = 'review-mask-worker.js';
+/** The file the fix upload check starts its worker thread from (fixes/checker.ts), next to it. */
+export const FIX_CHECK_WORKER = 'fix-check-worker.js';
 
 /**
- * Bundles src/main.ts, and the worker thread of the review's masker (`buildReviewMaskWorker`) next
- * to it, where the masker looks for it; npm dependencies stay external, workspace packages are
- * inlined. Returns the bundle's inputs (esbuild's metafile, relative to server/) for the boundary
+ * Bundles src/main.ts, and next to it the worker threads of the review's masker
+ * (`buildReviewMaskWorker`) and of the fix upload check (`buildFixCheckWorker`), where each is
+ * looked for; npm dependencies stay external, workspace packages are inlined. Returns the bundle's inputs (esbuild's metafile, relative to server/) for the boundary
  * test (enterprise.md §12).
  *
  * `__QUALOR_TEST_LICENSE_KEYS__` is always defined (enterprise.md §14.2): as the test keys in a
@@ -53,9 +55,9 @@ export async function buildServer(
     },
     logLevel: 'warning',
   });
-  await buildReviewMaskWorker({
-    outfile: path.join(path.dirname(path.resolve(serverRoot, outfile)), REVIEW_MASK_WORKER),
-  });
+  const outDir = path.dirname(path.resolve(serverRoot, outfile));
+  await buildReviewMaskWorker({ outfile: path.join(outDir, REVIEW_MASK_WORKER) });
+  await buildFixCheckWorker({ outfile: path.join(outDir, FIX_CHECK_WORKER) });
   return { inputs: Object.keys(result.metafile.inputs) };
 }
 
@@ -72,6 +74,31 @@ export async function buildReviewMaskWorker(
     absWorkingDir: serverRoot,
     entryPoints: ['src/review/mask-worker.ts'],
     outfile: options.outfile ?? `dist/${REVIEW_MASK_WORKER}`,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+    sourcemap: true,
+    metafile: true,
+    external: externalDependencies(),
+    logLevel: 'warning',
+  });
+  return { inputs: Object.keys(result.metafile.inputs) };
+}
+
+/**
+ * `dist/fix-check-worker.js` (0.16 fix MRs, rulings T3g, T3k): the worker thread a fix upload is
+ * checked by content in (src/fixes/check-worker.ts), so that reading a lockfile of up to 32 MiB
+ * never stops the server. The checker (src/fixes/checker.ts) starts it from the directory of the
+ * server bundle. It bundles the shared fix checks and nothing else of the server.
+ */
+export async function buildFixCheckWorker(
+  options: { outfile?: string } = {},
+): Promise<{ inputs: string[] }> {
+  const result = await build({
+    absWorkingDir: serverRoot,
+    entryPoints: ['src/fixes/check-worker.ts'],
+    outfile: options.outfile ?? `dist/${FIX_CHECK_WORKER}`,
     bundle: true,
     platform: 'node',
     format: 'esm',

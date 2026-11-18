@@ -23,7 +23,8 @@ export interface ProblemExtensions {
   /**
    * 422 LICENSE_INVALID: the verifier's reason code (enterprise.md §4, §9). 422 VALIDATION_FAILED
    * of **Read metadata** (SAML): what failed (sso/saml.ts SAML_METADATA_PROBLEM_CODES). 502
-   * MAIL_SEND_FAILED: why the test message was not sent (mail/transport.ts MAIL_ERROR_CODES).
+   * MAIL_SEND_FAILED: why the test message was not sent (mail/transport.ts MAIL_ERROR_CODES). 422
+   * UPLOAD_REFUSED: the first rule a fix upload fails (fixes/result.ts UPLOAD_RULES).
    */
   reason?: string;
   /** 400 INVALID_LICENSE_ID: the policy entries that are not SPDX ids or terms (6M §5). */

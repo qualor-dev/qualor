@@ -17426,6 +17426,284 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/fixes/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The fix job's claim: up to `max` requested fixes of the job's families (and open MRs to refresh), oldest first, each `preparing` with a 30-minute lease whose token is shown only here. A project whose fixes cannot run answers no items and `reason`. A project analysis token only */
+        post: {
+            parameters: {
+                query: {
+                    projectKey: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The families whose package managers the job can serve completely */
+                        families: ("js" | "go" | "maven" | "python")[];
+                        /**
+                         * @description Fixes to hand out at most; the CLI claims one per call (R4)
+                         * @default 10
+                         */
+                        max?: number;
+                        /** @description The checked-out branch; anything but the project's main branch is 409 */
+                        branch: string;
+                        /** @description The checked-out commit; recorded in the log only (ruling F12) */
+                        revision?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                generation: number;
+                                leaseToken: string;
+                                /** @enum {string} */
+                                family: "js" | "go" | "maven" | "python";
+                                packageName: string;
+                                installedVersions: string[];
+                                vulnerabilities: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    severity: "critical" | "high" | "medium" | "low" | "unknown";
+                                    title: string | null;
+                                    url: string | null;
+                                    installedVersions: string[];
+                                    fixedVersions: string[];
+                                }[];
+                                mainBranch: string;
+                                declinedTarget: string | null;
+                            }[];
+                            reason: ("disabled" | "not_allowed" | "not_bound" | "monitoring_off") | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description PROJECT_NOT_FOUND: no such project, or the token is of another project */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description NOT_MAIN_BRANCH: `branch` is not the project's main branch */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/fixes/{id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** The fix job's result for a claimed fix: its files (checked by path, target, base and content, then committed by a background job), a failure, no fix, or the claim handed back. A project analysis token only */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        generation: number;
+                        leaseToken: string;
+                        /** @description The main branch's head the job prepared the fix on */
+                        baseSha: string;
+                        /** @description The installed version whose target is the greatest (R30) */
+                        installedVersion: string;
+                        /** @description The greatest target (R30) */
+                        targetVersion: string;
+                        targets: {
+                            installed: string;
+                            target: string;
+                            lockfile: string;
+                        }[];
+                        files: {
+                            path: string;
+                            /** @description The whole new file, base64 (RFC 4648 §4, padded) */
+                            content: string;
+                        }[];
+                        lockfiles: {
+                            path: string;
+                            /** @enum {string} */
+                            relation: "direct" | "transitive";
+                            mechanism: string | null;
+                            dependents: string[];
+                        }[];
+                        unfixable: string[];
+                    } | {
+                        generation: number;
+                        leaseToken: string;
+                        failure: {
+                            /** @enum {string} */
+                            code: "manifest_unsupported" | "missing_tool" | "package_manager" | "verify_failed" | "unplanned_change" | "timeout" | "upload_refused" | "scm_permission" | "scm_refused" | "scm_unavailable" | "scm_not_bound" | "fixes_disabled";
+                            message: string;
+                        };
+                    } | {
+                        generation: number;
+                        leaseToken: string;
+                        noFix: {
+                            /** @enum {string} */
+                            reason: "no_fixed_version" | "declined" | "several_lines" | "not_installed" | "unresolvable";
+                            message: string;
+                        };
+                    } | {
+                        generation: number;
+                        leaseToken: string;
+                        /** @enum {boolean} */
+                        released: true;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description NOT_FOUND: no fix of the token's project has this id */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (both leave the fix `preparing`) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BODY_TOO_LARGE: a body over 50331648 bytes */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description UPLOAD_REFUSED: the files break a rule, the fix is now failed (upload_refused); the title is the rule’s fixed text, `reason` the rule, `detail` the file; VALIDATION_FAILED */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description SCM_UNAVAILABLE: the repository could not be read to check the upload; the fix stays `preparing`, try again after Retry-After */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/organizations/{id}/jira": {
         parameters: {
             query?: never;
@@ -18875,7 +19153,7 @@ export interface components {
             /** @description Stable machine-readable error code */
             code: string;
             detail?: string;
-            /** @description LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). MAIL_SEND_FAILED of POST /system/mail/test: why the test message was not sent (connection, auth, rejected, timeout, config). Map the code, not the text */
+            /** @description LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). MAIL_SEND_FAILED of POST /system/mail/test: why the test message was not sent (connection, auth, rejected, timeout, config). UPLOAD_REFUSED of PUT /fixes/{id}/result: the first rule the upload fails (unparsable, other_change, new_dependency, bad_spec, new_source, source_kind, missing_integrity, below_target, go_directive, path_not_allowed, duplicate_path, too_many_files, too_large, not_utf8, new_file, base_not_on_main, base_outdated, no_targets, target_mismatch, not_vulnerable), its file in detail. Map the code, not the text */
             reason?: string;
             /** @description INVALID_LICENSE_ID: `invalid` lists the licence policy entries that are not SPDX licence ids or "id WITH exception" terms, as sent */
             details?: {

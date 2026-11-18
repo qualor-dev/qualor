@@ -97,7 +97,7 @@ way.
    is shown only once.
 
 For CI, a [project analysis token](./users-projects-tokens.md#project-analysis-tokens) is safer: it
-can only upload to, and read exports of, its own project.
+works on its own project only. It uploads analyses, reads exports and runs fix jobs there.
 
 ### 4. Run a first scan locally
 

@@ -81,7 +81,15 @@ function stateFields(state: string | undefined): Partial<typeof dependencyFixes.
         leaseUntil: new Date(Date.now() + 30 * 60_000),
       };
     case 'committing':
-      return { prepared: { baseSha: 'b'.repeat(40), files: [], lockfiles: [], unfixable: [] } };
+      return {
+        prepared: {
+          baseSha: 'b'.repeat(40),
+          files: [],
+          lockfiles: [],
+          unfixable: [],
+          additions: [],
+        },
+      };
     case 'open':
       return { mrNumber: 12, mrUrl: 'https://scm.example/mr/12', headSha: 'c'.repeat(40) };
     default:

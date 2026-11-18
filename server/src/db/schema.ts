@@ -106,6 +106,16 @@ export interface FixPreparedValue {
     dependents: string[];
   }[];
   unfixable: string[];
+  /**
+   * Ruling T3i: the entries each uploaded lockfile adds (by slot, name and version; `go.sum`
+   * lines too, none for Maven), which the MR body lists so a forged dependency edge is visible.
+   */
+  additions: FixLockfileAdditions[];
+}
+/** The new entries of one uploaded lockfile (ruling T3i). */
+export interface FixLockfileAdditions {
+  path: string;
+  entries: { slot: string | null; name: string; version: string }[];
 }
 export interface FieldIssue {
   path: string;

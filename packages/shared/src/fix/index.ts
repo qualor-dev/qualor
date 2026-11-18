@@ -18,3 +18,4 @@ export * from './check/go';
 export * from './check/maven';
 export * from './check/python';
 export * from './check/upload';
+export * from './api';

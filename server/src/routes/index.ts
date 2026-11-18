@@ -15,6 +15,7 @@ import { gitlabWebhookRoutes } from './gitlab-webhooks';
 import { issueRoutes } from './issues';
 import { issueStatusImportRoutes } from './issue-status-import';
 import { licenseRoutes } from './license';
+import { fixJobRoutes } from './fix-jobs';
 import { fixSettingsRoutes } from './fix-settings';
 import { fixRoutes } from './fixes';
 import { jiraRoutes } from './jira';
@@ -101,6 +102,8 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(licensePolicyRoutes, { prefix: '/api/v0', deps });
   await app.register(fixSettingsRoutes, { prefix: '/api/v0', deps });
   await app.register(fixRoutes, { prefix: '/api/v0', deps });
+  // Its own plugin: the result route's body limit and the SCM runtime stay in its context.
+  await app.register(fixJobRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraProjectRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraLinkRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });

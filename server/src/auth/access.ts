@@ -34,11 +34,28 @@ export function requireUser(request: FastifyRequest, scope: AccessScope = 'read'
   if (principal.kind === 'project') {
     throw forbidden(
       'TOKEN_NOT_ALLOWED',
-      "Project analysis tokens can only upload and read analyses, upload SBOMs and download their project's SBOM and VEX",
+      "Project analysis tokens can only upload and read analyses, upload SBOMs, download their project's SBOM and VEX, and claim and upload their project's fixes",
     );
   }
   if (!hasScope(principal, scope))
     throw forbidden('INSUFFICIENT_SCOPE', `This token lacks the "${scope}" scope`);
+  return principal;
+}
+
+/**
+ * 0.16 fix MRs B1: the fix claim and result routes take a project analysis token only; a personal
+ * token (even with `analysis:write`), an OAuth grant and a session are 403 `TOKEN_NOT_ALLOWED`.
+ */
+export function requireProjectToken(
+  request: FastifyRequest,
+): Extract<Principal, { kind: 'project' }> {
+  const principal = requirePrincipal(request);
+  if (principal.kind !== 'project') {
+    throw forbidden(
+      'TOKEN_NOT_ALLOWED',
+      'Only a project analysis token can claim and upload fixes',
+    );
+  }
   return principal;
 }
 

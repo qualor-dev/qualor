@@ -117,7 +117,13 @@ describe('the fix tables (0.16 fix MRs spec §7, migration 0033_fix_mrs)', () =>
       await t.db.insert(dependencyFixes).values(
         fix(project.id, {
           state: 'committing',
-          prepared: { baseSha: 'a'.repeat(40), files: [], lockfiles: [], unfixable: [] },
+          prepared: {
+            baseSha: 'a'.repeat(40),
+            files: [],
+            lockfiles: [],
+            unfixable: [],
+            additions: [],
+          },
         }),
       );
       await t.db

@@ -343,7 +343,7 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
         mrUrl: 'https://scm.example/mr/7',
         headSha: HEAD,
         baseSha: BASE,
-        prepared: { baseSha: BASE, files: [], lockfiles: [], unfixable: [] },
+        prepared: { baseSha: BASE, files: [], lockfiles: [], unfixable: [], additions: [] },
         targetVersion: '1.2.6',
         declinedTarget: state === 'declined' ? '1.2.6' : null,
       });

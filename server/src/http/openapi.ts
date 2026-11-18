@@ -16,7 +16,7 @@ const PROBLEM_SCHEMA = {
     reason: {
       type: 'string',
       description:
-        'LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). MAIL_SEND_FAILED of POST /system/mail/test: why the test message was not sent (connection, auth, rejected, timeout, config). Map the code, not the text',
+        'LICENSE_INVALID: why the key was rejected (malformed, unknown-key, bad-signature, bad-payload, revoked, not-yet-valid). VALIDATION_FAILED of POST /ee/sso/connections/{id}/saml/metadata: what failed (a fetch.<reason> code of the connection Test, or config_invalid, metadata.no_url, metadata.not_saml, metadata.incomplete, metadata.sso_url). MAIL_SEND_FAILED of POST /system/mail/test: why the test message was not sent (connection, auth, rejected, timeout, config). UPLOAD_REFUSED of PUT /fixes/{id}/result: the first rule the upload fails (unparsable, other_change, new_dependency, bad_spec, new_source, source_kind, missing_integrity, below_target, go_directive, path_not_allowed, duplicate_path, too_many_files, too_large, not_utf8, new_file, base_not_on_main, base_outdated, no_targets, target_mismatch, not_vulnerable), its file in detail. Map the code, not the text',
     },
     details: {
       type: 'object',
