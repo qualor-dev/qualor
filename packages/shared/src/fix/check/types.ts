@@ -70,7 +70,12 @@ export interface LockEntry {
   source: string | null;
   kind: 'registry' | 'git' | 'file' | 'link' | 'tarball' | 'path' | 'other';
   integrity: string | null;
-  /** The names of the packages that depend on this package's name, sorted. */
+  /**
+   * The slots this entry depends on, sorted (Ruling T3j: an existing entry may not gain or lose
+   * any); empty for a format without a dependency graph.
+   */
+  dependencies: string[];
+  /** The names of the packages that depend on this entry's slot (or name), sorted. */
   dependents: string[];
 }
 

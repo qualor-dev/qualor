@@ -5,7 +5,7 @@
  * {@link lockfileBelowTarget}. The readers throw on a file they cannot read;
  * {@link checkJsLockfile} answers `unparsable`.
  */
-import { checkLockEntries, lockfileBelowTarget } from './lock-entries';
+import { checkLockEntries, lockfileBelowTarget, newLockEntries } from './lock-entries';
 import { parseNpmLock } from './lock-npm';
 import { parsePnpmLock } from './lock-pnpm';
 import type { ReadLock } from './lock-read';
@@ -62,6 +62,20 @@ function readBoth(
   }
 }
 
+function readerFor(path: string): ((text: string) => ReadLock) | undefined {
+  return READERS.get(path.slice(path.lastIndexOf('/') + 1));
+}
+
+/**
+ * Ruling T3i: the entries a JS lockfile change adds, each with its slot, name and version, for the
+ * MR body; null for a file that is not a JS lockfile or cannot be read in one format.
+ */
+export function jsLockfileAdditions(change: FixFileChange): LockEntry[] | null {
+  const read = readerFor(change.path);
+  const both = read === undefined ? null : readBoth(read, change);
+  return both === null ? null : newLockEntries(both[0], both[1]);
+}
+
 /**
  * B1 for a JS lockfile: both sides are read in one format (`unparsable` otherwise), every new
  * entry passes {@link checkLockEntries} (the npm and Yarn public registries allowed; integrity
@@ -69,7 +83,7 @@ function readBoth(
  * package's versions reach their targets in this lockfile (`below_target`).
  */
 export function checkJsLockfile(change: FixFileChange, ctx: FixCheckContext): FixCheckResult {
-  const read = READERS.get(change.path.slice(change.path.lastIndexOf('/') + 1));
+  const read = readerFor(change.path);
   if (read === undefined) return fixRefused('other_change', change.path);
   const both = readBoth(read, change);
   if (both === null) return fixRefused('unparsable', change.path);

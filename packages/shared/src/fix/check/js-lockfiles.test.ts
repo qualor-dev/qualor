@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { checkJsLockfile, readNpmLock, readPnpmLock, readYarnLock } from './js-lockfiles';
+import {
+  checkJsLockfile,
+  jsLockfileAdditions,
+  readNpmLock,
+  readPnpmLock,
+  readYarnLock,
+} from './js-lockfiles';
 import type { FixCheckContext, FixFileChange, LockEntry } from './types';
 
 /** The `(name, version, kind)`, alias slot and dependents of each entry, sorted. */
@@ -105,8 +111,11 @@ describe('readNpmLock', () => {
       source: `${NPM}/qf-a/-/qf-a-1.2.5.tgz`,
       kind: 'registry',
       integrity: 'sha512-a1.2.5',
+      dependencies: [],
       dependents: ['qf-b'],
     });
+    const qfB = readNpmLock(NPM_V3_BASE).find((e) => e.name === 'qf-b');
+    expect(qfB?.dependencies).toEqual(['qf-a']);
   });
 
   it('reads the kind of each v3 entry: nested, alias, link, workspace, git, file and tarball', () => {
@@ -1073,6 +1082,8 @@ describe('fix round 1: YAML in linear time (I1)', () => {
 
 describe('fix round 1: new entries are reachable from the package (Ruling T3e)', () => {
   const refused = (path: string) => ({ ok: false, rule: 'new_dependency', path });
+  // An existing package that gains a dependency is refused first, by Ruling T3j.
+  const changedParent = (path: string) => ({ ok: false, rule: 'other_change', path });
 
   it('npm: refuses an unrelated new package, or one only an unrelated package depends on', () => {
     const evil = { 'node_modules/evil': evilNpm('1.0.0') };
@@ -1085,7 +1096,9 @@ describe('fix round 1: new entries are reachable from the package (Ruling T3e)',
       dependencies: { 'qf-a': '^1.2.0', evil: '^1.0.0' },
     };
     const byQfB = npmV3(npmQfA('1.2.6'), { 'node_modules/qf-b': qfB, ...evil });
-    expect(check('package-lock.json', NPM_V3_BASE, byQfB)).toEqual(refused('package-lock.json'));
+    expect(check('package-lock.json', NPM_V3_BASE, byQfB)).toEqual(
+      changedParent('package-lock.json'),
+    );
   });
 
   it('npm: accepts a new dependency of the package’s new version', () => {
@@ -1108,7 +1121,9 @@ describe('fix round 1: new entries are reachable from the package (Ruling T3e)',
     const alone = pnpmV9('1.2.6', ...evilPnpm);
     expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), alone)).toEqual(refused('pnpm-lock.yaml'));
     const byQfB = alone.replace('      qf-a: 1.2.6\n', '      qf-a: 1.2.6\n      evil: 1.0.0\n');
-    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), byQfB)).toEqual(refused('pnpm-lock.yaml'));
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), byQfB)).toEqual(
+      changedParent('pnpm-lock.yaml'),
+    );
   });
 
   it('pnpm: accepts a new dependency of the package’s new version', () => {
@@ -1134,7 +1149,7 @@ evil@^1.0.0:
       '    "@scope/qf-c" "^3.0.0"\n',
       '    "@scope/qf-c" "^3.0.0"\n    evil "^1.0.0"\n',
     );
-    expect(check('yarn.lock', yarnClassic('1.2.5'), byQfB)).toEqual(refused('yarn.lock'));
+    expect(check('yarn.lock', yarnClassic('1.2.5'), byQfB)).toEqual(changedParent('yarn.lock'));
   });
 
   it('Yarn classic: accepts a new dependency of the package’s new version', () => {
@@ -1165,7 +1180,7 @@ qf-x@^1.0.0:
       '    qf-a: "npm:^1.2.0"\n',
       '    qf-a: "npm:^1.2.0"\n    evil: "npm:^1.0.0"\n',
     );
-    expect(check('yarn.lock', berry('1.2.5'), byQfB)).toEqual(refused('yarn.lock'));
+    expect(check('yarn.lock', berry('1.2.5'), byQfB)).toEqual(changedParent('yarn.lock'));
   });
 
   it('Berry: accepts a new dependency of the package’s new version', () => {
@@ -1174,5 +1189,143 @@ qf-x@^1.0.0:
       '  dependencies:\n    qf-x: "npm:^1.0.0"\n  checksum: 10c0/a1.2.6\n',
     );
     expect(check('yarn.lock', berry('1.2.5'), next)).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 1: existing entries keep their dependency names (Ruling T3j)', () => {
+  const otherChange = (path: string) => ({ ok: false, rule: 'other_change', path });
+
+  it('npm: refuses an existing dependency of the package that gains a new dependency', () => {
+    const qfX = (dependencies: Record<string, string>) => ({
+      version: '1.0.0',
+      resolved: `${NPM}/qf-x/-/qf-x-1.0.0.tgz`,
+      integrity: 'sha512-x',
+      dependencies,
+    });
+    const lock = (a: string, xDeps: Record<string, string> = {}, extra = {}) =>
+      npmV3(npmQfA(a, { dependencies: { 'qf-x': '^1.0.0' } }), {
+        'node_modules/qf-x': qfX(xDeps),
+        ...extra,
+      });
+    const evil = lock('1.2.6', { evil: '^1.0.0' }, { 'node_modules/evil': evilNpm('1.0.0') });
+    expect(check('package-lock.json', lock('1.2.5'), evil)).toEqual(
+      otherChange('package-lock.json'),
+    );
+    expect(check('package-lock.json', lock('1.2.5'), lock('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('pnpm: refuses an existing dependency of the package that gains a new dependency', () => {
+    const lock = (a: string, xSnapshot: string, extra = ['', '']) =>
+      pnpmV9(
+        a,
+        `\n  qf-x@1.0.0:\n    resolution: {integrity: sha512-x}\n${extra[0]}`,
+        `\n  qf-x@1.0.0:${xSnapshot}\n${extra[1]}`,
+      ).replace(`  qf-a@${a}: {}\n`, `  qf-a@${a}:\n    dependencies:\n      qf-x: 1.0.0\n`);
+    const evilPackage = '\n  evil@1.0.0:\n    resolution: {integrity: sha512-e}\n';
+    const evil = lock('1.2.6', '\n    dependencies:\n      evil: 1.0.0', [
+      evilPackage,
+      '\n  evil@1.0.0: {}\n',
+    ]);
+    expect(check('pnpm-lock.yaml', lock('1.2.5', ' {}'), evil)).toEqual(
+      otherChange('pnpm-lock.yaml'),
+    );
+    expect(check('pnpm-lock.yaml', lock('1.2.5', ' {}'), lock('1.2.6', ' {}'))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('Yarn classic: refuses an existing dependency of the package that gains a new dependency', () => {
+    const lock = (a: string, xDeps = '') => `${yarnClassic(a)}  dependencies:
+    qf-x "^1.0.0"
+
+qf-x@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/qf-x/-/qf-x-1.0.0.tgz#1"
+  integrity sha512-x
+${xDeps}`;
+    const evil = `${lock('1.2.6', '  dependencies:\n    evil "^1.0.0"\n')}
+evil@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/evil/-/evil-1.0.0.tgz#1"
+  integrity sha512-e
+`;
+    expect(check('yarn.lock', lock('1.2.5'), evil)).toEqual(otherChange('yarn.lock'));
+    expect(check('yarn.lock', lock('1.2.5'), lock('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('Berry: refuses an existing dependency of the package that gains a new dependency', () => {
+    const entry = (name: string, deps = '') => `
+"${name}@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "${name}@npm:1.0.0"
+${deps}  checksum: 10c0/${name}
+  languageName: node
+  linkType: hard
+`;
+    const lock = (a: string, xDeps = '', extra = '') =>
+      berry(a, undefined, entry('qf-x', xDeps) + extra).replace(
+        `  checksum: 10c0/a${a}\n`,
+        `  dependencies:\n    qf-x: "npm:^1.0.0"\n  checksum: 10c0/a${a}\n`,
+      );
+    const evil = lock('1.2.6', '  dependencies:\n    evil: "npm:^1.0.0"\n', entry('evil'));
+    expect(check('yarn.lock', lock('1.2.5'), evil)).toEqual(otherChange('yarn.lock'));
+    expect(check('yarn.lock', lock('1.2.5'), lock('1.2.6'))).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 1: unknown references fail closed', () => {
+  it('pnpm: reads a reference with an @ that names no package as an alias', () => {
+    const next = pnpmV9('1.2.6').replace(
+      '        version: 2.0.0\n',
+      '        version: git+ssh://git@evil.example/qf-b.git\n',
+    );
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), next)).toMatchObject({ rule: 'source_kind' });
+    const kept = (v: string) =>
+      pnpmV9(v).replace(
+        '        version: 2.0.0\n',
+        '        version: git+ssh://git@x.example/qf-b.git\n',
+      );
+    expect(check('pnpm-lock.yaml', kept('1.2.5'), kept('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('Yarn classic: reads npm:<name> without a range as an alias of that name', () => {
+    const alias = (slot: string, name: string, resolvedName: string, integrity: string) => `
+"${slot}@npm:${name}":
+  version "1.2.6"
+  resolved "https://registry.yarnpkg.com/${resolvedName}/-/${resolvedName}-1.2.6.tgz#1"
+  integrity ${integrity}
+`;
+    const evil = yarnClassic('1.2.6') + alias('qf-a', 'evil', 'qf-a', 'sha512-a1.2.6');
+    expect(check('yarn.lock', yarnClassic('1.2.5'), evil)).toMatchObject({ rule: 'source_kind' });
+    const kept = alias('qf-alias', 'qf-d', 'qf-d', 'sha512-d');
+    expect(readYarnLock(yarnClassic('1.2.5') + kept).find((e) => e.name === 'qf-d')).toMatchObject({
+      slot: 'qf-alias',
+      kind: 'registry',
+    });
+    expect(check('yarn.lock', yarnClassic('1.2.5') + kept, yarnClassic('1.2.6') + kept)).toEqual({
+      ok: true,
+    });
+  });
+});
+
+describe('jsLockfileAdditions (Ruling T3i)', () => {
+  it('lists the entries a lockfile change adds, and null for an unreadable change', () => {
+    const qfX = {
+      version: '1.0.0',
+      resolved: `${NPM}/qf-x/-/qf-x-1.0.0.tgz`,
+      integrity: 'sha512-x',
+    };
+    const next = npmV3(npmQfA('1.2.6', { dependencies: { 'qf-x': '^1.0.0' } }), {
+      'node_modules/qf-x': qfX,
+    });
+    const added = jsLockfileAdditions({ path: 'package-lock.json', base: NPM_V3_BASE, next });
+    expect(added?.map((e) => [e.slot, e.name, e.version])).toEqual([
+      [undefined, 'qf-a', '1.2.6'],
+      [undefined, 'qf-x', '1.0.0'],
+    ]);
+    expect(
+      jsLockfileAdditions({ path: 'package-lock.json', base: NPM_V3_BASE, next: '{' }),
+    ).toBeNull();
+    expect(jsLockfileAdditions({ path: 'go.sum', base: '', next: '' })).toBeNull();
   });
 });

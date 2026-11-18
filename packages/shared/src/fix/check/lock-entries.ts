@@ -153,24 +153,64 @@ function reachableNames(entries: readonly LockEntry[], packageName: string): Set
 }
 
 /**
+ * Ruling T3i: the entries of `next` that the base does not have (by identity: slot, name,
+ * version, source, kind and integrity), in `next` order. The MR body lists them.
+ */
+export function newLockEntries(
+  base: readonly LockEntry[],
+  next: readonly LockEntry[],
+): LockEntry[] {
+  const known = new Set(base.map(entryKey));
+  return next.filter((entry) => !known.has(entryKey(entry)));
+}
+
+function isPackageEntry(entry: LockEntry, packageName: string): boolean {
+  return entry.name === packageName || entry.slot === packageName;
+}
+
+function dependencyKey(entry: LockEntry): string {
+  return JSON.stringify([...new Set(entry.dependencies)].sort((a, b) => a.localeCompare(b)));
+}
+
+/**
+ * Ruling T3j: an entry the base already has, other than the package's own, keeps the names it
+ * depends on, so a fix cannot hang a new dependency on an existing package (which would make it
+ * reachable). A parent of the package keeps the package's name, so pins stay possible.
+ */
+function dependenciesChanged(
+  base: readonly LockEntry[],
+  next: readonly LockEntry[],
+  packageName: string,
+): boolean {
+  const before = new Map(base.map((entry) => [entryKey(entry), dependencyKey(entry)]));
+  return next.some((entry) => {
+    const was = isPackageEntry(entry, packageName) ? undefined : before.get(entryKey(entry));
+    return was !== undefined && was !== dependencyKey(entry);
+  });
+}
+
+/**
  * B1 for lockfiles. Every new entry is a registry entry (`source_kind`) and no alias the base did
  * not have (`source_kind`), whose source is null or a URL on an origin of the base's registry
  * entries or a public registry of the format (`new_source`), with an integrity hash where the
  * format has them (`missing_integrity`); the first failing new entry, in `next` order, names the
- * rule. Then, with `reachableOnly`, every new entry must be reachable from the package
- * (`new_dependency`, Ruling T3e).
+ * rule. Then an existing entry, other than the package's own, may not change the names it
+ * depends on (`other_change`, Ruling T3j), and, with `reachableOnly`, every new entry must be
+ * reachable from the package (`new_dependency`, Ruling T3e).
  */
 export function checkLockEntries(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
   ctx: FixCheckContext & LockCheckOptions,
 ): FixCheckResult {
-  const known = new Set(base.map(entryKey));
-  const added = next.filter((entry) => !known.has(entryKey(entry)));
+  const added = newLockEntries(base, next);
   const facts = baseFacts(base, ctx);
   for (const entry of added) {
     const rule = newEntryRule(entry, facts);
     if (rule !== null) return fixRefused(rule, ctx.lockfile);
+  }
+  if (dependenciesChanged(base, next, ctx.packageName)) {
+    return fixRefused('other_change', ctx.lockfile);
   }
   if (ctx.reachableOnly) {
     const reached = reachableNames(next, ctx.packageName);
@@ -251,7 +291,7 @@ export function belowTarget(
 
 /** The versions of the package, and of whatever its slot holds (fix round 1, C1). */
 function packageVersions(entries: readonly LockEntry[], packageName: string): string[] {
-  const own = entries.filter((e) => e.name === packageName || e.slot === packageName);
+  const own = entries.filter((e) => isPackageEntry(e, packageName));
   return [...new Set(own.map((e) => e.version))];
 }
 

@@ -1,19 +1,13 @@
 /**
- * What the JS lockfile readers share: entries before their dependents are known, dependency
- * edges, source kinds and the registry tarball rule. A reader throws on a file it cannot read;
- * `checkJsLockfile` answers `unparsable` instead.
+ * What the JS lockfile readers share: entries before their dependents are known, source kinds
+ * and the registry tarball rule. A reader throws on a file it cannot read; `checkJsLockfile`
+ * answers `unparsable` instead.
  */
 import type { LockEntry, LockEntryKind } from './types';
 import { isObject, own, parseUrl, type JsonObject } from './values';
 
-/** An entry before its dependents are known. */
+/** An entry before its dependents are known; `dependencies` are the slots it depends on. */
 export type RawEntry = Omit<LockEntry, 'dependents'>;
-
-/** `from` (a package name) depends on each slot named in `to`. */
-export interface Edge {
-  from: string;
-  to: readonly string[];
-}
 
 /** A lockfile read: its format (manager and major version, fix round 1 C4) and its entries. */
 export interface ReadLock {
@@ -50,30 +44,39 @@ export function inSlot(entry: RawEntry, slot: string): RawEntry {
   return slot === entry.name ? entry : { ...entry, slot };
 }
 
+function sorted(names: Iterable<string>): string[] {
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+/** The identity `checkLockEntries` compares entries by. */
+function identityOf({ slot, name, version, source, kind, integrity }: RawEntry): string {
+  return JSON.stringify([slot, name, version, source, kind, integrity]);
+}
+
 /**
- * Each entry gets the sorted names of the packages that depend on its slot (its name when it has
- * none); duplicate entries go.
+ * Entries with one identity become one, with the union of their dependencies (Ruling T3j compares
+ * those per identity, so a second copy cannot hide an added dependency). Each then gets the sorted
+ * names of the packages that depend on its slot (its name when it has none).
  */
-export function withDependents(raw: readonly RawEntry[], edges: readonly Edge[]): LockEntry[] {
-  const dependents = new Map<string, Set<string>>();
-  for (const { from, to } of edges) {
-    for (const slot of to) {
-      const names = dependents.get(slot) ?? new Set<string>();
-      names.add(from);
-      dependents.set(slot, names);
-    }
-  }
-  const seen = new Set<string>();
-  const entries: LockEntry[] = [];
+export function withDependents(raw: readonly RawEntry[]): LockEntry[] {
+  const dependents = new Map<string, string[]>();
+  const merged = new Map<string, { entry: RawEntry; dependencies: string[] }>();
   for (const entry of raw) {
-    const { slot, name, version, source, kind, integrity } = entry;
-    const key = JSON.stringify([slot, name, version, source, kind, integrity]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const names = [...(dependents.get(slot ?? name) ?? [])].sort((a, b) => a.localeCompare(b));
-    entries.push({ ...entry, dependents: names });
+    for (const slot of entry.dependencies) {
+      const names = dependents.get(slot);
+      if (names === undefined) dependents.set(slot, [entry.name]);
+      else names.push(entry.name);
+    }
+    const key = identityOf(entry);
+    const known = merged.get(key);
+    if (known === undefined) merged.set(key, { entry, dependencies: [...entry.dependencies] });
+    else known.dependencies.push(...entry.dependencies);
   }
-  return entries;
+  return [...merged.values()].map(({ entry, dependencies }) => ({
+    ...entry,
+    dependencies: sorted(dependencies),
+    dependents: sorted(dependents.get(entry.slot ?? entry.name) ?? []),
+  }));
 }
 
 /** `name@range`, the name possibly scoped; null without an `@` after the first character. */
@@ -81,9 +84,6 @@ export function splitDescriptor(text: string): { name: string; range: string } |
   const atSign = text.indexOf('@', 1);
   return atSign < 1 ? null : { name: text.slice(0, atSign), range: text.slice(atSign + 1) };
 }
-
-/** A package name, scoped or not. */
-export const PACKAGE_NAME = /^(?:@[\w.~-]+\/)?[\w.~-]+$/;
 
 /** Spec and version prefixes that name a git, file or link source. */
 const SPEC_KINDS: readonly (readonly [RegExp, LockEntryKind])[] = [

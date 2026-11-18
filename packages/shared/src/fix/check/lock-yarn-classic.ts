@@ -9,7 +9,6 @@ import {
   splitDescriptor,
   unreadable,
   withDependents,
-  type Edge,
   type RawEntry,
   type ReadLock,
 } from './lock-read';
@@ -114,9 +113,10 @@ interface ClassicPattern {
 /** `name@range`, or an alias `slot@npm:<name>@<range>`. */
 function classicPattern(pattern: string): ClassicPattern {
   const parts = splitDescriptor(pattern) ?? unreadable(pattern);
-  const target = parts.range.startsWith('npm:') ? parts.range.slice('npm:'.length) : null;
-  const aliased = target === null ? null : splitDescriptor(target);
-  if (aliased === null) return { slot: parts.name, name: parts.name, range: target ?? parts.range };
+  if (!parts.range.startsWith('npm:')) return { slot: parts.name, ...parts };
+  const target = parts.range.slice('npm:'.length);
+  // Fix round 1: `npm:<name>` without a range is an alias of that name too (fail closed).
+  const aliased = splitDescriptor(target) ?? { name: target, range: '' };
   return { slot: parts.name, name: aliased.name, range: aliased.range };
 }
 
@@ -135,7 +135,7 @@ function classicKind(ranges: readonly string[], entry: RawEntry): LockEntryKind 
   return resolvedKind(entry.source, entry.name, entry.version);
 }
 
-/** The dependency maps of a block (Ruling T3e follows them all). */
+/** The dependency maps of a block (Rulings T3e and T3j follow them all). */
 const BLOCK_EDGES = ['dependencies', 'optionalDependencies'];
 
 /**
@@ -144,7 +144,6 @@ const BLOCK_EDGES = ['dependencies', 'optionalDependencies'];
  */
 export function parseYarnClassic(source: string): ReadLock {
   const entries: RawEntry[] = [];
-  const edges: Edge[] = [];
   for (const block of classicBlocks(source)) {
     const patterns = block.patterns.map(classicPattern);
     const ranges = patterns.map((p) => p.range);
@@ -152,16 +151,15 @@ export function parseYarnClassic(source: string): ReadLock {
       version: block.fields.get('version') ?? unreadable(block.patterns.join(', ')),
       source: block.fields.get('resolved') ?? null,
       integrity: block.fields.get('integrity') ?? null,
+      dependencies: BLOCK_EDGES.flatMap((key) => block.maps.get(key) ?? []),
     };
-    const dependencies = BLOCK_EDGES.flatMap((key) => block.maps.get(key) ?? []);
     const pairs = new Map(patterns.map((p) => [JSON.stringify([p.slot, p.name]), p]));
     for (const { slot, name } of pairs.values()) {
       const entry: RawEntry = { name, ...fields, kind: 'registry' };
       entries.push(inSlot({ ...entry, kind: classicKind(ranges, entry) }, slot));
-      edges.push({ from: name, to: dependencies });
     }
   }
-  return { format: 'yarn-classic', entries: withDependents(entries, edges) };
+  return { format: 'yarn-classic', entries: withDependents(entries) };
 }
 
 /** As Yarn decides it: a `# yarn lockfile v1` line among the leading comment lines. */

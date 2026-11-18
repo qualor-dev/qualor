@@ -12,7 +12,6 @@ import {
   specKind,
   splitDescriptor,
   withDependents,
-  type Edge,
   type RawEntry,
   type ReadLock,
 } from './lock-read';
@@ -21,7 +20,7 @@ import { isObject, own, str, stripBom, type JsonObject } from './values';
 
 const NODE_MODULES = 'node_modules/';
 
-/** The dependency maps of a v2/v3 entry (Ruling T3e follows them all). */
+/** The dependency maps of a v2/v3 entry (Rulings T3e and T3j follow them all). */
 const PACKAGE_EDGES = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
 /** v1's `requires` lists every dependency, optional ones included. */
@@ -57,34 +56,43 @@ function npmSource(
   return { kind: key.includes(NODE_MODULES) ? 'registry' : 'path', source: null };
 }
 
-/** An entry at `key`; `slot` is null for a key outside `node_modules` (a workspace folder). */
-function npmEntry(key: string, slot: string | null, entry: JsonObject): RawEntry {
+/**
+ * An entry at `key`, depending on the slots of its dependency maps; `slot` is null for a key
+ * outside `node_modules` (a workspace folder).
+ */
+function npmEntry(
+  key: string,
+  slot: string | null,
+  entry: JsonObject,
+  edges: readonly string[],
+): RawEntry {
   const pkg = npmPackage(slot ?? key, entry);
-  const raw = { ...pkg, ...npmSource(key, entry, pkg), integrity: str(own(entry, 'integrity')) };
+  const raw = {
+    ...pkg,
+    ...npmSource(key, entry, pkg),
+    integrity: str(own(entry, 'integrity')),
+    dependencies: dependencyNames(entry, edges),
+  };
   return slot === null ? raw : inSlot(raw, slot);
 }
 
 /** v2 and v3 `packages`: the slot is the name after the last `node_modules/`. */
-function readNpmPackages(packages: JsonObject, entries: RawEntry[], edges: Edge[]): void {
+function readNpmPackages(packages: JsonObject, entries: RawEntry[]): void {
   for (const [key, value] of Object.entries(packages)) {
     if (key === '') continue;
     const cut = key.lastIndexOf(NODE_MODULES);
     const slot = cut < 0 ? null : key.slice(cut + NODE_MODULES.length);
-    const entry = npmEntry(key, slot, objectAt(value, key));
-    entries.push(entry);
-    edges.push({ from: entry.name, to: dependencyNames(value, PACKAGE_EDGES) });
+    entries.push(npmEntry(key, slot, objectAt(value, key), PACKAGE_EDGES));
   }
 }
 
-/** v1 (and v2) nested `dependencies`, walked with a stack; dependents from `requires`. */
-function readNpmDependencies(dependencies: JsonObject, entries: RawEntry[], edges: Edge[]): void {
+/** v1 (and v2) nested `dependencies`, walked with a stack; dependencies from `requires`. */
+function readNpmDependencies(dependencies: JsonObject, entries: RawEntry[]): void {
   const pending = [dependencies];
   for (let level = pending.pop(); level !== undefined; level = pending.pop()) {
     for (const [slot, value] of Object.entries(level)) {
       const object = objectAt(value, slot);
-      const entry = npmEntry(NODE_MODULES + slot, slot, object);
-      entries.push(entry);
-      edges.push({ from: entry.name, to: dependencyNames(object, V1_EDGES) });
+      entries.push(npmEntry(NODE_MODULES + slot, slot, object, V1_EDGES));
       const nested = own(object, 'dependencies');
       if (isObject(nested)) pending.push(nested);
     }
@@ -104,10 +112,9 @@ function npmFormat(lock: JsonObject): string {
 export function parseNpmLock(text: string): ReadLock {
   const lock = objectAt(JSON.parse(stripBom(text)), 'package-lock.json');
   const entries: RawEntry[] = [];
-  const edges: Edge[] = [];
-  readNpmPackages(sectionOf(lock, 'packages'), entries, edges);
-  readNpmDependencies(sectionOf(lock, 'dependencies'), entries, edges);
-  return { format: npmFormat(lock), entries: withDependents(entries, edges) };
+  readNpmPackages(sectionOf(lock, 'packages'), entries);
+  readNpmDependencies(sectionOf(lock, 'dependencies'), entries);
+  return { format: npmFormat(lock), entries: withDependents(entries) };
 }
 
 export function readNpmLock(text: string): LockEntry[] {

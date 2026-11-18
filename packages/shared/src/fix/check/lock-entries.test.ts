@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { belowTarget, checkLockEntries, lockfileBelowTarget, sourceOrigin } from './lock-entries';
+import {
+  belowTarget,
+  checkLockEntries,
+  lockfileBelowTarget,
+  newLockEntries,
+  sourceOrigin,
+} from './lock-entries';
 import type { FixTarget, LockEntry } from './types';
 
 const LOCK = 'package-lock.json';
@@ -61,6 +67,7 @@ const entry = (over: Partial<LockEntry> = {}): LockEntry => ({
   source: 'https://registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz',
   kind: 'registry',
   integrity: 'sha512-new',
+  dependencies: [],
   dependents: [],
   ...over,
 });
@@ -250,6 +257,41 @@ describe('checkLockEntries: reachability (Ruling T3e)', () => {
     expect(checkLockEntries(baseEntries, [y, x, entry()], on)).toEqual({ ok: true });
     const slotted = entry({ slot: 'qf-a', name: 'qf-a', version: '1.2.6' });
     expect(checkLockEntries(baseEntries, [slotted, x], on)).toEqual({ ok: true });
+  });
+});
+
+describe('checkLockEntries: dependencies of existing entries (Ruling T3j)', () => {
+  const x = (dependencies: string[]) =>
+    entry({ name: 'qf-x', version: '1.0.0', source: null, dependencies, dependents: ['qf-a'] });
+
+  it('refuses an existing entry whose dependency names changed', () => {
+    expect(checkLockEntries([...baseEntries, x([])], [entry(), x(['evil'])], ctx)).toEqual({
+      ok: false,
+      rule: 'other_change',
+      path: 'apps/web/package-lock.json',
+    });
+    expect(checkLockEntries([x(['qf-y'])], [entry(), x([])], ctx)).toMatchObject({
+      rule: 'other_change',
+    });
+  });
+
+  it('accepts unchanged names in any order, and changes of the package’s own entries', () => {
+    expect(checkLockEntries([x(['qf-a', 'qf-y'])], [entry(), x(['qf-y', 'qf-a'])], ctx)).toEqual({
+      ok: true,
+    });
+    const own = (dependencies: string[]) => entry({ dependencies });
+    expect(checkLockEntries([own([])], [own(['qf-x'])], ctx)).toEqual({ ok: true });
+  });
+});
+
+describe('newLockEntries (Ruling T3i)', () => {
+  it('lists the entries of next that the base does not have, with slot, name and version', () => {
+    const alias = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });
+    const added = newLockEntries(baseEntries, [...baseEntries, entry(), alias]);
+    expect(added.map((e) => [e.slot, e.name, e.version])).toEqual([
+      [undefined, 'qf-a', '1.2.6'],
+      ['qf-c', 'qf-d', '1.0.0'],
+    ]);
   });
 });
 

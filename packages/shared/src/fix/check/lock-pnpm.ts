@@ -4,14 +4,12 @@
  * (`qf-a: evil@1.2.6`, fix round 1 C1).
  */
 import {
-  PACKAGE_NAME,
   dependencyNames,
   objectAt,
   sectionOf,
   splitDescriptor,
   unreadable,
   withDependents,
-  type Edge,
   type RawEntry,
   type ReadLock,
 } from './lock-read';
@@ -23,8 +21,10 @@ interface PackageId {
   version: string;
 }
 
-/** The sections whose names are a package's dependencies (Ruling T3e follows them). */
+/** The dependency maps of an importer or a package instance (references are read from all). */
 const DEPENDENCY_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencies'];
+
+/** The dependency maps of a package (Rulings T3e and T3j follow them all). */
 const INSTANCE_EDGES = ['dependencies', 'optionalDependencies'];
 
 function pnpmMajor(lock: JsonObject): number {
@@ -81,6 +81,9 @@ interface PnpmFields {
   version: string | null;
 }
 
+/** An entry before its dependencies are known. */
+type Located = Omit<RawEntry, 'dependencies'>;
+
 /**
  * Ruling T3b: pnpm fetches a registry package (integrity only) by its key, so the key names it.
  * `name` or `version` fields that disagree with the key, or a key without a version, make the
@@ -91,7 +94,7 @@ function pnpmRegistryEntry(
   parts: PackageId | null,
   fields: PnpmFields,
   resolution: Resolution,
-): RawEntry {
+): Located {
   const agrees =
     parts !== null &&
     (fields.name ?? parts.name) === parts.name &&
@@ -104,8 +107,7 @@ function pnpmRegistryEntry(
   };
 }
 
-function pnpmEntry(key: string, value: unknown, major: number): RawEntry {
-  const entry = objectAt(value, key);
+function pnpmLocated(key: string, entry: JsonObject, major: number): Located {
   const parts = pnpmKeyParts(key, major);
   const fields = { name: str(own(entry, 'name')), version: str(own(entry, 'version')) };
   const resolution = pnpmResolution(own(entry, 'resolution'));
@@ -117,12 +119,29 @@ function pnpmEntry(key: string, value: unknown, major: number): RawEntry {
   };
 }
 
-/** v9 `snapshots`: the dependencies of each package instance. */
-function pnpmSnapshotEdges(snapshots: JsonObject): Edge[] {
-  return Object.entries(snapshots).map(([key, value]) => ({
-    from: (splitAtVersion(key) ?? unreadable(key)).name,
-    to: dependencyNames(value, INSTANCE_EDGES),
-  }));
+/** v9 `snapshots`: the dependencies of every instance of a package, by its `packages` key. */
+function snapshotDependencies(snapshots: JsonObject): Map<string, string[]> {
+  const byPackage = new Map<string, string[]>();
+  for (const [key, value] of Object.entries(snapshots)) {
+    const packageKey = key.split('(', 1)[0] ?? key;
+    const names = byPackage.get(packageKey) ?? [];
+    names.push(...dependencyNames(value, INSTANCE_EDGES));
+    byPackage.set(packageKey, names);
+  }
+  return byPackage;
+}
+
+/** A `packages` entry, depending on its v5/v6 dependency maps or on its v9 snapshots'. */
+function pnpmEntry(
+  key: string,
+  value: unknown,
+  major: number,
+  snapshots: ReadonlyMap<string, string[]> | null,
+): RawEntry {
+  const entry = objectAt(value, key);
+  const dependencies =
+    snapshots === null ? dependencyNames(entry, INSTANCE_EDGES) : (snapshots.get(key) ?? []);
+  return { ...pnpmLocated(key, entry, major), dependencies };
 }
 
 /** A dependency's reference: a plain string, or the `version` of a `{ specifier, version }`. */
@@ -132,12 +151,13 @@ function referenceOf(value: unknown): string | null {
 
 /**
  * The package a reference names when it is more than a version: `evil@1.2.6` (v9),
- * `/evil@1.2.6` (v6) or `/evil/1.2.6` (v5), a peer suffix cut off.
+ * `/evil@1.2.6` (v6) or `/evil/1.2.6` (v5), a peer suffix cut off. A reference with an `@` that
+ * names no package (a git URL, say) is read the same way, so it fails closed: an alias, refused
+ * unless the base has it (fix round 1).
  */
 function referencedPackage(reference: string, major: number): PackageId | null {
   const bare = reference.split('(', 1)[0] ?? '';
-  const parts = bare.startsWith('/') ? pnpmKeyParts(bare, major) : splitAtVersion(bare);
-  return parts !== null && PACKAGE_NAME.test(parts.name) ? parts : null;
+  return bare.startsWith('/') ? pnpmKeyParts(bare, major) : splitAtVersion(bare);
 }
 
 interface References {
@@ -154,12 +174,14 @@ function referenceEntry(slot: string, value: unknown, refs: References): RawEntr
   const reference = referenceOf(value);
   if (reference === null) return null;
   if (reference.startsWith('link:')) {
-    return { name: slot, version: '', source: reference, kind: 'link', integrity: null };
+    const link = { name: slot, version: '', source: reference, integrity: null };
+    return { ...link, kind: 'link', dependencies: [] };
   }
   const target = referencedPackage(reference, refs.major);
   if (target === null || target.name === slot) return null;
   const found = refs.packages.get(`${target.name}@${target.version}`);
-  return { ...(found ?? { ...target, kind: 'other', source: null, integrity: null }), slot };
+  const missing = { ...target, kind: 'other' as const, source: null, integrity: null };
+  return { ...(found ?? { ...missing, dependencies: [] }), slot };
 }
 
 function holderReferences(holder: unknown, refs: References): RawEntry[] {
@@ -191,24 +213,18 @@ function pnpmReferences(lock: JsonObject, major: number, entries: readonly RawEn
 }
 
 /**
- * `pnpm-lock.yaml`: v5 `/a/1.0.0`, v6 `/a@1.0.0` and v9 `a@1.0.0` package keys, the links and
- * aliases of the references; dependents from v9 `snapshots` or the v5/v6 packages' dependencies.
- * The format is `pnpm-<major>`.
+ * `pnpm-lock.yaml`: v5 `/a/1.0.0`, v6 `/a@1.0.0` and v9 `a@1.0.0` package keys with their
+ * dependencies (v9 `snapshots`, or the v5/v6 packages' own), and the links and aliases of the
+ * references. The format is `pnpm-<major>`.
  */
 export function parsePnpmLock(text: string): ReadLock {
   const lock = objectAt(parseYaml(text, { merge: true }), 'pnpm-lock.yaml');
   const major = pnpmMajor(lock);
+  const snapshots = major >= 9 ? snapshotDependencies(sectionOf(lock, 'snapshots')) : null;
   const packages = Object.entries(sectionOf(lock, 'packages'));
-  const entries = packages.map(([key, value]) => pnpmEntry(key, value, major));
-  const edges =
-    major >= 9
-      ? pnpmSnapshotEdges(sectionOf(lock, 'snapshots'))
-      : packages.map(([, value], i) => ({
-          from: entries[i]?.name ?? '',
-          to: dependencyNames(value, INSTANCE_EDGES),
-        }));
+  const entries = packages.map(([key, value]) => pnpmEntry(key, value, major, snapshots));
   const all = [...entries, ...pnpmReferences(lock, major, entries)];
-  return { format: `pnpm-${major}`, entries: withDependents(all, edges) };
+  return { format: `pnpm-${major}`, entries: withDependents(all) };
 }
 
 export function readPnpmLock(text: string): LockEntry[] {

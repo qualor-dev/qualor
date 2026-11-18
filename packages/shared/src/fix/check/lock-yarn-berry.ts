@@ -10,7 +10,6 @@ import {
   splitDescriptor,
   unreadable,
   withDependents,
-  type Edge,
   type RawEntry,
   type ReadLock,
 } from './lock-read';
@@ -117,6 +116,9 @@ function descriptorSlots(key: string): string[] {
   return [...new Set(slots)];
 }
 
+/** The dependency maps of an entry (Rulings T3e and T3j follow them all). */
+const ENTRY_EDGES = ['dependencies', 'peerDependencies'];
+
 /** Fix round 1, C4: Yarn 1 fields in a Berry entry would be read by Yarn 1 alone. */
 const CLASSIC_FIELDS = ['resolved', 'integrity'];
 
@@ -136,12 +138,10 @@ function berryEntries(key: string, entry: JsonObject): RawEntry[] {
     kind: locator.kind,
     source: locator.source,
     integrity: str(own(entry, 'checksum')),
+    dependencies: dependencyNames(entry, ENTRY_EDGES),
   };
   return descriptorSlots(key).map((slot) => inSlot(raw, slot));
 }
-
-/** The dependency maps of an entry (Ruling T3e follows them all). */
-const ENTRY_EDGES = ['dependencies', 'peerDependencies'];
 
 /**
  * Yarn Berry: YAML with every scalar a string, as Berry reads it; dependents from `dependencies`
@@ -151,13 +151,9 @@ export function parseYarnBerry(source: string): ReadLock {
   const lock = objectAt(parseYaml(source, { schema: 'failsafe' }), 'yarn.lock');
   const metadata = objectAt(own(lock, '__metadata'), '__metadata');
   const entries: RawEntry[] = [];
-  const edges: Edge[] = [];
   for (const [key, value] of Object.entries(lock)) {
-    if (key === '__metadata') continue;
-    const read = berryEntries(key, objectAt(value, key));
-    entries.push(...read);
-    edges.push({ from: read[0]?.name ?? key, to: dependencyNames(value, ENTRY_EDGES) });
+    if (key !== '__metadata') entries.push(...berryEntries(key, objectAt(value, key)));
   }
   const format = `yarn-berry-${str(own(metadata, 'version')) ?? 'none'}`;
-  return { format, entries: withDependents(entries, edges) };
+  return { format, entries: withDependents(entries) };
 }
