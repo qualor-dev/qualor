@@ -39,7 +39,12 @@ import {
 } from './checker';
 import { mainVulnerabilities, type MainVulnerability } from './eligibility';
 import { enqueueFixJob } from './jobs';
-import { openFixRepository, type FixRepository, type FixScmDeps } from './repository';
+import {
+  FIX_REPOSITORY_PROBLEM_TEXT,
+  openFixRepository,
+  type FixRepository,
+  type FixScmDeps,
+} from './repository';
 import { lockFix, lockProject } from './requests';
 import type { DependencyFixRow } from './rows';
 
@@ -505,18 +510,14 @@ async function repositoryOf(
   const repo = await throughScm(() => open(deps, project, { signal }));
   if (!('problem' in repo)) return repo;
   if (repo.problem === 'scm_not_bound') {
-    throw conflict('SCM_NOT_BOUND', 'The project is not mapped to a repository');
+    throw conflict('SCM_NOT_BOUND', FIX_REPOSITORY_PROBLEM_TEXT.scm_not_bound);
   }
   if (repo.problem === 'fixes_disabled') {
-    throw conflict(
-      'FIX_MRS_NOT_ALLOWED',
-      "An organisation admin has not allowed fix merge requests on the project's SCM connection",
-    );
+    throw conflict('FIX_MRS_NOT_ALLOWED', FIX_REPOSITORY_PROBLEM_TEXT.fixes_disabled);
   }
   throw new AttemptEnded({
     code: 'scm_refused',
-    message:
-      "The project's SCM connection cannot be used (its key no longer decrypts, its address is no longer allowed, or the repository reference is wrong); an organisation admin must check it",
+    message: FIX_REPOSITORY_PROBLEM_TEXT.connection,
   });
 }
 

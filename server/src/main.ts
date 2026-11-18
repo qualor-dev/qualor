@@ -7,6 +7,8 @@ import { createDatabase, type Db } from './db/client';
 import { EmbeddedPostgresError, startEmbeddedPostgres, type EmbeddedPostgres } from './db/embedded';
 import { restoreEmbedded } from './db/restore';
 import { readinessCheck, runMigrations } from './db/migrate';
+import { ensureFixSyncScheduled } from './fixes/jobs';
+import { fixHandlers } from './fixes/run';
 import { gateHandlers } from './gates/reevaluate';
 import { ensureHousekeepingScheduled, housekeepingHandlers } from './housekeeping/run';
 import {
@@ -412,16 +414,27 @@ async function main(): Promise<void> {
         audit,
         logger,
       }),
+      // 0.16 fix MRs (R17): the fix branches and their MRs, under the organisations' SCM slots.
+      ...fixHandlers({
+        db: database.db,
+        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        runtime: scmRuntime,
+        publicUrl: config.publicUrl,
+        limits: () => edition.limits(),
+        logger,
+      }),
     },
     concurrency: SCM_WORKER_CONCURRENCY,
     leaseMs: SCM_LEASE_MS,
     logger,
-    // A run whose job died is finished, so its page stops waiting.
+    // A run whose job died is finished, so its page stops waiting. Each organisation with fixes
+    // to track has its fix pass queued (R18).
     afterReap: async (db) => {
       const finished = await reconcileStuckSetupRuns(db);
       if (finished > 0) {
         logger.warn({ finished }, 'finished repository-setup runs whose job was lost');
       }
+      await ensureFixSyncScheduled(db);
     },
   });
   // Two circuits (6I R40): the AI requests (explain, triage, fix) have the `llm` runtime, AI reviews
@@ -601,6 +614,9 @@ async function main(): Promise<void> {
   );
   await scheduleAtBoot(logger, 'jira', 'the Jira passes could not be scheduled', () =>
     ensureJiraSyncScheduled(database.db),
+  );
+  await scheduleAtBoot(logger, 'fixes', 'the fix passes could not be scheduled', () =>
+    ensureFixSyncScheduled(database.db),
   );
 
   const shutdown = async (signal: string): Promise<void> => {
