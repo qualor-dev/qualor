@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { commitAll, gitSync, GIT_TEST_ENV, initRepo } from '../../test/git';
@@ -70,6 +70,30 @@ describe('openScratch and close', () => {
     expect(existsSync(scratch.root)).toBe(false);
     expect(worktrees(dir)).toHaveLength(1);
     expect(gitSync(dir, 'status', '--porcelain')).toBe('');
+  });
+
+  it('runs none of the repository’s hooks (ruling T12d)', async () => {
+    const { dir } = repo();
+    const marker = path.join(tmp('qualor-fix-marker-'), 'hook-ran');
+    const hook = path.join(dir, '.git', 'hooks', 'post-checkout');
+    writeFileSync(hook, `#!/bin/sh\necho ran > '${marker.replaceAll('\\', '/')}'\n`);
+    chmodSync(hook, 0o755);
+    // The hook works: a checkout in the repository itself runs it.
+    gitSync(dir, 'checkout', '-q', '-b', 'probe');
+    expect(existsSync(marker)).toBe(true);
+    rmSync(marker);
+    gitSync(dir, 'checkout', '-q', 'main');
+    rmSync(marker);
+
+    const git = createGit(dir, GIT_TEST_ENV);
+    const scratch = await openScratch(git, tmp('qualor-fix-temp-'));
+    try {
+      writeTree(scratch.root, { 'package.json': '{ "name": "changed" }\n' });
+      expect((await changedPaths(git, scratch)).changed).toEqual(['package.json']);
+    } finally {
+      await scratch.close();
+    }
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('prunes the worktree entry when its directory is already gone', async () => {

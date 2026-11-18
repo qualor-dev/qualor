@@ -6,22 +6,22 @@ import {
   fixResultBodySchema,
   fixUploadSchema,
   scrubToolOutput,
-  secretEnvValues,
+  utf8Head,
   type FixClaimItem,
   type FixClaimReason,
   type FixFamily,
   type FixResultBody,
 } from '@qualor/shared/fix';
-import { resolveBinary } from '../analyzers/binary';
 import type { FixFlags } from '../args';
 import type { CiInfo } from '../config/ci';
 import { loadSettings, requireServer, type ConfigFlags } from '../config/settings';
 import { CliError, EXIT, type ExitCode } from '../errors';
 import type { FixAdapter, FixWorkspace } from '../fix/adapter';
-import { fixToolEnv } from '../fix/env';
+import { fixJobSecrets, fixToolEnv } from '../fix/env';
 import { muslProblem } from '../fix/musl';
 import { prepareFix, type FixOutcome } from '../fix/run';
 import { createToolRunner, type ToolRunner } from '../fix/runner';
+import { resolveTool } from '../fix/shim';
 import { familyFiles, familyTools, missingTools, servedFamilies } from '../fix/tools';
 import { openScratch } from '../fix/workspace';
 import { createGit, gitText, type Git } from '../git/git';
@@ -39,7 +39,10 @@ const ADAPTERS: Partial<Record<FixFamily, FixAdapter>> = {};
 
 export interface FixDeps {
   adapters?: Partial<Record<FixFamily, FixAdapter>>;
-  /** Where a tool is (`resolveBinary` on the tool environment's `PATH`); null when it is not. */
+  /**
+   * Where a tool is; null when it is not. By default the runner's own lookup (`resolveTool` on the
+   * tool environment's `PATH`, npm's node shims included, ruling T12a).
+   */
   resolve?: (tool: string) => string | null;
   /** One fix's time (10 minutes, §6.5). */
   perFixMs?: number;
@@ -48,8 +51,8 @@ export interface FixDeps {
   wait?: (ms: number) => Promise<unknown>;
 }
 
-/** R4: a claim with less time left than this would only be handed back. */
-const MIN_CLAIM_MS = 1000;
+/** R4, ruling T12g: no claim with less of the job's `--timeout` left than this. */
+const MIN_CLAIM_MS = 60_000;
 /** How long a fix that ran out of time may take to stop before its scratch copy goes. */
 const STOP_GRACE_MS = 5000;
 /** A timer may fire this much before its time; a deadline this close counts as reached. */
@@ -76,8 +79,13 @@ interface FixJob {
   served: FixFamily[];
   adapters: Partial<Record<FixFamily, FixAdapter>>;
   resolve: (tool: string) => string | null;
+  /** Why `resolve` finds no tool: not installed, or a `.cmd` it will not start (ruling T12a). */
+  whyMissing: (tool: string) => string;
   runner: ToolRunner;
+  /** What messages and log lines are scrubbed of (B9, ruling T12b). */
   secrets: readonly string[];
+  /** What no uploaded file may gain (B9, I1). */
+  credentials: readonly string[];
   /** When the job's `--timeout` ends (ms, on `now`'s clock). */
   deadline: number;
   perFixMs: number;
@@ -184,7 +192,7 @@ function reportUnserved(job: FixJob): void {
     if (job.served.includes(family) || familyTools(paths).length === 0) continue;
     const missing = missingTools(paths, job.resolve);
     if (missing.length === 0) job.log.debug(`this qualor has no ${family} fixes yet`);
-    else lacking.push(`${family} (${missing.join(', ')} not installed)`);
+    else lacking.push(`${family} (${missing.map(job.whyMissing).join('; ')})`);
   }
   if (lacking.length > 0) {
     job.log.info(
@@ -193,18 +201,42 @@ function reportUnserved(job: FixJob): void {
   }
 }
 
+/**
+ * Where the job finds a tool and why it does not: the runner's own lookup (ruling T12a), so the
+ * families claimed are those the runner can start; or a test's `resolve`.
+ */
+function toolLookup(
+  root: string,
+  env: Record<string, string>,
+  resolve: FixDeps['resolve'],
+): Pick<FixJob, 'resolve' | 'whyMissing'> {
+  const notInstalled = (tool: string) =>
+    `${tool} is not installed (on PATH, outside the repository)`;
+  if (resolve !== undefined) return { resolve, whyMissing: notInstalled };
+  const lookup = (tool: string) => resolveTool(tool, { root, env });
+  return {
+    resolve: (tool) => {
+      const found = lookup(tool);
+      return found === null || 'problem' in found ? null : found.command;
+    },
+    whyMissing: (tool) => {
+      const found = lookup(tool);
+      return found !== null && 'problem' in found ? found.problem : notInstalled(tool);
+    },
+  };
+}
+
 async function startJob(flags: FixFlags, io: CliIO, log: Logger, deps: FixDeps): Promise<FixJob> {
   const now = deps.now ?? Date.now;
   const started = now();
   const { endpoint, projectKey, ci } = serverOf(flags, io, log);
-  const secrets = [endpoint.token, ...secretEnvValues(io.env)];
+  const { scrub: secrets, credentials } = fixJobSecrets(io.env, endpoint.token);
   const scrubbed = scrubbedLogger(log, secrets);
   const git = createGit(io.cwd, io.env);
   const checkout = await checkoutOf(git, ci);
   const tracked = await trackedFiles(git);
   const toolEnv = fixToolEnv(io.env);
-  const resolve =
-    deps.resolve ?? ((tool: string) => resolveBinary(tool, { root: io.cwd, env: toolEnv }));
+  const tools = toolLookup(io.cwd, toolEnv, deps.resolve);
   const adapters = deps.adapters ?? ADAPTERS;
   const families = familyFiles(tracked);
   return {
@@ -216,11 +248,12 @@ async function startJob(flags: FixFlags, io: CliIO, log: Logger, deps: FixDeps):
     checkout,
     tracked,
     families,
-    served: servedFamilies(families, resolve).filter((f) => adapters[f] !== undefined),
+    served: servedFamilies(families, tools.resolve).filter((f) => adapters[f] !== undefined),
     adapters,
-    resolve,
+    ...tools,
     runner: createToolRunner({ env: toolEnv, root: io.cwd, log: scrubbed, secrets }),
     secrets,
+    credentials,
     deadline: started + flags.timeoutSeconds * 1000,
     perFixMs: deps.perFixMs ?? FIX_LIMITS.perFixMinutes * 60_000,
     now,
@@ -276,7 +309,7 @@ async function preparedWithin(
       deadline,
       log: job.log,
     };
-    const work = prepareFix(item, adapter, ws, job.git, { secrets: job.secrets });
+    const work = prepareFix(item, adapter, ws, job.git, { credentials: job.credentials });
     const outcome = await within(work, budget);
     // Its tools stop at the deadline too; give them a moment before the scratch copy goes.
     if (outcome === 'timeout') await within(work, STOP_GRACE_MS);
@@ -301,12 +334,8 @@ async function outcomeOf(job: FixJob, item: FixClaimItem): Promise<Outcome> {
   }
   const missing = missingTools(job.families.get(item.family) ?? [], job.resolve);
   if (missing.length > 0) {
-    const what = missing.length === 1 ? 'is' : 'are';
     return {
-      failure: {
-        code: 'missing_tool',
-        message: `${missing.join(', ')} ${what} not installed (on PATH, outside the repository).`,
-      },
+      failure: { code: 'missing_tool', message: `${missing.map(job.whyMissing).join('; ')}.` },
     };
   }
   const budget = Math.min(job.perFixMs, job.deadline - job.now());
@@ -349,6 +378,10 @@ function acceptedLine(body: FixResultBody, state: string): string {
 /** What happened to a fix, in one log line. */
 function report(job: FixJob, item: FixClaimItem, body: FixResultBody, answer: FixSendAnswer): void {
   const name = `${clean(item.family)} ${clean(item.packageName)}`;
+  if (typeof answer === 'object' && 'stopped' in answer) {
+    job.log.info(`${name}: the project cannot take fixes now (${answer.stopped}); stopping`);
+    return;
+  }
   if (answer === 'lease_lost') {
     job.log.warn(`${name}: the server no longer holds this job's claim (FIX_LEASE_LOST); going on`);
     return;
@@ -378,22 +411,28 @@ function checkedBody(body: FixResultBody): FixResultBody {
     leaseToken: body.leaseToken,
     failure: {
       code: 'unplanned_change',
-      message: `The fix's result does not match the result schema${field}.`.slice(
-        0,
+      // Ruling T12h: the schema counts characters; the server keeps 2 KiB of UTF-8.
+      message: utf8Head(
+        `The fix's result does not match the result schema${field}.`,
         FIX_LIMITS.messageBytes,
       ),
     },
   };
 }
 
-async function send(job: FixJob, item: FixClaimItem, outcome: Outcome): Promise<void> {
+/**
+ * Sends a fix's result and logs what came of it. False when the run stops: the project can take no
+ * fixes now (ruling T12f, 409 `SCM_NOT_BOUND` or `FIX_MRS_NOT_ALLOWED`, as the claim's reasons).
+ */
+async function send(job: FixJob, item: FixClaimItem, outcome: Outcome): Promise<boolean> {
   const body = checkedBody(bodyOf(job, item, outcome));
   const answer = await sendFixResult(job.endpoint, item.id, body, { wait: job.wait, log: job.log });
   report(job, item, body, answer);
+  return !(typeof answer === 'object' && 'stopped' in answer);
 }
 
 /** One claimed fix, prepared and sent; one the job cannot even start on is handed back. */
-async function runOne(job: FixJob, item: FixClaimItem): Promise<void> {
+async function runOne(job: FixJob, item: FixClaimItem): Promise<boolean> {
   job.log.info(`preparing the fix of ${clean(item.family)} ${clean(item.packageName)}`);
   let outcome: Outcome;
   try {
@@ -402,7 +441,7 @@ async function runOne(job: FixJob, item: FixClaimItem): Promise<void> {
     await send(job, item, RELEASED).catch(() => undefined);
     throw err;
   }
-  await send(job, item, outcome);
+  return send(job, item, outcome);
 }
 
 // ─── The claim loop ─────────────────────────────────────────────────────────
@@ -415,7 +454,7 @@ const timeLeft = (job: FixJob): number => job.deadline - job.now();
  */
 async function claimNext(job: FixJob, done: number): Promise<FixClaimItem[] | null> {
   if (timeLeft(job) < MIN_CLAIM_MS) {
-    job.log.info("the job's --timeout is up; no further claim");
+    job.log.info("less than a minute of the job's --timeout is left; no further claim");
     return null;
   }
   const answer = await claimFix(job.endpoint, {
@@ -445,9 +484,9 @@ async function claimLoop(job: FixJob): Promise<void> {
     const items = await claimNext(job, done);
     if (items === null) return;
     for (const item of items) {
-      if (done < job.flags.max) await runOne(job, item);
-      else await send(job, item, RELEASED);
+      const goOn = done < job.flags.max ? await runOne(job, item) : await send(job, item, RELEASED);
       done += 1;
+      if (!goOn) return;
     }
   }
 }

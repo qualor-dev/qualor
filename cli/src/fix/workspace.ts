@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { CliError, EXIT } from '../errors';
 import { gitText, type Git } from '../git/git';
@@ -12,11 +12,31 @@ export interface Scratch {
   close(): Promise<void>;
 }
 
+/** The empty directory, beside the scratch copy, that its git calls take their hooks from. */
+const NO_HOOKS = 'no-hooks';
+
 /**
- * The scratch copy checks out the blobs as they are (`core.autocrlf=false`), so a file the tools
- * leave alone reads as unchanged and an uploaded file is what the commit will hold.
+ * Git's settings for every call on a scratch copy:
+ * - `core.autocrlf=false`: blobs are checked out and staged as they are, whatever the job's own
+ *   configuration says (`.gitattributes` still applies);
+ * - ruling T12d: no hook of the checkout runs (`post-checkout` on `worktree add`): hooks come from
+ *   an empty directory, and no file-system monitor is started.
  */
-const AS_COMMITTED = ['-c', 'core.autocrlf=false'];
+export function scratchGitOptions(root: string): string[] {
+  return [
+    '-c',
+    'core.autocrlf=false',
+    '-c',
+    `core.hooksPath=${path.join(path.dirname(root), NO_HOOKS)}`,
+    '-c',
+    'core.fsmonitor=false',
+  ];
+}
+
+/** Git in the scratch copy `root`, with {@link scratchGitOptions}. */
+export function inScratch(root: string, args: readonly string[]): string[] {
+  return [...scratchGitOptions(root), '-C', root, ...args];
+}
 
 /** Removes the scratch directory, then the worktree entry git keeps for it (best effort). */
 async function removeScratch(git: Git, parent: string, root: string): Promise<void> {
@@ -33,7 +53,15 @@ async function removeScratch(git: Git, parent: string, root: string): Promise<vo
 export async function openScratch(git: Git, tempRoot: string): Promise<Scratch> {
   const parent = realpathSync.native(mkdtempSync(path.join(tempRoot, 'qualor-fix-')));
   const root = path.join(parent, 'checkout');
-  const added = await git([...AS_COMMITTED, 'worktree', 'add', '--detach', root, 'HEAD']);
+  mkdirSync(path.join(parent, NO_HOOKS));
+  const added = await git([
+    ...scratchGitOptions(root),
+    'worktree',
+    'add',
+    '--detach',
+    root,
+    'HEAD',
+  ]);
   if (added.code !== 0) {
     await removeScratch(git, parent, root);
     const why = added.stderr.trim() || `exit code ${added.code}`;
@@ -90,15 +118,10 @@ export async function changedPaths(
   git: Git,
   scratch: Pick<Scratch, 'root'>,
 ): Promise<{ changed: string[]; added: string[] }> {
-  const out = await gitText(git, [
-    '-C',
-    scratch.root,
-    ...AS_COMMITTED,
-    'status',
-    '--porcelain=v1',
-    '-z',
-    '--untracked-files=all',
-  ]);
+  const out = await gitText(
+    git,
+    inScratch(scratch.root, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+  );
   const changed: string[] = [];
   const added: string[] = [];
   for (const entry of parseStatus(out)) {
@@ -106,4 +129,33 @@ export async function changedPaths(
     (isAdded(entry.status) ? added : changed).push(entry.path);
   }
   return { changed, added };
+}
+
+/**
+ * Ruling T12e: the files as a commit holds them. They are staged in the scratch copy's own index
+ * (`git add`, which applies `.gitattributes`: a file checked out with CRLF for `eol=crlf` goes
+ * back to LF), then read back from the index as bytes (`git show :<path>`).
+ */
+export async function committedForm(
+  git: Git,
+  scratch: Pick<Scratch, 'root'>,
+  paths: readonly string[],
+): Promise<Buffer[]> {
+  await gitText(git, inScratch(scratch.root, ['--literal-pathspecs', 'add', '--', ...paths]));
+  const blobs: Buffer[] = [];
+  for (const p of paths) {
+    const chunks: Buffer[] = [];
+    const r = await git(inScratch(scratch.root, ['show', `:${p}`]), {
+      onStdout: (chunk) => {
+        chunks.push(chunk);
+        return true;
+      },
+    });
+    if (r.code !== 0) {
+      const why = r.stderr.trim() || `exit code ${r.code}`;
+      throw new CliError(EXIT.USAGE, `git show :${p} failed: ${why}`);
+    }
+    blobs.push(Buffer.concat(chunks));
+  }
+  return blobs;
 }

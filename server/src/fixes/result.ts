@@ -4,10 +4,8 @@ import {
   FIX_LIMITS,
   FIX_RULE_TEXT,
   FIX_RULES,
-  fixFileKind,
   fixPathProblem,
-  greatestVersion,
-  isGreater,
+  fixTargetProblem,
   sameVersion,
   schemeOf,
   scrubToolOutput,
@@ -333,77 +331,6 @@ function shapeOf(family: FixFamily, files: FixUpload['files']): UploadedFile[] |
 
 // ─── Targets (R7, rulings T9g–T9i) ──────────────────────────────────────────
 
-const mismatch = (path: string): Refusal => ({ rule: 'target_mismatch', path });
-
-/** The directory part of a path, with its slash ('' at the root). */
-const directoryOf = (path: string): string => path.slice(0, path.lastIndexOf('/') + 1);
-
-/**
- * Ruling T9i: every uploaded lockfile of the family is named by a target (F14 skips `below_target`
- * on one that is not, so it could move the package anywhere); a `go.sum` through the `go.mod`
- * beside it. Manifests need none.
- */
-function unnamedLockfile(
-  family: FixFamily,
-  upload: FixUpload,
-  files: readonly UploadedFile[],
-): Refusal | null {
-  const named = new Set(upload.targets.map((t) => t.lockfile));
-  const unnamed = files.find((f) => {
-    if (fixFileKind(family, f.path) !== 'lockfile') return false;
-    const isGoSum = f.path.slice(f.path.lastIndexOf('/') + 1) === 'go.sum';
-    const by = isGoSum ? `${directoryOf(f.path)}go.mod` : f.path;
-    return !named.has(by);
-  });
-  return unnamed === undefined ? null : mismatch(unnamed.path);
-}
-
-/**
- * Where the targets and the MR's lines must point (rulings T9g, T9h): each target above its
- * installed version and in an uploaded file, each lockfile line an uploaded file.
- */
-function outsideUpload(
-  scheme: VersionScheme,
-  upload: FixUpload,
-  paths: ReadonlySet<string>,
-): Refusal | null {
-  const notAbove = upload.targets.find((t) => !isGreater(scheme, t.target, t.installed));
-  if (notAbove !== undefined) return mismatch(notAbove.lockfile);
-  const outside = upload.targets.find((t) => !paths.has(t.lockfile));
-  if (outside !== undefined) return mismatch(outside.lockfile);
-  const line = upload.lockfiles.find((l) => !paths.has(l.path));
-  return line === undefined ? null : mismatch(line.path);
-}
-
-/**
- * R30, R6, rulings T9g–T9i: the targets agree with the upload: each above its installed version
- * and in an uploaded file, each lockfile line an uploaded file, each uploaded lockfile named by a
- * target, `targetVersion` the greatest target and `installedVersion` the installed version of a
- * target that reaches it.
- */
-function targetMismatch(
-  family: FixFamily,
-  upload: FixUpload,
-  files: readonly UploadedFile[],
-): Refusal | null {
-  const scheme = schemeOf(family);
-  const outside = outsideUpload(scheme, upload, new Set(files.map((f) => f.path)));
-  if (outside !== null) return outside;
-  const unnamed = unnamedLockfile(family, upload, files);
-  if (unnamed !== null) return unnamed;
-  const greatest = greatestVersion(
-    scheme,
-    upload.targets.map((t) => t.target),
-  );
-  const named = upload.targets.some(
-    (t) =>
-      sameVersion(scheme, t.target, upload.targetVersion) &&
-      sameVersion(scheme, t.installed, upload.installedVersion),
-  );
-  const top = greatest !== null && sameVersion(scheme, greatest, upload.targetVersion);
-  return top && named ? null : mismatch('');
-}
-
 /**
  * R7: an installed version main has (`not_vulnerable` otherwise), raised at least to the server's
  * own choice for it from main's current rows (`below_target`; equality is not required).
@@ -433,8 +360,12 @@ async function checkTargets(
   upload: FixUpload,
   files: readonly UploadedFile[],
 ): Promise<MainVulnerability[] | Refusal> {
-  if (upload.targets.length === 0) return { rule: 'no_targets', path: '' };
-  const disagrees = targetMismatch(fix.family, upload, files);
+  // R30, rulings T9g–T9i: the one copy of the target rules, which the CLI runs before it uploads.
+  const disagrees = fixTargetProblem(
+    fix.family,
+    upload,
+    files.map((f) => f.path),
+  );
   if (disagrees !== null) return disagrees;
   const scheme = schemeOf(fix.family);
   const rows = await mainVulnerabilities(db, fix.projectId, fix.family, fix.packageName);

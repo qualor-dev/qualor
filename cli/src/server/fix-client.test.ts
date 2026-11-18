@@ -136,6 +136,15 @@ describe('sendFixResult (R6, R16, rulings T9b and T9d)', () => {
     }
   });
 
+  it('answers stopped on 409 SCM_NOT_BOUND and FIX_MRS_NOT_ALLOWED (ruling T12f)', async () => {
+    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']) {
+      const { url } = await serve((_req, res) => problem(res, 409, code));
+      expect(await sendFixResult(endpoint(url), FIX_ID, FAILURE, {})).toEqual({
+        stopped: expect.stringContaining(code),
+      });
+    }
+  });
+
   it('answers lease_lost on 409 FIX_LEASE_LOST', async () => {
     const { url } = await serve((_req, res) => problem(res, 409, 'FIX_LEASE_LOST'));
     expect(await sendFixResult(endpoint(url), FIX_ID, FAILURE, {})).toBe('lease_lost');
@@ -212,7 +221,7 @@ describe('sendFixResult (R6, R16, rulings T9b and T9d)', () => {
       [403, 'TOKEN_NOT_ALLOWED', EXIT.AUTH],
       [404, 'NOT_FOUND', EXIT.SERVER],
       [404, null, EXIT.SERVER],
-      [409, 'SCM_NOT_BOUND', EXIT.SERVER],
+      [409, 'SOMETHING_ELSE', EXIT.SERVER],
       [413, 'BODY_TOO_LARGE', EXIT.SERVER],
     ];
     for (const [status, code, exit] of cases) {

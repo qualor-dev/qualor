@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { FIX_LIMITS } from './families';
-import { FIX_SECRET_NAME, scrubToolOutput, scrubUrlUserinfo, secretEnvValues } from './scrub';
+import {
+  FIX_REDACTED,
+  FIX_SECRET_NAME,
+  replaceSecrets,
+  scrubToolOutput,
+  scrubUrlUserinfo,
+  secretEnvValues,
+  urlPasswordCount,
+  utf8Head,
+  utf8Tail,
+} from './scrub';
 
 /** Test secrets are assembled at run time, so no secret scanner finds one in this file. */
 const j = (...parts: string[]): string => parts.join('');
@@ -186,5 +196,33 @@ describe('scrubToolOutput (§6.9, B9)', () => {
     expect(out).toContain('_authToken=[redacted]');
     expect(out.endsWith('[ERROR] BUILD FAILURE')).toBe(true);
     expect(bytes(out)).toBeLessThanOrEqual(FIX_LIMITS.messageBytes);
+  });
+});
+
+describe('the helpers the CLI shares (ruling T12c)', () => {
+  it('replaceSecrets replaces each known value of 4 characters or more, the longest first', () => {
+    expect(replaceSecrets(`a ${SECRET} b ${NPM_TOKEN} abc`, [NPM_TOKEN, SECRET, 'abc'])).toBe(
+      `a ${FIX_REDACTED} b ${FIX_REDACTED} abc`,
+    );
+  });
+
+  it('utf8Tail keeps the last bytes from a whole character, utf8Head the first up to one', () => {
+    const text = `${'é'.repeat(3)}x`;
+    expect(utf8Tail(text, 4)).toBe('éx');
+    expect(utf8Tail(text, 6)).toBe('ééx');
+    expect(utf8Head(text, 3)).toBe('é');
+    expect(utf8Head(text, 4)).toBe('éé');
+    expect(utf8Head(text, 100)).toBe(text);
+    expect(bytes(utf8Head('€'.repeat(1000), 2048))).toBeLessThanOrEqual(2048);
+  });
+});
+
+describe('urlPasswordCount (I1: what a credential URL is)', () => {
+  it('counts URLs whose userinfo has a password, never a user name alone', () => {
+    expect(urlPasswordCount(`https://ci:${SECRET}@registry.example/x and http://u:p@h/`)).toBe(2);
+    expect(urlPasswordCount('git+ssh://git@github.com/x/y.git')).toBe(0);
+    expect(urlPasswordCount(`https://${NPM_TOKEN}@github.com/x`)).toBe(0);
+    expect(urlPasswordCount('https://registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz')).toBe(0);
+    expect(urlPasswordCount('https:\\/\\/u:pw@host\\/x')).toBe(1);
   });
 });

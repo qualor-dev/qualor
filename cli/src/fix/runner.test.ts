@@ -1,5 +1,6 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { useTempDirs } from '../../test/tmp';
+import { useTempDirs, writeTree } from '../../test/tmp';
 import { createLogger, type Logger } from '../log';
 import { createToolRunner, MissingToolError, toolFailure, type ToolResult } from './runner';
 
@@ -123,3 +124,65 @@ describe('createToolRunner', () => {
     await expect(failed).rejects.toMatchObject({ tool: 'yarn' });
   });
 });
+
+describe('createToolRunner: output size (ruling T12j)', () => {
+  const big = 'process.stdout.write("x".repeat(200000) + "END")';
+
+  it('keeps the last 64 KiB of stdout unless the call asks for more', async () => {
+    const run = createToolRunner({
+      env: { ...process.env } as Record<string, string>,
+      root: tmp(),
+      log: spy().log,
+    });
+    const tail = await run('node', ['-e', big], { cwd: tmp(), timeoutMs: 30_000 });
+    expect(tail.stdout).toHaveLength(64 * 1024);
+    expect(tail.stdout.endsWith('END')).toBe(true);
+    const whole = await run('node', ['-e', big], {
+      cwd: tmp(),
+      timeoutMs: 30_000,
+      outputLimitBytes: 1024 * 1024,
+    });
+    expect(whole.stdout).toHaveLength(200_003);
+  });
+});
+
+describe.runIf(process.platform === 'win32')(
+  'createToolRunner: npm cmd-shims (ruling T12a)',
+  () => {
+    it('runs a cmd-shim’s script with node, without a shell, with every argument as given', async () => {
+      const shims = tmp('qualor-shim-');
+      writeTree(shims, {
+        'qftool.cmd': [
+          '@ECHO off',
+          'GOTO start',
+          ':find_dp0',
+          'SET dp0=%~dp0',
+          'EXIT /b',
+          ':start',
+          'SETLOCAL',
+          'CALL :find_dp0',
+          'IF EXIST "%dp0%\\node.exe" (',
+          '  SET "_prog=%dp0%\\node.exe"',
+          ') ELSE (',
+          '  SET "_prog=node"',
+          '  SET PATHEXT=%PATHEXT:;.JS;=;%',
+          ')',
+          'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\qftool\\cli.js" %*',
+        ].join('\r\n'),
+        'node_modules/qftool/cli.js':
+          'process.stdout.write(JSON.stringify({ exec: process.execPath, argv: process.argv.slice(1) }))',
+      });
+      const env = { ...process.env, PATH: `${shims};${path.dirname(process.execPath)}` } as Record<
+        string,
+        string
+      >;
+      const run = createToolRunner({ env, root: tmp(), log: spy().log });
+      const tricky = ['a b', '"quoted"', '%PATH%', '&', '|', '^'];
+      const r = await run('qftool', tricky, { cwd: tmp(), timeoutMs: 30_000 });
+      expect(r.exitCode).toBe(0);
+      const seen = JSON.parse(r.stdout) as { exec: string; argv: string[] };
+      expect(seen.exec.toLowerCase()).toBe(process.execPath.toLowerCase());
+      expect(seen.argv).toEqual([path.join(shims, 'node_modules', 'qftool', 'cli.js'), ...tricky]);
+    });
+  },
+);

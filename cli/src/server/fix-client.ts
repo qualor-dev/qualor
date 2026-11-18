@@ -111,8 +111,15 @@ export async function claimFix(
   throw refusal(res, 'fix claim');
 }
 
-/** What the server made of a result: taken (with the fix's state), the claim lost, or refused. */
-export type FixSendAnswer = { accepted: string } | 'lease_lost' | { refused: string };
+/**
+ * What the server made of a result: taken (with the fix's state), the claim lost, refused, or the
+ * project can take no fixes now (ruling T12f; the fix stays `preparing` until its lease runs out).
+ */
+export type FixSendAnswer =
+  { accepted: string } | 'lease_lost' | { refused: string } | { stopped: string };
+
+/** Ruling T12f: the result route's 409s that mean the project's fixes cannot go on (as R4's reasons). */
+const STOPPING_CONFLICTS: ReadonlySet<string> = new Set(['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']);
 
 const acceptedSchema = z.looseObject({ state: z.string() });
 
@@ -136,6 +143,9 @@ function resultAnswer(res: HttpResponse, retries: number): FixSendAnswer | null 
     return { accepted: clean(parseJson(res, acceptedSchema, 'fix result answer').state) };
   }
   if (res.status === 409 && codeOf(res) === 'FIX_LEASE_LOST') return 'lease_lost';
+  if (res.status === 409 && STOPPING_CONFLICTS.has(codeOf(res) ?? '')) {
+    return { stopped: describeFailure(res) };
+  }
   if (res.status === 422) return { refused: refusedText(res) };
   if (res.status !== 503) throw refusal(res, 'fix result');
   if (retries < FIX_RESULT_RETRIES) return null;
@@ -148,7 +158,8 @@ function resultAnswer(res: HttpResponse, retries: number): FixSendAnswer | null 
 /**
  * `PUT /api/v0/fixes/{id}/result` (R6): any 202 is accepted, with the state the server answers
  * (`committing`, or `failed`/`open` after a permanent SCM error, ruling T9d); 409 `FIX_LEASE_LOST`
- * is `lease_lost`; a 422 is `refused` with the rule and file. A 503 (`SCM_UNAVAILABLE`,
+ * is `lease_lost`; 409 `SCM_NOT_BOUND` or `FIX_MRS_NOT_ALLOWED` is `stopped` (ruling T12f); a 422 is
+ * `refused` with the rule and file. A 503 (`SCM_UNAVAILABLE`,
  * `FIX_CHECK_BUSY`) is retried 3 times, after its `Retry-After` (at most 60 s) or 10 s (R16, T9b);
  * every other answer is a CliError as for the claim.
  */

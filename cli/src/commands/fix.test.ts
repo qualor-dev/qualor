@@ -25,7 +25,12 @@ const URL_PASSWORD = ['p4ss', 'w0rd', '99'].join('');
 const NPM = 'https://registry.npmjs.org';
 const packageJson = (range: string) =>
   `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }\n}\n`;
-const packageLock = (version: string) =>
+/** A `package-lock.json` with `qf-a` at `version` (and `qf`'s extra fields), and other entries. */
+const lockOf = (
+  version: string,
+  entries: Record<string, unknown> = {},
+  qf: Record<string, unknown> = {},
+) =>
   `${JSON.stringify(
     {
       name: 'app',
@@ -36,12 +41,18 @@ const packageLock = (version: string) =>
           version,
           resolved: `${NPM}/qf-a/-/qf-a-${version}.tgz`,
           integrity: `sha512-${version}`,
+          ...qf,
         },
+        ...entries,
       },
     },
     null,
     2,
   )}\n`;
+const packageLock = (version: string) => lockOf(version);
+/** The fixed lockfile (1.2.6) with more entries or fields. */
+const lockWith = (entries: Record<string, unknown>, qf: Record<string, unknown>) =>
+  lockOf('1.2.6', entries, qf);
 
 const BASE: Record<string, string> = {
   'package.json': packageJson('^1.2.5'),
@@ -111,7 +122,7 @@ async function qualor(o: { claims?: Answer[]; results?: Answer[] } = {}): Promis
   const seen: Omit<FakeQualor, 'url'> = { claims: [], results: [] };
   const server = await serve((req, res, recorded) => {
     const body = JSON.parse(recorded.body.toString('utf8')) as Record<string, unknown>;
-    if (req.url?.startsWith('/api/v0/projects/fixes/claim?projectKey=acme%2Fapp') === true) {
+    if (req.url?.startsWith('/api/v0/projects/fixes/claim?projectKey=') === true) {
       seen.claims.push(body);
       (claims.shift() ?? nothing)(res);
       return;
@@ -334,6 +345,33 @@ describe('qualor fix: families (B7, ruling F6)', () => {
     expect(r.code).toBe(EXIT.OK);
     expect(server.claims).toEqual([]);
   });
+
+  it.runIf(process.platform === 'win32')(
+    'names why a .cmd that is no npm cmd-shim is not served (ruling T12a)',
+    async () => {
+      const { dir } = repo({ ...BASE, 'pom.xml': '<project/>\n' });
+      const bin = tmp('qualor-fix-bin-');
+      writeTree(bin, {
+        'mvn.cmd': '@echo off\r\n"%JAVA_HOME%\\bin\\java.exe" -classpath x %*\r\n',
+      });
+      const maven: FixAdapter = {
+        family: 'maven',
+        installed: () => Promise.resolve([]),
+        apply: () => stopWith('unused'),
+      };
+      const pathKey = Object.keys(SCAN_TEST_ENV).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+      const server = await qualor();
+      const r = await run(dir, server, {
+        env: { [pathKey]: `${bin};${SCAN_TEST_ENV[pathKey] ?? ''}` },
+        deps: { resolve: undefined, adapters: { maven } },
+      });
+      expect(r.code).toBe(EXIT.OK);
+      const info = r.lines.filter((line) => line.includes('mvn.cmd'));
+      expect(info).toHaveLength(1);
+      expect(info[0]).toContain('maven');
+      expect(server.claims).toEqual([]);
+    },
+  );
 });
 
 describe('qualor fix: the scratch worktree', () => {
@@ -477,6 +515,7 @@ describe('qualor fix: what an upload must hold (rulings T9c, T9i, T9l)', () => {
     });
     for (const resolved of [
       `${NPM}/qf-a/-/qf-a-1.2.6.tgz?token=${NPM_SECRET}`,
+      `${NPM}/qf-a/-/qf-a-1.2.6.tgz?token=${TOKEN}`,
       `https://ci:${URL_PASSWORD}@registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz`,
     ]) {
       const server = await qualor({ claims: [claimOf(item(1))] });
@@ -490,8 +529,78 @@ describe('qualor fix: what an upload must hold (rulings T9c, T9i, T9l)', () => {
       expect(failure.message).toContain('package-lock.json');
       expect(JSON.stringify(server.results)).not.toContain(NPM_SECRET);
       expect(JSON.stringify(server.results)).not.toContain(URL_PASSWORD);
+      expect(JSON.stringify(server.results)).not.toContain(TOKEN);
       expect(r.log).not.toContain(NPM_SECRET);
     }
+  });
+
+  it('uploads a file that gains only ordinary text: true, a project key, a git@ URL (I1)', async () => {
+    const { dir } = repo();
+    const writes = (lock: string): FixAdapter => ({
+      ...goodJs,
+      apply: async (ws, fix, plan) => {
+        const applied = await goodJs.apply(ws, fix, plan);
+        writeTree(ws.root, { 'package-lock.json': lock });
+        return applied;
+      },
+    });
+    const cases: { env: Record<string, string>; lock: string }[] = [
+      { env: { YARN_NPM_ALWAYS_AUTH: 'true' }, lock: lockWith({}, { dev: true }) },
+      {
+        env: { QUALOR_PROJECT_KEY: 'core' },
+        lock: lockWith(
+          {
+            'node_modules/core-js': {
+              version: '3.40.0',
+              resolved: `${NPM}/core-js/-/core-js-3.40.0.tgz`,
+              integrity: 'sha512-cj',
+            },
+          },
+          { dependencies: { 'core-js': '^3.0.0' } },
+        ),
+      },
+    ];
+    for (const { env, lock } of cases) {
+      const server = await qualor({ claims: [claimOf(item(1))] });
+      await run(dir, server, { env, deps: { adapters: { js: writes(lock) } } });
+      const body = server.results[0]?.body;
+      expect(body, JSON.stringify(env)).toHaveProperty('files');
+    }
+    // A git@ user name is no credential: the shared check refuses the git source, not this rule.
+    const gitSsh = lockWith(
+      { 'node_modules/y': { version: '1.0.0', resolved: 'git+ssh://git@github.com/x/y.git#abc' } },
+      { dependencies: { y: 'github:x/y' } },
+    );
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    await run(dir, server, { deps: { adapters: { js: writes(gitSsh) } } });
+    const failure = failureOf(server.results[0]?.body);
+    expect(failure.message).toContain('source_kind');
+    expect(failure.message).not.toContain('secret_in_file');
+  });
+
+  it('uploads the committed form of a file .gitattributes checks out with CRLF (ruling T12e)', async () => {
+    const { dir } = repo({ ...BASE, '.gitattributes': 'package.json text eol=crlf\n' });
+    const crlf: FixAdapter = {
+      ...goodJs,
+      apply: async (ws, fix, plan) => {
+        const applied = await goodJs.apply(ws, fix, plan);
+        // A package manager keeps the line endings of the file it edits.
+        const manifest = packageJson(`^${plan.greatest}`).replaceAll('\n', '\r\n');
+        writeTree(ws.root, { 'package.json': manifest });
+        return applied;
+      },
+    };
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    await run(dir, server, { deps: { adapters: { js: crlf } } });
+    const body = server.results[0]?.body;
+    const files = body !== undefined && 'files' in body ? body.files : [];
+    const content = files.find((f) => f.path === 'package.json')?.content ?? '';
+    const uploaded = Buffer.from(content, 'base64').toString('utf8');
+    expect(uploaded).toBe(packageJson('^1.2.6'));
+    const base = packageJson('^1.2.5').split('\n');
+    expect(uploaded.split('\n').filter((line, i) => line !== base[i])).toEqual([
+      '    "qf-a": "^1.2.6"',
+    ]);
   });
 
   it('refuses locally a file with a NUL byte, naming not_utf8', async () => {
@@ -633,6 +742,24 @@ describe('qualor fix: no fix (B3, B4)', () => {
       message: '1.x and 2.x',
     });
   });
+
+  it('uploads the targets it checked, whatever verify does to the plan (ruling T12i)', async () => {
+    const { dir } = repo();
+    const meddling: FixAdapter = {
+      ...goodJs,
+      verify: (_ws, _fix, plan) => {
+        for (const t of plan.targets) t.target = '9.9.9';
+        plan.targets.push({ installed: '0.0.1', target: '0.0.2', lockfile: 'x/package-lock.json' });
+        return Promise.resolve(null);
+      },
+    };
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    await run(dir, server, { deps: { adapters: { js: meddling } } });
+    const body = server.results[0]?.body;
+    expect(body !== undefined && 'targets' in body ? body.targets : null).toEqual([
+      { installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' },
+    ]);
+  });
 });
 
 describe('qualor fix: the tool environment and its output (B9, §11.6)', () => {
@@ -738,10 +865,21 @@ describe('qualor fix: time (§6.5 limits, R4)', () => {
 
   it('hands the fix in flight back when the job’s --timeout ends, and exits 0', async () => {
     const { dir } = repo();
-    const server = await qualor({ claims: [claimOf(item(1)), claimOf(item(2))] });
+    // The job's clock jumps 60 s at the claim, so 3 s of the 63 s --timeout remain for the fix.
+    let skipped = 0;
+    const now = () => Date.now() + skipped;
+    const server = await qualor({
+      claims: [
+        (res) => {
+          skipped = 60_000;
+          claimOf(item(1))(res);
+        },
+        claimOf(item(2)),
+      ],
+    });
     const r = await run(dir, server, {
-      flags: { timeoutSeconds: 3 },
-      deps: { adapters: { js: hanging } },
+      flags: { timeoutSeconds: 63 },
+      deps: { adapters: { js: hanging }, now },
     });
     expect(r.code).toBe(EXIT.OK);
     expect(server.results.map((x) => x.body)).toEqual([
@@ -758,6 +896,15 @@ describe('qualor fix: time (§6.5 limits, R4)', () => {
     expect(server.claims).toHaveLength(1);
     expect(server.results).toHaveLength(1);
   });
+
+  it('claims nothing with less than 60 s of --timeout left (ruling T12g)', async () => {
+    const { dir } = repo();
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    const r = await run(dir, server, { flags: { timeoutSeconds: 59 } });
+    expect(r.code).toBe(EXIT.OK);
+    expect(server.claims).toEqual([]);
+    expect(r.log).toContain('--timeout');
+  });
 });
 
 describe('qualor fix: the result route’s answers (R16, rulings T9b, T9d)', () => {
@@ -771,6 +918,20 @@ describe('qualor fix: the result route’s answers (R16, rulings T9b, T9d)', () 
     expect(r.code).toBe(EXIT.OK);
     expect(r.log).toMatch(/lease/i);
     expect(server.claims).toHaveLength(2);
+  });
+
+  it('stops, exit 0, when the result route says the project cannot take fixes now (ruling T12f)', async () => {
+    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']) {
+      const { dir } = repo();
+      const server = await qualor({
+        claims: [claimOf(item(1)), claimOf(item(2))],
+        results: [(res) => problem(res, 409, code)],
+      });
+      const r = await run(dir, server);
+      expect(r.code, code).toBe(EXIT.OK);
+      expect(server.claims, code).toHaveLength(1);
+      expect(r.lines.filter((line) => line.includes(code))).toHaveLength(1);
+    }
   });
 
   it('retries an upload the server could not check (503, 503, 202)', async () => {

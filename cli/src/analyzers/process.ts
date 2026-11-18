@@ -12,13 +12,15 @@ export interface ProcessSpec {
    */
   env: Readonly<Record<string, string>>;
   timeoutMs: number;
+  /** How much of the end of each stream to keep (64 KiB unless given; ruling T12j). */
+  outputLimitBytes?: number;
 }
 
 export interface ProcessResult {
   exitCode: number | null;
   timedOut: boolean;
   durationMs: number;
-  /** The last 64 KiB of each stream (config.md §6: debug log only). */
+  /** The end of each stream: the last 64 KiB unless `outputLimitBytes` says (config.md §6). */
   stdout: string;
   stderr: string;
   spawnError?: string;
@@ -26,7 +28,38 @@ export interface ProcessResult {
   spawnErrorCode?: string;
 }
 
-const TAIL_CHARS = 64 * 1024;
+const TAIL_BYTES = 64 * 1024;
+
+/** The last `limit` bytes of a stream, kept as it comes, decoded from a whole character. */
+class Tail {
+  private chunks: Buffer[] = [];
+  private size = 0;
+  constructor(private readonly limit: number) {}
+
+  add(chunk: Buffer): void {
+    this.chunks.push(chunk);
+    this.size += chunk.length;
+    if (this.size > this.limit * 2) this.trim();
+  }
+
+  private trim(): void {
+    const all = Buffer.concat(this.chunks);
+    const kept = all.subarray(Math.max(0, all.length - this.limit));
+    this.chunks = [kept];
+    this.size = kept.length;
+  }
+
+  text(): string {
+    this.trim();
+    const bytes = this.chunks[0] ?? Buffer.alloc(0);
+    let start = 0;
+    // A continuation byte (10xxxxxx) at the cut is the inside of a character.
+    if (this.size === this.limit) {
+      while (start < bytes.length && ((bytes[start] ?? 0) & 0xc0) === 0x80) start++;
+    }
+    return bytes.subarray(start).toString('utf8');
+  }
+}
 /** After 'exit', wait this long for the pipes to close (a grandchild may still hold them). */
 const CLOSE_GRACE_MS = 1_000;
 
@@ -186,8 +219,8 @@ export function killActiveProcesses(): void {
 export function runProcess(spec: ProcessSpec, log: Logger): Promise<ProcessResult> {
   return new Promise((resolve) => {
     const started = performance.now();
-    let stdout = '';
-    let stderr = '';
+    const stdout = new Tail(spec.outputLimitBytes ?? TAIL_BYTES);
+    const stderr = new Tail(spec.outputLimitBytes ?? TAIL_BYTES);
     let timedOut = false;
     let settled = false;
     let exitCode: number | null = null;
@@ -207,19 +240,16 @@ export function runProcess(spec: ProcessSpec, log: Logger): Promise<ProcessResul
       if (child.pid !== undefined) activePids.delete(child.pid);
       const durationMs = performance.now() - started;
       log.debug(`${spec.command} exited ${exitCode ?? 'null'} after ${Math.round(durationMs)} ms`);
-      if (stderr !== '') log.debug(stderr);
-      resolve({ exitCode, timedOut, durationMs, stdout, stderr, ...extra });
+      const err = stderr.text();
+      if (err !== '') log.debug(err);
+      resolve({ exitCode, timedOut, durationMs, stdout: stdout.text(), stderr: err, ...extra });
     };
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child.pid);
     }, spec.timeoutMs);
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout = (stdout + chunk.toString('utf8')).slice(-TAIL_CHARS);
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString('utf8')).slice(-TAIL_CHARS);
-    });
+    child.stdout.on('data', (chunk: Buffer) => stdout.add(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderr.add(chunk));
     child.on('error', (err: NodeJS.ErrnoException) =>
       finish({
         spawnError: err.message,

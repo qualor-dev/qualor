@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import path from 'node:path';
 import {
   checkFixUpload,
@@ -6,22 +6,21 @@ import {
   FIX_LIMITS,
   FIX_MAX_DEPENDENTS,
   FIX_RULE_TEXT,
-  fixFileKind,
   fixPathProblem,
+  fixTargetProblem,
   greatestVersion,
-  isGreater,
   sameVersion,
   schemeOf,
-  scrubUrlUserinfo,
+  urlPasswordCount,
   type FixClaimItem,
   type FixFailureCode,
   type FixFamily,
   type FixFileChange,
   type FixLockfile,
+  type FixTargetFields,
   type FixTarget,
   type FixUpload,
   type NoFixReason,
-  type VersionScheme,
 } from '@qualor/shared/fix';
 import { gitText, type Git } from '../git/git';
 import type {
@@ -33,7 +32,7 @@ import type {
   InstalledAt,
 } from './adapter';
 import { MissingToolError } from './runner';
-import { changedPaths } from './workspace';
+import { changedPaths, committedForm, inScratch } from './workspace';
 
 /**
  * One fix, prepared in its scratch copy (spec §6.5 steps 1–6, B1, B3, B4): where the package is
@@ -89,7 +88,7 @@ type LocalRule =
 
 const LOCAL_RULE_TEXT: Readonly<Record<LocalRule, string>> = {
   secret_in_file:
-    "A changed file holds a secret of the job's environment, or a URL with credentials, that its text on the main branch does not.",
+    "A changed file holds a credential of the job's environment (the project token, a registry token or password), or a URL with a password, that its text on the main branch does not.",
   new_file: 'The fix added a file; a fix only changes files that exist on the main branch.',
   not_a_file: 'A changed path is no longer a regular file (deleted, or a link).',
   path_not_allowed: 'A changed file is not a manifest or lockfile of the package family.',
@@ -110,12 +109,6 @@ function unplanned(rule: string, text: string, paths: readonly string[]): FixOut
 const local = (rule: LocalRule, paths: readonly string[]): FixOutcome =>
   unplanned(rule, LOCAL_RULE_TEXT[rule], paths);
 
-/** The fields of an upload the target rules read. */
-export type TargetFields = Pick<
-  FixUpload,
-  'targets' | 'lockfiles' | 'targetVersion' | 'installedVersion'
->;
-
 /** How often `part` occurs in `text`. */
 function occurrences(text: string, part: string): number {
   let n = 0;
@@ -123,85 +116,22 @@ function occurrences(text: string, part: string): number {
   return n;
 }
 
-const REDACTED = '[redacted]';
-
-/** The URLs with credentials in a text (`scheme://user:pass@host`, `scheme://token@host`). */
-const credentialUrls = (text: string): number =>
-  occurrences(scrubUrlUserinfo(text), REDACTED) - occurrences(text, REDACTED);
-
 /**
- * B9, §6.9: a changed file that holds a known secret (the project token, a secret-named variable's
- * value, 4 characters or more, R21) or a URL with credentials more often than its text at HEAD, so
- * a package manager that wrote a registry credential into a lockfile never has it uploaded. The
- * first such file.
+ * B9, §6.9, I1: the first changed file that holds one of the job's credentials (the project token,
+ * credential-like values of the environment: `fixJobSecrets`) or a URL with a password more often
+ * than its text at HEAD, so a package manager that wrote a registry credential into a lockfile
+ * never has it uploaded. Ordinary text (`true`, a project key, `git@`) is no credential.
  */
 function secretFile(
   files: readonly FixFileChange[],
-  secrets: readonly string[],
+  credentials: readonly string[],
 ): string | undefined {
-  const known = secrets.filter((s) => s.length >= 4);
+  const known = credentials.filter((s) => s.length >= 4);
   return files.find(
     (f) =>
-      credentialUrls(f.next) > credentialUrls(f.base) ||
+      urlPasswordCount(f.next) > urlPasswordCount(f.base) ||
       known.some((s) => occurrences(f.next, s) > occurrences(f.base, s)),
   )?.path;
-}
-
-const directoryOf = (p: string): string => p.slice(0, p.lastIndexOf('/') + 1);
-
-/** Ruling T9i: an uploaded lockfile no target names; a `go.sum` through the `go.mod` beside it. */
-function unnamedLockfile(
-  family: FixFamily,
-  targets: readonly FixTarget[],
-  paths: readonly string[],
-): string | undefined {
-  const named = new Set(targets.map((t) => t.lockfile));
-  return paths.find((p) => {
-    if (fixFileKind(family, p) !== 'lockfile') return false;
-    const isGoSum = p.slice(p.lastIndexOf('/') + 1) === 'go.sum';
-    return !named.has(isGoSum ? `${directoryOf(p)}go.mod` : p);
-  });
-}
-
-/** R30: `targetVersion` is the greatest target, and `installedVersion` that of a target reaching it. */
-function topMismatch(scheme: VersionScheme, upload: TargetFields): boolean {
-  const greatest = greatestVersion(
-    scheme,
-    upload.targets.map((t) => t.target),
-  );
-  const named = upload.targets.some(
-    (t) =>
-      sameVersion(scheme, t.target, upload.targetVersion) &&
-      sameVersion(scheme, t.installed, upload.installedVersion),
-  );
-  return greatest === null || !sameVersion(scheme, greatest, upload.targetVersion) || !named;
-}
-
-/**
- * Rulings T9c, T9i: the server's target rules (`no_targets`, `target_mismatch`), in its order, for
- * an upload of `paths`: each target above its installed version and naming an uploaded file, each
- * lockfile line an uploaded file, each uploaded lockfile named by a target (a `go.sum` through its
- * `go.mod`), `targetVersion` the greatest target and `installedVersion` the installed version of a
- * target that reaches it. The rule and the file it failed on ('' when none), or null.
- */
-export function targetRuleProblem(
-  family: FixFamily,
-  upload: TargetFields,
-  paths: readonly string[],
-): { rule: 'no_targets' | 'target_mismatch'; path: string } | null {
-  if (upload.targets.length === 0) return { rule: 'no_targets', path: '' };
-  const mismatch = (p: string) => ({ rule: 'target_mismatch' as const, path: p });
-  const scheme = schemeOf(family);
-  const uploaded = new Set(paths);
-  const notAbove = upload.targets.find((t) => !isGreater(scheme, t.target, t.installed));
-  if (notAbove !== undefined) return mismatch(notAbove.lockfile);
-  const outside = upload.targets.find((t) => !uploaded.has(t.lockfile));
-  if (outside !== undefined) return mismatch(outside.lockfile);
-  const line = upload.lockfiles.find((l) => !uploaded.has(l.path));
-  if (line !== undefined) return mismatch(line.path);
-  const unnamed = unnamedLockfile(family, upload.targets, paths);
-  if (unnamed !== undefined) return mismatch(unnamed);
-  return topMismatch(scheme, upload) ? mismatch('') : null;
 }
 
 // ─── Steps ─────────────────────────────────────────────────────────────────
@@ -313,26 +243,39 @@ function utf8Text(bytes: Uint8Array): string | null {
   }
 }
 
+/** Each path a regular file of at most 32 MiB together in the working tree; the first problem. */
+function workingTreeProblem(root: string, paths: readonly string[]): FixOutcome | null {
+  let total = 0;
+  for (const p of paths) {
+    const size = regularFileSize(path.join(root, ...p.split('/')));
+    if (size === null) return local('not_a_file', [p]);
+    total += size;
+    if (total > FIX_LIMITS.maxTotalBytes) return local('too_large', [p]);
+  }
+  return null;
+}
+
 /**
- * Steps 4–5: each changed file's new text (a regular file, 32 MiB together, UTF-8 without NUL) and
- * its text at HEAD (`git show HEAD:<path>`), in path order.
+ * Steps 4–5: each changed file's new text as a commit holds it (ruling T12e: staged, so
+ * `.gitattributes` line endings are undone; 32 MiB together, UTF-8 without NUL) and its text at HEAD
+ * (`git show HEAD:<path>`), in path order.
  */
 async function readChanges(
   root: string,
   git: Git,
   paths: readonly string[],
 ): Promise<FixFileChange[] | FixOutcome> {
+  const problem = workingTreeProblem(root, paths);
+  if (problem !== null) return problem;
+  const blobs = await committedForm(git, { root }, paths);
+  if (blobs.reduce((n, b) => n + b.length, 0) > FIX_LIMITS.maxTotalBytes) {
+    return local('too_large', []);
+  }
   const changes: FixFileChange[] = [];
-  let total = 0;
-  for (const p of paths) {
-    const abs = path.join(root, ...p.split('/'));
-    const size = regularFileSize(abs);
-    if (size === null) return local('not_a_file', [p]);
-    total += size;
-    if (total > FIX_LIMITS.maxTotalBytes) return local('too_large', [p]);
-    const next = utf8Text(readFileSync(abs));
+  for (const [i, p] of paths.entries()) {
+    const next = utf8Text(blobs[i] ?? Buffer.alloc(0));
     if (next === null) return local('not_utf8', [p]);
-    const base = await gitText(git, ['-C', root, 'show', `HEAD:${p}`]);
+    const base = await gitText(git, inScratch(root, ['show', `HEAD:${p}`]));
     changes.push({ path: p, base, next });
   }
   return changes;
@@ -365,14 +308,15 @@ async function changedFiles(
  */
 function uploadProblem(
   fix: FixClaimItem,
-  upload: TargetFields,
+  upload: FixTargetFields,
   files: readonly FixFileChange[],
-  secrets: readonly string[],
+  credentials: readonly string[],
 ): FixOutcome | null {
-  const leaked = secretFile(files, secrets);
+  const leaked = secretFile(files, credentials);
   if (leaked !== undefined) return local('secret_in_file', [leaked]);
   const paths = files.map((f) => f.path);
-  const targets = targetRuleProblem(fix.family, upload, paths);
+  // Rulings T9c, T9i, I2: the server's own target check (`@qualor/shared/fix`).
+  const targets = fixTargetProblem(fix.family, upload, paths);
   if (targets !== null) return local(targets.rule, targets.path === '' ? [] : [targets.path]);
   const content = checkFixUpload({
     family: fix.family,
@@ -394,7 +338,7 @@ async function prepare(
   fix: FixClaimItem,
   adapter: FixAdapter,
   ws: FixWorkspace,
-  job: { git: Git; secrets: readonly string[] },
+  job: { git: Git; credentials: readonly string[] },
 ): Promise<FixOutcome> {
   const { git } = job;
   const installs = await vulnerableInstalls(fix, adapter, ws);
@@ -410,18 +354,23 @@ async function prepare(
   if (isStop(applied)) return fromStop(applied);
   const files = await changedFiles(fix.family, ws, git);
   if (!Array.isArray(files)) return files;
+  // Ruling T12i: the targets as checked, a copy no later step of the adapter can change.
   const upload = {
-    targets: plan.targets,
+    targets: plan.targets.map((t) => ({
+      installed: t.installed,
+      target: t.target,
+      lockfile: t.lockfile,
+    })),
     lockfiles: applied.lockfiles.map(lockfileLine),
     targetVersion: plan.greatest,
     installedVersion: plan.installed,
   };
-  const problem = uploadProblem(fix, upload, files, job.secrets);
+  const problem = uploadProblem(fix, upload, files, job.credentials);
   if (problem !== null) return problem;
   const verified = (await adapter.verify?.(ws, fix, plan)) ?? null;
   if (verified !== null) return fromStop(verified);
   const baseSha = (
-    await gitText(git, ['-C', ws.root, 'rev-parse', '--verify', 'HEAD^{commit}'])
+    await gitText(git, inScratch(ws.root, ['rev-parse', '--verify', 'HEAD^{commit}']))
   ).trim();
   return {
     baseSha,
@@ -440,20 +389,20 @@ async function prepare(
  * `noFix no_fixed_version`; the greatest equal to `declinedTarget` → `noFix declined`); `apply`;
  * what changed (an added file → `failure unplanned_change`); the base texts (`git show HEAD:<path>`);
  * the target rules and `checkFixUpload` (a rule → `failure unplanned_change` naming it); `verify`;
- * the files form. `git` is the checkout's; it reads the workspace with `-C`. `o.secrets` are the
- * job's known secrets (B9): a changed file that gains one, or a URL with credentials, is
- * `unplanned_change` (`secret_in_file`). Never throws for an adapter or a tool: a throw is a failure
- * (`missing_tool` or `package_manager`).
+ * the files form. `git` is the checkout's; it reads the workspace with `-C`, hooks off (T12d).
+ * `o.credentials` are the job's credentials (B9, I1: `fixJobSecrets`): a changed file that gains
+ * one, or a URL with a password, is `unplanned_change` (`secret_in_file`). Never throws for an
+ * adapter or a tool: a throw is a failure (`missing_tool` or `package_manager`).
  */
 export async function prepareFix(
   fix: FixClaimItem,
   adapter: FixAdapter,
   ws: FixWorkspace,
   git: Git,
-  o: { secrets?: readonly string[] } = {},
+  o: { credentials?: readonly string[] } = {},
 ): Promise<FixOutcome> {
   try {
-    return await prepare(fix, adapter, ws, { git, secrets: o.secrets ?? [] });
+    return await prepare(fix, adapter, ws, { git, credentials: o.credentials ?? [] });
   } catch (err) {
     return stopped(fix, err);
   }

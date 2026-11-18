@@ -114,6 +114,20 @@ describe('runProcess', () => {
     expect(r.stdout.endsWith('END')).toBe(true);
   });
 
+  it('keeps up to outputLimitBytes of each stream when the spec asks, from a whole character', async () => {
+    const r = await runProcess(
+      {
+        ...node(
+          'process.stdout.write("é".repeat(150000) + "END"); process.stderr.write("x".repeat(70000))',
+        ),
+        outputLimitBytes: 100_001,
+      },
+      silentLogger,
+    );
+    expect(r.stdout).toBe(`${'é'.repeat(49_999)}END`);
+    expect(r.stderr).toHaveLength(70_000);
+  });
+
   it('reports a command that cannot be started', async () => {
     const r = await runProcess(
       {

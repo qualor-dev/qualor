@@ -18,4 +18,5 @@ export * from './check/go';
 export * from './check/maven';
 export * from './check/python';
 export * from './check/upload';
+export * from './check/targets';
 export * from './api';

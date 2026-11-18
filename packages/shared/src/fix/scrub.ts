@@ -14,7 +14,9 @@ const NOT_SECRET_NAMES: ReadonlySet<string> = new Set(['PWD', 'OLDPWD']);
 /** R21: a shorter value is not scrubbed (it would hit ordinary text). */
 const MIN_SECRET_CHARS = 4;
 
-const REDACTED = '[redacted]';
+/** What a scrubbed secret becomes. */
+export const FIX_REDACTED = '[redacted]';
+const REDACTED = FIX_REDACTED;
 
 /**
  * B9, R21: the values of the secret-named variables of an environment, at least 4 characters each,
@@ -29,7 +31,8 @@ export function secretEnvValues(env: Readonly<Record<string, string | undefined>
   return [...values].toSorted((a, b) => b.length - a.length);
 }
 
-function replaceSecrets(text: string, secrets: readonly string[]): string {
+/** Each known secret of 4 characters or more (R21) replaced by `[redacted]`, the longest first. */
+export function replaceSecrets(text: string, secrets: readonly string[]): string {
   return secrets
     .filter((s) => s.length >= MIN_SECRET_CHARS)
     .toSorted((a, b) => b.length - a.length)
@@ -108,6 +111,20 @@ export function scrubUrlUserinfo(text: string): string {
   return text.replace(URL_AUTHORITY, urlUserinfo);
 }
 
+/**
+ * How many URLs of the text carry a password: a userinfo (up to the authority's last `@`) with a
+ * `:`. A user name alone (`git+ssh://git@github.com/…`) is no credential (Task 12 fix round 1, I1).
+ */
+export function urlPasswordCount(text: string): number {
+  let n = 0;
+  for (const m of text.matchAll(URL_AUTHORITY)) {
+    const authority = m[2] ?? '';
+    const at = authority.lastIndexOf('@');
+    if (at !== -1 && authority.slice(0, at).includes(':')) n += 1;
+  }
+  return n;
+}
+
 /** The B9 shapes, in order. */
 const B9_SCRUBS: readonly ((text: string) => string)[] = [
   (t) => t.replace(NPMRC_AUTH, `$1$2${REDACTED}`),
@@ -132,8 +149,18 @@ function lastLines(text: string, maxChars: number): string {
   return text.slice(text.lastIndexOf('\n', start) + 1);
 }
 
+/** The first `maxBytes` bytes of the UTF-8 text, ending at a whole character. */
+export function utf8Head(text: string, maxBytes: number): string {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= maxBytes) return text;
+  let end = maxBytes;
+  // A continuation byte (10xxxxxx) at the cut means the character before it is cut in two.
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end--;
+  return new TextDecoder().decode(bytes.subarray(0, end));
+}
+
 /** The last `maxBytes` bytes of the UTF-8 text, starting at a whole character. */
-function utf8Tail(text: string, maxBytes: number): string {
+export function utf8Tail(text: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length <= maxBytes) return text;
   let start = bytes.length - maxBytes;
