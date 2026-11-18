@@ -35,16 +35,18 @@ const fixJobPayload = z.union([fixJob, syncJob]);
 
 /**
  * spec §6.7, R18: one pass of the organisation, then (as the Jira pass) the next one 15 minutes
- * out, from `finally` so a pass that throws keeps its schedule too, while the organisation still
- * has a project with fixes switched on or an active fix; otherwise it gets none until a project
- * is switched on.
+ * out, or later when a 429 asked for it (ruling T11b: its `Retry-After`), from `finally` so a pass
+ * that throws keeps its schedule too, while the organisation still has a project with fixes
+ * switched on or an active fix; otherwise it gets none until a project is switched on.
  */
 async function runFixSync(deps: FixJobDeps, organizationId: string): Promise<void> {
+  let delay = FIX_SYNC_INTERVAL_SECONDS;
   try {
-    await runFixSyncPass(deps, organizationId);
+    const outcome = await runFixSyncPass(deps, organizationId);
+    delay = Math.max(delay, outcome.retryAfterSeconds ?? 0);
   } finally {
     if (await fixPassWanted(deps.db, organizationId)) {
-      await scheduleFixSync(deps.db, organizationId, FIX_SYNC_INTERVAL_SECONDS);
+      await scheduleFixSync(deps.db, organizationId, delay);
     }
   }
 }

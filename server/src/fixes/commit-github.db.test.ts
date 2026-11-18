@@ -1,46 +1,30 @@
-import { createHash } from 'node:crypto';
-import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
-import { and, eq, like, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { bearer } from '../../test/app';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
-import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
+import {
+  acceptedQfA,
+  claimFix,
+  enableFixes,
+  openQfA,
+  qfaPackageJson as packageJson,
+  qfaPackageLock as packageLock,
+  runFixJobs as runQueuedFixJobs,
+  seedMainVulnerability,
+  uploadQfA,
+} from '../../test/fixes';
 import { githubTestConfig, mappedGitHubProject } from '../../test/github';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
 import { PUBLIC_URL, silentLogger } from '../../test/scm';
 import { dependencyFixes, jobs } from '../db/schema';
 import { communityLimits } from '../limits';
-import { runUntilIdle } from '../queue/worker';
 import { MutationPacer } from '../scm/github/app-auth';
 import { createScmRuntime } from '../scm/runtime';
 import { FIX_QUEUE } from './jobs';
-import { fixHandlers, type FixJobDeps } from './run';
+import type { FixJobDeps } from './run';
 
-const NPM = 'https://registry.npmjs.org';
 const BRANCH = 'qualor/fix/js/qf-a';
 const TITLE = 'Bump qf-a from 1.2.5 to 1.2.6';
-
-const packageJson = (range: string) =>
-  `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }\n}\n`;
-const packageLock = (version: string) =>
-  `${JSON.stringify(
-    {
-      name: 'app',
-      lockfileVersion: 3,
-      packages: {
-        '': { name: 'app', dependencies: { 'qf-a': '^1.2.5' } },
-        'node_modules/qf-a': {
-          version,
-          resolved: `${NPM}/qf-a/-/qf-a-${version}.tgz`,
-          integrity: `sha512-${createHash('sha512').update(version).digest('base64')}`,
-        },
-      },
-    },
-    null,
-    2,
-  )}\n`;
-const b64 = (text: string) => Buffer.from(text).toString('base64');
 
 interface Repo {
   id: number;
@@ -91,71 +75,18 @@ describe('the fix commit job on GitHub (0.16 fix MRs §6.7, B10, R14; Git Data A
     );
     return { id, name, project };
   };
-  const claim = async (repo: Repo): Promise<FixClaimItem> => {
-    const res = await h.ctx.app.inject({
-      method: 'POST',
-      url: `/api/v0/projects/fixes/claim?projectKey=${encodeURIComponent(repo.project.key)}`,
-      headers: bearer(repo.project.token),
-      payload: { families: ['js'], branch: 'main', max: 1 },
-    });
-    expect(res.statusCode, res.body).toBe(200);
-    return (res.json() as FixClaimAnswer).items[0]!;
-  };
-  const upload = async (repo: Repo, item: FixClaimItem) => {
-    const res = await h.ctx.app.inject({
-      method: 'PUT',
-      url: `/api/v0/fixes/${item.id}/result`,
-      headers: bearer(repo.project.token),
-      payload: {
-        generation: item.generation,
-        leaseToken: item.leaseToken,
-        baseSha: fake.headOf(repo.id, 'main'),
-        installedVersion: '1.2.5',
-        targetVersion: '1.2.6',
-        targets: [{ installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' }],
-        files: [
-          { path: 'package.json', content: b64(packageJson('^1.2.6')) },
-          { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
-        ],
-        lockfiles: [
-          { path: 'package-lock.json', relation: 'direct', mechanism: null, dependents: [] },
-        ],
-        unfixable: [],
-      },
-    });
-    expect(res.statusCode, res.body).toBe(202);
-  };
-  const accepted = async (repo: Repo): Promise<string> => {
-    await seedFix(db(), { projectId: repo.project.id, family: 'js', packageName: 'qf-a' });
-    const item = await claim(repo);
-    await upload(repo, item);
-    return item.id;
-  };
+  const claim = (repo: Repo) => claimFix(h, repo.project);
+  const upload = (repo: Repo, item: Awaited<ReturnType<typeof claim>>) =>
+    uploadQfA(h, repo.project, item, fake.headOf(repo.id, 'main'));
+  const accepted = (repo: Repo) => acceptedQfA(h, repo.project, fake.headOf(repo.id, 'main'));
   const refreshed = async (repo: Repo, fixId: string) => {
     await db().update(dependencyFixes).set({ refresh: true }).where(eq(dependencyFixes.id, fixId));
     await upload(repo, await claim(repo));
   };
   /** The queued commit and close jobs, run now; the organisation's passes are dropped first. */
-  const runFixJobs = async () => {
-    await db()
-      .delete(jobs)
-      .where(
-        and(
-          eq(jobs.queue, FIX_QUEUE),
-          eq(jobs.status, 'queued'),
-          like(jobs.concurrencyKey, 'fix-sync:%'),
-        ),
-      );
-    await db()
-      .update(jobs)
-      .set({ runAt: sql`now()` })
-      .where(and(eq(jobs.queue, FIX_QUEUE), eq(jobs.status, 'queued')));
-    return runUntilIdle(db(), fixHandlers(deps), silentLogger);
-  };
+  const runFixJobs = () => runQueuedFixJobs(db(), deps);
   const openFix = async (repo: Repo): Promise<string> => {
-    const fixId = await accepted(repo);
-    await runFixJobs();
-    expect((await row(fixId)).state).toBe('open');
+    const fixId = await openQfA(h, repo.project, fake.headOf(repo.id, 'main'), deps);
     fake.clearRequests();
     return fixId;
   };

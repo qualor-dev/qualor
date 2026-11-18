@@ -1,10 +1,20 @@
-import { createHash } from 'node:crypto';
-import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
-import { and, eq, like, sql } from 'drizzle-orm';
+import type { FixClaimItem } from '@qualor/shared/fix';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { bearer } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
-import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
+import {
+  acceptedQfA,
+  claimFix,
+  enableFixes,
+  openQfA,
+  putFixResult,
+  qfaPackageJson as packageJson,
+  qfaPackageLock as packageLock,
+  runFixJobs as runQueuedFixJobs,
+  seedFix,
+  seedMainVulnerability,
+  uploadQfA,
+} from '../../test/fixes';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
 import { mappedProject, PUBLIC_URL, scmTestConfig, silentLogger } from '../../test/scm';
@@ -18,17 +28,19 @@ import {
   projectVulnerabilitySettings,
   scmConnections,
   targetVulnerabilities,
+  users,
+  vulnerabilityDecisions,
   vulnerabilityTargetChecks,
 } from '../db/schema';
 import { communityLimits } from '../limits';
 import { runUntilIdle, type WorkerLogger } from '../queue/worker';
+import { MAX_RETRY_AFTER_SECONDS } from '../scm/gitlab/client';
 import { createScmRuntime } from '../scm/runtime';
 import { goneComment } from './body';
 import { FIX_QUEUE, FIX_SYNC_INTERVAL_SECONDS, fixSyncKey, scheduleFixSync } from './jobs';
 import { fixHandlers, type FixJobDeps } from './run';
-import { expireLeases, runFixSyncPass, type FixPassOutcome } from './sync';
+import { expireLeases, FIX_READS_PER_PASS, runFixSyncPass, type FixPassOutcome } from './sync';
 
-const NPM = 'https://registry.npmjs.org';
 const CVE = 'CVE-2026-9401';
 const BRANCH = 'qualor/fix/js/qf-a';
 const BRANCH_PATH = /\/repository\/branches\/qualor%2Ffix%2Fjs%2Fqf-a$/;
@@ -37,36 +49,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-const integrity = (version: string) => {
-  const digest = createHash('sha512').update(`qf-a-${version}`).digest('base64');
-  return `sha512-${digest}`;
-};
-const packageJson = (range: string) =>
-  `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }\n}\n`;
-const packageLock = (version: string) =>
-  `${JSON.stringify(
-    {
-      name: 'app',
-      lockfileVersion: 3,
-      packages: {
-        '': { name: 'app', dependencies: { 'qf-a': '^1.2.5' } },
-        'node_modules/qf-a': {
-          version,
-          resolved: `${NPM}/qf-a/-/qf-a-${version}.tgz`,
-          integrity: integrity(version),
-        },
-      },
-    },
-    null,
-    2,
-  )}\n`;
-const b64 = (text: string) => Buffer.from(text).toString('base64');
-
 /** A GitLab project of the fake, mapped to a Qualor project with fix MRs on and qf-a vulnerable. */
 interface Repo {
   gitlabId: number;
   project: IngestProject & { connectionId: string };
-  token: Record<string, string>;
   main: string;
 }
 
@@ -79,6 +65,7 @@ const ZERO: FixPassOutcome = {
   refreshed: 0,
   requested: 0,
   stop: null,
+  retryAfterSeconds: null,
 };
 
 describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c, F28)', () => {
@@ -110,7 +97,7 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     const project = await mappedProject(h, fake, `FS-${gitlabId}`, gitlabId, options);
     await enableFixes(h, project.id, { maxOpen: 20 });
     const main = await mainBranchId(db(), project.id);
-    const repo = { gitlabId, project, token: bearer(project.token), main };
+    const repo = { gitlabId, project, main };
     await vulnerable(repo, { vulnerabilityId: CVE, fixedVersion: '1.2.6' });
     return repo;
   };
@@ -146,78 +133,19 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
         ),
       );
 
-  const claimAnswer = async (repo: Repo): Promise<FixClaimAnswer> => {
-    const res = await h.ctx.app.inject({
-      method: 'POST',
-      url: `/api/v0/projects/fixes/claim?projectKey=${encodeURIComponent(repo.project.key)}`,
-      headers: repo.token,
-      payload: { families: ['js'], branch: 'main', max: 1 },
-    });
-    expect(res.statusCode, res.body).toBe(200);
-    return res.json() as FixClaimAnswer;
-  };
-  const claim = async (repo: Repo): Promise<FixClaimItem> => {
-    const answer = await claimAnswer(repo);
-    expect(answer.items).toHaveLength(1);
-    return answer.items[0]!;
-  };
+  const claim = (repo: Repo) => claimFix(h, repo.project);
   const result = (repo: Repo, item: FixClaimItem, body: object) =>
-    h.ctx.app.inject({
-      method: 'PUT',
-      url: `/api/v0/fixes/${item.id}/result`,
-      headers: repo.token,
-      payload: { generation: item.generation, leaseToken: item.leaseToken, ...body },
-    });
+    putFixResult(h, repo.project, item, body);
   /** The good upload of qf-a 1.2.5 → 1.2.6 on main's head; 202, the fix `committing`. */
-  const upload = async (repo: Repo, item: FixClaimItem) => {
-    const res = await result(repo, item, {
-      baseSha: fake.headOf(repo.gitlabId, 'main'),
-      installedVersion: '1.2.5',
-      targetVersion: '1.2.6',
-      targets: [{ installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' }],
-      files: [
-        { path: 'package.json', content: b64(packageJson('^1.2.6')) },
-        { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
-      ],
-      lockfiles: [
-        { path: 'package-lock.json', relation: 'direct', mechanism: null, dependents: [] },
-      ],
-      unfixable: [],
-    });
-    expect(res.statusCode, res.body).toBe(202);
-  };
+  const upload = (repo: Repo, item: FixClaimItem) =>
+    uploadQfA(h, repo.project, item, fake.headOf(repo.gitlabId, 'main'));
   /** A requested fix of qf-a, claimed and uploaded (Task 9's routes): `committing`. */
-  const accepted = async (repo: Repo): Promise<string> => {
-    await seedFix(db(), { projectId: repo.project.id, family: 'js', packageName: 'qf-a' });
-    const item = await claim(repo);
-    await upload(repo, item);
-    return item.id;
-  };
-  /**
-   * Runs the queued commit and close jobs now. The organisation's queued passes (a settings save
-   * queues one) are dropped first: these tests run each pass themselves.
-   */
-  const runFixJobs = async () => {
-    await db()
-      .delete(jobs)
-      .where(
-        and(
-          eq(jobs.queue, FIX_QUEUE),
-          eq(jobs.status, 'queued'),
-          like(jobs.concurrencyKey, 'fix-sync:%'),
-        ),
-      );
-    await db()
-      .update(jobs)
-      .set({ runAt: sql`now()` })
-      .where(and(eq(jobs.queue, FIX_QUEUE), eq(jobs.status, 'queued')));
-    return runUntilIdle(db(), fixHandlers(deps()), silentLogger);
-  };
+  const accepted = (repo: Repo) => acceptedQfA(h, repo.project, fake.headOf(repo.gitlabId, 'main'));
+  /** The queued commit and close jobs, run now; these tests run each pass themselves. */
+  const runFixJobs = () => runQueuedFixJobs(db(), deps());
   /** An open fix of qf-a with its MR (Task 10's commit job), with the requests cleared. */
   const openFix = async (repo: Repo): Promise<string> => {
-    const fixId = await accepted(repo);
-    await runFixJobs();
-    expect((await row(fixId)).state).toBe('open');
+    const fixId = await openQfA(h, repo.project, fake.headOf(repo.gitlabId, 'main'), deps());
     fake.clearRequests();
     return fixId;
   };
@@ -251,6 +179,39 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     fake.discussions(repo.gitlabId, iid).flatMap((d) => d.notes.map((n) => n.body));
   const mrOf = (repo: Repo, iid: number) =>
     fake.mergeRequestsOf(repo.gitlabId).find((m) => m.iid === iid)!;
+  /**
+   * The project's automatic rule on (high, since a day ago, main checked before then), with a new
+   * high package `qf-auto` on main that it would request.
+   */
+  const autoRuleWithNewPackage = async (repo: Repo) => {
+    const since = new Date(Date.now() - DAY);
+    await seedCheck(db(), {
+      projectId: repo.project.id,
+      branchId: repo.main,
+      baselineAt: new Date(since.getTime() - DAY),
+    });
+    await db()
+      .update(projectFixSettings)
+      .set({ autoMinSeverity: 'high', autoSince: since })
+      .where(eq(projectFixSettings.projectId, repo.project.id));
+    await vulnerable(repo, {
+      vulnerabilityId: 'CVE-2026-9404',
+      fixedVersion: '3.0.1',
+      packageName: 'qf-auto',
+      firstSeenAt: new Date(since.getTime() + HOUR),
+    });
+  };
+  /** The project's fixes of `qf-auto`. */
+  const autoRows = (repo: Repo) =>
+    db()
+      .select()
+      .from(dependencyFixes)
+      .where(
+        and(
+          eq(dependencyFixes.projectId, repo.project.id),
+          eq(dependencyFixes.packageName, 'qf-auto'),
+        ),
+      );
   const monitoring = (projectId: string, enabled: boolean) =>
     db()
       .insert(projectVulnerabilitySettings)
@@ -609,23 +570,7 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     const repo = await freshRepo();
     const fixId = await openFix(repo);
     const { mrNumber } = await row(fixId);
-    // The automatic rule is on, with a new high package on main that it would request.
-    const since = new Date(Date.now() - DAY);
-    await seedCheck(db(), {
-      projectId: repo.project.id,
-      branchId: repo.main,
-      baselineAt: new Date(since.getTime() - DAY),
-    });
-    await db()
-      .update(projectFixSettings)
-      .set({ autoMinSeverity: 'high', autoSince: since })
-      .where(eq(projectFixSettings.projectId, repo.project.id));
-    await vulnerable(repo, {
-      vulnerabilityId: 'CVE-2026-9404',
-      fixedVersion: '3.0.1',
-      packageName: 'qf-auto',
-      firstSeenAt: new Date(since.getTime() + HOUR),
-    });
+    await autoRuleWithNewPackage(repo);
     await goneFromMain(repo);
     fake.setMergeRequest(repo.gitlabId, mrNumber!, { conflict: true });
     await monitoring(repo.project.id, false);
@@ -634,23 +579,13 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     expect(writes()).toEqual([]);
     expect(await row(fixId)).toMatchObject({ state: 'open', refresh: true });
     expect(mrOf(repo, mrNumber!).state).toBe('opened');
-    const autoRows = () =>
-      db()
-        .select()
-        .from(dependencyFixes)
-        .where(
-          and(
-            eq(dependencyFixes.projectId, repo.project.id),
-            eq(dependencyFixes.packageName, 'qf-auto'),
-          ),
-        );
-    expect(await autoRows()).toEqual([]);
+    expect(await autoRows(repo)).toEqual([]);
 
     // Monitoring back on: the gone MR is closed and the rule requests its package.
     await monitoring(repo.project.id, true);
     expect(await pass()).toEqual({ ...ZERO, fixed: 1, requested: 1 });
     expect(mrOf(repo, mrNumber!).state).toBe('closed');
-    const [auto] = await autoRows();
+    const [auto] = await autoRows(repo);
     expect(auto).toMatchObject({ state: 'requested', origin: 'auto', requestedBy: null });
   });
 
@@ -733,7 +668,7 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
       ([level, , m]) => level === 'info' && m === 'fix sync pass',
     );
     expect(more).toEqual([]);
-    expect(line![1]).toMatchObject({ ...ZERO, stop: 'rate_limited' });
+    expect(line![1]).toMatchObject({ ...ZERO, stop: 'rate_limited', retryAfterSeconds: 30 });
     const [queued, ...others] = await queuedSyncs(h.organizationId);
     expect(others).toEqual([]);
     expect(queued!.inSeconds).toBeGreaterThan(FIX_SYNC_INTERVAL_SECONDS - 10);
@@ -768,5 +703,202 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     });
     expect(await passJob(other.organizationId)).toBe(1);
     expect(await queuedSyncs(other.organizationId)).toEqual([]);
+  });
+  describe('fix round 1', () => {
+    it('T11a: ignored or triaged rows keep qf-a present on main, so the MR stays open; deleted rows are gone', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber, headSha } = await row(fixId);
+      const [admin] = await db().select().from(users).where(eq(users.username, 'ingest-admin'));
+      // Every remaining vulnerability of qf-a on main: one ignored, one accepted (won't fix).
+      await vulnerable(repo, { vulnerabilityId: 'CVE-2026-9406', fixedVersion: '1.2.6' });
+      await db()
+        .update(targetVulnerabilities)
+        .set({ ignored: true })
+        .where(
+          and(
+            eq(targetVulnerabilities.projectId, repo.project.id),
+            eq(targetVulnerabilities.vulnerabilityId, CVE),
+          ),
+        );
+      await db().insert(vulnerabilityDecisions).values({
+        projectId: repo.project.id,
+        packageName: 'qf-a',
+        vulnerabilityId: 'CVE-2026-9406',
+        status: 'wont_fix',
+        decidedBy: admin!.id,
+      });
+      expect(await pass()).toEqual(ZERO);
+      expect(await row(fixId)).toMatchObject({ state: 'open', refresh: false });
+      expect(mrOf(repo, mrNumber!).state).toBe('opened');
+      expect(notes(repo, mrNumber!)).toEqual([]);
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBe(headSha);
+      expect(writes()).toEqual([]);
+
+      // A person closes it: declined, as usual, since qf-a is still on main.
+      fake.setMergeRequest(repo.gitlabId, mrNumber!, { state: 'closed' });
+      expect(await pass()).toEqual({ ...ZERO, declined: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'declined', declinedTarget: '1.2.6' });
+
+      // The rows deleted (another project's fix): gone, as before.
+      const other = await freshRepo();
+      const otherFix = await openFix(other);
+      await goneFromMain(other);
+      expect(await pass()).toEqual({ ...ZERO, fixed: 1 });
+      expect((await row(otherFix)).state).toBe('fixed');
+    });
+
+    it('I1: a gone-close cut before the branch delete ends fixed on the next pass, the branch deleted, no declined target', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      // The MR step's head read, the close's, then a 503 on the re-read right before the delete.
+      fake.inject(
+        'GET',
+        BRANCH_PATH,
+        { status: 200, passThrough: true },
+        { status: 200, passThrough: true },
+        { status: 503 },
+      );
+      expect(await pass()).toEqual({ ...ZERO, stop: 'transient' });
+      expect(mrOf(repo, mrNumber!).state).toBe('closed');
+      expect(notes(repo, mrNumber!)).toEqual([goneComment('qf-a', 'main')]);
+      expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+      expect((await row(fixId)).state).toBe('open');
+
+      fake.clearRequests();
+      expect(await pass()).toEqual({ ...ZERO, fixed: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'fixed', declinedTarget: null });
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBeNull();
+      expect(writes().map((r) => r.method)).toEqual(['DELETE']);
+      expect(notes(repo, mrNumber!)).toEqual([goneComment('qf-a', 'main')]);
+    });
+
+    it('I1: a closed MR whose package is gone, with a person’s head on the branch: taken over, the branch kept', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      fake.setMergeRequest(repo.gitlabId, mrNumber!, { state: 'closed' });
+      let person = '';
+      // The delete's re-read finds a person's push.
+      fake.inject('GET', BRANCH_PATH, {
+        status: 200,
+        passThrough: true,
+        before: async () => {
+          person = fake.pushAs(repo.gitlabId, BRANCH, { 'README.md': 'mine\n' });
+        },
+      });
+      expect(await pass()).toEqual({ ...ZERO, takenOver: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'taken_over', declinedTarget: null });
+      expect(writes()).toEqual([]);
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBe(person);
+    });
+
+    it('T11b: a 429 with Retry-After 3600 puts the next pass at the clamped Retry-After, at least the interval', async () => {
+      await openFix(await freshRepo());
+      fake.inject('GET', MR_READ, { status: 429, headers: { 'retry-after': '3600' } });
+      const { lines, logger } = capture();
+      expect(await passJob(h.organizationId, { logger })).toBe(1);
+      const [line] = lines.filter(([level, , m]) => level === 'info' && m === 'fix sync pass');
+      // The SCM clients clamp a Retry-After to 15 minutes (MAX_RETRY_AFTER_SECONDS).
+      expect(line![1]).toMatchObject({
+        stop: 'rate_limited',
+        retryAfterSeconds: MAX_RETRY_AFTER_SECONDS,
+      });
+      const due = Math.max(FIX_SYNC_INTERVAL_SECONDS, MAX_RETRY_AFTER_SECONDS);
+      const [queued, ...others] = await queuedSyncs(h.organizationId);
+      expect(others).toEqual([]);
+      expect(queued!.inSeconds).toBeGreaterThan(due - 10);
+      expect(queued!.inSeconds).toBeLessThanOrEqual(due);
+    });
+
+    it('T11d: a 5xx on an MR read stops the pass as transient', async () => {
+      const one = await openFix(await freshRepo());
+      const two = await openFix(await freshRepo());
+      fake.inject('GET', MR_READ, { status: 503 });
+      fake.clearRequests();
+      expect(await pass()).toEqual({ ...ZERO, stop: 'transient' });
+      expect(fake.requests).toHaveLength(1);
+      expect((await row(one)).state).toBe('open');
+      expect((await row(two)).state).toBe('open');
+    });
+
+    it("T11d: a project's request budget ends its part; another project of the organisation goes on", async () => {
+      const spent = await freshRepo();
+      const first = await openFix(spent);
+      // A second open fix of the same project, whose MR does not exist (a 404 skips it).
+      const second = await seedFix(db(), {
+        projectId: spent.project.id,
+        family: 'js',
+        packageName: 'qf-b',
+        state: 'open',
+        mrNumber: 9_999,
+        headSha: 'c'.repeat(40),
+      });
+      const other = await freshRepo();
+      const merged = await openFix(other);
+      fake.setMergeRequest(other.gitlabId, (await row(merged)).mrNumber!, { state: 'merged' });
+      // Both projects' automatic rules would request a new package (step 4, no SCM request).
+      for (const repo of [spent, other]) await autoRuleWithNewPackage(repo);
+      const base = deps();
+      // Two requests per project's client: the spent project needs three for its two fixes.
+      const tight = { scm: { ...base.scm, clientOptions: { timeoutMs: 2_000, maxRequests: 2 } } };
+      const { lines, logger } = capture();
+      fake.clearRequests();
+      expect(await pass({ ...tight, logger })).toEqual({
+        ...ZERO,
+        merged: 1,
+        requested: 1,
+        stop: 'budget',
+      });
+      expect((await row(merged)).state).toBe('merged');
+      expect((await row(first)).state).toBe('open');
+      expect((await row(second)).state).toBe('open');
+      // The spent project's part ended: no request past its budget, no automatic request.
+      const spentRequests = fake.requests.filter((r) =>
+        r.path.startsWith(`/projects/${spent.gitlabId}/`),
+      );
+      expect(spentRequests).toHaveLength(2);
+      expect(await autoRows(spent)).toEqual([]);
+      expect(await autoRows(other)).toHaveLength(1);
+      const budgetWarnings = lines.filter(
+        ([level, fields]) =>
+          level === 'warn' && (fields as { errorKind?: string }).errorKind === 'budget',
+      );
+      expect(budgetWarnings).toHaveLength(1);
+    });
+
+    it('T11d: with more open fixes than FIX_READS_PER_PASS, a pass reads 200 MRs', async () => {
+      expect(FIX_READS_PER_PASS).toBe(200);
+      const repo = await freshRepo();
+      // 201 open fixes whose MRs do not exist (each read a 404, skipped); monitoring off, so only
+      // the MR step sends requests.
+      await db()
+        .insert(dependencyFixes)
+        .values(
+          Array.from({ length: FIX_READS_PER_PASS + 1 }, (_, i) => ({
+            projectId: repo.project.id,
+            family: 'js' as const,
+            packageName: `qf-many-${i}`,
+            state: 'open' as const,
+            origin: 'manual' as const,
+            branch: `qualor/fix/js/qf-many-${i}`,
+            mrNumber: 10_000 + i,
+            mrUrl: `https://scm.example/mr/${10_000 + i}`,
+            headSha: 'c'.repeat(40),
+          })),
+        );
+      await monitoring(repo.project.id, false);
+      try {
+        fake.clearRequests();
+        expect(await pass()).toEqual(ZERO);
+        expect(mrReads()).toHaveLength(FIX_READS_PER_PASS);
+        expect(fake.requests).toHaveLength(FIX_READS_PER_PASS);
+      } finally {
+        await monitoring(repo.project.id, true);
+      }
+    });
   });
 });

@@ -1,56 +1,35 @@
-import { createHash } from 'node:crypto';
-import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
-import { and, eq, like, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { bearer } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab, type FakeMergeRequest } from '../../test/fake-gitlab';
-import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
+import {
+  acceptedQfA,
+  claimFix,
+  enableFixes,
+  openQfA,
+  qfaPackageJson as packageJson,
+  qfaPackageLock as packageLock,
+  runFixJobs as runQueuedFixJobs,
+  seedMainVulnerability,
+  uploadQfA,
+} from '../../test/fixes';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
 import { mappedProject, PUBLIC_URL, scmTestConfig, silentLogger } from '../../test/scm';
 import { dependencyFixes, jobs, projects, scmConnections } from '../db/schema';
 import { communityLimits } from '../limits';
-import { runUntilIdle } from '../queue/worker';
 import { MAX_DECORATIONS_PER_ORGANIZATION, createScmRuntime } from '../scm/runtime';
 import { cancelComment } from './body';
 import { FIX_QUEUE } from './jobs';
-import { fixHandlers, type FixJobDeps } from './run';
+import type { FixJobDeps } from './run';
 
-const NPM = 'https://registry.npmjs.org';
 const CVE = 'CVE-2026-9301';
 const BRANCH = 'qualor/fix/js/qf-a';
 const TITLE = 'Bump qf-a from 1.2.5 to 1.2.6';
-
-const integrity = (version: string) => {
-  const digest = createHash('sha512').update(`qf-a-${version}`).digest('base64');
-  return `sha512-${digest}`;
-};
-const packageJson = (range: string) =>
-  `{\n  "name": "app",\n  "dependencies": {\n    "qf-a": "${range}"\n  }\n}\n`;
-const packageLock = (version: string) =>
-  `${JSON.stringify(
-    {
-      name: 'app',
-      lockfileVersion: 3,
-      packages: {
-        '': { name: 'app', dependencies: { 'qf-a': '^1.2.5' } },
-        'node_modules/qf-a': {
-          version,
-          resolved: `${NPM}/qf-a/-/qf-a-${version}.tgz`,
-          integrity: integrity(version),
-        },
-      },
-    },
-    null,
-    2,
-  )}\n`;
-const b64 = (text: string) => Buffer.from(text).toString('base64');
 
 /** A GitLab project of the fake, mapped to a Qualor project with fix MRs on and qf-a vulnerable. */
 interface Repo {
   gitlabId: number;
   project: IngestProject & { connectionId: string };
-  token: Record<string, string>;
 }
 
 describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, R10, R17)', () => {
@@ -93,84 +72,25 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
         fixedVersion: '1.2.6',
       },
     );
-    return { gitlabId, project, token: bearer(project.token) };
+    return { gitlabId, project };
   };
 
-  const claim = async (repo: Repo): Promise<FixClaimItem> => {
-    const res = await h.ctx.app.inject({
-      method: 'POST',
-      url: `/api/v0/projects/fixes/claim?projectKey=${encodeURIComponent(repo.project.key)}`,
-      headers: repo.token,
-      payload: { families: ['js'], branch: 'main', max: 1 },
-    });
-    expect(res.statusCode, res.body).toBe(200);
-    const answer = res.json() as FixClaimAnswer;
-    expect(answer.items).toHaveLength(1);
-    return answer.items[0]!;
-  };
+  const claim = (repo: Repo) => claimFix(h, repo.project);
   /** The good upload of qf-a 1.2.5 → 1.2.6 on main's head; 202, the fix `committing`. */
-  const upload = async (repo: Repo, item: FixClaimItem) => {
-    const res = await h.ctx.app.inject({
-      method: 'PUT',
-      url: `/api/v0/fixes/${item.id}/result`,
-      headers: repo.token,
-      payload: {
-        generation: item.generation,
-        leaseToken: item.leaseToken,
-        baseSha: fake.headOf(repo.gitlabId, 'main'),
-        installedVersion: '1.2.5',
-        targetVersion: '1.2.6',
-        targets: [{ installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' }],
-        files: [
-          { path: 'package.json', content: b64(packageJson('^1.2.6')) },
-          { path: 'package-lock.json', content: b64(packageLock('1.2.6')) },
-        ],
-        lockfiles: [
-          { path: 'package-lock.json', relation: 'direct', mechanism: null, dependents: [] },
-        ],
-        unfixable: [],
-      },
-    });
-    expect(res.statusCode, res.body).toBe(202);
-  };
+  const upload = (repo: Repo, item: Awaited<ReturnType<typeof claim>>) =>
+    uploadQfA(h, repo.project, item, fake.headOf(repo.gitlabId, 'main'));
   /** A requested fix of qf-a, claimed and uploaded (Task 9's routes): `committing`. */
-  const accepted = async (repo: Repo): Promise<string> => {
-    await seedFix(db(), { projectId: repo.project.id, family: 'js', packageName: 'qf-a' });
-    const item = await claim(repo);
-    await upload(repo, item);
-    return item.id;
-  };
+  const accepted = (repo: Repo) => acceptedQfA(h, repo.project, fake.headOf(repo.gitlabId, 'main'));
   /** An open fix to refresh (a conflict, a higher target): claimed and uploaded again. */
   const refreshed = async (repo: Repo, fixId: string) => {
     await db().update(dependencyFixes).set({ refresh: true }).where(eq(dependencyFixes.id, fixId));
     await upload(repo, await claim(repo));
   };
-  /**
-   * Makes every queued commit and close job due now, then runs the queue until idle. The
-   * organisation's queued passes (a settings save queues one) are dropped first: the sync pass has
-   * tests of its own.
-   */
-  const runFixJobs = async () => {
-    await db()
-      .delete(jobs)
-      .where(
-        and(
-          eq(jobs.queue, FIX_QUEUE),
-          eq(jobs.status, 'queued'),
-          like(jobs.concurrencyKey, 'fix-sync:%'),
-        ),
-      );
-    await db()
-      .update(jobs)
-      .set({ runAt: sql`now()` })
-      .where(and(eq(jobs.queue, FIX_QUEUE), eq(jobs.status, 'queued')));
-    return runUntilIdle(db(), fixHandlers(deps()), silentLogger);
-  };
+  /** The queued commit and close jobs, run now (the sync pass has tests of its own). */
+  const runFixJobs = () => runQueuedFixJobs(db(), deps());
   /** An open fix of qf-a with its MR (the first commit), with the requests cleared. */
   const openFix = async (repo: Repo): Promise<string> => {
-    const fixId = await accepted(repo);
-    await runFixJobs();
-    expect((await row(fixId)).state).toBe('open');
+    const fixId = await openQfA(h, repo.project, fake.headOf(repo.gitlabId, 'main'), deps());
     fake.clearRequests();
     return fixId;
   };

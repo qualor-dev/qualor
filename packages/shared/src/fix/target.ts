@@ -4,7 +4,14 @@
  * vulnerabilities, the greatest of those choices.
  */
 import { goSameModuleMajor } from './versions/go';
-import { compareVersions, isPrerelease, releaseLine, versionParses } from './versions';
+import {
+  compareVersions,
+  isGreater,
+  isPrerelease,
+  releaseLine,
+  sameVersion,
+  versionParses,
+} from './versions';
 import type { VersionScheme } from './versions';
 
 /** What target choice needs of one vulnerability of the package. */
@@ -45,7 +52,7 @@ function isCandidate(scheme: VersionScheme, installed: string, fixed: string): b
     }
   }
   if (scheme === 'go' && !goSameModuleMajor(fixed, installed)) return false;
-  return (compareVersions(scheme, fixed, installed) ?? 0) > 0;
+  return isGreater(scheme, fixed, installed);
 }
 
 /**
@@ -66,19 +73,6 @@ export function chooseTarget(
   if (pick === undefined) return null;
   const pickLine = releaseLine(scheme, pick);
   return { version: pick, majorJump: pickLine === null || pickLine !== line };
-}
-
-function isGreater(scheme: VersionScheme, a: string, b: string): boolean {
-  return (compareVersions(scheme, a, b) ?? 0) > 0;
-}
-
-/**
- * Ruling T1c: the same version by the scheme's order (`v1.2.3` and `1.2.3` for Go), or the same
- * string when either does not parse.
- */
-function sameVersion(scheme: VersionScheme, a: string, b: string): boolean {
-  const c = compareVersions(scheme, a, b);
-  return c === null ? a === b : c === 0;
 }
 
 function targetFor(

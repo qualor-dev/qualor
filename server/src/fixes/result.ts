@@ -7,6 +7,8 @@ import {
   fixFileKind,
   fixPathProblem,
   greatestVersion,
+  isGreater,
+  sameVersion,
   schemeOf,
   scrubToolOutput,
   type FixFamily,
@@ -331,12 +333,6 @@ function shapeOf(family: FixFamily, files: FixUpload['files']): UploadedFile[] |
 
 // ─── Targets (R7, rulings T9g–T9i) ──────────────────────────────────────────
 
-/** The same version by the scheme's order, or the same text when either does not parse (T1c). */
-function sameVersion(scheme: VersionScheme, a: string, b: string): boolean {
-  const c = compareVersions(scheme, a, b);
-  return c === null ? a === b : c === 0;
-}
-
 const mismatch = (path: string): Refusal => ({ rule: 'target_mismatch', path });
 
 /** The directory part of a path, with its slash ('' at the root). */
@@ -371,9 +367,7 @@ function outsideUpload(
   upload: FixUpload,
   paths: ReadonlySet<string>,
 ): Refusal | null {
-  const notAbove = upload.targets.find(
-    (t) => (compareVersions(scheme, t.target, t.installed) ?? 0) <= 0,
-  );
+  const notAbove = upload.targets.find((t) => !isGreater(scheme, t.target, t.installed));
   if (notAbove !== undefined) return mismatch(notAbove.lockfile);
   const outside = upload.targets.find((t) => !paths.has(t.lockfile));
   if (outside !== undefined) return mismatch(outside.lockfile);

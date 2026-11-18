@@ -91,6 +91,20 @@ export function compareVersions(scheme: VersionScheme, a: string, b: string): nu
   return c === null ? null : sign(c);
 }
 
+/**
+ * Ruling T1c: the same version by the scheme's order (`v1.2.3` and `1.2.3` for Go), or the same
+ * text when either does not parse. The one copy for the CLI and the server (ruling T11c).
+ */
+export function sameVersion(scheme: VersionScheme, a: string, b: string): boolean {
+  const c = compareVersions(scheme, a, b);
+  return c === null ? a === b : c === 0;
+}
+
+/** Whether `a` is greater than `b` by the scheme's order; false when either does not parse. */
+export function isGreater(scheme: VersionScheme, a: string, b: string): boolean {
+  return (compareVersions(scheme, a, b) ?? 0) > 0;
+}
+
 /** Whether a version parses by the scheme. */
 export function versionParses(scheme: VersionScheme, v: string): boolean {
   return SCHEMES[scheme].facts(v) !== null;

@@ -9,7 +9,7 @@ import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { textList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { branches, dependencyFixes } from '../db/schema';
-import { pairKey } from '../jira/presence';
+import { pairKey, pairPlaces, type VulnerabilityPair } from '../jira/presence';
 import type { VulnerabilitySeverity } from '../vulnerabilities/order';
 import { IS_NEW, scopedRows } from '../vulnerabilities/summary';
 import { fixDto, fixPackageName, type DependencyFix, type DependencyFixRow } from './rows';
@@ -21,13 +21,21 @@ export const GO_STDLIB = 'stdlib';
 export const isGoStdlib = (family: FixFamily, packageName: string): boolean =>
   family === 'go' && packageName === GO_STDLIB;
 
-/** The project's main branch; null when it has none (a project always has one, but races). */
-export async function mainBranchId(db: Executor, projectId: string): Promise<string | null> {
+/** The project's main branch, its id and name; null when it has none (it always has, but races). */
+export async function mainBranchOf(
+  db: Executor,
+  projectId: string,
+): Promise<{ id: string; name: string } | null> {
   const [row] = await db
-    .select({ id: branches.id })
+    .select({ id: branches.id, name: branches.name })
     .from(branches)
     .where(and(eq(branches.projectId, projectId), eq(branches.isMain, true)));
-  return row?.id ?? null;
+  return row ?? null;
+}
+
+/** The project's main branch id; null when it has none. */
+export async function mainBranchId(db: Executor, projectId: string): Promise<string | null> {
+  return (await mainBranchOf(db, projectId))?.id ?? null;
 }
 
 /** A {@link scopedRows} condition: the row is on the project's main-branch target. */
@@ -121,6 +129,36 @@ export async function mainVulnerabilities(
     kev: r.kev,
     kevDateAdded: r.kev_date_added,
   }));
+}
+
+/**
+ * Ruling T11a, spec §6.7 step 3: whether main still has the fix's package, by the Jira presence
+ * rule restricted to the main-branch target (`pairPlaces`, ruling F23): a `target_vulnerabilities`
+ * row on main in any state (an ignored or triaged one keeps the package present), or a non-closed
+ * Trivy issue on main. The pairs judged are the package's rows on main (the family's Trivy types,
+ * every spelling of a Python name, T8b) and the ones the fix handled (`vulnerability_ids`).
+ */
+export async function packageOnMain(
+  db: Executor,
+  fix: Pick<DependencyFixRow, 'projectId' | 'family' | 'packageName' | 'vulnerabilityIds'>,
+): Promise<boolean> {
+  const main = await mainBranchOf(db, fix.projectId);
+  if (main === null) return false;
+  const rows = await db.execute<{ package_name: string; vulnerability_id: string }>(sql`
+    SELECT DISTINCT tv.package_name, tv.vulnerability_id
+      FROM target_vulnerabilities tv
+     WHERE ${onMain(fix.projectId)} AND ${ofPackage(fix.family, fix.packageName)}
+       AND tv.ecosystem IN ${textList(ecosystemsOf(fix.family))}`);
+  const pairs: VulnerabilityPair[] = [
+    ...rows.rows.map((r) => ({ packageName: r.package_name, vulnerabilityId: r.vulnerability_id })),
+    ...fix.vulnerabilityIds.map((vulnerabilityId) => ({
+      packageName: fix.packageName,
+      vulnerabilityId,
+    })),
+  ];
+  const scope = { targets: [{ kind: 'branch' as const, branchId: main.id }] };
+  const { present } = await pairPlaces(db, fix.projectId, scope, pairs);
+  return [...present.values()].some((places) => places.includes(main.name));
 }
 
 /**

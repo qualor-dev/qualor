@@ -1,4 +1,10 @@
-import { chooseTargets, compareVersions, schemeOf, type VersionScheme } from '@qualor/shared/fix';
+import {
+  chooseTargets,
+  isGreater,
+  sameVersion,
+  schemeOf,
+  type VersionScheme,
+} from '@qualor/shared/fix';
 import { and, eq, lt, sql, type SQL } from 'drizzle-orm';
 import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import type { Db, Executor } from '../db/client';
@@ -11,7 +17,7 @@ import { runFixAuto } from './auto';
 import { goneComment } from './body';
 import { claimVulnerabilities } from './claim';
 import { closeFixChange, fence, openWithMrElse, type ClosedAs } from './commit';
-import { mainVulnerabilities, type MainVulnerability } from './eligibility';
+import { mainVulnerabilities, packageOnMain, type MainVulnerability } from './eligibility';
 import { FIX_QUEUE } from './jobs';
 import { openTrackingRepository, type FixRepository } from './repository';
 import type { DependencyFixRow } from './rows';
@@ -47,6 +53,8 @@ export interface FixPassOutcome {
    * request budget ended that project's part while the pass went on.
    */
   stop: null | 'rate_limited' | 'budget' | 'transient';
+  /** The provider's `Retry-After` when a 429 ended the pass (ruling T11b); null otherwise. */
+  retryAfterSeconds: number | null;
 }
 
 /** Ruling T10c: the failure of a commit whose job died (a DB failure, a bug) with no answer. */
@@ -143,6 +151,8 @@ interface Pass {
   readonly repositories: Map<string, Tracking | null>;
   /** Projects whose part of the pass has ended (their request budget, a refused token). */
   readonly ended: Set<string>;
+  /** Whether vulnerability monitoring is on for each project, read once per pass. */
+  readonly monitoring: Map<string, boolean>;
 }
 
 /** A 429 or a transient failure has ended the pass. */
@@ -156,6 +166,19 @@ interface Where {
 }
 
 /**
+ * The pass ends on a 429 (keeping the provider's `Retry-After` for the next pass, ruling T11b) or
+ * on a transient failure.
+ */
+function halt(pass: Pass, err: ScmError): void {
+  if (err.kind === 'rate_limited') {
+    pass.outcome.stop = 'rate_limited';
+    pass.outcome.retryAfterSeconds = err.retryAfterSeconds;
+  } else {
+    pass.outcome.stop = 'transient';
+  }
+}
+
+/**
  * A failed SCM call: a 429 or a transient failure ends the pass; the request budget or a refused
  * token ends the project's part; any other failure (an MR or branch not found, a refusal, an
  * answer not understood) skips that fix until the next pass. One warning with what the SCM said,
@@ -163,7 +186,7 @@ interface Where {
  */
 function noteFailure(pass: Pass, where: Where, err: ScmError): void {
   if (retryable(err)) {
-    pass.outcome.stop = err.kind === 'rate_limited' ? 'rate_limited' : 'transient';
+    halt(pass, err);
   } else if (err.kind === 'budget' || err.kind === 'auth') {
     pass.ended.add(where.projectId);
     if (err.kind === 'budget' && pass.outcome.stop === null) pass.outcome.stop = 'budget';
@@ -292,16 +315,51 @@ async function openParts(db: Db, organizationId: string): Promise<Part[]> {
   return [...parts.values()];
 }
 
+/** Whether vulnerability monitoring is on for the project (instance and project), once a pass. */
+async function monitored(pass: Pass, projectId: string): Promise<boolean> {
+  const known = pass.monitoring.get(projectId);
+  if (known !== undefined) return known;
+  const on = await monitoringOn(pass.deps.db, projectId);
+  pass.monitoring.set(projectId, on);
+  return on;
+}
+
 /**
- * spec §6.7 step 2, §11.2: what became of the fix's MR. Merged → `merged`; closed by a person →
- * `declined`; a branch head that is not Qualor's last commit → `taken_over` (a branch a person
- * deleted is not theirs, as for the commit job); a conflict → `refresh`.
+ * Ruling T11a: main no longer has the fix's package (`packageOnMain`, the Jira presence rule on
+ * the main target), judged only while monitoring is on (spec §6.7: else nothing is gone).
  */
-async function trackChange(pass: Pass, repo: FixRepository, row: DependencyFixRow): Promise<void> {
+async function isGone(pass: Pass, row: DependencyFixRow): Promise<boolean> {
+  return (await monitored(pass, row.projectId)) && !(await packageOnMain(pass.deps.db, row));
+}
+
+/**
+ * Finding I1: an MR closed without a merge. While main still has the package, a person declined
+ * it: `declined`, its target kept. Once the package is gone (Qualor's gone-close cut short before
+ * the branch delete, or a person's close that no longer matters): `fixed`, with the branch
+ * deleted through the B10 path (`deleteBranch` re-reads the head; a person's head keeps the
+ * branch, `taken_over`). Nothing is deleted while the connection does not allow fix MRs (R18).
+ */
+async function endClosed(pass: Pass, tracking: Tracking, row: DependencyFixRow): Promise<void> {
+  if (!(await isGone(pass, row))) return endFix(pass, row, 'declined');
+  let deleted: 'deleted' | 'gone' | 'taken_over' = 'gone';
+  if (tracking.writable && row.headSha !== null) {
+    deleted = await tracking.repo.deleteBranch(row.branch, row.headSha);
+  }
+  return endFix(pass, row, deleted === 'taken_over' ? 'taken_over' : 'fixed');
+}
+
+/**
+ * spec §6.7 step 2, §11.2: what became of the fix's MR. Merged → `merged`; closed → `declined`,
+ * or `fixed` when the package is gone ({@link endClosed}); a branch head that is not Qualor's last
+ * commit → `taken_over` (a branch a person deleted is not theirs, as for the commit job); a
+ * conflict → `refresh`.
+ */
+async function trackChange(pass: Pass, tracking: Tracking, row: DependencyFixRow): Promise<void> {
   if (row.mrNumber === null) return;
+  const { repo } = tracking;
   const change = await repo.readChange(row.mrNumber);
   if (change.state === 'merged') return endFix(pass, row, 'merged');
-  if (change.state === 'closed') return endFix(pass, row, 'declined');
+  if (change.state === 'closed') return endClosed(pass, tracking, row);
   const head = await repo.branchHead(row.branch);
   if (head !== null && head !== row.headSha) return endFix(pass, row, 'taken_over');
   if (change.conflict) await markRefresh(pass, row);
@@ -315,7 +373,7 @@ async function readPart(pass: Pass, part: Part): Promise<void> {
     const row = await openFixOf(pass.deps.db, fixId);
     if (row !== null) {
       await scmCall(pass, { projectId: row.projectId, fixId }, () =>
-        trackChange(pass, tracking.repo, row),
+        trackChange(pass, tracking, row),
       );
     }
     if (halted(pass) || pass.ended.has(part.project.id)) return;
@@ -336,20 +394,11 @@ async function readChanges(pass: Pass): Promise<void> {
 
 // ─── Step 3: presence on main ────────────────────────────────────────────────
 
-/** Ruling T1c: the same version by the scheme's order, or the same text when either is unknown. */
-function sameVersion(scheme: VersionScheme, a: string, b: string): boolean {
-  const c = compareVersions(scheme, a, b);
-  return c === null ? a === b : c === 0;
-}
-
-const isAbove = (scheme: VersionScheme, a: string, b: string): boolean =>
-  (compareVersions(scheme, a, b) ?? 0) > 0;
-
 /** The MR's target for an installed version (B3): the lowest of its lockfiles'; null without one. */
 function targetOf(row: DependencyFixRow, scheme: VersionScheme, installed: string): string | null {
   const own = row.targets.filter((t) => sameVersion(scheme, t.installed, installed));
   if (own.length === 0) return row.targets.length === 0 ? row.targetVersion : null;
-  return own.reduce((low, t) => (isAbove(scheme, low.target, t.target) ? t : low)).target;
+  return own.reduce((low, t) => (isGreater(scheme, low.target, t.target) ? t : low)).target;
 }
 
 /**
@@ -366,15 +415,18 @@ export function needsHigherTarget(
   const installed = [...new Set(rows.map((r) => r.packageVersion))];
   return chooseTargets(scheme, installed, claimVulnerabilities(row.family, rows)).some((t) => {
     const current = targetOf(row, scheme, t.installed);
-    return t.target !== null && current !== null && isAbove(scheme, t.target, current);
+    return t.target !== null && current !== null && isGreater(scheme, t.target, current);
   });
 }
 
-/** How a gone fix ends after {@link closeFixChange}. */
+/**
+ * How a gone fix ends after {@link closeFixChange}: an MR found closed is `fixed` too (I1: the
+ * package is gone, so no person declined a fix that still mattered).
+ */
 const GONE_END: Readonly<Record<ClosedAs, PassEnd>> = Object.freeze({
   closed: 'fixed',
   merged: 'merged',
-  declined: 'declined',
+  declined: 'fixed',
   taken_over: 'taken_over',
 });
 
@@ -397,23 +449,24 @@ async function closeGone(pass: Pass, project: ProjectRow, row: DependencyFixRow)
 }
 
 /**
- * One open fix judged on main, read again right before (ruling T8c): its package's main rows
- * (B5; a Python package by its PEP 503 name, T8b) gone → {@link closeGone}; a higher version
- * needed → `refresh`.
+ * One open fix judged on main, read again right before (ruling T8c). The package gone from main by
+ * the Jira presence rule (ruling T11a: an ignored or triaged row keeps it present) →
+ * {@link closeGone}. Otherwise a higher version needed by a vulnerability that needs a fix (B5:
+ * effective-open, not ignored; a Python package by its PEP 503 name, T8b) → `refresh`.
  */
 async function judgeOnMain(pass: Pass, project: ProjectRow, fixId: string): Promise<void> {
   const { db } = pass.deps;
   const row = await openFixOf(db, fixId);
   if (row === null) return;
+  if (!(await packageOnMain(db, row))) return closeGone(pass, project, row);
   const rows = await mainVulnerabilities(db, row.projectId, row.family, row.packageName);
-  if (rows.length === 0) await closeGone(pass, project, row);
-  else if (needsHigherTarget(row, rows)) await markRefresh(pass, row);
+  if (needsHigherTarget(row, rows)) await markRefresh(pass, row);
 }
 
 /** spec §6.7 step 3; monitoring off for the project skips it (as in the Jira pass). */
 async function presence(pass: Pass): Promise<void> {
   for (const { project, fixIds } of pass.parts) {
-    if (pass.ended.has(project.id) || !(await monitoringOn(pass.deps.db, project.id))) continue;
+    if (pass.ended.has(project.id) || !(await monitored(pass, project.id))) continue;
     for (const fixId of fixIds) {
       await judgeOnMain(pass, project, fixId);
       if (halted(pass) || pass.ended.has(project.id)) break;
@@ -466,10 +519,12 @@ export async function runFixSyncPass(
       refreshed: 0,
       requested: 0,
       stop: null,
+      retryAfterSeconds: null,
     },
     parts: [],
     repositories: new Map(),
     ended: new Set(),
+    monitoring: new Map(),
   };
   for (const step of STEPS) {
     await step(pass);

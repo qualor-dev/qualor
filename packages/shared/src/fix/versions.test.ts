@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { chooseTarget } from './target';
 import {
   compareVersions,
+  isGreater,
   isPrerelease,
   parseFixedVersions,
   releaseLine,
+  sameVersion,
   schemeOf,
 } from './versions';
 import { compareGo, goSameModuleMajor } from './versions/go';
@@ -195,5 +197,23 @@ describe('PEP 440 order', () => {
       version: '1.0rc2',
       majorJump: false,
     });
+  });
+});
+
+describe('sameVersion and isGreater (ruling T11c: the one copy, for the CLI and the server)', () => {
+  it("sameVersion compares by the scheme's order, and by text when either does not parse (T1c)", () => {
+    expect(sameVersion('go', 'v1.2.3', '1.2.3')).toBe(true);
+    expect(sameVersion('pep440', '1.0', '1.0.0')).toBe(true);
+    expect(sameVersion('semver', '1.2.3', '1.2.4')).toBe(false);
+    expect(sameVersion('semver', 'not a version', 'not a version')).toBe(true);
+    expect(sameVersion('semver', 'not a version', '1.2.3')).toBe(false);
+  });
+
+  it('isGreater is true only for a greater version by the order; never when either does not parse', () => {
+    expect(isGreater('semver', '1.2.8', '1.2.6')).toBe(true);
+    expect(isGreater('semver', '1.2.6', '1.2.6')).toBe(false);
+    expect(isGreater('semver', '1.2.6', '1.2.8')).toBe(false);
+    expect(isGreater('maven', '5.2.21', '5.2.20.RELEASE')).toBe(true);
+    expect(isGreater('semver', 'not a version', '1.0.0')).toBe(false);
   });
 });
