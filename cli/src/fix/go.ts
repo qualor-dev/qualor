@@ -1,5 +1,3 @@
-import { lstatSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 import {
   compareVersions,
   greatestVersion,
@@ -19,30 +17,40 @@ import type {
   FixWorkspace,
   InstalledAt,
 } from './adapter';
+import {
+  absolute,
+  basename,
+  dirOf,
+  isRegularFile,
+  isStop,
+  notRegular,
+  readText,
+  timeLeft,
+  unsupported,
+} from './files';
 import { toolFailure, type ToolResult } from './runner';
 
 /**
  * The Go family (spec §6.5, R3, R24): Go modules. In the folder of each `go.mod` whose `require`
  * of the package is a vulnerable version, `go get <module>@v<target>` then `go mod tidy`, both
  * with `GOTOOLCHAIN=local` (a target that needs a newer Go fails instead of fetching a toolchain)
- * and `GOFLAGS=-mod=mod`. Go raises the `require` line itself, `// indirect` kept, and writes the
- * new `go.sum` lines; the job's own `GOPROXY`, `GONOSUMDB`, … apply, as in the customer's build.
+ * and the job's `GOFLAGS` with `-mod=mod` (ruling T14a). Go raises the `require` line itself,
+ * `// indirect` kept, and writes the new `go.sum` lines; the job's own `GOPROXY`, `GONOSUMDB`, …
+ * apply, as in the customer's build.
  *
+ * - **Modules:** every tracked `go.mod` outside the folders Go ignores (`vendor`, `testdata`, and
+ *   names that start with `_` or `.`; ruling T14e), in code-unit order of their paths (T14c).
  * - **Relation:** direct when the `require` line is not `// indirect`, else transitive; Go needs
  *   no pin, so there is no mechanism.
  * - **Refused before any `go` runs** (`manifest_unsupported`): a module with a tracked
  *   `vendor/modules.txt` (R24: Qualor does not re-vendor), a `go.mod` or `go.sum` that is a link,
  *   and a `replace` of the package for every version (the `require` would move while the build
- *   kept the replacement).
+ *   kept the replacement). The same holds for the tracked `go.work` that governs the module (the
+ *   nearest one at or above its folder, finding I1): its own `replace` of the package for every
+ *   version, a `vendor/modules.txt` beside it, or the file being a link.
  * - **Target lockfile:** each target names the `go.mod` it changes; its `go.sum` is covered
  *   through that `go.mod` (ruling T9i).
  */
-
-/** R24: the variables of both `go` calls. */
-const GO_ENV: Readonly<Record<string, string>> = Object.freeze({
-  GOTOOLCHAIN: 'local',
-  GOFLAGS: '-mod=mod',
-});
 
 const INCOMPATIBLE = '+incompatible';
 /** A module path that ends in its major version (`/v2`, `/v25`). */
@@ -62,6 +70,29 @@ export function goGetVersion(modulePath: string, installed: string, target: stri
   return incompatible ? `${version}${INCOMPATIBLE}` : version;
 }
 
+/** A `GOFLAGS` entry that sets the module mode (`-mod=…`, `--mod=…`). */
+const MOD_FLAG = /^--?mod=/;
+
+/**
+ * Ruling T14a: the `GOFLAGS` of both calls: the job's entries (space-separated, as Go reads them)
+ * without any `-mod=…`, then `-mod=mod`.
+ */
+function goFlags(job: string | undefined): string {
+  const kept = (job ?? '').split(/\s+/).filter((flag) => flag !== '' && !MOD_FLAG.test(flag));
+  return [...kept, '-mod=mod'].join(' ');
+}
+
+/** A job variable by name, whatever its case (Windows names are case-insensitive). */
+function jobVariable(ws: FixWorkspace, name: string): string | undefined {
+  const found = Object.entries(ws.env ?? {}).findLast(([key]) => key.toUpperCase() === name);
+  return found?.[1];
+}
+
+/** R24, ruling T14a: the variables of both `go` calls. */
+function goEnv(ws: FixWorkspace): Record<string, string> {
+  return { GOTOOLCHAIN: 'local', GOFLAGS: goFlags(jobVariable(ws, 'GOFLAGS')) };
+}
+
 /** One module of the repository that the fix changes. */
 interface Module {
   /** '' at the repository root, else the folder with a trailing `/`. */
@@ -72,12 +103,6 @@ interface Module {
   spec: string;
 }
 
-const isStop = (v: unknown): v is FixStop => typeof v === 'object' && v !== null && 'kind' in v;
-const unsupported = (message: string): FixStop => ({
-  kind: 'failure',
-  code: 'manifest_unsupported',
-  message,
-});
 const verifyFailed = (message: string): FixStop => ({
   kind: 'failure',
   code: 'verify_failed',
@@ -86,27 +111,26 @@ const verifyFailed = (message: string): FixStop => ({
 
 // ─── Files ──────────────────────────────────────────────────────────────────
 
-const basename = (p: string) => p.slice(p.lastIndexOf('/') + 1);
-/** A repository path's folder with its slash ('' at the root). */
-const dirOf = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
-/** A `go.mod` of a vendored copy, not a module of the repository. */
-const inVendor = (p: string) => p.split('/').slice(0, -1).includes('vendor');
-
-const absolute = (ws: FixWorkspace, rel: string) => path.join(ws.root, ...rel.split('/'));
-const readText = (ws: FixWorkspace, rel: string) => readFileSync(absolute(ws, rel), 'utf8');
-const where = (dir: string) => (dir === '' ? 'the repository root' : dir);
-
-/** Whether a repository path is a regular file of the scratch copy: not a link, not missing. */
-function isRegularFile(ws: FixWorkspace, rel: string): boolean {
-  try {
-    return lstatSync(absolute(ws, rel)).isFile();
-  } catch {
-    return false;
-  }
+/** Ruling T14c: one order for paths, by UTF-16 code units (never the locale's). */
+function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
 }
 
-/** The `go.mod` read (Task 4's reader); a file it cannot read throws, naming it. */
-function goModAt(ws: FixWorkspace, file: string): GoModFile {
+/**
+ * Ruling T14e: a `go.mod` in a folder Go leaves out of `./...` (`vendor`, `testdata`, or a name
+ * that starts with `_` or `.`): a vendored copy or a fixture, not a module of the repository.
+ */
+const inIgnoredFolder = (p: string) =>
+  p
+    .split('/')
+    .slice(0, -1)
+    .some((s) => s === 'vendor' || s === 'testdata' || s.startsWith('_') || s.startsWith('.'));
+
+const where = (dir: string) => (dir === '' ? 'the repository root' : dir);
+
+/** A `go.mod` or `go.work` read (Task 4's reader); a file it cannot read throws, naming it. */
+function goFileAt(ws: FixWorkspace, file: string): GoModFile {
   try {
     return readGoMod(readText(ws, file));
   } catch (err) {
@@ -128,7 +152,56 @@ function replacesEveryVersion(file: GoModFile, packageName: string): boolean {
   );
 }
 
-/** What stops a module before any `go` runs (R24, links, a replace), or null. */
+/** A folder and each folder above it, up to the repository root (''). */
+function foldersUp(dir: string): string[] {
+  const folders = [dir];
+  let at = dir;
+  while (at !== '') {
+    at = dirOf(at.slice(0, -1));
+    folders.push(at);
+  }
+  return folders;
+}
+
+/** The tracked `vendor/modules.txt` of a folder: R24, Qualor does not re-vendor. */
+function vendorStop(tracked: ReadonlySet<string>, dir: string, what: string): FixStop | null {
+  const vendor = `${dir}vendor/modules.txt`;
+  if (!tracked.has(vendor)) return null;
+  return unsupported(
+    `${vendor} is tracked: a vendored ${what}, whose vendor folder Qualor does not update.`,
+  );
+}
+
+function replaceStop(goFile: string, packageName: string, build: string): FixStop {
+  return unsupported(
+    `${goFile} has a replace of ${packageName} for every version; Qualor changes only require lines, and the ${build} would keep the replacement.`,
+  );
+}
+
+/**
+ * Finding I1: the tracked `go.work` that governs a module (the nearest at or above its folder, as
+ * `go` finds it): a `vendor/modules.txt` beside it, a link, or its `replace` of the package for
+ * every version stops the fix, since the workspace build would not use the new `require`.
+ */
+function workspaceStop(
+  ws: FixWorkspace,
+  tracked: ReadonlySet<string>,
+  dir: string,
+  packageName: string,
+): FixStop | null {
+  const work = foldersUp(dir)
+    .map((folder) => `${folder}go.work`)
+    .find((file) => tracked.has(file));
+  if (work === undefined) return null;
+  const vendored = vendorStop(tracked, dirOf(work), 'workspace');
+  if (vendored !== null) return vendored;
+  if (!isRegularFile(ws, work)) return notRegular(work);
+  return replacesEveryVersion(goFileAt(ws, work), packageName)
+    ? replaceStop(work, packageName, 'workspace build')
+    : null;
+}
+
+/** What stops a module before any `go` runs (R24, links, a replace, its workspace), or null. */
 function moduleStop(
   ws: FixWorkspace,
   tracked: ReadonlySet<string>,
@@ -136,23 +209,15 @@ function moduleStop(
   packageName: string,
 ): FixStop | null {
   const dir = dirOf(goMod);
-  const vendor = `${dir}vendor/modules.txt`;
-  if (tracked.has(vendor)) {
-    return unsupported(
-      `${vendor} is tracked: a vendored module, whose vendor folder Qualor does not update.`,
-    );
-  }
+  const vendored = vendorStop(tracked, dir, 'module');
+  if (vendored !== null) return vendored;
   const goSum = `${dir}go.sum`;
   const link = [goMod, ...(tracked.has(goSum) ? [goSum] : [])].find((f) => !isRegularFile(ws, f));
-  if (link !== undefined) {
-    return unsupported(`${link} is not a regular file (a link?); Qualor edits only regular files.`);
+  if (link !== undefined) return notRegular(link);
+  if (replacesEveryVersion(goFileAt(ws, goMod), packageName)) {
+    return replaceStop(goMod, packageName, 'build');
   }
-  if (replacesEveryVersion(goModAt(ws, goMod), packageName)) {
-    return unsupported(
-      `${goMod} has a replace of ${packageName} for every version; Qualor changes only require lines, and the build would keep the replacement.`,
-    );
-  }
-  return null;
+  return workspaceStop(ws, tracked, dir, packageName);
 }
 
 /** The module of one `go.mod` and its targets: its relation, and what `go get` fetches. */
@@ -162,7 +227,7 @@ function moduleOf(
   packageName: string,
   targets: readonly FixTarget[],
 ): Module {
-  const requires = requiresOf(goModAt(ws, goMod), packageName);
+  const requires = requiresOf(goFileAt(ws, goMod), packageName);
   const greatest = greatestVersion(
     'go',
     targets.map((t) => t.target),
@@ -185,10 +250,15 @@ function groupByLockfile(targets: readonly FixTarget[]): Map<string, FixTarget[]
   return out;
 }
 
-/** The modules of the plan's targets, in path order, or why one cannot be changed. */
+/**
+ * The modules of the plan's targets, in code-unit order of their paths (T14c), none in a folder Go
+ * ignores (T14e), or why one cannot be changed.
+ */
 function modulesOf(ws: FixWorkspace, packageName: string, plan: FixPlan): Module[] | FixStop {
   const tracked = new Set(ws.files);
-  const byGoMod = [...groupByLockfile(plan.targets)].toSorted(([a], [b]) => a.localeCompare(b));
+  const byGoMod = [...groupByLockfile(plan.targets)]
+    .filter(([goMod]) => !inIgnoredFolder(goMod))
+    .toSorted(([a], [b]) => byCodeUnit(a, b));
   const modules: Module[] = [];
   for (const [goMod, targets] of byGoMod) {
     const stop = moduleStop(ws, tracked, goMod, packageName);
@@ -200,13 +270,12 @@ function modulesOf(ws: FixWorkspace, packageName: string, plan: FixPlan): Module
 
 // ─── go ─────────────────────────────────────────────────────────────────────
 
-const timeLeft = (ws: FixWorkspace) => Math.max(0, ws.deadline - Date.now());
 const succeeded = (r: ToolResult) => r.exitCode === 0 && !r.timedOut;
 
 function go(ws: FixWorkspace, module: Module, args: readonly string[]): Promise<ToolResult> {
   return ws.run('go', args, {
     cwd: absolute(ws, module.dir),
-    env: GO_ENV,
+    env: goEnv(ws),
     timeoutMs: timeLeft(ws),
   });
 }
@@ -276,9 +345,10 @@ function goModHashes(ws: FixWorkspace, goSum: string): Set<string> {
 }
 
 /**
- * One `go.mod` after `go`: each `require` of the package at least the greatest target of that
- * file, and its `go.sum` holding the `h1:` hash of that version's `go.mod` (else the build fails
- * with a missing go.sum entry). A `// indirect` require that `go mod tidy` dropped is fine.
+ * One `go.mod` after `go`: a target that parses (ruling T14d: none fails closed), each `require`
+ * of the package at least the greatest target of that file, and its `go.sum` holding the `h1:`
+ * hash of that version's `go.mod` (else the build fails with a missing go.sum entry). A
+ * `// indirect` require that `go mod tidy` dropped is fine.
  */
 function goModProblems(
   ws: FixWorkspace,
@@ -290,10 +360,11 @@ function goModProblems(
     'go',
     targets.map((t) => t.target),
   );
+  if (greatest === null) return [`no target of ${goMod} is a Go module version`];
   const hashes = goModHashes(ws, `${dirOf(goMod)}go.sum`);
   const problems: string[] = [];
-  for (const { version } of requiresOf(goModAt(ws, goMod), packageName)) {
-    if (greatest !== null && (compareVersions('go', version, greatest) ?? -1) < 0) {
+  for (const { version } of requiresOf(goFileAt(ws, goMod), packageName)) {
+    if ((compareVersions('go', version, greatest) ?? -1) < 0) {
       problems.push(`${goMod} still requires ${version}, below ${greatest}`);
     } else if (!hashes.has(`${packageName} ${version}`)) {
       problems.push(`${dirOf(goMod)}go.sum has no h1: line for ${packageName} ${version}/go.mod`);
@@ -340,7 +411,7 @@ async function apply(
 /** A `go.mod`'s `require` versions of the package; none, with a warning, for one it cannot read. */
 function installedIn(ws: FixWorkspace, goMod: string, packageName: string): string[] {
   try {
-    const versions = requiresOf(goModAt(ws, goMod), packageName).map((r) => r.version);
+    const versions = requiresOf(goFileAt(ws, goMod), packageName).map((r) => r.version);
     return [...new Set(versions)];
   } catch (err) {
     // A fixture or a broken go.mod elsewhere in the repository must not stop every Go fix.
@@ -350,13 +421,13 @@ function installedIn(ws: FixWorkspace, goMod: string, packageName: string): stri
 }
 
 /**
- * Every tracked `go.mod`'s `require` versions of the package (not in a `vendor/` folder, not a
- * link), by Task 4's reader.
+ * Every tracked `go.mod`'s `require` versions of the package (not in a folder Go ignores, not a
+ * link), by Task 4's reader, in code-unit order of their paths.
  */
 function installed(ws: FixWorkspace, packageName: string): Promise<InstalledAt[]> {
   const found = ws.files
-    .filter((p) => basename(p) === 'go.mod' && !inVendor(p) && isRegularFile(ws, p))
-    .toSorted()
+    .filter((p) => basename(p) === 'go.mod' && !inIgnoredFolder(p) && isRegularFile(ws, p))
+    .toSorted(byCodeUnit)
     .map((goMod) => ({ lockfile: goMod, versions: installedIn(ws, goMod, packageName) }))
     .filter((at) => at.versions.length > 0);
   return Promise.resolve(found);

@@ -63,7 +63,7 @@ function commonFields(name: Buffer, data: Buffer, crc: number): Buffer {
 }
 
 /** A zip archive of `entries` (name → text), stored without compression. */
-export function storedZip(entries: Record<string, string>): Buffer {
+function storedZip(entries: Record<string, string>): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
@@ -108,10 +108,7 @@ export function storedZip(entries: Record<string, string>): Buffer {
  * except for a `+incompatible` version, and `files` under `<path>@<version>/`); each module's
  * `@v/list` names its versions that are not pseudo-versions, as a real proxy does.
  */
-export function writeGoProxy(
-  dir: string,
-  modules: { path: string; version: string; goMod: string; files: Record<string, string> }[],
-): string {
+export function writeGoProxy(dir: string, modules: readonly GoProxyModule[]): string {
   const lists = new Map<string, string[]>();
   for (const m of modules) {
     const at = path.join(dir, ...escapeCase(m.path).split('/'), '@v');

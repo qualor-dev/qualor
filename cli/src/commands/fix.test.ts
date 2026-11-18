@@ -825,6 +825,28 @@ describe('qualor fix: the tool environment and its output (B9, §11.6)', () => {
     expect(names).toContain('NPM_TOKEN');
   });
 
+  it('gives the adapter the tool environment as ws.env: the job’s GOFLAGS, no Qualor or CI job credentials (ruling T14a)', async () => {
+    const { dir } = repo();
+    let seen: Readonly<Record<string, string>> | undefined;
+    const probing: FixAdapter = {
+      ...goodJs,
+      apply: (ws) => {
+        seen = ws.env;
+        return stopWith('probed');
+      },
+    };
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    await run(dir, server, {
+      env: { GOFLAGS: '-modcacherw', CI_JOB_TOKEN: 'ci-job-token-value' },
+      deps: { adapters: { js: probing } },
+    });
+    expect(seen?.['GOFLAGS']).toBe('-modcacherw');
+    const names = Object.keys(seen ?? {}).map((n) => n.toUpperCase());
+    for (const name of ['QUALOR_TOKEN', 'QUALOR_URL', 'QUALOR_PROJECT_KEY', 'CI_JOB_TOKEN']) {
+      expect(names, name).not.toContain(name);
+    }
+  });
+
   it('keeps every secret out of the failure message and the log, within 2 KiB', async () => {
     const { dir } = repo();
     const script = [

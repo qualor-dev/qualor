@@ -1,5 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   checkFixUpload,
@@ -8,14 +7,15 @@ import {
   type FixClaimItem,
   type FixFileChange,
 } from '@qualor/shared/fix';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { useGoTestEnv } from '../../test/fix/go-env';
 import { writeGoProxy, type GoProxyModule } from '../../test/fix/go-proxy';
 import { toolInstalled } from '../../test/fix/tools';
 import { commitAll, gitSync, GIT_TEST_ENV, initRepo } from '../../test/git';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { createGit } from '../git/git';
 import { silentLogger, type Logger } from '../log';
-import type { FixWorkspace } from './adapter';
+import type { FixPlan, FixWorkspace } from './adapter';
 import { goAdapter, goGetVersion } from './go';
 import { prepareFix, type FixOutcome } from './run';
 import { createToolRunner, type ToolResult, type ToolRunner } from './runner';
@@ -28,49 +28,10 @@ const GO = toolInstalled('go');
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
-/** The test process's own Go settings and profile folders, replaced for every `go` call. */
-const REPLACED = /^(GO\w*|HOME|USERPROFILE|APPDATA|LOCALAPPDATA|XDG_\w+)$/i;
+const goTestEnv = useGoTestEnv();
 
-/** Homes with a module cache, which `go` makes read-only: emptied with `go clean -modcache`. */
-const homes: { dir: string; env: Record<string, string> }[] = [];
-afterEach(async () => {
-  for (const home of homes.splice(0)) {
-    const go = createToolRunner({ env: home.env, root: home.dir, log: silentLogger });
-    await go('go', ['clean', '-modcache'], { cwd: home.dir, timeoutMs: SLOW }).catch(() => null);
-    rmSync(home.dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  }
-});
-
-/**
- * `go` in a CI job against the offline proxy (R27): `GOPROXY=<file url>`, `GOSUMDB=off`,
- * `GOFLAGS=-mod=mod`, and its own home, `GOPATH`, `GOCACHE` and `GOMODCACHE` in a temporary
- * folder, so nothing of this machine's Go setup or profile plays a part.
- */
-function goEnv(proxy: string): Record<string, string> {
-  const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-fix-go-home-'));
-  const at = (name: string) => path.join(dir, name);
-  const inherited = Object.entries(GIT_TEST_ENV).filter(
-    (entry): entry is [string, string] => entry[1] !== undefined && !REPLACED.test(entry[0]),
-  );
-  const env = {
-    ...Object.fromEntries(inherited),
-    HOME: dir,
-    USERPROFILE: dir,
-    APPDATA: at('AppData'),
-    LOCALAPPDATA: at('LocalAppData'),
-    XDG_CONFIG_HOME: at('config'),
-    XDG_CACHE_HOME: at('cache'),
-    GOENV: 'off',
-    GOPATH: at('gopath'),
-    GOCACHE: at('gocache'),
-    GOMODCACHE: at('gomodcache'),
-    GOPROXY: proxy,
-    GOSUMDB: 'off',
-    GOFLAGS: '-mod=mod',
-  };
-  homes.push({ dir, env });
-  return env;
-}
+/** `go` in a CI job against the offline proxy (R27): `GOPROXY=<file url>`, `GOSUMDB=off`. */
+const goEnv = (proxy: string) => goTestEnv({ GOPROXY: proxy, GOSUMDB: 'off', GOFLAGS: '-mod=mod' });
 
 // ─── Modules ────────────────────────────────────────────────────────────────
 
@@ -196,6 +157,7 @@ async function fix(
     const ws: FixWorkspace = {
       root: scratch.root,
       files: gitSync(dir, 'ls-files').split('\n'),
+      env,
       run,
       deadline: Date.now() + SLOW,
       log: o.log ?? silentLogger,
@@ -562,16 +524,16 @@ function fakeGo(o: { sum?: boolean; get?: () => ToolResult } = {}): FakeRunner {
 const DOCKER = 'github.com/docker/docker';
 
 describe('the Go adapter with a fake go', () => {
-  it('commands: go get <module>@v<target> then go mod tidy, with GOTOOLCHAIN=local and GOFLAGS=-mod=mod, in the module folder (R24, ruling T1d)', async () => {
+  it('commands: go get <module>@v<target> then go mod tidy, with GOTOOLCHAIN=local and the job’s GOFLAGS with -mod=mod, in the module folder (R24, rulings T1d, T14a)', async () => {
     const dir = committed({
       'go.mod': `module example.com/app\n\ngo 1.21\n\nrequire ${DOCKER} v20.10.0+incompatible\n`,
       'go.sum': sumOf(DOCKER, 'v20.10.0+incompatible'),
     });
     const item = claim(['v20.10.0+incompatible'], '25.0.6', DOCKER);
 
-    const r = await fix(dir, {}, item, { fake: fakeGo() });
+    const r = await fix(dir, { GOFLAGS: '-modcacherw -mod=vendor' }, item, { fake: fakeGo() });
 
-    const env = { GOTOOLCHAIN: 'local', GOFLAGS: '-mod=mod' };
+    const env = { GOTOOLCHAIN: 'local', GOFLAGS: '-modcacherw -mod=mod' };
     expect(r.calls).toEqual([
       { tool: 'go', args: ['get', `${DOCKER}@v25.0.6+incompatible`], env, cwd: '' },
       { tool: 'go', args: ['mod', 'tidy'], env, cwd: '' },
@@ -613,6 +575,68 @@ describe('the Go adapter with a fake go', () => {
     expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
     if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('replace');
     expect(r.calls).toEqual([]);
+  });
+
+  const appMod = (dir: string) => ({
+    [`${dir}go.mod`]: `module example.com/app\n\ngo 1.21\n\nrequire ${QF} v1.2.5\n`,
+    [`${dir}go.sum`]: sumOf(QF, 'v1.2.5'),
+  });
+
+  it('a tracked go.work above the module that replaces the package for every version is manifest_unsupported, before any go runs (I1)', async () => {
+    const dir = committed({
+      'go.work': `go 1.21\n\nuse ./app\n\nreplace ${QF} => ./qf-fork\n`,
+      ...appMod('app/'),
+    });
+
+    const r = await fix(dir, {}, claim(['v1.2.5'], '1.2.6'), { fake: fakeGo() });
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) {
+      expect(r.outcome.failure.message).toContain('go.work');
+      expect(r.outcome.failure.message).toContain('replace');
+    }
+    expect(r.calls).toEqual([]);
+  });
+
+  it('a tracked vendor/modules.txt beside the workspace’s go.work is manifest_unsupported, before any go runs (I1)', async () => {
+    const dir = committed({
+      'go.work': 'go 1.21\n\nuse ./app\n',
+      'vendor/modules.txt': `# ${QF} v1.2.5\n## explicit\n${QF}\n`,
+      ...appMod('app/'),
+    });
+
+    const r = await fix(dir, {}, claim(['v1.2.5'], '1.2.6'), { fake: fakeGo() });
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('vendor/modules.txt');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('the nearest go.work governs: one replacing another module or one other version only is not refused, nor is a farther go.work’s replace (I1)', async () => {
+    const dir = committed({
+      'go.work': `go 1.21\n\nuse ./svc/app\n\nreplace ${QF} => ./qf-fork\n`,
+      'svc/go.work': `go 1.21\n\nuse ./app\n\nreplace (\n\texample.com/other => ./other\n\t${QF} v1.0.0 => ./qf-old\n)\n`,
+      ...appMod('svc/app/'),
+    });
+
+    const r = await fix(dir, {}, claim(['v1.2.5'], '1.2.6'), { fake: fakeGo() });
+
+    expect(uploaded(r).lockfiles).toEqual([lockfileLine('svc/app/go.mod', 'direct')]);
+    expect(r.calls.map((c) => [c.cwd, ...c.args, c.env['GOFLAGS']])).toEqual([
+      ['svc/app', 'get', `${QF}@v1.2.6`, '-mod=mod'],
+      ['svc/app', 'mod', 'tidy', '-mod=mod'],
+    ]);
+  });
+
+  it('modules run in the code-unit order of their go.mod paths, the order installed lists them in (ruling T14c)', async () => {
+    const dir = committed({ ...appMod('svc/a/'), ...appMod('svc/B/') });
+
+    const r = await fix(dir, {}, claim(['v1.2.5'], '1.2.6'), { fake: fakeGo() });
+
+    const up = uploaded(r);
+    expect(up.targets.map((t) => t.lockfile)).toEqual(['svc/B/go.mod', 'svc/a/go.mod']);
+    expect(up.lockfiles.map((l) => l.path)).toEqual(['svc/B/go.mod', 'svc/a/go.mod']);
+    expect(r.calls.map((c) => c.cwd)).toEqual(['svc/B', 'svc/B', 'svc/a', 'svc/a']);
   });
 
   const unresolvable = { noFix: { reason: 'unresolvable' } };
@@ -669,7 +693,70 @@ describe('the Go adapter with a fake go', () => {
     if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('go.sum');
   });
 
-  it('installed: the require version of every go.mod, none under vendor/, an unreadable one skipped with a warning', async () => {
+  it('verify fails closed when no target of a go.mod parses (ruling T14d)', async () => {
+    const root = tmp('qualor-fix-go-verify-');
+    writeTree(root, {
+      'go.mod': `module example.com/app\n\ngo 1.21\n\nrequire ${QF} v1.2.6\n`,
+      'go.sum': sumOf(QF, 'v1.2.6'),
+    });
+    const ws: FixWorkspace = {
+      root,
+      files: ['go.mod', 'go.sum'],
+      run: () => Promise.reject(new Error('no tool runs')),
+      deadline: Date.now() + SLOW,
+      log: silentLogger,
+    };
+    const plan: FixPlan = {
+      targets: [{ installed: 'v1.2.5', target: 'not-a-version', lockfile: 'go.mod' }],
+      greatest: 'not-a-version',
+      installed: 'v1.2.5',
+      unfixable: [],
+      majorJump: false,
+    };
+
+    const stop = await goAdapter.verify?.(ws, claim(['v1.2.5'], '1.2.6'), plan);
+
+    expect(stop).toMatchObject({ kind: 'failure', code: 'verify_failed' });
+  });
+
+  it('apply skips a go.mod in a folder go ignores (testdata, _ or . names), whatever the plan names (ruling T14e)', async () => {
+    const root = tmp('qualor-fix-go-apply-');
+    const files = {
+      ...appMod(''),
+      ...appMod('testdata/x/'),
+      ...appMod('_old/'),
+      ...appMod('.cache/'),
+    };
+    writeTree(root, files);
+    const calls: string[] = [];
+    const ws: FixWorkspace = {
+      root,
+      files: Object.keys(files),
+      run: (_tool, args, call) => {
+        calls.push([path.relative(root, call.cwd).replaceAll('\\', '/'), ...args].join(' '));
+        return fakeGo()(root)(_tool, args, call);
+      },
+      deadline: Date.now() + SLOW,
+      log: silentLogger,
+    };
+    const targets = ['go.mod', 'testdata/x/go.mod', '_old/go.mod', '.cache/go.mod'].map(
+      (lockfile) => ({ installed: 'v1.2.5', target: '1.2.6', lockfile }),
+    );
+    const plan: FixPlan = {
+      targets,
+      greatest: '1.2.6',
+      installed: 'v1.2.5',
+      unfixable: [],
+      majorJump: false,
+    };
+
+    const applied = await goAdapter.apply(ws, claim(['v1.2.5'], '1.2.6'), plan);
+
+    expect(applied).toEqual({ lockfiles: [lockfileLine('go.mod', 'direct')] });
+    expect(calls).toEqual([` get ${QF}@v1.2.6`, ' mod tidy']);
+  });
+
+  it('installed: the require version of every go.mod, none under vendor/, testdata/ or a _ or . folder, an unreadable one skipped with a warning (ruling T14e)', async () => {
     const root = tmp('qualor-fix-go-installed-');
     const files = {
       'go.mod': `module example.com/app\n\ngo 1.21\n\nrequire (\n\t${QF} v1.2.5\n\texample.com/other v1.0.0\n)\n`,
@@ -677,6 +764,10 @@ describe('the Go adapter with a fake go', () => {
       'svc/c/go.mod': 'module example.com/c\n\ngo 1.21\n',
       'svc/d/go.mod': 'module example.com/d\n\nrequire (\n',
       'vendor/example.com/x/go.mod': `module example.com/x\n\nrequire ${QF} v1.0.0\n`,
+      'testdata/x/go.mod': `module example.com/x\n\nrequire ${QF} v1.0.1\n`,
+      'svc/testdata/y/go.mod': `module example.com/y\n\nrequire ${QF} v1.0.2\n`,
+      '_old/go.mod': `module example.com/old\n\nrequire ${QF} v1.0.3\n`,
+      '.github/tool/go.mod': `module example.com/tool\n\nrequire ${QF} v1.0.4\n`,
     };
     writeTree(root, files);
     const warnings: string[] = [];

@@ -17,6 +17,12 @@ import type { ToolRunner } from './runner';
 export interface FixWorkspace {
   root: string;
   files: readonly string[];
+  /**
+   * The tool environment `run` starts every tool with before a call's own variables (B9: without
+   * Qualor's settings and the CI job's credentials), so an adapter can build a call's variable from
+   * the job's value (ruling T14a: `GOFLAGS`). Absent when the caller gives none. Never logged.
+   */
+  env?: Readonly<Record<string, string>>;
   run: ToolRunner;
   deadline: number;
   log: Logger;

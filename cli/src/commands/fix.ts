@@ -84,6 +84,8 @@ interface FixJob {
   /** Why `resolve` finds no tool: not installed, or a `.cmd` it will not start (ruling T12a). */
   whyMissing: (tool: string) => string;
   runner: ToolRunner;
+  /** The environment `runner` starts every tool with (`fixToolEnv`, B9). */
+  toolEnv: Readonly<Record<string, string>>;
   /** What messages and log lines are scrubbed of (B9, ruling T12b). */
   secrets: readonly string[];
   /** What no uploaded file may gain (B9, I1). */
@@ -254,6 +256,7 @@ async function startJob(flags: FixFlags, io: CliIO, log: Logger, deps: FixDeps):
     adapters,
     ...tools,
     runner: createToolRunner({ env: toolEnv, root: io.cwd, log: scrubbed, secrets }),
+    toolEnv,
     secrets,
     credentials,
     deadline: started + flags.timeoutSeconds * 1000,
@@ -307,6 +310,7 @@ async function preparedWithin(
     const ws: FixWorkspace = {
       root: scratch.root,
       files: job.tracked,
+      env: job.toolEnv,
       run: boundedRunner(job, deadline),
       deadline,
       log: job.log,

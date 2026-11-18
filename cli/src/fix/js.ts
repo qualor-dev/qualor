@@ -1,5 +1,3 @@
-import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import picomatch from 'picomatch';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -29,6 +27,18 @@ import type {
 import { addJsonProperty, setJsonString } from './edit/json';
 import { isRewritableRange, rangeAllows, rangeWithTarget } from './edit/ranges';
 import { setYamlOverride } from './edit/yaml';
+import {
+  absolute,
+  basename,
+  dirOf,
+  isRegularFile,
+  isStop,
+  notRegular,
+  readText,
+  timeLeft,
+  unsupported,
+  writeText,
+} from './files';
 import { toolFailure, type ToolResult } from './runner';
 
 /**
@@ -87,12 +97,6 @@ const DIRECT_SECTIONS = ['dependencies', 'devDependencies', 'optionalDependencie
 
 const isRecord = (v: unknown): v is Json =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
-const isStop = (v: unknown): v is FixStop => isRecord(v) && 'kind' in v;
-const unsupported = (message: string): FixStop => ({
-  kind: 'failure',
-  code: 'manifest_unsupported',
-  message,
-});
 const severalLines = (message: string): FixStop => ({
   kind: 'no_fix',
   reason: 'several_lines',
@@ -101,31 +105,11 @@ const severalLines = (message: string): FixStop => ({
 
 // ─── Files ──────────────────────────────────────────────────────────────────
 
-const basename = (p: string) => p.slice(p.lastIndexOf('/') + 1);
-/** A repository path's folder with its slash ('' at the root). */
-const dirOf = (p: string) => p.slice(0, p.lastIndexOf('/') + 1);
 const inNodeModules = (p: string) => p.split('/').includes('node_modules');
 const isJsLockfile = (p: string) =>
   FIX_FILES.js.lockfiles.includes(basename(p)) && !inNodeModules(p);
 
-const absolute = (ws: FixWorkspace, rel: string) => path.join(ws.root, ...rel.split('/'));
-const readText = (ws: FixWorkspace, rel: string) => readFileSync(absolute(ws, rel), 'utf8');
-const writeText = (ws: FixWorkspace, rel: string, text: string) =>
-  writeFileSync(absolute(ws, rel), text, 'utf8');
 const stripBom = (text: string) => (text.startsWith(BOM) ? text.slice(1) : text);
-
-/** Whether a repository path is a regular file of the scratch copy: not a link, not missing. */
-function isRegularFile(ws: FixWorkspace, rel: string): boolean {
-  try {
-    return lstatSync(absolute(ws, rel)).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** A link is followed by every read and write: the edit could land outside the scratch copy. */
-const notRegular = (file: string): FixStop =>
-  unsupported(`${file} is not a regular file (a link?); Qualor edits only regular files.`);
 
 function parseManifest(text: string): Json | null {
   try {
@@ -853,8 +837,6 @@ const COMMANDS: Readonly<Record<Manager, Command>> = {
  */
 const UNRESOLVABLE =
   /\b(?:ETARGET|ERESOLVE|ERR_PNPM_NO_MATCHING_VERSION|YN0082)\b|No candidates found|Couldn't find any versions for/;
-
-const timeLeft = (ws: FixWorkspace) => Math.max(0, ws.deadline - Date.now());
 
 function run(
   ws: FixWorkspace,
