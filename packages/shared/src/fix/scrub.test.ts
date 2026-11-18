@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FIX_LIMITS } from './families';
-import { FIX_SECRET_NAME, scrubToolOutput, secretEnvValues } from './scrub';
+import { FIX_SECRET_NAME, scrubToolOutput, scrubUrlUserinfo, secretEnvValues } from './scrub';
 
 /** Test secrets are assembled at run time, so no secret scanner finds one in this file. */
 const j = (...parts: string[]): string => parts.join('');
@@ -63,7 +63,7 @@ describe('scrubToolOutput (§6.9, B9)', () => {
   it('redacts URL credentials up to the last @, and a token as the user', () => {
     const out = scrubToolOutput(
       [
-        `fetch https://user:${SECRET}@x/y@host/x failed`,
+        `fetch https://user:${SECRET}@x@host/x failed`,
         `git+https://${NPM_TOKEN}@github.com/o/r.git`,
         'GET http://registry.local:4873/@scope%2fpkg 404',
       ].join('\n'),
@@ -73,6 +73,63 @@ describe('scrubToolOutput (§6.9, B9)', () => {
       'fetch https://[redacted]@host/x failed',
       'git+https://[redacted]@github.com/o/r.git',
       'GET http://registry.local:4873/@scope%2fpkg 404',
+    ]);
+  });
+
+  it.each([
+    ['a numeric password', 'GET https://user:12345@registry.example/pkg 401'],
+    ['git+https with a numeric password', 'git+https://user:12345@github.com/o/r.git'],
+    ['a GOPROXY value', 'GOPROXY=https://user:12345@proxy.corp/'],
+    ['a UV_INDEX_URL value', 'UV_INDEX_URL=https://user:0042@pypi.corp/simple'],
+    ['a 300-character token', `https://${'Tk9'.repeat(100)}@r.example/x`],
+    ['a 300-character user', `https://${'us3r'.repeat(75)}:${SECRET}@r.example/x`],
+    ['a JSON-escaped URL', `{"url":"https:\\/\\/user:${SECRET}@r.example\\/x"}`],
+  ])('redacts any URL userinfo: %s', (_, line) => {
+    const out = scrubToolOutput(line, []);
+    expect(out).toContain('[redacted]@');
+    expect(out).not.toMatch(/12345|0042|Tk9Tk9|us3rus3r|user:/);
+    expect(out).not.toContain(SECRET.slice(2, 10));
+    expect(out.slice(out.indexOf('[redacted]@') + '[redacted]@'.length)).toBe(
+      line.slice(line.lastIndexOf('@') + 1),
+    );
+  });
+
+  it('keeps URLs whose authority holds no userinfo, and the host and path of those that do', () => {
+    const lines = [
+      'GET http://host:4873/@scope%2fpkg 404',
+      'see https://registry.example/x?email=a@b.example',
+    ];
+    expect(scrubToolOutput(lines.join('\n'), []).split('\n')).toEqual(lines);
+    expect(scrubToolOutput('GET https://user:pass@host/path/@scope/pkg', [])).toBe(
+      'GET https://[redacted]@host/path/@scope/pkg',
+    );
+    // The B9 step keeps an IPv6 host. redactText's own URL pattern (llm/redact.ts) still reads its
+    // `[` as a user name: a follow-up outside the fix scrub.
+    const ipv6 = 'GET https://[::1]:8080/@scope/pkg 404';
+    expect(scrubUrlUserinfo([ipv6, ...lines].join('\n')).split('\n')).toEqual([ipv6, ...lines]);
+    expect(scrubUrlUserinfo('https://u:1@[::1]:8080/x')).toBe('https://[redacted]@[::1]:8080/x');
+  });
+
+  it('redacts <password> elements with CDATA, attributes, any case, over lines or unclosed', () => {
+    const out = scrubToolOutput(
+      [
+        `<password><![CDATA[${SECRET}]]></password>`,
+        `<password encrypted="true">${SECRET}</password>`,
+        `<Password>`,
+        `  ${SECRET}`,
+        `</Password>`,
+        `<password>${SECRET}`,
+        '<password/> <passwordHint>a hint</passwordHint> <password></password>',
+      ].join('\n'),
+      [],
+    );
+    expect(out).not.toContain(SECRET.slice(2, 10));
+    expect(out.split('\n')).toEqual([
+      '<password>[redacted]</password>',
+      '<password encrypted="true">[redacted]</password>',
+      '<Password>[redacted]</Password>',
+      '<password>[redacted]',
+      '<password/> <passwordHint>a hint</passwordHint> <password></password>',
     ]);
   });
 

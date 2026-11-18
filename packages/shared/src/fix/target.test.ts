@@ -34,6 +34,23 @@ describe('chooseTargets (B3)', () => {
       { installed: '3.0.0', target: null, majorJump: false, unfixable: [] },
     ]);
   });
+
+  it('matches installed versions by version order, not spelling (Ruling T1c)', () => {
+    const go: VulnerabilityFixFacts[] = [
+      { id: 'A', installedVersions: ['1.2.3'], fixedVersions: ['1.2.4'] },
+    ];
+    expect(chooseTargets('go', ['v1.2.3'], go)).toEqual([
+      { installed: 'v1.2.3', target: '1.2.4', majorJump: false, unfixable: [] },
+    ]);
+    const maven: VulnerabilityFixFacts[] = [
+      { id: 'A', installedVersions: ['5.2.20.RELEASE'], fixedVersions: ['5.2.21'] },
+      { id: 'B', installedVersions: ['junk version'], fixedVersions: ['1.0'] },
+    ];
+    expect(chooseTargets('maven', ['5.2.20', 'junk version'], maven)).toEqual([
+      { installed: '5.2.20', target: '5.2.21', majorJump: false, unfixable: [] },
+      { installed: 'junk version', target: null, majorJump: false, unfixable: ['B'] },
+    ]);
+  });
 });
 
 describe('greatestVersion', () => {

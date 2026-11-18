@@ -72,6 +72,15 @@ function isGreater(scheme: VersionScheme, a: string, b: string): boolean {
   return (compareVersions(scheme, a, b) ?? 0) > 0;
 }
 
+/**
+ * Ruling T1c: the same version by the scheme's order (`v1.2.3` and `1.2.3` for Go), or the same
+ * string when either does not parse.
+ */
+function sameVersion(scheme: VersionScheme, a: string, b: string): boolean {
+  const c = compareVersions(scheme, a, b);
+  return c === null ? a === b : c === 0;
+}
+
 function targetFor(
   scheme: VersionScheme,
   installed: string,
@@ -80,7 +89,7 @@ function targetFor(
   const unfixable: string[] = [];
   let best: TargetChoice | null = null;
   for (const v of vulnerabilities) {
-    if (!v.installedVersions.includes(installed)) continue;
+    if (!v.installedVersions.some((x) => sameVersion(scheme, x, installed))) continue;
     const choice = chooseTarget(scheme, installed, v.fixedVersions);
     if (choice === null) unfixable.push(v.id);
     else if (best === null || isGreater(scheme, choice.version, best.version)) best = choice;

@@ -141,6 +141,28 @@ describe('Go order', () => {
     });
     expect(chooseTarget('go', 'v0.3.0', ['1.0.1'])).toEqual({ version: '1.0.1', majorJump: true });
   });
+
+  it('puts +incompatible versions on the path without /vN (Ruling T1b)', () => {
+    expect(
+      chooseTarget('go', 'v20.10.27+incompatible', ['25.0.6+incompatible', '26.1.5+incompatible']),
+    ).toEqual({ version: '25.0.6+incompatible', majorJump: true });
+    // Trivy's fixed versions for github.com/docker/docker drop the suffix (CVE-2024-41110).
+    expect(
+      chooseTarget('go', 'v24.0.7+incompatible', ['23.0.15', '26.1.5', '27.1.1', '25.0.6']),
+    ).toEqual({ version: '25.0.6', majorJump: true });
+    expect(chooseTarget('go', 'v20.10.7+incompatible', ['20.10.11'])).toEqual({
+      version: '20.10.11',
+      majorJump: false,
+    });
+    expect(chooseTarget('go', 'v1.4.0', ['2.1.0+incompatible'])).toEqual({
+      version: '2.1.0+incompatible',
+      majorJump: true,
+    });
+    // A version from v2 on without the suffix lives on its own /vN path.
+    expect(chooseTarget('go', 'v2.3.0', ['3.0.0+incompatible', '3.1.0'])).toBeNull();
+    expect(goSameModuleMajor('25.0.6+incompatible', 'v20.10.27+incompatible')).toBe(true);
+    expect(goSameModuleMajor('3.0.0+incompatible', 'v2.3.0')).toBe(false);
+  });
 });
 
 describe('PEP 440 order', () => {

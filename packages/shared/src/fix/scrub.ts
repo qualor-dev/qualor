@@ -40,26 +40,80 @@ function replaceSecrets(text: string, secrets: readonly string[]): string {
 const NPMRC_AUTH = /(_auth(?:Token)?|_password)([ \t]{0,32}=[ \t]{0,32})\S[^\r\n]*/gi;
 /** An `Authorization:` header (`Proxy-Authorization:` too): the value to the line end. */
 const AUTHORIZATION = /(authorization["']?[ \t]{0,32}:[ \t]{0,32})\S[^\r\n]*/gi;
-/** A Maven `settings.xml` `<password>` element. */
-const PASSWORD_ELEMENT = /(<password>)[^<]+(<\/password>)/gi;
-/** `scheme://user:password@`; the password may hold `/` or `@`, so it runs to the last `@`. */
-const URL_PASSWORD = /([a-z][a-z0-9+.-]{0,30}:\/\/)[^\s:/@"'`]{0,256}:([^\s"'`]{1,1024})@/gi;
-/** `scheme://token@`: a user name alone may be a token. */
-const URL_USER = /([a-z][a-z0-9+.-]{0,30}:\/\/)[^\s:/@"'`]{1,256}@/gi;
-/** `host:8080/…@`: a port and a path, not a password. */
-const PORT = /^\d{1,5}(?:\/|$)/;
+/** A Maven `settings.xml` `<password>` start tag, attributes allowed; not `<password/>`. */
+const PASSWORD_OPEN = /<password(?:\s[^<>]{0,1024})?(?<!\/)>/gi;
+const PASSWORD_CLOSE = /^<\/password\s{0,32}>/i;
+const CDATA_OPEN = '<![CDATA[';
+const CDATA_CLOSE = ']]>';
+/** A CDATA section that does not end within this many characters counts as unclosed. */
+const CDATA_MAX_CHARS = 65_536;
 
-function urlPassword(match: string, scheme: string, password: string): string {
-  return PORT.test(password) ? match : `${scheme}${REDACTED}@`;
+function lineEnd(text: string, from: number): number {
+  const newline = text.indexOf('\n', from);
+  return newline === -1 ? text.length : newline;
+}
+
+/**
+ * Where the value of a `<password>` element that starts at `start` ends: before its end tag; for an
+ * element left open (output cut short), at the end of the value's line, so it is redacted anyway.
+ * A CDATA section is part of the value, whatever it holds.
+ */
+function passwordValueEnd(text: string, start: number): number {
+  const at = start + (/^\s{0,64}/.exec(text.slice(start, start + 64))?.[0].length ?? 0);
+  let from = at;
+  if (text.startsWith(CDATA_OPEN, at)) {
+    const close = text.slice(at, at + CDATA_MAX_CHARS).indexOf(CDATA_CLOSE);
+    if (close === -1) return lineEnd(text, at);
+    from = at + close + CDATA_CLOSE.length;
+  }
+  const next = text.indexOf('<', from);
+  const end = next === -1 ? text.length : next;
+  if (PASSWORD_CLOSE.test(text.slice(end, end + 64))) return end;
+  return Math.min(end, lineEnd(text, from));
+}
+
+/** The value of each `<password>` element: CDATA, attributes, any case, over lines, or unclosed. */
+function scrubPasswordElements(text: string): string {
+  let out = '';
+  let done = 0;
+  for (const open of text.matchAll(PASSWORD_OPEN)) {
+    const start = open.index + open[0].length;
+    const end = start < done ? start : passwordValueEnd(text, start);
+    if (end > start) {
+      out += text.slice(done, start) + REDACTED;
+      done = end;
+    }
+  }
+  return out + text.slice(done);
+}
+
+/**
+ * A URL's scheme (also JSON-escaped, `https:\/\/`) and authority. The authority ends where the
+ * WHATWG URL parser ends it, at `/`, `\`, `?` or `#`, and at white space, a quote or `<>`.
+ */
+const URL_AUTHORITY = /([a-z][a-z0-9+.-]{0,30}:(?:\/\/|\\\/\\\/))([^\s/\\?#"'`<>]+)/gi;
+
+/**
+ * Any userinfo of a URL: everything up to the authority's last `@` (as the WHATWG URL parser reads
+ * it), whatever it looks like: a numeric password, a token alone, any length. `host:4873/@scope`
+ * has no `@` in its authority, so it stays.
+ */
+function urlUserinfo(match: string, scheme: string, authority: string): string {
+  const at = authority.lastIndexOf('@');
+  return at === -1 ? match : `${scheme}${REDACTED}${authority.slice(at)}`;
+}
+
+/** B9: the userinfo of every URL in the text replaced by `[redacted]` (`https://[redacted]@host`). */
+export function scrubUrlUserinfo(text: string): string {
+  return text.replace(URL_AUTHORITY, urlUserinfo);
 }
 
 /** The B9 shapes, in order. */
 const B9_SCRUBS: readonly ((text: string) => string)[] = [
   (t) => t.replace(NPMRC_AUTH, `$1$2${REDACTED}`),
   (t) => t.replace(AUTHORIZATION, `$1${REDACTED}`),
-  (t) => t.replace(PASSWORD_ELEMENT, `$1${REDACTED}$2`),
-  (t) => t.replace(URL_PASSWORD, urlPassword),
-  (t) => t.replace(URL_USER, `$1${REDACTED}@`),
+  scrubPasswordElements,
+  scrubUrlUserinfo,
 ];
 
 /**
