@@ -27,52 +27,138 @@ export interface LockCheckOptions {
   publicHosts: readonly string[];
   /** Whether a new entry needs an integrity hash (the format has them). */
   integrityRequired: boolean;
+  /**
+   * Ruling T3e: a new entry must be reachable from the package through the entries' dependents.
+   * Off for a format without a dependency graph (go.sum).
+   */
+  reachableOnly: boolean;
 }
+
+/** The raw authority of a URL: after the scheme and any `/` or `\`, up to `/`, `?`, `#` or `\`. */
+const RAW_AUTHORITY = /^[a-z][a-z0-9+.-]*:[/\\]*([^/?#\\]*)/i;
+
+/** A host and port in plain ASCII: letters, digits, dots, dashes, colons and IPv6 brackets. */
+const PLAIN_AUTHORITY = /^[A-Za-z0-9.:[\]-]+$/;
 
 /**
  * `scheme://host[:port]` of a URL source, as the WHATWG URL parser reads it (so `https:\\evil`,
- * `https:/evil` and surrounding space are host `evil`): lower case, without user info, without a
- * default port. Null for a source that does not parse or has no host (`file:…`, `npm:1.2.3`).
+ * `https:/evil` and surrounding space are host `evil`): lower case, without a default port. Null
+ * for a source that does not parse or has no host (`file:…`, `npm:1.2.3`), and (fix round 1, C3)
+ * when the raw authority holds user info, a `%` escape or any other character: parsers disagree
+ * on those (Yarn 1's `url.parse` reads `registry.yarnpkg.co%6D` as `registry.yarnpkg.co`).
  */
 export function sourceOrigin(source: string): string | null {
+  const raw = RAW_AUTHORITY.exec(source.trim())?.[1];
+  if (raw === undefined || !PLAIN_AUTHORITY.test(raw)) return null;
   const url = parseUrl(source);
   if (url === null || url.host === '') return null;
   return `${url.protocol}//${url.host}`.toLowerCase();
 }
 
+/** The name an entry is installed and depended on as. */
+function slotOf(entry: LockEntry): string {
+  return entry.slot ?? entry.name;
+}
+
+/** An entry whose slot holds another package (an alias). */
+function isAlias(entry: LockEntry): boolean {
+  return slotOf(entry) !== entry.name;
+}
+
+function aliasKey(entry: LockEntry): string {
+  return JSON.stringify([slotOf(entry), entry.name]);
+}
+
 /**
- * An entry is new when its `(name, version, source, kind, integrity)` is not in the base (Ruling
- * T3b), so a base entry whose kind or integrity changed is checked again.
+ * An entry is new when its `(slot, name, version, source, kind, integrity)` is not in the base
+ * (Ruling T3b, fix round 1 C1), so a base entry whose kind, integrity or slot changed is checked
+ * again.
  */
 function entryKey(entry: LockEntry): string {
-  return JSON.stringify([entry.name, entry.version, entry.source, entry.kind, entry.integrity]);
+  return JSON.stringify([
+    slotOf(entry),
+    entry.name,
+    entry.version,
+    entry.source,
+    entry.kind,
+    entry.integrity,
+  ]);
 }
 
 function originOf(entry: LockEntry): string | null {
   return entry.source === null ? null : sourceOrigin(entry.source);
 }
 
-function newEntryRule(
-  entry: LockEntry,
-  origins: ReadonlySet<string>,
-  integrityRequired: boolean,
-): FixRule | null {
+/** What the base allows a new entry: origins (Ruling T3f: of registry entries only) and aliases. */
+interface BaseFacts {
+  origins: ReadonlySet<string>;
+  aliases: ReadonlySet<string>;
+  integrityRequired: boolean;
+}
+
+function baseFacts(base: readonly LockEntry[], ctx: LockCheckOptions): BaseFacts {
+  const origins = new Set(ctx.publicHosts.map((host) => sourceOrigin(host) ?? host));
+  for (const entry of base) {
+    const origin = entry.kind === 'registry' ? originOf(entry) : null;
+    if (origin !== null) origins.add(origin);
+  }
+  const aliases = new Set(base.filter(isAlias).map(aliasKey));
+  return { origins, aliases, integrityRequired: ctx.integrityRequired };
+}
+
+function newEntryRule(entry: LockEntry, facts: BaseFacts): FixRule | null {
   if (entry.kind !== 'registry') return 'source_kind';
+  // Fix round 1, C1: another package in a slot only where the base had that alias.
+  if (isAlias(entry) && !facts.aliases.has(aliasKey(entry))) return 'source_kind';
   if (entry.source !== null) {
     // Ruling T3c: a source that gives no origin fails closed; the readers write null, not a
     // reference, for a registry entry the format names no URL for.
     const origin = originOf(entry);
-    if (origin === null || !origins.has(origin)) return 'new_source';
+    if (origin === null || !facts.origins.has(origin)) return 'new_source';
   }
-  if (integrityRequired && (entry.integrity ?? '') === '') return 'missing_integrity';
+  if (facts.integrityRequired && (entry.integrity ?? '') === '') return 'missing_integrity';
   return null;
 }
 
+/** The entries of each dependent's name. */
+function entriesByDependent(entries: readonly LockEntry[]): Map<string, LockEntry[]> {
+  const index = new Map<string, LockEntry[]>();
+  for (const entry of entries) {
+    for (const dependent of entry.dependents) {
+      const list = index.get(dependent);
+      if (list === undefined) index.set(dependent, [entry]);
+      else list.push(entry);
+    }
+  }
+  return index;
+}
+
 /**
- * B1 for lockfiles: every new entry is a registry entry (`source_kind`) whose source is null or a
- * URL on an origin the base lockfile or a public registry of the format uses (`new_source`), with
- * an integrity hash where the format has them (`missing_integrity`). The first failing new entry,
- * in `next` order, names the rule.
+ * Ruling T3e: the names reachable from the package. They are its name and the names of the
+ * packages in its slot, then every name of an entry with a reachable dependent, to a fixpoint.
+ */
+function reachableNames(entries: readonly LockEntry[], packageName: string): Set<string> {
+  const reached = new Set([packageName]);
+  for (const entry of entries) if (entry.slot === packageName) reached.add(entry.name);
+  const index = entriesByDependent(entries);
+  const pending = [...reached];
+  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+    for (const entry of index.get(name) ?? []) {
+      if (reached.has(entry.name)) continue;
+      reached.add(entry.name);
+      pending.push(entry.name);
+    }
+  }
+  return reached;
+}
+
+/**
+ * B1 for lockfiles. Every new entry is a registry entry (`source_kind`) and no alias the base did
+ * not have (`source_kind`), whose source is null or a URL on an origin of the base's registry
+ * entries or a public registry of the format (`new_source`), with an integrity hash where the
+ * format has them (`missing_integrity`); the first failing new entry, in `next` order, names the
+ * rule. Then, with `reachableOnly`, every new entry must be reachable from the package
+ * (`new_dependency`, Ruling T3e).
  */
 export function checkLockEntries(
   base: readonly LockEntry[],
@@ -80,15 +166,17 @@ export function checkLockEntries(
   ctx: FixCheckContext & LockCheckOptions,
 ): FixCheckResult {
   const known = new Set(base.map(entryKey));
-  const origins = new Set(ctx.publicHosts.map((host) => sourceOrigin(host) ?? host));
-  for (const entry of base) {
-    const origin = originOf(entry);
-    if (origin !== null) origins.add(origin);
-  }
-  for (const entry of next) {
-    if (known.has(entryKey(entry))) continue;
-    const rule = newEntryRule(entry, origins, ctx.integrityRequired);
+  const added = next.filter((entry) => !known.has(entryKey(entry)));
+  const facts = baseFacts(base, ctx);
+  for (const entry of added) {
+    const rule = newEntryRule(entry, facts);
     if (rule !== null) return fixRefused(rule, ctx.lockfile);
+  }
+  if (ctx.reachableOnly) {
+    const reached = reachableNames(next, ctx.packageName);
+    if (added.some((entry) => !reached.has(entry.name))) {
+      return fixRefused('new_dependency', ctx.lockfile);
+    }
   }
   return FIX_CHECK_OK;
 }
@@ -161,8 +249,10 @@ export function belowTarget(
   );
 }
 
+/** The versions of the package, and of whatever its slot holds (fix round 1, C1). */
 function packageVersions(entries: readonly LockEntry[], packageName: string): string[] {
-  return [...new Set(entries.filter((e) => e.name === packageName).map((e) => e.version))];
+  const own = entries.filter((e) => e.name === packageName || e.slot === packageName);
+  return [...new Set(own.map((e) => e.version))];
 }
 
 /**

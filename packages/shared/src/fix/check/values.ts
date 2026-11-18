@@ -2,12 +2,12 @@
  * Reading parsed documents of a fix upload, which come from an untrusted run: own keys only (never
  * a prototype's), plain objects only, and no recursion over the document's depth.
  */
-import { parse } from 'yaml';
+import { isScalar, parseDocument, visit, type YAMLMap } from 'yaml';
 
 export type JsonObject = Record<string, unknown>;
 
 export function stripBom(text: string): string {
-  return text.startsWith('﻿') ? text.slice(1) : text;
+  return text.startsWith('\uFEFF') ? text.slice(1) : text;
 }
 
 /** A plain object, as `JSON.parse` and `yaml` build them (not an array, buffer or class). */
@@ -105,9 +105,26 @@ export interface YamlReadOptions {
 }
 
 /**
- * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases,
- * unique keys). Errors throw; warnings are not printed.
+ * Refuses a mapping with two equal keys, compared as text (so `1` and `'1'` collide, as they do
+ * in the parsed object), with one set per mapping: linear, unlike `yaml`'s own `uniqueKeys` check.
+ */
+function assertUniqueKeys(map: YAMLMap): void {
+  const seen = new Set<string>();
+  for (const { key } of map.items) {
+    const text = isScalar(key) ? String(key.value) : String(key);
+    if (seen.has(text)) throw new Error(`duplicate YAML key ${text.slice(0, 100)}`);
+    seen.add(text);
+  }
+}
+
+/**
+ * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases)
+ * and unique keys (checked in linear time, fix round 1 I1). Errors throw; warnings are not printed.
  */
 export function parseYaml(text: string, options: YamlReadOptions = {}): unknown {
-  return parse(stripBom(text), { ...options, logLevel: 'error' });
+  const doc = parseDocument(stripBom(text), { ...options, uniqueKeys: false });
+  const [error] = doc.errors;
+  if (error !== undefined) throw error;
+  visit(doc, { Map: (_key, map) => assertUniqueKeys(map) });
+  return doc.toJS({ maxAliasCount: 100 });
 }

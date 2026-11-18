@@ -58,7 +58,13 @@ export interface FixCheckContext {
 
 /** One resolved package of a lockfile, in a form shared by every format. */
 export interface LockEntry {
+  /** The package actually fetched. */
   name: string;
+  /**
+   * The name the package is installed and depended on as, when that differs from `name` (an
+   * alias: an npm folder, a Yarn pattern or descriptor, a pnpm reference); absent otherwise.
+   */
+  slot?: string;
   version: string;
   /** Where it is fetched from (a URL, a path or a reference); null when the format names none. */
   source: string | null;

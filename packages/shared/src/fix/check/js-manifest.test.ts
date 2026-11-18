@@ -166,7 +166,7 @@ describe('checkPackageJson: smuggling (§11.8)', () => {
 
 describe('checkPackageJson: format', () => {
   it('reads through CRLF line endings and a BOM (Review Focus 1)', () => {
-    const crlf = (text: string) => '﻿' + text.replaceAll('\n', '\r\n');
+    const crlf = (text: string) => '\uFEFF' + text.replaceAll('\n', '\r\n');
     const base = crlf(json(BASE));
     const next = crlf(json(BASE).replace('"qf-a": "^1.2.5"', '"qf-a": "^1.2.6"'));
     expect(next).not.toBe(base);

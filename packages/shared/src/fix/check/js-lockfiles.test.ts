@@ -2,11 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { checkJsLockfile, readNpmLock, readPnpmLock, readYarnLock } from './js-lockfiles';
 import type { FixCheckContext, FixFileChange, LockEntry } from './types';
 
-/** The `(name, version, kind)` and dependents of each entry, sorted. */
+/** The `(name, version, kind)`, alias slot and dependents of each entry, sorted. */
 const shape = (entries: LockEntry[]) =>
   entries
-    .map(({ name, version, kind, dependents }) => ({ name, version, kind, dependents }))
-    .sort((a, b) => `${a.name}@${a.version}`.localeCompare(`${b.name}@${b.version}`));
+    .map(({ name, version, kind, dependents, slot }) => ({
+      name,
+      version,
+      kind,
+      dependents,
+      ...(slot === undefined ? {} : { slot }),
+    }))
+    .sort((a, b) =>
+      `${a.name}@${a.version}@${a.slot ?? ''}`.localeCompare(
+        `${b.name}@${b.version}@${b.slot ?? ''}`,
+      ),
+    );
 
 const contextFor = (lockfile: string): FixCheckContext => ({
   family: 'js',
@@ -114,6 +124,7 @@ describe('readNpmLock', () => {
     });
     expect(shape(readNpmLock(lock))).toEqual([
       { name: 'qf-a', version: '1.2.5', kind: 'registry', dependents: ['qf-b', 'web'] },
+      { name: 'qf-a', version: '1.2.5', kind: 'registry', dependents: [], slot: 'qf-alias' },
       { name: 'qf-a', version: '2.0.1', kind: 'registry', dependents: ['qf-b', 'web'] },
       { name: 'qf-b', version: '2.0.0', kind: 'registry', dependents: [] },
       { name: 'qf-file', version: '1.0.0', kind: 'file', dependents: [] },
@@ -233,7 +244,10 @@ describe('checkJsLockfile: npm', () => {
       rule: 'below_target',
       path: 'package-lock.json',
     });
-    const fixed = next.replaceAll('2.0.0', '2.0.4');
+    const fixed = npmV3(npmQfA('1.2.6'), {
+      'node_modules/qf-b/node_modules/qf-a': npmQfA('2.0.3'),
+      'node_modules/qf-c/node_modules/qf-a': npmQfA('2.0.4'),
+    });
     expect(checkJsLockfile({ ...change, next: fixed }, ctx)).toEqual({ ok: true });
   });
 
@@ -249,14 +263,30 @@ describe('checkJsLockfile: npm', () => {
   });
 
   it.each([
-    ['a scoped package', '@scope/qf-d', `${NPM}/@scope/qf-d/-/qf-d-1.0.0.tgz`],
-    ['a scoped package with %2F', '@scope/qf-d', `${NPM}/@scope%2Fqf-d/-/qf-d-1.0.0.tgz`],
-    ['a scoped package with %2f', '@scope/qf-d', `${NPM}/@scope%2fqf-d/-/qf-d-1.0.0.tgz`],
-    ['an alias by its real name', 'qf-d', `${NPM}/qf-d/-/qf-d-1.0.0.tgz`],
-  ])('accepts %s on the registry (Ruling T3b)', (_name, realName, resolved) => {
-    const added = { version: '1.0.0', resolved, integrity: 'sha512-d', name: realName };
-    const next = npmV3(npmQfA('1.2.6'), { 'node_modules/qf-alias': added });
+    ['a scoped package', `${NPM}/@scope/qf-d/-/qf-d-1.0.0.tgz`],
+    ['a scoped package with %2F', `${NPM}/@scope%2Fqf-d/-/qf-d-1.0.0.tgz`],
+    ['a scoped package with %2f', `${NPM}/@scope%2fqf-d/-/qf-d-1.0.0.tgz`],
+  ])('accepts %s on the registry (Ruling T3b)', (_name, resolved) => {
+    const added = { version: '1.0.0', resolved, integrity: 'sha512-d' };
+    const qfA = npmQfA('1.2.6', { dependencies: { '@scope/qf-d': '^1.0.0' } });
+    const next = npmV3(qfA, { 'node_modules/@scope/qf-d': added });
     expect(check('package-lock.json', NPM_V3_BASE, next)).toEqual({ ok: true });
+  });
+
+  it('accepts an alias the base already has, by its real name (Ruling T3b, C1)', () => {
+    const qfD = (v: string) => ({
+      name: 'qf-d',
+      version: v,
+      resolved: `${NPM}/qf-d/-/qf-d-${v}.tgz`,
+      integrity: `sha512-d${v}`,
+    });
+    const at = (a: string, d: string) =>
+      npmV3(npmQfA(a, { dependencies: { 'qf-alias': 'npm:qf-d@^0.9.0' } }), {
+        'node_modules/qf-alias': qfD(d),
+      });
+    expect(check('package-lock.json', at('1.2.5', '0.9.0'), at('1.2.6', '0.9.1'))).toEqual({
+      ok: true,
+    });
   });
 
   it.each([
@@ -287,6 +317,7 @@ describe('checkJsLockfile: npm', () => {
     };
     const entries = readNpmLock(npmV1(npmQfA('1.2.5'), { 'string-width-cjs': alias }));
     expect(entries.find((e) => e.integrity === 'sha512-s')).toMatchObject({
+      slot: 'string-width-cjs',
       name: 'string-width',
       version: '4.2.3',
       kind: 'registry',
@@ -616,6 +647,13 @@ qf-git@x/qf-git:
       { name: 'qf-link', version: '0.0.0', kind: 'link', dependents: [] },
       { name: 'qf-repo', version: '1.0.0', kind: 'git', dependents: [] },
       { name: 'string-width', version: '4.2.3', kind: 'registry', dependents: [] },
+      {
+        name: 'string-width',
+        version: '4.2.3',
+        kind: 'registry',
+        dependents: [],
+        slot: 'string-width-cjs',
+      },
     ]);
   });
 
@@ -677,29 +715,35 @@ const berry = (qfA: string, resolution = `qf-a@npm:${qfA}`, extra = '') => `${BE
   linkType: hard
 ${extra}`;
 
-const TYPESCRIPT = `
-"typescript@npm:^5.6.3":
-  version: 5.6.3
-  resolution: "typescript@npm:5.6.3"
+const typescript = (v: string) => `
+"typescript@npm:^5.6.2":
+  version: ${v}
+  resolution: "typescript@npm:${v}"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10c0/ts
+  checksum: 10c0/ts${v}
   languageName: node
   linkType: hard
 `;
 
-const TYPESCRIPT_PATCH = `
-"typescript@patch:typescript@npm%3A^5.6.3#optional!builtin<compat/typescript>":
-  version: 5.6.3
-  resolution: "typescript@patch:typescript@npm%3A5.6.3#optional!builtin<compat/typescript>::version=5.6.3&hash=8c6c40"
+const typescriptPatch = (v: string, patched = `typescript@npm%3A${v}`) => `
+"typescript@patch:typescript@npm%3A^5.6.2#optional!builtin<compat/typescript>":
+  version: ${v}
+  resolution: "typescript@patch:${patched}#optional!builtin<compat/typescript>::version=${v}&hash=8c6c40"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10c0/ttt
+  checksum: 10c0/patched${v}
   languageName: node
   linkType: hard
 `;
+
+const TS: FixCheckContext = {
+  family: 'js',
+  packageName: 'typescript',
+  targets: [{ installed: '5.6.2', target: '5.6.3', lockfile: 'yarn.lock' }],
+};
 
 describe('readYarnLock: Berry', () => {
   it('reads entries from their resolution, with dependents', () => {
@@ -753,7 +797,7 @@ describe('checkJsLockfile: Yarn', () => {
   });
 
   it('reads through CRLF line endings and a BOM', () => {
-    const crlf = (text: string) => '﻿' + text.replaceAll('\n', '\r\n');
+    const crlf = (text: string) => '\uFEFF' + text.replaceAll('\n', '\r\n');
     expect(check('yarn.lock', crlf(yarnClassic('1.2.5')), crlf(yarnClassic('1.2.6')))).toEqual({
       ok: true,
     });
@@ -797,17 +841,28 @@ describe('checkJsLockfile: Yarn', () => {
     });
   });
 
-  it('accepts an added Berry builtin compat patch', () => {
-    const base = berry('1.2.5', undefined, TYPESCRIPT);
-    const next = berry('1.2.6', undefined, TYPESCRIPT + TYPESCRIPT_PATCH);
-    expect(check('yarn.lock', base, next)).toEqual({ ok: true });
-    const bare = next.replace('  checksum: 10c0/ttt\n', '');
-    expect(check('yarn.lock', base, bare)).toMatchObject({ rule: 'missing_integrity' });
-    const patch = readYarnLock(next).filter((e) => e.name === 'typescript');
+  it('accepts a Berry builtin compat patch of the package, bumped with it', () => {
+    const lock = (v: string) => berry('1.2.5', undefined, typescript(v) + typescriptPatch(v));
+    const change = { path: 'yarn.lock', base: lock('5.6.2'), next: lock('5.6.3') };
+    expect(checkJsLockfile(change, TS)).toEqual({ ok: true });
+    const bare = { ...change, next: change.next.replace('  checksum: 10c0/patched5.6.3\n', '') };
+    expect(checkJsLockfile(bare, TS)).toMatchObject({ rule: 'missing_integrity' });
+    const patch = readYarnLock(change.next).filter((e) => e.name === 'typescript');
     expect(patch.map((e) => [e.version, e.kind, e.integrity])).toEqual([
-      ['5.6.3', 'registry', '10c0/ts'],
-      ['5.6.3', 'registry', '10c0/ttt'],
+      ['5.6.3', 'registry', '10c0/ts5.6.3'],
+      ['5.6.3', 'registry', '10c0/patched5.6.3'],
     ]);
+  });
+
+  it.each([
+    ['another package', 'evil@npm%3A5.6.3'],
+    ['another version', 'typescript@npm%3A5.6.4'],
+  ])('refuses a builtin patch of %s (C2)', (_name, patched) => {
+    const base = berry('1.2.5', undefined, typescript('5.6.2') + typescriptPatch('5.6.2'));
+    const next = berry('1.2.5', undefined, typescript('5.6.3') + typescriptPatch('5.6.3', patched));
+    expect(checkJsLockfile({ path: 'yarn.lock', base, next }, TS)).toMatchObject({
+      rule: 'source_kind',
+    });
   });
 
   it('refuses a lockfile that still holds the installed version', () => {
@@ -832,5 +887,292 @@ qf-a@~1.2.0:
     expect(check('yarn.lock', berry('1.2.5'), 'a: 1\n')).toMatchObject({ rule: 'unparsable' });
     const dup = berry('1.2.6') + '\n"qf-a@npm:^1.2.0":\n  version: 1.2.6\n';
     expect(check('yarn.lock', berry('1.2.5'), dup)).toMatchObject({ rule: 'unparsable' });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 1 (task-3-fix-1.md): the reviewer's probes, and Rulings T3e and T3f
+
+const evilNpm = (version: string) => ({
+  version,
+  resolved: `${NPM}/evil/-/evil-${version}.tgz`,
+  integrity: `sha512-evil${version}`,
+});
+
+describe('fix round 1: another package in the package’s slot (C1)', () => {
+  it('refuses npm v3 and v1 entries that put another package in the slot', () => {
+    const v3 = npmV3({ ...evilNpm('1.2.6'), name: 'evil' });
+    expect(check('package-lock.json', NPM_V3_BASE, v3)).toMatchObject({ rule: 'source_kind' });
+    const v1 = npmV1({ ...evilNpm('1.2.6'), version: 'npm:evil@1.2.6' });
+    expect(check('package-lock.json', NPM_V1_BASE, v1)).toMatchObject({ rule: 'source_kind' });
+  });
+
+  it('refuses a Berry descriptor of the package resolved to another package', () => {
+    const next = berry('1.2.6', 'evil@npm:1.2.6');
+    expect(check('yarn.lock', berry('1.2.5'), next)).toMatchObject({ rule: 'source_kind' });
+  });
+
+  it('refuses a pnpm importer or snapshot reference to another package', () => {
+    const lock = (ref: string, pkg: string) => `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      qf-a:
+        specifier: ^1.2.5
+        version: ${ref}
+
+packages:
+
+  ${pkg}:
+    resolution: {integrity: sha512-${pkg}}
+
+snapshots:
+
+  ${pkg}: {}
+`;
+    const importer = lock('evil@1.2.6', 'evil@1.2.6');
+    expect(check('pnpm-lock.yaml', lock('1.2.5', 'qf-a@1.2.5'), importer)).toMatchObject({
+      rule: 'source_kind',
+    });
+    const evil = '\n  evil@1.2.6:\n    resolution: {integrity: sha512-e}\n';
+    const snapshot = pnpmV9('1.2.6', evil, '\n  evil@1.2.6: {}\n').replace(
+      '      qf-a: 1.2.6\n',
+      '      qf-a: evil@1.2.6\n',
+    );
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), snapshot)).toMatchObject({
+      rule: 'source_kind',
+    });
+  });
+
+  it('refuses a Yarn classic alias pattern the base does not have', () => {
+    const alias = `${yarnClassic('1.2.6')}
+"qf-a@npm:evil@^1.2.6":
+  version "1.2.6"
+  resolved "https://registry.yarnpkg.com/evil/-/evil-1.2.6.tgz#1"
+  integrity sha512-e
+`;
+    expect(check('yarn.lock', yarnClassic('1.2.5'), alias)).toMatchObject({
+      rule: 'source_kind',
+    });
+  });
+});
+
+describe('fix round 1: Berry archive URLs and patches name the entry (C2)', () => {
+  it('refuses an archive URL that names another package', () => {
+    const archive = encodeURIComponent('https://registry.yarnpkg.com/evil/-/evil-6.6.6.tgz');
+    const next = berry('1.2.6', `qf-a@npm:1.2.6::__archiveUrl=${archive}`);
+    expect(check('yarn.lock', berry('1.2.5'), next)).toMatchObject({ rule: 'source_kind' });
+  });
+
+  it('accepts an archive URL of the package itself on a public registry', () => {
+    const archive = encodeURIComponent('https://registry.yarnpkg.com/qf-a/-/qf-a-1.2.6.tgz');
+    const next = berry('1.2.6', `qf-a@npm:1.2.6::__archiveUrl=${archive}`);
+    expect(check('yarn.lock', berry('1.2.5'), next)).toEqual({ ok: true });
+  });
+
+  it('refuses a builtin patch of another package in the package’s entry', () => {
+    const next = berry('1.2.6', 'qf-a@patch:evil@npm%3A1.2.6#optional!builtin<compat/typescript>');
+    expect(check('yarn.lock', berry('1.2.5'), next)).toMatchObject({ rule: 'source_kind' });
+  });
+});
+
+describe('fix round 1: a raw host with %, user info or other characters (C3)', () => {
+  const at = (host: string) => `https://${host}/qf-a/-/qf-a-1.2.6.tgz`;
+  const char = (code: number) => String.fromCharCode(code);
+
+  it.each([
+    ['a percent-encoded host', at('registry.yarnpkg.co%6D')],
+    ['user info', at('registry.npmjs.org@registry.yarnpkg.com')],
+    ['an IDN host', at(`r${char(0x435)}gistry.yarnpkg.com`)],
+  ])('refuses %s', (_name, resolved) => {
+    expect(check('yarn.lock', yarnClassic('1.2.5'), yarnClassic('1.2.6', resolved))).toEqual({
+      ok: false,
+      rule: 'new_source',
+      path: 'yarn.lock',
+    });
+  });
+
+  it.each([
+    at('registry.yarnpkg.co%6d'),
+    at('registry%2Eyarnpkg%2Ecom'),
+    at(`registry.yarnpkg.com${char(0xff0e)}`),
+    at(`registry${char(0xff0e)}yarnpkg${char(0xff0e)}com`),
+    at(`registry.yarnpkg.com${char(0xad)}`),
+    at(`evil.example${char(9)}@registry.yarnpkg.com`),
+    at('registry.yarnpkg.com;.evil.example'),
+  ])('refuses the reviewer’s probe %j', (resolved) => {
+    expect(check('yarn.lock', yarnClassic('1.2.5'), yarnClassic('1.2.6', resolved)).ok).toBe(false);
+  });
+});
+
+describe('fix round 1: the lockfile keeps the base’s format (C4)', () => {
+  it('refuses a classic base with a Berry-shaped next', () => {
+    const next = `"__metadata":
+  version: "8"
+
+"qf-a@^1.2.5":
+  version: "1.2.6"
+  resolution: "qf-a@npm:1.2.6"
+  checksum: "10c0/evil"
+`;
+    expect(check('yarn.lock', yarnClassic('1.2.5'), next)).toMatchObject({ rule: 'unparsable' });
+  });
+
+  it.each(['resolved: "https://evil.example/x.tgz"', 'integrity: sha512-evil'])(
+    'refuses a Berry entry with %s',
+    (field) => {
+      const next = berry('1.2.6').replace(
+        '  checksum: 10c0/a1.2.6\n',
+        `  checksum: 10c0/a1.2.6\n  ${field}\n`,
+      );
+      expect(() => readYarnLock(next)).toThrow();
+      expect(check('yarn.lock', berry('1.2.5'), next)).toMatchObject({ rule: 'unparsable' });
+    },
+  );
+
+  it('refuses a changed lockfile version (npm, pnpm, Berry)', () => {
+    const v2 = NPM_V3_BASE.replace('"lockfileVersion": 3', '"lockfileVersion": 2');
+    expect(check('package-lock.json', NPM_V3_BASE, v2)).toMatchObject({ rule: 'unparsable' });
+    expect(check('pnpm-lock.yaml', pnpmV6('1.2.5'), pnpmV9('1.2.6'))).toMatchObject({
+      rule: 'unparsable',
+    });
+    const berry6 = berry('1.2.6').replace('  version: 8\n', '  version: 6\n');
+    expect(check('yarn.lock', berry('1.2.5'), berry6)).toMatchObject({ rule: 'unparsable' });
+  });
+});
+
+describe('fix round 1: YAML in linear time (I1)', () => {
+  const big = (qfA: string) => {
+    const packages: string[] = [];
+    const snapshots: string[] = [];
+    for (let i = 0; i < 20_000; i++) {
+      packages.push(`\n  pkg-${i}@1.0.${i}:\n    resolution: {integrity: sha512-p${i}}\n`);
+      snapshots.push(`\n  pkg-${i}@1.0.${i}:\n    dependencies:\n      qf-a: ${qfA}\n`);
+    }
+    return pnpmV9(qfA, packages.join(''), snapshots.join(''));
+  };
+
+  it('checks a pnpm-lock.yaml of 20 000 packages in well under 3 s', { timeout: 60_000 }, () => {
+    const [base, next] = [big('1.2.5'), big('1.2.6')];
+    const started = performance.now();
+    expect(check('pnpm-lock.yaml', base, next)).toEqual({ ok: true });
+    expect(performance.now() - started).toBeLessThan(3000);
+  });
+
+  it('still refuses a duplicate key, also one written once as a number', () => {
+    const dup = pnpmV9('1.2.6') + '\n  qf-a@1.2.6: {}\n';
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), dup)).toMatchObject({ rule: 'unparsable' });
+    const numbered = pnpmV9('1.2.6').replace('settings:\n', "settings:\n  1: a\n  '1': b\n");
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), numbered)).toMatchObject({
+      rule: 'unparsable',
+    });
+  });
+});
+
+describe('fix round 1: new entries are reachable from the package (Ruling T3e)', () => {
+  const refused = (path: string) => ({ ok: false, rule: 'new_dependency', path });
+
+  it('npm: refuses an unrelated new package, or one only an unrelated package depends on', () => {
+    const evil = { 'node_modules/evil': evilNpm('1.0.0') };
+    const alone = npmV3(npmQfA('1.2.6'), evil);
+    expect(check('package-lock.json', NPM_V3_BASE, alone)).toEqual(refused('package-lock.json'));
+    const qfB = {
+      version: '2.0.0',
+      resolved: `${NPM}/qf-b/-/qf-b-2.0.0.tgz`,
+      integrity: 'sha512-bbb',
+      dependencies: { 'qf-a': '^1.2.0', evil: '^1.0.0' },
+    };
+    const byQfB = npmV3(npmQfA('1.2.6'), { 'node_modules/qf-b': qfB, ...evil });
+    expect(check('package-lock.json', NPM_V3_BASE, byQfB)).toEqual(refused('package-lock.json'));
+  });
+
+  it('npm: accepts a new dependency of the package’s new version', () => {
+    const qfX = {
+      version: '1.0.0',
+      resolved: `${NPM}/qf-x/-/qf-x-1.0.0.tgz`,
+      integrity: 'sha512-x',
+    };
+    const qfA = npmQfA('1.2.6', { dependencies: { 'qf-x': '^1.0.0' } });
+    const next = npmV3(qfA, { 'node_modules/qf-x': qfX });
+    expect(check('package-lock.json', NPM_V3_BASE, next)).toEqual({ ok: true });
+  });
+
+  const evilPnpm = [
+    '\n  evil@1.0.0:\n    resolution: {integrity: sha512-e}\n',
+    '\n  evil@1.0.0: {}\n',
+  ];
+
+  it('pnpm: refuses an unrelated new package, or one only an unrelated package depends on', () => {
+    const alone = pnpmV9('1.2.6', ...evilPnpm);
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), alone)).toEqual(refused('pnpm-lock.yaml'));
+    const byQfB = alone.replace('      qf-a: 1.2.6\n', '      qf-a: 1.2.6\n      evil: 1.0.0\n');
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), byQfB)).toEqual(refused('pnpm-lock.yaml'));
+  });
+
+  it('pnpm: accepts a new dependency of the package’s new version', () => {
+    const next = pnpmV9(
+      '1.2.6',
+      '\n  qf-x@1.0.0:\n    resolution: {integrity: sha512-x}\n',
+      '\n  qf-x@1.0.0: {}\n',
+    ).replace('  qf-a@1.2.6: {}\n', '  qf-a@1.2.6:\n    dependencies:\n      qf-x: 1.0.0\n');
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), next)).toEqual({ ok: true });
+  });
+
+  const evilClassic = `
+evil@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/evil/-/evil-1.0.0.tgz#1"
+  integrity sha512-e
+`;
+
+  it('Yarn classic: refuses an unrelated new package, or one only an unrelated package depends on', () => {
+    const alone = yarnClassic('1.2.6') + evilClassic;
+    expect(check('yarn.lock', yarnClassic('1.2.5'), alone)).toEqual(refused('yarn.lock'));
+    const byQfB = alone.replace(
+      '    "@scope/qf-c" "^3.0.0"\n',
+      '    "@scope/qf-c" "^3.0.0"\n    evil "^1.0.0"\n',
+    );
+    expect(check('yarn.lock', yarnClassic('1.2.5'), byQfB)).toEqual(refused('yarn.lock'));
+  });
+
+  it('Yarn classic: accepts a new dependency of the package’s new version', () => {
+    const next = `${yarnClassic('1.2.6')}  dependencies:
+    qf-x "^1.0.0"
+
+qf-x@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/qf-x/-/qf-x-1.0.0.tgz#1"
+  integrity sha512-x
+`;
+    expect(check('yarn.lock', yarnClassic('1.2.5'), next)).toEqual({ ok: true });
+  });
+
+  const berryEntry = (name: string) => `
+"${name}@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "${name}@npm:1.0.0"
+  checksum: 10c0/${name}
+  languageName: node
+  linkType: hard
+`;
+
+  it('Berry: refuses an unrelated new package, or one only an unrelated package depends on', () => {
+    const alone = berry('1.2.6', undefined, berryEntry('evil'));
+    expect(check('yarn.lock', berry('1.2.5'), alone)).toEqual(refused('yarn.lock'));
+    const byQfB = alone.replace(
+      '    qf-a: "npm:^1.2.0"\n',
+      '    qf-a: "npm:^1.2.0"\n    evil: "npm:^1.0.0"\n',
+    );
+    expect(check('yarn.lock', berry('1.2.5'), byQfB)).toEqual(refused('yarn.lock'));
+  });
+
+  it('Berry: accepts a new dependency of the package’s new version', () => {
+    const next = berry('1.2.6', undefined, berryEntry('qf-x')).replace(
+      '  checksum: 10c0/a1.2.6\n',
+      '  dependencies:\n    qf-x: "npm:^1.0.0"\n  checksum: 10c0/a1.2.6\n',
+    );
+    expect(check('yarn.lock', berry('1.2.5'), next)).toEqual({ ok: true });
   });
 });

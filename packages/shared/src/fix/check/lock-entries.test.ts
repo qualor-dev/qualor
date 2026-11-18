@@ -82,6 +82,7 @@ const ctx = {
   lockfile: 'apps/web/package-lock.json',
   publicHosts: ['https://registry.npmjs.org'],
   integrityRequired: true,
+  reachableOnly: false,
 } as const;
 
 describe('checkLockEntries', () => {
@@ -95,9 +96,50 @@ describe('checkLockEntries', () => {
     expect(checkLockEntries(baseEntries, [...baseEntries, entry()], ctx)).toEqual({ ok: true });
   });
 
-  it('compares scheme and host only, case-insensitively and without user info', () => {
-    const next = entry({ source: 'HTTPS://user:pw@NPM.example.com/other/path.tgz' });
+  it('compares scheme and host only, case-insensitively', () => {
+    const next = entry({ source: 'HTTPS://NPM.example.com/other/path.tgz' });
     expect(checkLockEntries(baseEntries, [next], ctx)).toEqual({ ok: true });
+  });
+
+  it.each([
+    'https://registry.npmjs.org@registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz',
+    'https://user:pw@npm.example.com/qf-a/-/qf-a-1.2.6.tgz',
+    'https://registry.npmjs.or%67/qf-a/-/qf-a-1.2.6.tgz',
+    'https://npm.example.co%6D/qf-a/-/qf-a-1.2.6.tgz',
+    'https://registry.npmjs.org\uFF0E/qf-a/-/qf-a-1.2.6.tgz',
+    'https://r\u0435gistry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz',
+    'https://registry.npmjs.org;.evil.example/qf-a/-/qf-a-1.2.6.tgz',
+  ])('refuses a source whose raw host has user info, %, or other characters: %j (C3)', (source) => {
+    expect(checkLockEntries(baseEntries, [entry({ source })], ctx)).toMatchObject({
+      rule: 'new_source',
+    });
+  });
+
+  it('takes the allowed origins from the base’s registry entries only (Ruling T3f)', () => {
+    const base = [
+      ...baseEntries,
+      entry({ name: 'qf-y', source: 'https://github.com/x/y.git', kind: 'git' }),
+    ];
+    const raw = entry({ source: 'https://github.com/x/raw/main/qf-a/-/qf-a-1.2.6.tgz' });
+    expect(checkLockEntries(base, [raw], ctx)).toMatchObject({ rule: 'new_source' });
+  });
+
+  it('refuses a new alias (slot and name differ) unless the base has the same pair (C1)', () => {
+    const alias = entry({
+      slot: 'qf-a',
+      name: 'evil',
+      source: 'https://registry.npmjs.org/evil/-/evil-1.2.6.tgz',
+    });
+    expect(checkLockEntries(baseEntries, [alias], ctx)).toMatchObject({ rule: 'source_kind' });
+    const base = [
+      ...baseEntries,
+      entry({ slot: 'qf-c', name: 'qf-d', version: '0.9.0', source: null }),
+    ];
+    const bumped = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });
+    expect(checkLockEntries(base, [bumped], ctx)).toEqual({ ok: true });
+    expect(checkLockEntries(base, [{ ...bumped, slot: 'qf-e' }], ctx)).toMatchObject({
+      rule: 'source_kind',
+    });
   });
 
   it.each([
@@ -177,11 +219,48 @@ describe('checkLockEntries', () => {
   });
 });
 
+describe('checkLockEntries: reachability (Ruling T3e)', () => {
+  const on = { ...ctx, reachableOnly: true };
+  const evil = (dependents: string[]) =>
+    entry({
+      name: 'evil',
+      version: '1.0.0',
+      source: 'https://registry.npmjs.org/evil/-/evil-1.0.0.tgz',
+      dependents,
+    });
+
+  it('refuses a new entry that nothing reachable from the package depends on', () => {
+    expect(checkLockEntries(baseEntries, [entry(), evil([])], on)).toEqual({
+      ok: false,
+      rule: 'new_dependency',
+      path: 'apps/web/package-lock.json',
+    });
+    const other = entry({ name: 'qf-b', version: '2.0.0', source: null });
+    expect(
+      checkLockEntries([...baseEntries, other], [entry(), other, evil(['qf-b'])], on),
+    ).toMatchObject({
+      rule: 'new_dependency',
+    });
+    expect(checkLockEntries(baseEntries, [entry(), evil([])], ctx)).toEqual({ ok: true });
+  });
+
+  it('accepts a new dependency of the package, and of that dependency, also through a slot', () => {
+    const x = entry({ name: 'qf-x', version: '1.0.0', source: null, dependents: ['qf-a'] });
+    const y = entry({ name: 'qf-y', version: '1.0.0', source: null, dependents: ['qf-x'] });
+    expect(checkLockEntries(baseEntries, [y, x, entry()], on)).toEqual({ ok: true });
+    const slotted = entry({ slot: 'qf-a', name: 'qf-a', version: '1.2.6' });
+    expect(checkLockEntries(baseEntries, [slotted, x], on)).toEqual({ ok: true });
+  });
+});
+
 describe('sourceOrigin', () => {
   it.each([
     ['https://registry.npmjs.org/a/-/a-1.0.0.tgz', 'https://registry.npmjs.org'],
-    ['git+SSH://git@GitHub.com/x/y.git', 'git+ssh://github.com'],
-    ['https://a:b@host:8080?x', 'https://host:8080'],
+    ['git+SSH://GitHub.com/x/y.git', 'git+ssh://github.com'],
+    ['git+ssh://git@github.com/x/y.git', null],
+    ['https://a:b@host:8080?x', null],
+    ['https://[::1]:8080/a', 'https://[::1]:8080'],
+    ['https://registry.yarnpkg.co%6D/a', null],
     ['https://registry.npmjs.org:443/a', 'https://registry.npmjs.org'],
     ['https://evil\\@registry.npmjs.org/', 'https://evil'],
     ['https:\\\\evil.example/x', 'https://evil.example'],
@@ -207,6 +286,19 @@ describe('lockfileBelowTarget (Ruling F14)', () => {
     expect(
       lockfileBelowTarget(lockEntries('1.2.5'), lockEntries('1.2.5'), other, 'web/' + LOCK),
     ).toBe(false);
+  });
+
+  it('counts an entry in the package’s slot as the package (C1)', () => {
+    const fixCtx = { family: 'js', packageName: 'qf-a', targets } as const;
+    const slotted = [entry({ slot: 'qf-a', name: 'evil', version: '1.2.5' })];
+    expect(
+      lockfileBelowTarget(
+        lockEntries('1.2.5'),
+        [...lockEntries('1.2.6'), ...slotted],
+        fixCtx,
+        LOCK,
+      ),
+    ).toBe(true);
   });
 
   it('reads only the package’s versions, and the base’s as old', () => {
