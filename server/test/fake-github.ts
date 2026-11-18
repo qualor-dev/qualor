@@ -117,6 +117,10 @@ export interface FakeOpenedPull {
   title: string;
   body: string;
   state: 'open' | 'closed';
+  /** A closed pull request that was merged (`setPull`); false when left out. */
+  merged?: boolean;
+  /** GitHub's `mergeable` (`false`: a conflict, `null`: not computed yet); true when left out. */
+  mergeable?: boolean | null;
 }
 export interface FakeFile {
   filename: string;
@@ -279,6 +283,30 @@ export interface FakeGitHub {
   fileText(repoId: number, filePath: string, branch?: string): string | null;
   /** The head sha of a branch, or null. */
   branchSha(repoId: number, branch: string): string | null;
+  /** The head sha of a branch (the same as `branchSha`), or null. */
+  headOf(repoId: number, branch: string): string | null;
+  /** The text of a file as of a commit, or null. */
+  fileAt(repoId: number, sha: string, filePath: string): string | null;
+  /**
+   * A person's push: one commit on `branch` (made on the default branch's head if it is missing)
+   * with `files` laid over the head's files; `sha` names the commit (a test mirrors a real local
+   * commit), else one is made. A `sha` the repository already has is refused: a commit is never
+   * overwritten.
+   */
+  pushAs(
+    repoId: number,
+    branch: string,
+    files: Record<string, string>,
+    options?: { author?: string; sha?: string },
+  ): string;
+  /** Sets a pull request opened through the API, as people would on GitHub. */
+  setPull(
+    repoId: number,
+    number: number,
+    changes: { state?: 'open' | 'closed'; merged?: boolean; mergeable?: boolean | null },
+  ): void;
+  /** The pull requests opened through the API in the repository. */
+  pullsOf(repoId: number): FakeOpenedPull[];
   addRepository(repo: FakeRepository): void;
   addPull(repoId: number, pull: FakePull): void;
   updatePull(repoId: number, number: number, changes: Partial<FakePull>): void;
@@ -501,19 +529,84 @@ export async function createFakeGitHub(
   let nextPullNumber = 1000;
   let nextCommit = 1;
   const newSha = () => createHash('sha1').update(`commit ${nextCommit++}`).digest('hex');
-  /** A branch of a repository: its head sha and the files at it. */
-  interface Branch {
-    sha: string;
-    files: Map<string, { text: string; sha: string }>;
+  const gitSha = (kind: string, content: string) =>
+    createHash('sha1')
+      .update(`${kind} ${Buffer.byteLength(content)}\0${content}`)
+      .digest('hex');
+  /** A repository's Git objects: commits (with their tree), trees (path to blob), blobs, branch heads. */
+  interface RepoGit {
+    commits: Map<string, { parent: string | null; tree: string; author: string }>;
+    trees: Map<string, Map<string, string>>;
+    blobs: Map<string, string>;
+    heads: Map<string, string>;
   }
-  const branchesByRepo = new Map<number, Map<string, Branch>>();
-  const branchesOf = (repo: { id: number; defaultBranch?: string }) => {
-    let branches = branchesByRepo.get(repo.id);
-    if (!branches) {
-      branches = new Map([[repo.defaultBranch ?? 'main', { sha: newSha(), files: new Map() }]]);
-      branchesByRepo.set(repo.id, branches);
+  const gitByRepo = new Map<number, RepoGit>();
+  const putBlob = (git: RepoGit, text: string): string => {
+    const sha = gitSha('blob', text);
+    git.blobs.set(sha, text);
+    return sha;
+  };
+  const putTree = (git: RepoGit, files: Map<string, string>): string => {
+    const listing = [...files].sort(([a], [b]) => a.localeCompare(b));
+    const sha = gitSha('tree', listing.map(([name, blob]) => `${name}\0${blob}`).join('\n'));
+    git.trees.set(sha, new Map(files));
+    return sha;
+  };
+  const putCommit = (
+    git: RepoGit,
+    parent: string | null,
+    files: Map<string, string>,
+    author: string,
+    sha = newSha(),
+  ): string => {
+    git.commits.set(sha, { parent, tree: putTree(git, files), author });
+    return sha;
+  };
+  const gitOf = (repo: { id: number; defaultBranch?: string }): RepoGit => {
+    let git = gitByRepo.get(repo.id);
+    if (!git) {
+      git = { commits: new Map(), trees: new Map(), blobs: new Map(), heads: new Map() };
+      git.heads.set(repo.defaultBranch ?? 'main', putCommit(git, null, new Map(), 'fake'));
+      gitByRepo.set(repo.id, git);
     }
-    return branches;
+    return git;
+  };
+  /** A branch name or a commit sha, as a commit sha; undefined when the repository knows neither. */
+  const resolveRef = (git: RepoGit, ref: string): string | undefined => {
+    const head = git.heads.get(ref);
+    if (head !== undefined) return head;
+    return git.commits.has(ref) ? ref : undefined;
+  };
+  /** The files (path to blob sha) of a commit. */
+  const filesOfCommit = (git: RepoGit, sha: string): Map<string, string> =>
+    git.trees.get(git.commits.get(sha)?.tree ?? '') ?? new Map();
+  const textAt = (git: RepoGit, sha: string, filePath: string): string | null => {
+    const blob = filesOfCommit(git, sha).get(filePath);
+    return blob === undefined ? null : (git.blobs.get(blob) ?? null);
+  };
+  /** The shas from `sha` back to its root, nearest first. */
+  const ancestry = (git: RepoGit, sha: string): string[] => {
+    const chain: string[] = [];
+    for (let at: string | null = sha; at !== null && !chain.includes(at);) {
+      chain.push(at);
+      at = git.commits.get(at)?.parent ?? null;
+    }
+    return chain;
+  };
+  /** One new commit on the head of `branch` with `changes` laid over its files; moves the head. */
+  const commitOnBranch = (
+    git: RepoGit,
+    branch: string,
+    changes: Map<string, string>,
+    author: string,
+    sha?: string,
+  ): string => {
+    const head = git.heads.get(branch) ?? null;
+    const files = new Map(head === null ? [] : filesOfCommit(git, head));
+    for (const [filePath, blob] of changes) files.set(filePath, blob);
+    const made = putCommit(git, head, files, author, sha);
+    git.heads.set(branch, made);
+    return made;
   };
   const repoById = (id: number) => [...repos.values()].find((r) => r.id === id);
   const actionsKeyPair = nacl.box.keyPair();
@@ -566,21 +659,52 @@ export async function createFakeGitHub(
     addFile: (repoId, filePath, text, branch) => {
       const repo = repoById(repoId);
       if (!repo) throw new Error(`no repository ${repoId}`);
-      const target = branchesOf(repo).get(branch ?? repo.defaultBranch ?? 'main');
-      if (!target) throw new Error(`no branch ${branch}`);
-      target.files.set(filePath, { text, sha: newSha() });
-      target.sha = newSha();
+      const git = gitOf(repo);
+      const name = branch ?? repo.defaultBranch ?? 'main';
+      if (!git.heads.has(name)) throw new Error(`no branch ${branch}`);
+      commitOnBranch(git, name, new Map([[filePath, putBlob(git, text)]]), 'fake');
     },
     fileText: (repoId, filePath, branch) => {
       const repo = repoById(repoId);
       if (!repo) return null;
-      const target = branchesOf(repo).get(branch ?? repo.defaultBranch ?? 'main');
-      return target?.files.get(filePath)?.text ?? null;
+      const git = gitOf(repo);
+      const head = git.heads.get(branch ?? repo.defaultBranch ?? 'main');
+      return head === undefined ? null : textAt(git, head, filePath);
     },
     branchSha: (repoId, branch) => {
       const repo = repoById(repoId);
-      return repo ? (branchesOf(repo).get(branch)?.sha ?? null) : null;
+      return repo ? (gitOf(repo).heads.get(branch) ?? null) : null;
     },
+    headOf: (repoId, branch) => fake.branchSha(repoId, branch),
+    fileAt: (repoId, sha, filePath) => {
+      const repo = repoById(repoId);
+      return repo ? textAt(gitOf(repo), sha, filePath) : null;
+    },
+    pushAs: (repoId, branch, pushed, pushOptions = {}) => {
+      const repo = repoById(repoId);
+      if (!repo) throw new Error(`no repository ${repoId}`);
+      const git = gitOf(repo);
+      if (pushOptions.sha !== undefined && git.commits.has(pushOptions.sha))
+        throw new Error(`fake GitHub: commit ${pushOptions.sha} exists already`);
+      if (!git.heads.has(branch)) {
+        git.heads.set(branch, git.heads.get(repo.defaultBranch ?? 'main')!);
+      }
+      const changes = new Map(
+        Object.entries(pushed).map(([filePath, text]) => [filePath, putBlob(git, text)]),
+      );
+      return commitOnBranch(git, branch, changes, pushOptions.author ?? 'person', pushOptions.sha);
+    },
+    setPull: (repoId, number, changes) => {
+      const opened = fake.openedPulls.find((o) => o.repoId === repoId && o.number === number);
+      if (!opened) throw new Error(`fake GitHub: no pull request #${number}`);
+      if (changes.merged === true) {
+        opened.merged = true;
+        opened.state = 'closed';
+      }
+      if (changes.state !== undefined) opened.state = changes.state;
+      if (changes.mergeable !== undefined) opened.mergeable = changes.mergeable;
+    },
+    pullsOf: (repoId) => fake.openedPulls.filter((o) => o.repoId === repoId),
     addRepository: (repo) => repos.set(`${repo.owner}/${repo.name}`.toLowerCase(), repo),
     addPull: (repoId, pull) => pulls.set(`${repoId}#${pull.number}`, structuredClone(pull)),
     updatePull: (repoId, number, changes) => {
@@ -659,6 +783,11 @@ export async function createFakeGitHub(
       .writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...headers })
       .end(text);
   };
+  /** A 200 whose body is the file itself (the raw media type), not JSON. */
+  const sendText = (res: ServerResponse, text: string) =>
+    res
+      .writeHead(200, { 'content-type': 'application/vnd.github.raw+json; charset=utf-8' })
+      .end(text);
   const deny = (res: ServerResponse, status: number, message: string) =>
     send(res, status, {
       message,
@@ -1314,34 +1443,46 @@ export async function createFakeGitHub(
       if (!need('metadata', 'read')) return forbidden();
       return send(res, 200, repo.languages ?? {});
     }
-    const branches = branchesOf(repo);
+    const git = gitOf(repo);
     const defaultBranch = repo.defaultBranch ?? 'main';
+    const decodePath = (value: string) => value.split('/').map(decodeURIComponent).join('/');
     const contentPath = /^\/contents(?:\/(.*))?$/.exec(rest);
     if (contentPath) {
-      const filePath = (contentPath[1] ?? '').split('/').map(decodeURIComponent).join('/');
+      const filePath = decodePath(contentPath[1] ?? '');
       if (method === 'GET') {
         if (!need('contents', 'read')) return forbidden();
-        const branch = branches.get(url.searchParams.get('ref') ?? defaultBranch);
-        if (!branch) return deny(res, 404, 'No commit found for the ref');
-        const file = branch.files.get(filePath);
-        if (file) {
+        const commit = resolveRef(git, url.searchParams.get('ref') ?? defaultBranch);
+        if (commit === undefined) return deny(res, 404, 'No commit found for the ref');
+        const files = filesOfCommit(git, commit);
+        const blob = files.get(filePath);
+        const raw = String(req.headers.accept ?? '').includes('application/vnd.github.raw');
+        if (blob !== undefined) {
+          const text = git.blobs.get(blob)!;
+          if (raw) return sendText(res, text);
+          const size = Buffer.byteLength(text);
+          // GitHub gives no content for a file over 1 MB (`encoding: "none"`): only the raw media
+          // type reads it.
+          const large = size > 1_000_000;
           return send(res, 200, {
             type: 'file',
             name: filePath.split('/').pop(),
             path: filePath,
-            sha: file.sha,
-            size: Buffer.byteLength(file.text),
-            encoding: 'base64',
-            content: (
-              Buffer.from(file.text)
-                .toString('base64')
-                .match(/.{1,60}/g) ?? []
-            ).join('\n'),
+            sha: blob,
+            size,
+            encoding: large ? 'none' : 'base64',
+            content: large
+              ? ''
+              : (
+                  Buffer.from(text)
+                    .toString('base64')
+                    .match(/.{1,60}/g) ?? []
+                ).join('\n'),
           });
         }
+        if (raw) return deny(res, 404, 'Not Found');
         const prefix = filePath === '' ? '' : `${filePath}/`;
         const entries = new Map<string, 'file' | 'dir'>();
-        for (const name of branch.files.keys()) {
+        for (const name of files.keys()) {
           if (!name.startsWith(prefix)) continue;
           const [head, ...tail] = name.slice(prefix.length).split('/');
           entries.set(head!, tail.length === 0 ? 'file' : 'dir');
@@ -1372,35 +1513,29 @@ export async function createFakeGitHub(
           (b.sha !== undefined && typeof b.sha !== 'string')
         )
           return deny(res, 422, 'Invalid request.');
-        const branch = branches.get(b.branch ?? defaultBranch);
-        if (!branch) return deny(res, 404, 'Branch not found');
-        const existing = branch.files.get(filePath);
-        if (existing && b.sha === undefined)
+        const branchName = b.branch ?? defaultBranch;
+        const head = git.heads.get(branchName);
+        if (head === undefined) return deny(res, 404, 'Branch not found');
+        const existing = filesOfCommit(git, head).get(filePath);
+        if (existing !== undefined && b.sha === undefined)
           return deny(res, 422, 'Invalid request.\n\n"sha" wasn\'t supplied.');
-        if (existing && b.sha !== existing.sha)
+        if (existing !== undefined && b.sha !== existing)
           return deny(res, 409, `${filePath} does not match ${b.sha}`);
-        const blobSha = newSha();
-        branch.files.set(filePath, {
-          text: Buffer.from(b.content, 'base64').toString('utf8'),
-          sha: blobSha,
-        });
-        branch.sha = newSha();
-        return send(res, existing ? 200 : 201, {
+        const blobSha = putBlob(git, Buffer.from(b.content, 'base64').toString('utf8'));
+        const made = commitOnBranch(git, branchName, new Map([[filePath, blobSha]]), 'qualor');
+        return send(res, existing === undefined ? 201 : 200, {
           content: { path: filePath, sha: blobSha },
-          commit: { sha: branch.sha, message: b.message },
+          commit: { sha: made, message: b.message },
         });
       }
     }
     const refMatch = /^\/git\/ref\/heads\/(.+)$/.exec(rest);
     if (method === 'GET' && refMatch) {
       if (!need('contents', 'read')) return forbidden();
-      const name = refMatch[1]!.split('/').map(decodeURIComponent).join('/');
-      const branch = branches.get(name);
-      if (!branch) return deny(res, 404, 'Not Found');
-      return send(res, 200, {
-        ref: `refs/heads/${name}`,
-        object: { type: 'commit', sha: branch.sha },
-      });
+      const name = decodePath(refMatch[1]!);
+      const head = git.heads.get(name);
+      if (head === undefined) return deny(res, 404, 'Not Found');
+      return send(res, 200, { ref: `refs/heads/${name}`, object: { type: 'commit', sha: head } });
     }
     if (method === 'POST' && rest === '/git/refs') {
       if (!need('contents', 'write')) return forbidden();
@@ -1408,24 +1543,155 @@ export async function createFakeGitHub(
       const name = typeof b.ref === 'string' ? /^refs\/heads\/(.+)$/.exec(b.ref)?.[1] : undefined;
       if (name === undefined || typeof b.sha !== 'string')
         return deny(res, 422, 'Invalid request.');
-      if (branches.has(name)) return deny(res, 422, 'Reference already exists');
-      const from = [...branches.values()].find((x) => x.sha === b.sha);
-      if (!from) return deny(res, 422, 'Object does not exist');
-      branches.set(name, { sha: from.sha, files: new Map(from.files) });
-      return send(res, 201, {
-        ref: `refs/heads/${name}`,
-        object: { type: 'commit', sha: from.sha },
+      if (git.heads.has(name)) return deny(res, 422, 'Reference already exists');
+      if (!git.commits.has(b.sha)) return deny(res, 422, 'Object does not exist');
+      git.heads.set(name, b.sha);
+      return send(res, 201, { ref: `refs/heads/${name}`, object: { type: 'commit', sha: b.sha } });
+    }
+    const gitRefMatch = /^\/git\/refs\/heads\/(.+)$/.exec(rest);
+    if (method === 'PATCH' && gitRefMatch) {
+      if (!need('contents', 'write')) return forbidden();
+      const name = decodePath(gitRefMatch[1]!);
+      const b = json() as { sha?: unknown; force?: unknown };
+      if (typeof b.sha !== 'string' || (b.force !== undefined && typeof b.force !== 'boolean'))
+        return deny(res, 422, 'Invalid request.');
+      const current = git.heads.get(name);
+      if (current === undefined) return deny(res, 422, 'Reference does not exist');
+      // A branch name is no sha: only a commit the repository has.
+      if (!/^[0-9a-f]{40}$/.test(b.sha) || !git.commits.has(b.sha))
+        return deny(res, 422, 'Object does not exist');
+      if (b.force !== true && !ancestry(git, b.sha).includes(current))
+        return deny(res, 422, 'Update is not a fast forward');
+      git.heads.set(name, b.sha);
+      return send(res, 200, { ref: `refs/heads/${name}`, object: { type: 'commit', sha: b.sha } });
+    }
+    if (method === 'DELETE' && gitRefMatch) {
+      if (!need('contents', 'write')) return forbidden();
+      const name = decodePath(gitRefMatch[1]!);
+      if (!git.heads.delete(name)) return deny(res, 422, 'Reference does not exist');
+      return send(res, 204);
+    }
+    if (method === 'POST' && rest === '/git/blobs') {
+      if (!need('contents', 'write')) return forbidden();
+      const b = json() as { content?: unknown; encoding?: unknown };
+      if (
+        typeof b.content !== 'string' ||
+        (b.encoding !== undefined && b.encoding !== 'base64' && b.encoding !== 'utf-8') ||
+        (b.encoding === 'base64' && !/^[A-Za-z0-9+/=\s]*$/.test(b.content))
+      )
+        return deny(res, 422, 'Invalid request.');
+      const text =
+        b.encoding === 'base64' ? Buffer.from(b.content, 'base64').toString('utf8') : b.content;
+      return send(res, 201, { sha: putBlob(git, text) });
+    }
+    if (method === 'POST' && rest === '/git/trees') {
+      if (!need('contents', 'write')) return forbidden();
+      const b = json() as { base_tree?: unknown; tree?: unknown };
+      const base = typeof b.base_tree === 'string' ? git.trees.get(b.base_tree) : undefined;
+      if (
+        !Array.isArray(b.tree) ||
+        (b.base_tree !== undefined && (typeof b.base_tree !== 'string' || base === undefined))
+      )
+        return deny(res, 422, 'Invalid request.');
+      const files = new Map(base);
+      for (const entry of b.tree as Record<string, unknown>[]) {
+        const entryPath = entry['path'];
+        if (
+          typeof entryPath !== 'string' ||
+          entryPath === '' ||
+          entryPath.startsWith('/') ||
+          entryPath.split('/').some((s) => s === '' || s === '.' || s === '..') ||
+          !['100644', '100755'].includes(String(entry['mode'])) ||
+          entry['type'] !== 'blob' ||
+          typeof entry['sha'] !== 'string' ||
+          !git.blobs.has(entry['sha'])
+        )
+          return deny(res, 422, 'Invalid request.');
+        if (entryPath.startsWith('.github/workflows/') && !need('workflows', 'write'))
+          return forbidden();
+        files.set(entryPath, entry['sha']);
+      }
+      return send(res, 201, { sha: putTree(git, files) });
+    }
+    if (method === 'POST' && rest === '/git/commits') {
+      if (!need('contents', 'write')) return forbidden();
+      const b = json() as { message?: unknown; tree?: unknown; parents?: unknown };
+      const parents = Array.isArray(b.parents) ? (b.parents as unknown[]) : [];
+      if (
+        typeof b.message !== 'string' ||
+        b.message === '' ||
+        typeof b.tree !== 'string' ||
+        !git.trees.has(b.tree) ||
+        parents.length > 1 ||
+        !parents.every((p) => typeof p === 'string' && git.commits.has(p))
+      )
+        return deny(res, 422, 'Invalid request.');
+      const sha = newSha();
+      git.commits.set(sha, {
+        parent: (parents[0] as string | undefined) ?? null,
+        tree: b.tree,
+        author: 'qualor',
       });
+      return send(res, 201, {
+        sha,
+        tree: { sha: b.tree },
+        parents: parents.map((p) => ({ sha: p })),
+        message: b.message,
+      });
+    }
+    const commitMatch = /^\/git\/commits\/([0-9a-f]{40})$/.exec(rest);
+    if (method === 'GET' && commitMatch) {
+      if (!need('contents', 'read')) return forbidden();
+      const found = git.commits.get(commitMatch[1]!);
+      if (!found) return deny(res, 404, 'Not Found');
+      return send(res, 200, {
+        sha: commitMatch[1],
+        tree: { sha: found.tree },
+        parents: found.parent === null ? [] : [{ sha: found.parent }],
+      });
+    }
+    const compareMatch = /^\/compare\/(.+)$/.exec(rest);
+    if (method === 'GET' && compareMatch) {
+      if (!need('contents', 'read')) return forbidden();
+      const [baseRef, headRef, ...more] = decodePath(compareMatch[1]!).split('...');
+      const base = baseRef === undefined ? undefined : resolveRef(git, baseRef);
+      const head = headRef === undefined ? undefined : resolveRef(git, headRef);
+      if (more.length > 0 || base === undefined || head === undefined)
+        return deny(res, 404, 'Not Found');
+      const baseChain = ancestry(git, base);
+      const headChain = ancestry(git, head);
+      const aheadBy = headChain.filter((s) => !baseChain.includes(s)).length;
+      const behindBy = baseChain.filter((s) => !headChain.includes(s)).length;
+      let status = 'diverged';
+      if (aheadBy === 0 && behindBy === 0) status = 'identical';
+      else if (behindBy === 0) status = 'ahead';
+      else if (aheadBy === 0) status = 'behind';
+      return send(res, 200, { status, ahead_by: aheadBy, behind_by: behindBy });
     }
     const openedPullJson = (o: FakeOpenedPull) => ({
       ...githubShape('pull_request'),
       number: o.number,
       title: o.title,
+      body: o.body,
       state: o.state,
       html_url: `${webBase()}/${repo.owner}/${repo.name}/pull/${o.number}`,
-      head: { ref: o.head, sha: branches.get(o.head)?.sha ?? newSha(), label: o.head },
-      base: { ref: o.base, sha: branches.get(o.base)?.sha ?? newSha(), label: o.base },
+      head: { ref: o.head, sha: git.heads.get(o.head) ?? newSha(), label: o.head },
+      base: { ref: o.base, sha: git.heads.get(o.base) ?? newSha(), label: o.base },
     });
+    /** `GET /pulls/{n}`: the list's shape plus what only a single read has. */
+    const openedPullDetail = (o: FakeOpenedPull) => {
+      const mergeable = o.mergeable === undefined ? true : o.mergeable;
+      let mergeableState = 'clean';
+      if (mergeable === null) mergeableState = 'unknown';
+      else if (!mergeable) mergeableState = 'dirty';
+      return {
+        ...openedPullJson(o),
+        draft: false,
+        merged: o.merged ?? false,
+        mergeable,
+        mergeable_state: mergeableState,
+      };
+    };
     if (method === 'GET' && rest === '/pulls') {
       if (!need('pull_requests', 'read')) return forbidden();
       const head = url.searchParams.get('head');
@@ -1454,7 +1720,7 @@ export async function createFakeGitHub(
         (b.body !== undefined && typeof b.body !== 'string')
       )
         return deny(res, 422, 'Validation Failed');
-      if (!branches.has(b.head) || !branches.has(b.base))
+      if (!git.heads.has(b.head) || !git.heads.has(b.base))
         return deny(res, 422, 'Validation Failed');
       if (
         fake.openedPulls.some(
@@ -1472,7 +1738,40 @@ export async function createFakeGitHub(
         state: 'open',
       };
       fake.openedPulls.push(opened);
+      // The pull request is known to `GET /pulls/{n}` and its files, comments and reviews too.
+      pulls.set(`${repo.id}#${opened.number}`, {
+        number: opened.number,
+        title: opened.title,
+        state: 'open',
+        headSha: git.heads.get(opened.head)!,
+        baseSha: git.heads.get(opened.base)!,
+        files: [],
+      });
       return send(res, 201, openedPullJson(opened));
+    }
+    const patchPull = /^\/pulls\/(\d+)$/.exec(rest);
+    if (method === 'PATCH' && patchPull) {
+      if (!need('pull_requests', 'write')) return forbidden();
+      const opened = fake.openedPulls.find(
+        (o) => o.repoId === repo.id && o.number === Number(patchPull[1]),
+      );
+      if (!opened) return deny(res, 404, 'Not Found');
+      const b = json() as { title?: unknown; body?: unknown; state?: unknown };
+      if (
+        (b.title !== undefined && (typeof b.title !== 'string' || b.title === '')) ||
+        (b.body !== undefined && typeof b.body !== 'string') ||
+        (b.state !== undefined && b.state !== 'open' && b.state !== 'closed')
+      )
+        return deny(res, 422, 'Validation Failed');
+      // A merged pull request is neither closed nor reopened.
+      if (opened.merged === true && b.state !== undefined)
+        return deny(res, 422, 'Validation Failed: the pull request is merged');
+      if (b.title !== undefined) opened.title = b.title as string;
+      if (b.body !== undefined) opened.body = b.body as string;
+      if (b.state !== undefined) opened.state = b.state as 'open' | 'closed';
+      const registered = pulls.get(`${repo.id}#${opened.number}`);
+      if (registered) Object.assign(registered, { title: opened.title, state: opened.state });
+      return send(res, 200, openedPullDetail(opened));
     }
     if (method === 'GET' && rest === '/actions/secrets/public-key') {
       if (!need('secrets', 'read')) return forbidden();
@@ -1607,6 +1906,10 @@ export async function createFakeGitHub(
     const pullMatch = /^\/pulls\/(\d+)(\/files)?$/.exec(rest);
     if (method === 'GET' && pullMatch) {
       if (!need('pull_requests', 'read')) return forbidden();
+      const opened = fake.openedPulls.find(
+        (o) => o.repoId === repo.id && o.number === Number(pullMatch[1]),
+      );
+      if (opened && !pullMatch[2]) return send(res, 200, openedPullDetail(opened));
       const pull = pulls.get(`${repo.id}#${pullMatch[1]}`);
       if (!pull) return deny(res, 404, 'Not Found');
       if (pullMatch[2]) {

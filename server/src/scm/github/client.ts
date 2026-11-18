@@ -177,7 +177,12 @@ const contentsFile = z.looseObject({
 });
 const contentsEntries = z.array(z.looseObject({ name: z.string() }));
 const gitRef = z.looseObject({ object: z.looseObject({ sha: z.string() }) });
-const createdPullRequest = z.looseObject({ html_url: z.string() });
+const createdPullRequest = z.looseObject({ html_url: z.string(), number: z.number().int() });
+const blobAnswer = z.looseObject({ sha });
+const gitCommitAnswer = z.looseObject({ sha, tree: z.looseObject({ sha }) });
+const compareAnswer = z.looseObject({
+  status: z.enum(['ahead', 'behind', 'identical', 'diverged']),
+});
 const secretsPublicKey = z.looseObject({ key_id: z.string(), key: z.string() });
 const secretsList = z.looseObject({ secrets: z.array(z.looseObject({ name: z.string() })) });
 const languagesAnswer = z.record(z.string(), z.number());
@@ -209,8 +214,22 @@ const pullRequest = z.looseObject({
   draft: z.boolean().default(false),
   /** A `closed` pull request that was merged. */
   merged: z.boolean().default(false),
+  /** `false`: a conflict with the base; `null`: GitHub has not computed it yet. */
+  mergeable: z.boolean().nullish(),
+  mergeable_state: z.string().optional(),
 });
 export type GitHubPullRequest = z.infer<typeof pullRequest>;
+
+/** A pull request as a fix reads it: its state, whether it conflicts, and its head. */
+export interface GitHubPullState {
+  number: number;
+  url: string;
+  state: 'open' | 'closed';
+  merged: boolean;
+  /** `mergeable === false` or `mergeable_state === 'dirty'`. */
+  conflict: boolean;
+  headSha: string;
+}
 const file = z.looseObject({
   filename: z.string(),
   status: z.string(),
@@ -574,6 +593,11 @@ function graphqlForbidden(err: unknown): boolean {
   return err instanceof ScmError && err.kind === 'auth' && err.status === 200;
 }
 
+/** GitHub's 422 for a ref it does not have (a delete of a branch that is gone). */
+function missingReference(err: ScmError): boolean {
+  return err.status === 422 && /reference does not exist/i.test(err.providerMessage ?? '');
+}
+
 function transportError(result: Extract<OutboundResult, { kind: 'failed' }>): ScmError {
   switch (result.cause) {
     case 'not_public':
@@ -608,7 +632,7 @@ function hasControl(value: string, last: number): boolean {
 }
 
 type Auth = 'app' | 'installation';
-type Method = 'GET' | 'POST' | 'PATCH' | 'PUT';
+type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 /** A path under the connection's base URL (REST), or an absolute URL beside it (GraphQL). */
 type Target = string | URL;
 
@@ -623,6 +647,8 @@ export function githubRoute(method: Method, target: Target): string {
     .replace(/^\/repos\/[^/]+\/[^/]+/, '/repos/{owner}/{repo}')
     .replace(/\/contents\/.+$/, '/contents/{path}')
     .replace(/\/git\/ref\/heads\/.+$/, '/git/ref/heads/{branch}')
+    .replace(/\/git\/refs\/heads\/.+$/, '/git/refs/heads/{branch}')
+    .replace(/\/compare\/.+$/, '/compare/{basehead}')
     .replace(/\/collaborators\/[^/]+/, '/collaborators/{login}')
     .replace(/\/actions\/secrets\/(?!public-key$)[^/]+$/, '/actions/secrets/{name}')
     .replace(/\/(?:[0-9a-f]{64}|[0-9a-f]{40})(?=\/|$)/g, '/{sha}')
@@ -636,6 +662,13 @@ interface CallOptions {
    * is not.
    */
   mutation?: boolean;
+  /** A larger answer than the {@link MAX_GITHUB_RESPONSE_BYTES} default (a fix reads lockfiles, R15). */
+  maxResponseBytes?: number;
+  /**
+   * Another media type than the JSON one (`application/vnd.github.raw+json`): the answer is the
+   * body as text, not JSON.
+   */
+  accept?: string;
 }
 
 /** A 2xx answer's JSON, null for an empty body; a body that is not JSON is a bad answer. */
@@ -818,6 +851,7 @@ export class GitHubClient {
     target: Target,
     credential: string,
     body: unknown,
+    options: CallOptions = {},
   ): Promise<OutboundResult> {
     return outboundRequest(
       {
@@ -825,7 +859,7 @@ export class GitHubClient {
         method,
         headers: {
           authorization: `Bearer ${credential}`,
-          accept: 'application/vnd.github+json',
+          accept: options.accept ?? 'application/vnd.github+json',
           'x-github-api-version': GITHUB_API_VERSION,
           'user-agent': `Qualor/${VERSION}`,
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
@@ -840,7 +874,7 @@ export class GitHubClient {
           ? {}
           : { connectTimeoutMs: this.options.connectTimeoutMs }),
         ...(this.options.resolve ? { resolve: this.options.resolve } : {}),
-        maxResponseBytes: MAX_GITHUB_RESPONSE_BYTES,
+        maxResponseBytes: options.maxResponseBytes ?? MAX_GITHUB_RESPONSE_BYTES,
         overflow: 'fail',
         names: { noun: 'GitHub', target: 'GitHub' },
       },
@@ -877,10 +911,16 @@ export class GitHubClient {
     if (options.mutation ?? method !== 'GET') {
       await this.pacer.wait(`${this.#connection.baseUrl}|${this.#installationId ?? 'app'}`);
     }
-    const result = await this.send(method, target, credential, body);
+    const result = await this.send(method, target, credential, body, options);
     if (result.kind === 'failed') throw transportError(result);
     const { status, headers } = result;
-    if (status >= 200 && status < 300) return { headers, json: answerJson(result.body, status) };
+    if (status >= 200 && status < 300) {
+      const text = options.accept !== undefined;
+      return {
+        headers,
+        json: text ? result.body.toString('utf8') : answerJson(result.body, status),
+      };
+    }
     const message = githubMessage(result.body, [credential, this.#token ?? '', this.#jwt ?? '']);
     throw httpError(status, headers, message, auth, () => this.now());
   }
@@ -1280,13 +1320,13 @@ export class GitHubClient {
     });
   }
 
-  /** A pull request from `head` into `base`; its web address. */
+  /** A pull request from `head` into `base`; its web address and number. */
   async openPullRequest(input: {
     head: string;
     base: string;
     title: string;
     body: string;
-  }): Promise<{ url: string }> {
+  }): Promise<{ url: string; number: number }> {
     this.branchPath(input.head);
     this.branchPath(input.base);
     const { json } = await this.repoCall('POST', `${this.repoPath()}/pulls`, {
@@ -1295,11 +1335,12 @@ export class GitHubClient {
       title: input.title,
       body: input.body,
     });
-    return { url: this.parse(createdPullRequest, json).html_url };
+    const created = this.parse(createdPullRequest, json);
+    return { url: created.html_url, number: created.number };
   }
 
   /** The open pull request whose head is the branch `head` of this repository, or null. */
-  async findOpenPullRequest(head: string): Promise<{ url: string } | null> {
+  async findOpenPullRequest(head: string): Promise<{ url: string; number: number } | null> {
     this.branchPath(head);
     const { owner } = this.repoRef();
     const qualifiedHead = encodeURIComponent(`${owner}:${head}`);
@@ -1308,7 +1349,151 @@ export class GitHubClient {
       `${this.repoPath()}/pulls?state=open&head=${qualifiedHead}&per_page=1`,
     );
     const [found] = this.parse(z.array(createdPullRequest), json);
-    return found ? { url: found.html_url } : null;
+    return found ? { url: found.html_url, number: found.number } : null;
+  }
+
+  /** A pull request's state, whether it conflicts with its base, and its head sha. */
+  async pullRequestState(number: number): Promise<GitHubPullState> {
+    const found = await this.pullRequest(String(number));
+    return {
+      number: found.number,
+      url: found.html_url,
+      state: found.state === 'open' ? 'open' : 'closed',
+      merged: found.merged,
+      conflict: found.mergeable === false || found.mergeable_state === 'dirty',
+      headSha: found.head.sha,
+    };
+  }
+
+  /** The open pull request from the branch `head` of this repository, in full, or null. */
+  async openPullRequestFrom(head: string): Promise<GitHubPullState | null> {
+    const found = await this.findOpenPullRequest(head);
+    return found === null ? null : this.pullRequestState(found.number);
+  }
+
+  /** Changes a pull request's title or body, or closes it. */
+  async updatePullRequest(
+    number: number,
+    input: { title?: string; body?: string; state?: 'closed' },
+  ): Promise<void> {
+    await this.repoCall('PATCH', `${this.repoPath()}/pulls/${this.number(String(number))}`, {
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.body === undefined ? {} : { body: input.body }),
+      ...(input.state === undefined ? {} : { state: input.state }),
+    });
+  }
+
+  /** A blob with `content` (sent as base64); its sha. */
+  async createBlob(content: string): Promise<string> {
+    const { json } = await this.repoCall('POST', `${this.repoPath()}/git/blobs`, {
+      content: Buffer.from(content, 'utf8').toString('base64'),
+      encoding: 'base64',
+    });
+    return this.parse(blobAnswer, json).sha;
+  }
+
+  /** The sha of the tree a commit holds. */
+  async commitTreeSha(commitSha: string): Promise<string> {
+    const { json } = await this.repoCall(
+      'GET',
+      `${this.repoPath()}/git/commits/${this.sha(commitSha)}`,
+    );
+    return this.parse(gitCommitAnswer, json).tree.sha;
+  }
+
+  /**
+   * A tree on `baseTree` with the files of `entries` (a blob each, mode `100644`, R14); its
+   * sha. The paths go in the body, not in a URL.
+   */
+  async createTree(
+    baseTree: string,
+    entries: readonly { path: string; blobSha: string }[],
+  ): Promise<string> {
+    // The path only goes in the body, but it is checked as a path of the repository all the same.
+    for (const e of entries) this.contentPath(e.path);
+    const { json } = await this.repoCall('POST', `${this.repoPath()}/git/trees`, {
+      base_tree: this.sha(baseTree),
+      tree: entries.map((e) => ({
+        path: e.path,
+        mode: '100644',
+        type: 'blob',
+        sha: this.sha(e.blobSha),
+      })),
+    });
+    return this.parse(blobAnswer, json).sha;
+  }
+
+  /** A commit of `tree` on `parents` (shas); its sha. */
+  async createCommit(input: { message: string; tree: string; parents: string[] }): Promise<string> {
+    const { json } = await this.repoCall('POST', `${this.repoPath()}/git/commits`, {
+      message: input.message,
+      tree: this.sha(input.tree),
+      parents: input.parents.map((p) => this.sha(p)),
+    });
+    return this.parse(blobAnswer, json).sha;
+  }
+
+  /**
+   * Moves the branch `name` to the commit `sha` (`PATCH /git/refs/heads/{name}`, the name's
+   * slashes kept). Without `force` GitHub refuses a move that is not a fast-forward (422).
+   */
+  async updateBranch(name: string, sha: string, force: boolean): Promise<void> {
+    await this.repoCall('PATCH', `${this.repoPath()}/git/refs/heads/${this.branchPath(name)}`, {
+      sha: this.sha(sha),
+      force,
+    });
+  }
+
+  /** Deletes the branch `name`; false when it was not there. */
+  async deleteBranch(name: string): Promise<boolean> {
+    try {
+      await this.repoCall('DELETE', `${this.repoPath()}/git/refs/heads/${this.branchPath(name)}`);
+      return true;
+    } catch (err) {
+      // GitHub answers 422 "Reference does not exist" for a ref that is gone; a 404 means the same.
+      if (err instanceof ScmError && (err.status === 404 || missingReference(err))) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * How `head` stands to `base` (`GET /compare/{base}...{head}`): `ahead` when `base` is an
+   * ancestor of `head`; null when either is unknown.
+   */
+  async compareStatus(
+    base: string,
+    head: string,
+  ): Promise<'ahead' | 'behind' | 'identical' | 'diverged' | null> {
+    try {
+      const { json } = await this.repoCall(
+        'GET',
+        `${this.repoPath()}/compare/${this.branchPath(base)}...${this.branchPath(head)}`,
+      );
+      return this.parse(compareAnswer, json).status;
+    } catch (err) {
+      if (err instanceof ScmError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * The raw text of the file at `path` on `ref` (a branch or a sha), or null when it is not
+   * there. It reads up to `maxBytes` where `fileText` stops at 1 MB (a fix reads lockfiles, R15).
+   */
+  async rawFileText(path: string, ref: string, maxBytes: number): Promise<string | null> {
+    this.branchPath(ref);
+    try {
+      const { json } = await this.repoCall(
+        'GET',
+        `${this.repoPath()}/contents/${this.contentPath(path)}?ref=${encodeURIComponent(ref)}`,
+        undefined,
+        { accept: 'application/vnd.github.raw+json', maxResponseBytes: maxBytes },
+      );
+      return typeof json === 'string' ? json : null;
+    } catch (err) {
+      if (err instanceof ScmError && err.status === 404) return null;
+      throw err;
+    }
   }
 
   /** Whether the repository has an Actions secret called `name` (its value is never readable). */

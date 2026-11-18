@@ -1812,6 +1812,389 @@ describe('GitHub REST client (github.md §4–§6)', () => {
       });
     });
   });
+
+  describe('fix writes', () => {
+    const R = 31;
+    const FIXES = { owner: 'acme', repo: 'fixes' };
+    const BRANCH = 'qualor/fix/js/qf-a';
+    const REF_PATH = '/repos/acme/fixes/git/refs/heads/qualor/fix/js/qf-a';
+    const MIB = 1024 * 1024;
+    let main0: string;
+    beforeAll(() => {
+      fake.addRepository({ id: R, owner: 'acme', name: 'fixes', installationId: 777 });
+      fake.addFile(R, 'package.json', '{"a":1}\n');
+      fake.addFile(R, 'package-lock.json', '{"l":1}\n');
+      fake.addFile(R, 'README.md', 'hi\n');
+      main0 = fake.headOf(R, 'main')!;
+    });
+    const fixes = async (options: GitHubClientOptions = {}) => {
+      const client = clientFor(options);
+      await client.useRepository(FIXES);
+      return client;
+    };
+    /** One commit on `parent` that changes `package.json` to `text`. */
+    const commitOf = async (
+      client: GitHubClient,
+      parent: string,
+      text: string,
+    ): Promise<string> => {
+      const tree = await client.createTree(await client.commitTreeSha(parent), [
+        { path: 'package.json', blobSha: await client.createBlob(text) },
+      ]);
+      return client.createCommit({ message: `m ${text}`, tree, parents: [parent] });
+    };
+
+    it('makes one commit of three files on the base and a branch at it', async () => {
+      const client = await fixes();
+      const baseTree = await client.commitTreeSha(main0);
+      const files = [
+        { path: 'package.json', text: '{"a":2}\n' },
+        { path: 'package-lock.json', text: '{"l":2}\n' },
+        { path: 'npm-shrinkwrap.json', text: '{"s":2}\n' },
+      ];
+      const entries: { path: string; blobSha: string }[] = [];
+      for (const f of files)
+        entries.push({ path: f.path, blobSha: await client.createBlob(f.text) });
+      const tree = await client.createTree(baseTree, entries);
+      const commit = await client.createCommit({
+        message: 'Bump qf-a from 1.0.0 to 1.0.1',
+        tree,
+        parents: [main0],
+      });
+      fake.clearRequests();
+      await client.createBranch(BRANCH, commit);
+      expect(fake.headOf(R, BRANCH)).toBe(commit);
+      for (const f of files) expect(fake.fileAt(R, commit, f.path)).toBe(f.text);
+      // Nothing else changed: the base's other file is there, and the base is untouched.
+      expect(fake.fileAt(R, commit, 'README.md')).toBe('hi\n');
+      expect(fake.fileAt(R, main0, 'package.json')).toBe('{"a":1}\n');
+      expect(fake.fileAt(R, main0, 'npm-shrinkwrap.json')).toBeNull();
+      expect(fake.headOf(R, 'main')).toBe(main0);
+      expect(await client.compareStatus(main0, BRANCH)).toBe('ahead');
+    });
+
+    it('sends the blob as base64, the tree entries as mode 100644 with the paths in the body', async () => {
+      const client = await fixes();
+      fake.clearRequests();
+      const blob = await client.createBlob('héllo\n');
+      const tree = await client.createTree(await client.commitTreeSha(main0), [
+        { path: 'dir/new file.txt', blobSha: blob },
+      ]);
+      await client.createCommit({ message: 'm', tree, parents: [main0] });
+      expect(JSON.parse(fake.requests[0]!.body)).toEqual({
+        content: Buffer.from('héllo\n').toString('base64'),
+        encoding: 'base64',
+      });
+      expect(fake.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+        'POST /repos/acme/fixes/git/blobs',
+        'GET /repos/acme/fixes/git/commits/' + main0,
+        'POST /repos/acme/fixes/git/trees',
+        'POST /repos/acme/fixes/git/commits',
+      ]);
+      expect(JSON.parse(fake.requests[2]!.body).tree).toEqual([
+        { path: 'dir/new file.txt', mode: '100644', type: 'blob', sha: blob },
+      ]);
+      expect(JSON.parse(fake.requests[3]!.body)).toMatchObject({ message: 'm', parents: [main0] });
+    });
+
+    it('refuses a branch name where a sha is wanted, before any request', async () => {
+      const client = await fixes();
+      fake.clearRequests();
+      for (const call of [
+        () => client.commitTreeSha('main'),
+        () => client.createTree('main', []),
+        () => client.createCommit({ message: 'm', tree: 'main', parents: [] }),
+        () => client.createCommit({ message: 'm', tree: main0, parents: ['main'] }),
+        () => client.updateBranch(BRANCH, 'main', true),
+      ]) {
+        expect((await failure(call())).kind).toBe('refused');
+      }
+      expect(fake.requests).toEqual([]);
+    });
+
+    it('refuses what GitHub refuses: an unknown object, or an entry that is no blob of the repository', async () => {
+      const client = await fixes();
+      const missing = 'e'.repeat(40);
+      expect((await failure(client.createTree(missing, []))).status).toBe(422);
+      expect(
+        (
+          await failure(
+            client.createTree(await client.commitTreeSha(main0), [{ path: 'a', blobSha: missing }]),
+          )
+        ).status,
+      ).toBe(422);
+      expect(
+        (await failure(client.createCommit({ message: 'm', tree: missing, parents: [] }))).status,
+      ).toBe(422);
+      expect(
+        (
+          await failure(
+            client.createCommit({
+              message: 'm',
+              tree: await client.commitTreeSha(main0),
+              parents: [missing],
+            }),
+          )
+        ).status,
+      ).toBe(422);
+      expect((await failure(client.commitTreeSha(missing))).kind).toBe('not_found');
+      expect((await failure(client.updateBranch(BRANCH, missing, true))).status).toBe(422);
+    });
+
+    it('moves a branch with force to a commit that is not a descendant; without it, refused', async () => {
+      const client = await fixes();
+      const first = fake.headOf(R, BRANCH)!;
+      const sha2 = await commitOf(client, main0, '{"a":3}\n');
+      fake.clearRequests();
+      const err = await failure(client.updateBranch(BRANCH, sha2, false));
+      expect(err).toMatchObject({
+        kind: 'refused',
+        status: 422,
+        request: 'PATCH /repos/{owner}/{repo}/git/refs/heads/{branch}',
+      });
+      expect(fake.headOf(R, BRANCH)).toBe(first);
+      expect(fake.requests[0]).toMatchObject({ method: 'PATCH', path: REF_PATH });
+      expect(JSON.parse(fake.requests[0]!.body)).toEqual({ sha: sha2, force: false });
+      await client.updateBranch(BRANCH, sha2, true);
+      expect(fake.headOf(R, BRANCH)).toBe(sha2);
+      expect(JSON.parse(fake.requests[1]!.body)).toEqual({ sha: sha2, force: true });
+      // A fast-forward needs no force.
+      const sha3 = await commitOf(client, sha2, '{"a":4}\n');
+      await client.updateBranch(BRANCH, sha3, false);
+      expect(fake.headOf(R, BRANCH)).toBe(sha3);
+    });
+
+    it('refuses to move a branch that is not there', async () => {
+      const client = await fixes();
+      const err = await failure(client.updateBranch('qualor/fix/js/none', main0, true));
+      expect(err).toMatchObject({ kind: 'refused', status: 422 });
+    });
+
+    it('compares: ahead, behind, identical, diverged; an unknown ref is null', async () => {
+      const client = await fixes();
+      const head = fake.headOf(R, BRANCH)!;
+      fake.clearRequests();
+      expect(await client.compareStatus(main0, head)).toBe('ahead');
+      expect(fake.requests[0]).toMatchObject({
+        method: 'GET',
+        path: `/repos/acme/fixes/compare/${main0}...${head}`,
+      });
+      expect(await client.compareStatus(head, main0)).toBe('behind');
+      expect(await client.compareStatus(main0, main0)).toBe('identical');
+      // A commit beside the branch, made from the base: neither is an ancestor of the other.
+      const other = await commitOf(client, main0, '{"a":9}\n');
+      expect(await client.compareStatus(other, head)).toBe('diverged');
+      expect(await client.compareStatus('qualor/fix/js/none', head)).toBeNull();
+      expect(await client.compareStatus(main0, 'f'.repeat(40))).toBeNull();
+      // A branch name with slashes keeps them in the request.
+      expect(await client.compareStatus('main', BRANCH)).toBe('ahead');
+      expect(fake.requests.at(-1)?.path).toBe(`/repos/acme/fixes/compare/main...${BRANCH}`);
+    });
+
+    it('deletes a branch: true, then false', async () => {
+      const client = await fixes();
+      await client.createBranch('qualor/fix/js/qf-del', main0);
+      fake.clearRequests();
+      expect(await client.deleteBranch('qualor/fix/js/qf-del')).toBe(true);
+      expect(fake.requests[0]).toMatchObject({
+        method: 'DELETE',
+        path: '/repos/acme/fixes/git/refs/heads/qualor/fix/js/qf-del',
+      });
+      expect(fake.headOf(R, 'qualor/fix/js/qf-del')).toBeNull();
+      expect(await client.deleteBranch('qualor/fix/js/qf-del')).toBe(false);
+    });
+
+    describe('pull requests', () => {
+      const PR_BRANCH = 'qualor/fix/js/qf-pr';
+      it('opens, finds, updates and closes a pull request; the comment is recorded', async () => {
+        const client = await fixes();
+        await client.createBranch(PR_BRANCH, fake.headOf(R, BRANCH)!);
+        const opened = await client.openPullRequest({
+          head: PR_BRANCH,
+          base: 'main',
+          title: 'Bump qf-a',
+          body: 'first',
+        });
+        expect(opened.url).toMatch(/\/acme\/fixes\/pull\/\d+$/);
+        expect(opened.number).toBeGreaterThan(0);
+        const found = await client.openPullRequestFrom(PR_BRANCH);
+        expect(found).toEqual({
+          number: opened.number,
+          url: opened.url,
+          state: 'open',
+          merged: false,
+          conflict: false,
+          headSha: fake.headOf(R, PR_BRANCH),
+        });
+        expect(await client.openPullRequestFrom('qualor/fix/js/nothing')).toBeNull();
+        await client.updatePullRequest(opened.number, { title: 'Bump qf-a again', body: 'second' });
+        expect(fake.pullsOf(R).find((p) => p.number === opened.number)).toMatchObject({
+          title: 'Bump qf-a again',
+          body: 'second',
+          state: 'open',
+        });
+        await client.createComment(String(opened.number), 'Qualor no longer finds qf-a');
+        expect(fake.comments.at(-1)).toMatchObject({
+          repoId: R,
+          issue: opened.number,
+          body: 'Qualor no longer finds qf-a',
+        });
+        fake.clearRequests();
+        await client.updatePullRequest(opened.number, { state: 'closed' });
+        expect(fake.requests[0]).toMatchObject({
+          method: 'PATCH',
+          path: `/repos/acme/fixes/pulls/${opened.number}`,
+        });
+        expect(JSON.parse(fake.requests[0]!.body)).toEqual({ state: 'closed' });
+        expect((await client.pullRequestState(opened.number)).state).toBe('closed');
+        expect(await client.openPullRequestFrom(PR_BRANCH)).toBeNull();
+        // The pull request is no longer open: the branch can have another.
+        const second = await client.openPullRequest({
+          head: PR_BRANCH,
+          base: 'main',
+          title: 't',
+          body: '',
+        });
+        expect(second.number).not.toBe(opened.number);
+      });
+
+      it('reads a conflict (mergeable false) and a merge', async () => {
+        const client = await fixes();
+        await client.createBranch('qualor/fix/js/qf-c', main0);
+        const { number } = await client.openPullRequest({
+          head: 'qualor/fix/js/qf-c',
+          base: 'main',
+          title: 't',
+          body: '',
+        });
+        fake.setPull(R, number, { mergeable: null });
+        expect((await client.pullRequestState(number)).conflict).toBe(false);
+        fake.setPull(R, number, { mergeable: false });
+        expect(await client.pullRequestState(number)).toMatchObject({
+          state: 'open',
+          merged: false,
+          conflict: true,
+        });
+        fake.setPull(R, number, { mergeable: true, merged: true });
+        expect(await client.pullRequestState(number)).toMatchObject({
+          state: 'closed',
+          merged: true,
+          conflict: false,
+        });
+        // GitHub neither closes nor reopens a merged pull request.
+        const err = await failure(client.updatePullRequest(number, { state: 'closed' }));
+        expect(err).toMatchObject({ kind: 'refused', status: 422 });
+        expect((await client.pullRequestState(number)).merged).toBe(true);
+      });
+
+      it('a pull request the repository has not is not found', async () => {
+        const client = await fixes();
+        expect((await failure(client.pullRequestState(999_999))).kind).toBe('not_found');
+        expect((await failure(client.updatePullRequest(999_999, { title: 't' }))).kind).toBe(
+          'not_found',
+        );
+      });
+    });
+
+    it('answers 403 (auth) to a write without contents: write', async () => {
+      const client = clientFor();
+      await client.useRepository({ owner: 'acme', repo: 'nocontents' });
+      const refused = await failure(client.createBlob('x'));
+      expect(refused).toMatchObject({
+        kind: 'auth',
+        status: 403,
+        request: 'POST /repos/{owner}/{repo}/git/blobs',
+      });
+      const sha = 'a'.repeat(40);
+      for (const call of [
+        () => client.createTree(sha, []),
+        () => client.createCommit({ message: 'm', tree: sha, parents: [] }),
+        () => client.updateBranch('qualor/fix/js/x', sha, true),
+        () => client.deleteBranch('qualor/fix/js/x'),
+        () => client.commitTreeSha(sha),
+        () => client.compareStatus('main', 'qualor/fix/js/x'),
+      ]) {
+        expect(await failure(call())).toMatchObject({ kind: 'auth', status: 403 });
+      }
+    });
+
+    it('reads a large file raw: fileText stops at 1 MB, rawFileText reads on to its own cap', async () => {
+      const big = `{"big":"${'x'.repeat(1_500_000)}"}\n`;
+      const huge = 'y'.repeat(9 * MIB);
+      fake.addFile(R, 'big.json', big);
+      fake.addFile(R, 'huge.lock', huge);
+      const client = await fixes();
+      expect((await failure(client.fileText('big.json'))).kind).toBe('bad_answer');
+      fake.clearRequests();
+      expect(await client.rawFileText('big.json', 'main', 32 * MIB)).toBe(big);
+      expect(fake.requests[0]).toMatchObject({
+        method: 'GET',
+        path: '/repos/acme/fixes/contents/big.json?ref=main',
+      });
+      expect(fake.requests[0]!.headers.accept).toBe('application/vnd.github.raw+json');
+      expect(await client.rawFileText('huge.lock', 'main', 32 * MIB)).toBe(huge);
+      // The default 8 MiB cap stays where the cap is not raised.
+      expect((await failure(client.rawFileText('huge.lock', 'main', 8 * MIB))).kind).toBe(
+        'bad_answer',
+      );
+    });
+
+    it('reads a file raw at a sha or a branch; a missing file or ref is null', async () => {
+      const client = await fixes();
+      expect(await client.rawFileText('package.json', main0, MIB)).toBe('{"a":1}\n');
+      expect(await client.rawFileText('package.json', BRANCH, MIB)).not.toBe('{"a":1}\n');
+      expect(await client.rawFileText('nope.json', 'main', MIB)).toBeNull();
+      expect(await client.rawFileText('package.json', 'qualor/fix/js/none', MIB)).toBeNull();
+      expect(fake.requests.at(-1)?.path).toBe(
+        '/repos/acme/fixes/contents/package.json?ref=qualor%2Ffix%2Fjs%2Fnone',
+      );
+    });
+
+    it('keeps the JSON media type and the 8 MiB cap for every other call', async () => {
+      const client = await fixes();
+      fake.clearRequests();
+      await client.fileText('package.json');
+      expect(fake.requests[0]!.headers.accept).toBe('application/vnd.github+json');
+    });
+
+    it('paces every write through the pacer and no read', async () => {
+      const pacer = new SpyPacer(
+        () => clock,
+        async (ms) => {
+          clock += ms;
+        },
+      );
+      const client = await fixes({ pacer });
+      pacer.waits.length = 0;
+      await client.commitTreeSha(main0);
+      await client.compareStatus('main', 'main');
+      expect(pacer.waits).toEqual([]);
+      const blob = await client.createBlob('p\n');
+      const tree = await client.createTree(await client.commitTreeSha(main0), [
+        { path: 'p.txt', blobSha: blob },
+      ]);
+      const commit = await client.createCommit({ message: 'm', tree, parents: [main0] });
+      await client.createBranch('qualor/fix/js/paced', commit);
+      await client.updateBranch('qualor/fix/js/paced', commit, true);
+      await client.deleteBranch('qualor/fix/js/paced');
+      expect(pacer.waits).toHaveLength(6);
+    });
+
+    it('names the ref, compare and branch routes without their values in the log', () => {
+      expect(githubRoute('PATCH', `/repos/acme/fixes/git/refs/heads/${BRANCH}`)).toBe(
+        'PATCH /repos/{owner}/{repo}/git/refs/heads/{branch}',
+      );
+      expect(githubRoute('DELETE', `/repos/acme/fixes/git/refs/heads/${BRANCH}`)).toBe(
+        'DELETE /repos/{owner}/{repo}/git/refs/heads/{branch}',
+      );
+      expect(githubRoute('GET', `/repos/acme/fixes/compare/main...${BRANCH}`)).toBe(
+        'GET /repos/{owner}/{repo}/compare/{basehead}',
+      );
+      expect(githubRoute('GET', `/repos/acme/fixes/git/commits/${'a'.repeat(40)}`)).toBe(
+        'GET /repos/{owner}/{repo}/git/commits/{sha}',
+      );
+    });
+  });
 });
 
 describe('githubRateLimit (github.md §5.3)', () => {
