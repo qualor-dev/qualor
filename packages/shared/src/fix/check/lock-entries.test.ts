@@ -228,62 +228,81 @@ describe('checkLockEntries', () => {
 
 describe('checkLockEntries: reachability (Ruling T3e)', () => {
   const on = { ...ctx, reachableOnly: true };
-  const evil = (dependents: string[]) =>
-    entry({
-      name: 'evil',
-      version: '1.0.0',
-      source: 'https://registry.npmjs.org/evil/-/evil-1.0.0.tgz',
-      dependents,
-    });
+  const evil = entry({
+    name: 'evil',
+    version: '1.0.0',
+    source: 'https://registry.npmjs.org/evil/-/evil-1.0.0.tgz',
+  });
+  const named = (name: string, dependencies: string[] = [], over: Partial<LockEntry> = {}) =>
+    entry({ name, version: '1.0.0', source: null, dependencies, ...over });
 
   it('refuses a new entry that nothing reachable from the package depends on', () => {
-    expect(checkLockEntries(baseEntries, [entry(), evil([])], on)).toEqual({
+    expect(checkLockEntries(baseEntries, [entry(), evil], on)).toEqual({
       ok: false,
       rule: 'new_dependency',
       path: 'apps/web/package-lock.json',
     });
-    const other = entry({ name: 'qf-b', version: '2.0.0', source: null });
-    expect(
-      checkLockEntries([...baseEntries, other], [entry(), other, evil(['qf-b'])], on),
-    ).toMatchObject({
+    const other = named('qf-b', ['evil']);
+    expect(checkLockEntries([...baseEntries, other], [entry(), other, evil], on)).toMatchObject({
       rule: 'new_dependency',
     });
-    expect(checkLockEntries(baseEntries, [entry(), evil([])], ctx)).toEqual({ ok: true });
+    expect(checkLockEntries(baseEntries, [entry(), evil], ctx)).toEqual({ ok: true });
   });
 
-  it('accepts a new dependency of the package, and of that dependency, also through a slot', () => {
-    const x = entry({ name: 'qf-x', version: '1.0.0', source: null, dependents: ['qf-a'] });
-    const y = entry({ name: 'qf-y', version: '1.0.0', source: null, dependents: ['qf-x'] });
-    expect(checkLockEntries(baseEntries, [y, x, entry()], on)).toEqual({ ok: true });
-    const slotted = entry({ slot: 'qf-a', name: 'qf-a', version: '1.2.6' });
-    expect(checkLockEntries(baseEntries, [slotted, x], on)).toEqual({ ok: true });
+  it('accepts a new dependency of the package, and of that dependency, also through slots', () => {
+    const chain = [named('qf-y'), named('qf-x', ['qf-y']), entry({ dependencies: ['qf-x'] })];
+    expect(checkLockEntries(baseEntries, chain, on)).toEqual({ ok: true });
+    const slotted = entry({ slot: 'qf-a', name: 'qf-a', version: '1.2.6', dependencies: ['qf-x'] });
+    expect(checkLockEntries(baseEntries, [slotted, named('qf-x')], on)).toEqual({ ok: true });
+    const base = [...baseEntries, named('qf-d', [], { slot: 'qf-alias', version: '0.9.0' })];
+    const alias = named('qf-d', [], { slot: 'qf-alias' });
+    const viaAlias = [entry({ dependencies: ['qf-alias'] }), alias];
+    expect(checkLockEntries(base, viaAlias, on)).toEqual({ ok: true });
+    expect(checkLockEntries(base, [entry(), alias], on)).toMatchObject({
+      rule: 'new_dependency',
+    });
   });
 });
 
-describe('checkLockEntries: dependencies of existing entries (Ruling T3j)', () => {
-  const x = (dependencies: string[]) =>
-    entry({ name: 'qf-x', version: '1.0.0', source: null, dependencies, dependents: ['qf-a'] });
+describe('checkLockEntries: dependencies of existing packages (Rulings T3j, T3l)', () => {
+  const x = (dependencies: string[], over: Partial<LockEntry> = {}) =>
+    entry({ name: 'qf-x', version: '1.0.0', source: null, dependencies, ...over });
 
-  it('refuses an existing entry whose dependency names changed', () => {
+  it('refuses an existing package that gains a dependency, whatever its version or integrity', () => {
     expect(checkLockEntries([...baseEntries, x([])], [entry(), x(['evil'])], ctx)).toEqual({
       ok: false,
       rule: 'other_change',
       path: 'apps/web/package-lock.json',
     });
-    expect(checkLockEntries([x(['qf-y'])], [entry(), x([])], ctx)).toMatchObject({
+    const bumped = x(['qf-y', 'evil'], { version: '1.0.1' });
+    expect(checkLockEntries([x(['qf-y'])], [entry(), bumped], ctx)).toMatchObject({
+      rule: 'other_change',
+    });
+    const retagged = x(['evil'], { integrity: 'sha512-new sha1-bogus' });
+    expect(checkLockEntries([x([])], [entry(), retagged], ctx)).toMatchObject({
       rule: 'other_change',
     });
   });
 
-  it('accepts unchanged names in any order, and changes of the package’s own entries', () => {
+  it('accepts the same names in any order, fewer names, and a new version that drops one', () => {
     expect(checkLockEntries([x(['qf-a', 'qf-y'])], [entry(), x(['qf-y', 'qf-a'])], ctx)).toEqual({
       ok: true,
     });
-    const own = (dependencies: string[]) => entry({ dependencies });
-    expect(checkLockEntries([own([])], [own(['qf-x'])], ctx)).toEqual({ ok: true });
+    expect(checkLockEntries([x(['qf-y'])], [entry(), x([])], ctx)).toEqual({ ok: true });
+    const dropped = x([], { version: '1.0.1' });
+    expect(checkLockEntries([x(['qf-y'])], [entry(), dropped], ctx)).toEqual({ ok: true });
+  });
+
+  it('refuses an existing version of the package that gains a dependency, not a new one', () => {
+    const own = (version: string, dependencies: string[]) => entry({ version, dependencies });
+    expect(checkLockEntries([own('2.0.3', [])], [own('2.0.3', ['evil'])], ctx)).toMatchObject({
+      rule: 'other_change',
+    });
+    expect(checkLockEntries([own('1.2.5', [])], [own('1.2.6', ['qf-x'])], ctx)).toEqual({
+      ok: true,
+    });
   });
 });
-
 describe('newLockEntries (Ruling T3i)', () => {
   it('lists the entries of next that the base does not have, with slot, name and version', () => {
     const alias = entry({ slot: 'qf-c', name: 'qf-d', version: '1.0.0', source: null });

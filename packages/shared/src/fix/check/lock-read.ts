@@ -53,30 +53,43 @@ function identityOf({ slot, name, version, source, kind, integrity }: RawEntry):
   return JSON.stringify([slot, name, version, source, kind, integrity]);
 }
 
+function addTo(map: Map<string, Set<string>>, key: string, values: Iterable<string>): void {
+  const set = map.get(key);
+  if (set === undefined) map.set(key, new Set(values));
+  else for (const value of values) set.add(value);
+}
+
+/** The names of the packages that depend on each slot, one set per slot. */
+function dependentsBySlot(raw: readonly RawEntry[]): Map<string, Set<string>> {
+  const dependents = new Map<string, Set<string>>();
+  for (const entry of raw) {
+    for (const slot of entry.dependencies) addTo(dependents, slot, [entry.name]);
+  }
+  return dependents;
+}
+
 /**
- * Entries with one identity become one, with the union of their dependencies (Ruling T3j compares
- * those per identity, so a second copy cannot hide an added dependency). Each then gets the sorted
- * names of the packages that depend on its slot (its name when it has none).
+ * Entries with one identity become one, with the union of their dependencies (Ruling T3l compares
+ * those, so a second copy cannot hide an added dependency). Each then gets the sorted names of
+ * the packages that depend on its slot (its name when it has none): one array per slot, shared by
+ * all its entries (fix round 2, N1), so the result stays linear in the input. Do not mutate it.
  */
 export function withDependents(raw: readonly RawEntry[]): LockEntry[] {
-  const dependents = new Map<string, string[]>();
-  const merged = new Map<string, { entry: RawEntry; dependencies: string[] }>();
+  const merged = new Map<string, RawEntry>();
+  const dependencies = new Map<string, Set<string>>();
   for (const entry of raw) {
-    for (const slot of entry.dependencies) {
-      const names = dependents.get(slot);
-      if (names === undefined) dependents.set(slot, [entry.name]);
-      else names.push(entry.name);
-    }
     const key = identityOf(entry);
-    const known = merged.get(key);
-    if (known === undefined) merged.set(key, { entry, dependencies: [...entry.dependencies] });
-    else known.dependencies.push(...entry.dependencies);
+    if (!merged.has(key)) merged.set(key, entry);
+    addTo(dependencies, key, entry.dependencies);
   }
-  return [...merged.values()].map(({ entry, dependencies }) => ({
-    ...entry,
-    dependencies: sorted(dependencies),
-    dependents: sorted(dependents.get(entry.slot ?? entry.name) ?? []),
-  }));
+  const dependents = dependentsBySlot(raw);
+  const shared = new Map<string, string[]>();
+  return [...merged].map(([key, entry]) => {
+    const slot = entry.slot ?? entry.name;
+    const names = shared.get(slot) ?? sorted(dependents.get(slot) ?? []);
+    shared.set(slot, names);
+    return { ...entry, dependencies: sorted(dependencies.get(key) ?? []), dependents: names };
+  });
 }
 
 /** `name@range`, the name possibly scoped; null without an `@` after the first character. */

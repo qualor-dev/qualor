@@ -120,36 +120,64 @@ function newEntryRule(entry: LockEntry, facts: BaseFacts): FixRule | null {
   return null;
 }
 
-/** The entries of each dependent's name. */
-function entriesByDependent(entries: readonly LockEntry[]): Map<string, LockEntry[]> {
-  const index = new Map<string, LockEntry[]>();
+function groupBy(
+  entries: readonly LockEntry[],
+  keyOf: (entry: LockEntry) => string,
+): Map<string, LockEntry[]> {
+  const groups = new Map<string, LockEntry[]>();
   for (const entry of entries) {
-    for (const dependent of entry.dependents) {
-      const list = index.get(dependent);
-      if (list === undefined) index.set(dependent, [entry]);
-      else list.push(entry);
-    }
+    const key = keyOf(entry);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [entry]);
+    else group.push(entry);
   }
-  return index;
+  return groups;
+}
+
+/** A walk over the forward dependencies: each name and each slot is expanded once. */
+interface Walk {
+  byName: ReadonlyMap<string, LockEntry[]>;
+  bySlot: ReadonlyMap<string, LockEntry[]>;
+  names: Set<string>;
+  slots: Set<string>;
+  queue: string[];
+}
+
+function reachName(walk: Walk, name: string): void {
+  if (walk.names.has(name)) return;
+  walk.names.add(name);
+  walk.queue.push(name);
+}
+
+/** The names of the entries in a slot (an alias's slot holds another name). */
+function followSlot(walk: Walk, slot: string): void {
+  if (walk.slots.has(slot)) return;
+  walk.slots.add(slot);
+  for (const entry of walk.bySlot.get(slot) ?? []) reachName(walk, entry.name);
 }
 
 /**
- * Ruling T3e: the names reachable from the package. They are its name and the names of the
- * packages in its slot, then every name of an entry with a reachable dependent, to a fixpoint.
+ * Ruling T3e: the names reachable from the package. They are its name and the names held in its
+ * slot, then, for every reachable name, the names in the slots its entries depend on. Each name
+ * and each slot is expanded once, so the walk is linear in the entries and their dependencies
+ * (fix round 2, N1).
  */
 function reachableNames(entries: readonly LockEntry[], packageName: string): Set<string> {
-  const reached = new Set([packageName]);
-  for (const entry of entries) if (entry.slot === packageName) reached.add(entry.name);
-  const index = entriesByDependent(entries);
-  const pending = [...reached];
-  for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
-    for (const entry of index.get(name) ?? []) {
-      if (reached.has(entry.name)) continue;
-      reached.add(entry.name);
-      pending.push(entry.name);
+  const walk: Walk = {
+    byName: groupBy(entries, (entry) => entry.name),
+    bySlot: groupBy(entries, slotOf),
+    names: new Set(),
+    slots: new Set(),
+    queue: [],
+  };
+  reachName(walk, packageName);
+  followSlot(walk, packageName);
+  for (let name = walk.queue.pop(); name !== undefined; name = walk.queue.pop()) {
+    for (const entry of walk.byName.get(name) ?? []) {
+      for (const slot of entry.dependencies) followSlot(walk, slot);
     }
   }
-  return reached;
+  return walk.names;
 }
 
 /**
@@ -168,24 +196,45 @@ function isPackageEntry(entry: LockEntry, packageName: string): boolean {
   return entry.name === packageName || entry.slot === packageName;
 }
 
-function dependencyKey(entry: LockEntry): string {
-  return JSON.stringify([...new Set(entry.dependencies)].sort((a, b) => a.localeCompare(b)));
+/**
+ * Where Ruling T3l compares an entry's dependencies: by (slot, name), and for an entry of the
+ * package by (slot, name, version).
+ */
+function dependencyScope(entry: LockEntry, packageName: string): string {
+  const scope = [slotOf(entry), entry.name];
+  return JSON.stringify(isPackageEntry(entry, packageName) ? [...scope, entry.version] : scope);
+}
+
+/** The names the base's entries depend on, per scope. */
+function baseDependencies(
+  base: readonly LockEntry[],
+  packageName: string,
+): Map<string, Set<string>> {
+  const allowed = new Map<string, Set<string>>();
+  for (const entry of base) {
+    const key = dependencyScope(entry, packageName);
+    const names = allowed.get(key) ?? new Set<string>();
+    for (const name of entry.dependencies) names.add(name);
+    allowed.set(key, names);
+  }
+  return allowed;
 }
 
 /**
- * Ruling T3j: an entry the base already has, other than the package's own, keeps the names it
- * depends on, so a fix cannot hang a new dependency on an existing package (which would make it
- * reachable). A parent of the package keeps the package's name, so pins stay possible.
+ * Ruling T3l (refining T3j): a package the base has, by (slot, name), may depend only on names
+ * some base entry of it depended on, whatever its new version, source or integrity; an existing
+ * version of the package itself, by (slot, name, version), likewise. Only new versions of the
+ * package are exempt (the residual T3i discloses). Fewer names are fine.
  */
-function dependenciesChanged(
+function dependenciesWidened(
   base: readonly LockEntry[],
   next: readonly LockEntry[],
   packageName: string,
 ): boolean {
-  const before = new Map(base.map((entry) => [entryKey(entry), dependencyKey(entry)]));
+  const allowed = baseDependencies(base, packageName);
   return next.some((entry) => {
-    const was = isPackageEntry(entry, packageName) ? undefined : before.get(entryKey(entry));
-    return was !== undefined && was !== dependencyKey(entry);
+    const names = allowed.get(dependencyScope(entry, packageName));
+    return names !== undefined && entry.dependencies.some((name) => !names.has(name));
   });
 }
 
@@ -194,9 +243,9 @@ function dependenciesChanged(
  * not have (`source_kind`), whose source is null or a URL on an origin of the base's registry
  * entries or a public registry of the format (`new_source`), with an integrity hash where the
  * format has them (`missing_integrity`); the first failing new entry, in `next` order, names the
- * rule. Then an existing entry, other than the package's own, may not change the names it
- * depends on (`other_change`, Ruling T3j), and, with `reachableOnly`, every new entry must be
- * reachable from the package (`new_dependency`, Ruling T3e).
+ * rule. Then no package the base has may depend on a name it did not (`other_change`, Ruling
+ * T3l), and, with `reachableOnly`, every new entry must be reachable from the package
+ * (`new_dependency`, Ruling T3e).
  */
 export function checkLockEntries(
   base: readonly LockEntry[],
@@ -209,7 +258,7 @@ export function checkLockEntries(
     const rule = newEntryRule(entry, facts);
     if (rule !== null) return fixRefused(rule, ctx.lockfile);
   }
-  if (dependenciesChanged(base, next, ctx.packageName)) {
+  if (dependenciesWidened(base, next, ctx.packageName)) {
     return fixRefused('other_change', ctx.lockfile);
   }
   if (ctx.reachableOnly) {

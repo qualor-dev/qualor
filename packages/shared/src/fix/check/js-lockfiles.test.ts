@@ -1329,3 +1329,231 @@ describe('jsLockfileAdditions (Ruling T3i)', () => {
     expect(jsLockfileAdditions({ path: 'go.sum', base: '', next: '' })).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 2 (task-3-fix-2.md): the re-reviewer's probes (t3rr) and Ruling T3l
+
+/** An npm v3 lockfile with only the given packages (the root depends on `qf-a`). */
+const npmOnly = (packages: Record<string, unknown>) =>
+  JSON.stringify(
+    {
+      name: 'app',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        '': { name: 'app', version: '1.0.0', dependencies: { 'qf-a': '^1.2.5' } },
+        ...packages,
+      },
+    },
+    null,
+    2,
+  );
+
+const reg = (name: string, version: string, over: Record<string, unknown> = {}) => ({
+  version,
+  resolved: `${NPM}/${name}/-/${name}-${version}.tgz`,
+  integrity: `sha512-${name}${version}`,
+  ...over,
+});
+
+describe('fix round 2: existing packages keep their dependency names (Ruling T3l)', () => {
+  const base = npmOnly({
+    'node_modules/qf-a': reg('qf-a', '1.2.5', { dependencies: { 'qf-x': '^1.0.0' } }),
+    'node_modules/qf-x': reg('qf-x', '1.0.0', { dependencies: { 'qf-y': '^1.0.0' } }),
+    'node_modules/qf-y': reg('qf-y', '1.0.0'),
+  });
+  const qfA = reg('qf-a', '1.2.6', { dependencies: { 'qf-x': '^1.0.0' } });
+  const evil = reg('evil', '1.0.0');
+  const otherChange = { ok: false, rule: 'other_change', path: 'package-lock.json' };
+
+  it('refuses a dependency re-entered with another integrity string and an edge to evil', () => {
+    const qfX = reg('qf-x', '1.0.0', {
+      integrity: 'sha512-qf-x1.0.0 sha1-bogus',
+      dependencies: { 'qf-y': '^1.0.0', evil: '^1.0.0' },
+    });
+    const next = npmOnly({
+      'node_modules/qf-a': qfA,
+      'node_modules/qf-x': qfX,
+      'node_modules/qf-y': reg('qf-y', '1.0.0'),
+      'node_modules/evil': evil,
+    });
+    expect(check('package-lock.json', base, next)).toEqual(otherChange);
+  });
+
+  it('refuses a new version of an existing dependency with an edge to evil', () => {
+    const next = npmOnly({
+      'node_modules/qf-a': qfA,
+      'node_modules/qf-x': reg('qf-x', '1.0.1', { dependencies: { evil: '^1.0.0' } }),
+      'node_modules/evil': evil,
+    });
+    expect(check('package-lock.json', base, next)).toEqual(otherChange);
+  });
+
+  it('refuses an existing version of the package on another line that gains an edge', () => {
+    const lock = (a: string, deps: Record<string, string> = {}, extra = {}) =>
+      npmOnly({
+        'node_modules/qf-a': reg('qf-a', a),
+        'node_modules/qf-b': reg('qf-b', '2.0.0', { dependencies: { 'qf-a': '^2.0.0' } }),
+        'node_modules/qf-b/node_modules/qf-a': reg('qf-a', '2.0.3', { dependencies: deps }),
+        ...extra,
+      });
+    const gained = lock('1.2.6', { evil: '^1.0.0' }, { 'node_modules/evil': evil });
+    expect(check('package-lock.json', lock('1.2.5'), gained)).toEqual(otherChange);
+    expect(check('package-lock.json', lock('1.2.5'), lock('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('accepts a parent of the package, a new name under the new version, and a dropped name', () => {
+    const withParent = (a: Record<string, unknown>) =>
+      npmOnly({
+        'node_modules/qf-a': a,
+        'node_modules/qf-b': reg('qf-b', '2.0.0', { dependencies: { 'qf-a': '^1.2.0' } }),
+        'node_modules/qf-x': reg('qf-x', '1.0.0', { dependencies: { 'qf-y': '^1.0.0' } }),
+        'node_modules/qf-y': reg('qf-y', '1.0.0'),
+      });
+    const before = withParent(reg('qf-a', '1.2.5', { dependencies: { 'qf-x': '^1.0.0' } }));
+    expect(check('package-lock.json', before, withParent(qfA))).toEqual({ ok: true });
+    const newName = npmOnly({
+      'node_modules/qf-a': reg('qf-a', '1.2.6', {
+        dependencies: { 'qf-x': '^1.0.0', 'qf-z': '^1.0.0' },
+      }),
+      'node_modules/qf-x': reg('qf-x', '1.0.0', { dependencies: { 'qf-y': '^1.0.0' } }),
+      'node_modules/qf-y': reg('qf-y', '1.0.0'),
+      'node_modules/qf-z': reg('qf-z', '1.0.0'),
+    });
+    expect(check('package-lock.json', base, newName)).toEqual({ ok: true });
+    const dropped = npmOnly({
+      'node_modules/qf-a': qfA,
+      'node_modules/qf-x': reg('qf-x', '1.0.1'),
+      'node_modules/qf-y': reg('qf-y', '1.0.0'),
+    });
+    expect(check('package-lock.json', base, dropped)).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 2: pnpm v5 peer suffixes in references (N2)', () => {
+  const peerOfX = (a: string) => `lockfileVersion: 5.4
+
+importers:
+
+  .:
+    specifiers:
+      qf-a: ^1.2.5
+      qf-x: ^1.0.0
+    dependencies:
+      qf-a: ${a}
+      qf-x: 1.0.0_qf-a@${a}
+
+packages:
+
+  /qf-a/${a}:
+    resolution: {integrity: sha512-a${a}}
+    dev: false
+
+  /qf-x/1.0.0_qf-a@${a}:
+    resolution: {integrity: sha512-x}
+    peerDependencies:
+      qf-a: ^1.2.0
+    dependencies:
+      qf-a: ${a}
+    dev: false
+`;
+
+  const withPeer = (a: string) => `lockfileVersion: 5.4
+
+importers:
+
+  .:
+    specifiers:
+      qf-a: ^1.2.5
+      react: ^18.2.0
+    dependencies:
+      qf-a: ${a}_react@18.2.0
+      react: 18.2.0
+
+packages:
+
+  /qf-a/${a}_react@18.2.0:
+    resolution: {integrity: sha512-a${a}}
+    peerDependencies:
+      react: ^18
+    dependencies:
+      react: 18.2.0
+    dev: false
+
+  /react/18.2.0:
+    resolution: {integrity: sha512-r}
+    dev: false
+`;
+
+  it('reads a peer-suffixed reference as a version, not as an alias', () => {
+    expect(readPnpmLock(peerOfX('1.2.5')).filter((e) => e.slot !== undefined)).toEqual([]);
+    expect(readPnpmLock(withPeer('1.2.5')).filter((e) => e.slot !== undefined)).toEqual([]);
+  });
+
+  it('accepts a bump of a package that is a peer, or has one', () => {
+    expect(check('pnpm-lock.yaml', peerOfX('1.2.5'), peerOfX('1.2.6'))).toEqual({ ok: true });
+    expect(check('pnpm-lock.yaml', withPeer('1.2.5'), withPeer('1.2.6'))).toEqual({ ok: true });
+  });
+
+  it('still reads a v5 alias reference', () => {
+    const alias = peerOfX('1.2.6').replace(
+      '      qf-a: 1.2.6\n    dev',
+      '      qf-a: /evil/1.2.6\n    dev',
+    );
+    expect(readPnpmLock(alias).find((e) => e.slot === 'qf-a')).toMatchObject({ name: 'evil' });
+  });
+});
+
+describe('fix round 2: the dependents graph in linear time (N1)', () => {
+  const qfA = { 'node_modules/qf-a': reg('qf-a', '1.2.5') };
+  const timed = (next: string) => {
+    const started = performance.now();
+    const result = check('package-lock.json', npmOnly(qfA), next);
+    return { result, ms: performance.now() - started };
+  };
+
+  it(
+    'checks 20 000 distinct parents of 20 000 copies of x in under 3 s',
+    { timeout: 60_000 },
+    () => {
+      const packages: Record<string, unknown> = { ...qfA };
+      for (let i = 0; i < 20_000; i++) {
+        packages[`node_modules/p${i}`] = reg(`p${i}`, '1.0.0', { dependencies: { x: '*' } });
+        packages[`node_modules/p${i}/node_modules/x`] = reg('x', `1.0.${i}`);
+      }
+      const { result, ms } = timed(JSON.stringify({ lockfileVersion: 3, packages }));
+      expect(result).toMatchObject({ rule: 'new_dependency' });
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it(
+    'checks 80 000 nested copies of x, each depending on x, in under 3 s',
+    { timeout: 60_000 },
+    () => {
+      const packages: Record<string, unknown> = { ...qfA };
+      for (let i = 0; i < 80_000; i++) {
+        packages[`node_modules/p${i}/node_modules/x`] = reg('x', `1.0.${i}`, {
+          dependencies: { x: '*' },
+        });
+      }
+      const { result, ms } = timed(JSON.stringify({ lockfileVersion: 3, packages }));
+      expect(result).toMatchObject({ rule: 'new_dependency' });
+      expect(ms).toBeLessThan(3000);
+    },
+  );
+
+  it('shares one dependents array between the entries of a slot', () => {
+    const packages: Record<string, unknown> = { ...qfA };
+    for (let i = 0; i < 3; i++) {
+      packages[`node_modules/p${i}`] = reg(`p${i}`, '1.0.0', { dependencies: { x: '*' } });
+      packages[`node_modules/p${i}/node_modules/x`] = reg('x', `1.0.${i}`);
+    }
+    const copies = readNpmLock(JSON.stringify({ lockfileVersion: 3, packages })).filter(
+      (e) => e.name === 'x',
+    );
+    expect(copies[0]?.dependents).toEqual(['p0', 'p1', 'p2']);
+    expect(copies[1]?.dependents).toBe(copies[0]?.dependents);
+  });
+});

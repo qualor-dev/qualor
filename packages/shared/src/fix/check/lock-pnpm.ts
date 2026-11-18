@@ -157,7 +157,10 @@ function referenceOf(value: unknown): string | null {
  */
 function referencedPackage(reference: string, major: number): PackageId | null {
   const bare = reference.split('(', 1)[0] ?? '';
-  return bare.startsWith('/') ? pnpmKeyParts(bare, major) : splitAtVersion(bare);
+  if (bare.startsWith('/')) return pnpmKeyParts(bare, major);
+  // Fix round 2, N2: a v5 reference carries its peers after the first `_`
+  // (`1.0.0_react@18.2.0`), as v5 keys do.
+  return splitAtVersion(major < 6 ? (bare.split('_', 1)[0] ?? '') : bare);
 }
 
 interface References {
