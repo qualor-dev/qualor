@@ -17355,7 +17355,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused); an open MR is closed with a comment and its branch deleted by a background job, unless a person pushed to it. Cancelling an ended fix changes nothing */
+        /** Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused). When it has an MR (open, or being refreshed), a background job closes the MR with a comment and deletes its branch, unless a person pushed to it. Cancelling an ended fix changes nothing */
         delete: {
             parameters: {
                 query?: never;

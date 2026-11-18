@@ -12,7 +12,7 @@ import { branches, dependencyFixes } from '../db/schema';
 import { pairKey } from '../jira/presence';
 import type { VulnerabilitySeverity } from '../vulnerabilities/order';
 import { IS_NEW, scopedRows } from '../vulnerabilities/summary';
-import { fixDto, type DependencyFix, type DependencyFixRow } from './rows';
+import { fixDto, fixPackageName, type DependencyFix, type DependencyFixRow } from './rows';
 
 /** R3: the Go standard library is fixed by the Go version, never by a module update. */
 export const GO_STDLIB = 'stdlib';
@@ -74,9 +74,20 @@ interface MainRow extends Record<string, unknown> {
 }
 
 /**
+ * A {@link scopedRows} condition: the row is of the package. A Python package matches by its PEP
+ * 503 name, every spelling of it (ruling T8b); any other exactly.
+ */
+function ofPackage(family: FixFamily, packageName: string): SQL {
+  return family === 'python'
+    ? sql`lower(regexp_replace(tv.package_name, '[-_.]+', '-', 'g')) = ${fixPackageName(family, packageName)}`
+    : sql`tv.package_name = ${packageName}`;
+}
+
+/**
  * spec §6.2, B5, B7: the vulnerabilities a fix of the package handles: its rows on the main-branch
- * target of every Trivy type of the family, not ignored, with an open effective decision (D6), by
- * vulnerability id, installed version and type.
+ * target of every Trivy type of the family (a Python package under any spelling of its name, T8b),
+ * not ignored, with an open effective decision (D6), by vulnerability id, installed version and
+ * type.
  */
 export async function mainVulnerabilities(
   db: Executor,
@@ -88,7 +99,7 @@ export async function mainVulnerabilities(
     SELECT vulnerability_id, severity, title, primary_url, ecosystem, package_version,
            fixed_version, first_seen_at, ${IS_NEW} AS is_new, kev, kev_date_added
       FROM (${scopedRows(
-        sql`${onMain(projectId)} AND tv.package_name = ${packageName}
+        sql`${onMain(projectId)} AND ${ofPackage(family, packageName)}
             AND tv.ecosystem IN ${textList(ecosystemsOf(family))}`,
       )}) r
      WHERE eff_status = 'open' AND NOT ignored
@@ -141,6 +152,7 @@ interface FacetRow extends Record<string, unknown> {
 
 /** What the main rows of one pair say: the families they belong to, and whether one is fixable. */
 interface PairFamilies {
+  packageName: string;
   families: Set<FixFamily>;
   fixable: boolean;
 }
@@ -151,7 +163,11 @@ function familiesOf(rows: readonly FacetRow[]): Map<string, PairFamilies> {
     const family = familyOfEcosystem(r.ecosystem);
     if (family === null) continue;
     const key = pairKey(r.package_name, r.vulnerability_id);
-    const entry = byPair.get(key) ?? { families: new Set<FixFamily>(), fixable: false };
+    const entry = byPair.get(key) ?? {
+      packageName: r.package_name,
+      families: new Set<FixFamily>(),
+      fixable: false,
+    };
     entry.families.add(family);
     const fixed = (r.fixed ?? []).some((v) => parseFixedVersions(v).length > 0);
     if (fixed && !isGoStdlib(family, r.package_name)) entry.fixable = true;
@@ -168,22 +184,22 @@ const fixKey = (family: FixFamily, packageName: string): string =>
  * page: the pairs' rows on the main-branch target, then the fixes of their packages. A pair has
  * the fix of its package (in the family of its main rows) while main has a row of it, whatever
  * its decision; it is fixable when such a row is effective-open, not ignored and has a fixed
- * version, its family is supported and it is not Go's standard library. Every pair is a key.
+ * version, its family is supported and it is not Go's standard library. A Python fix is found by
+ * the PEP 503 name of the pair's package (ruling T8b). Every pair is a key.
  */
 export async function fixFacets(
   db: Executor,
   projectId: string,
   pairs: readonly { packageName: string; vulnerabilityId: string }[],
 ): Promise<Map<string, FixFacet>> {
-  const facets = new Map<string, FixFacet>(
-    pairs.map((p) => [pairKey(p.packageName, p.vulnerabilityId), NO_FACET]),
-  );
-  if (pairs.length === 0) return facets;
+  const unique = new Map(pairs.map((p) => [pairKey(p.packageName, p.vulnerabilityId), p]));
+  const facets = new Map<string, FixFacet>([...unique.keys()].map((key) => [key, NO_FACET]));
+  if (unique.size === 0) return facets;
   const wanted = JSON.stringify(
-    [...facets.keys()].map((key) => {
-      const [packageName, vulnerabilityId] = JSON.parse(key) as [string, string];
-      return { package_name: packageName, vulnerability_id: vulnerabilityId };
-    }),
+    [...unique.values()].map((p) => ({
+      package_name: p.packageName,
+      vulnerability_id: p.vulnerabilityId,
+    })),
   );
   const rows = await db.execute<FacetRow>(sql`
     SELECT package_name, vulnerability_id, ecosystem,
@@ -198,26 +214,29 @@ export async function fixFacets(
      GROUP BY package_name, vulnerability_id, ecosystem`);
   const byPair = familiesOf(rows.rows);
   if (byPair.size === 0) return facets;
-  const names = [...new Set(rows.rows.map((r) => r.package_name))];
+  const fixName = (family: FixFamily, entry: PairFamilies) =>
+    fixPackageName(family, entry.packageName);
+  const names = new Set(
+    [...byPair.values()].flatMap((entry) => [...entry.families].map((f) => fixName(f, entry))),
+  );
   const fixes = await db
     .select()
     .from(dependencyFixes)
     .where(
       and(
         eq(dependencyFixes.projectId, projectId),
-        sql`${dependencyFixes.packageName} IN ${textList(names)}`,
+        sql`${dependencyFixes.packageName} IN ${textList([...names])}`,
       ),
     );
   const fixOf = new Map<string, DependencyFixRow>(
     fixes.map((f) => [fixKey(f.family, f.packageName), f]),
   );
-  for (const [key, { families, fixable }] of byPair) {
-    const [packageName] = JSON.parse(key) as [string, string];
+  for (const [key, entry] of byPair) {
     // One family in practice; with several, the first of B7's order that has a fix.
-    const row = FIX_FAMILIES.filter((f) => families.has(f))
-      .map((f) => fixOf.get(fixKey(f, packageName)))
+    const row = FIX_FAMILIES.filter((f) => entry.families.has(f))
+      .map((f) => fixOf.get(fixKey(f, fixName(f, entry))))
       .find((f) => f !== undefined);
-    facets.set(key, { fix: row ? fixDto(row) : null, fixable });
+    facets.set(key, { fix: row ? fixDto(row) : null, fixable: entry.fixable });
   }
   return facets;
 }

@@ -1,4 +1,4 @@
-import { FIX_FAMILIES, type FixFamily } from '@qualor/shared/fix';
+import { FIX_FAMILIES, normalizePythonName, type FixFamily } from '@qualor/shared/fix';
 import { z } from 'zod';
 import { FIX_STATES, type dependencyFixes } from '../db/schema';
 import { iso, timestamp } from '../http/schemas';
@@ -69,6 +69,15 @@ export function fixListItem(row: DependencyFixRow): FixListItem {
     branch: row.branch,
     createdAt: iso(row.createdAt),
   };
+}
+
+/**
+ * B7, ruling T8b: the package name a fix is stored and found under: a Python package's PEP 503 name
+ * (lower case, each run of `-`, `_` and `.` one `-`), so `Django_Rest` and `django-rest` are one
+ * fix; every other family's name exactly as Trivy reports it.
+ */
+export function fixPackageName(family: FixFamily, packageName: string): string {
+  return family === 'python' ? normalizePythonName(packageName) : packageName;
 }
 
 const BRANCH_PREFIX = 'qualor/fix';

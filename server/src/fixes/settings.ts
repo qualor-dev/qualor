@@ -37,7 +37,11 @@ export interface FixPreconditions {
   lastClaimAt: string | null;
 }
 
-/** The project's SCM binding, the connection's switch (B2) and monitoring (B5), as they stand now. */
+/**
+ * The project's SCM binding, the connection's switch (B2) and monitoring (B5), as they stand now.
+ * One read after the other: `db` may be a transaction, whose one client takes no query queued
+ * behind another (pg deprecates it).
+ */
 export async function fixPreconditions(
   db: Executor,
   project: ProjectRow,
@@ -49,10 +53,8 @@ export async function fixPreconditions(
           .select({ provider: scmConnections.provider, allowed: scmConnections.fixMrsAllowed })
           .from(scmConnections)
           .where(eq(scmConnections.id, project.scmConnectionId));
-  const [monitoring, settings] = await Promise.all([
-    monitoringOn(db, project.id),
-    fixSettingsOf(db, project.id),
-  ]);
+  const monitoring = await monitoringOn(db, project.id);
+  const settings = await fixSettingsOf(db, project.id);
   return {
     scmBound: connection !== undefined && project.scmProjectRef !== null,
     provider: connection?.provider ?? null,

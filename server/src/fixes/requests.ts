@@ -11,7 +11,7 @@ import {
 import { conflict } from '../http/problem';
 import type { ProjectRow } from '../projects/access';
 import { enqueueFixJob } from './jobs';
-import { fixBranchName, type DependencyFixRow } from './rows';
+import { fixBranchName, fixPackageName, type DependencyFixRow } from './rows';
 import { fixCounts } from './settings';
 
 /**
@@ -67,7 +67,10 @@ export async function lockFix(tx: Executor, fixId: string): Promise<DependencyFi
   return row ?? null;
 }
 
-/** The package's fix row in the project, locked `FOR UPDATE`; null when it has none. */
+/**
+ * The package's fix row in the project, locked `FOR UPDATE`; null when it has none. A Python
+ * package is found under its PEP 503 name, whichever spelling asks ({@link fixPackageName}).
+ */
 export async function lockPackageFix(
   tx: Executor,
   projectId: string,
@@ -81,7 +84,7 @@ export async function lockPackageFix(
       and(
         eq(dependencyFixes.projectId, projectId),
         eq(dependencyFixes.family, family),
-        eq(dependencyFixes.packageName, packageName),
+        eq(dependencyFixes.packageName, fixPackageName(family, packageName)),
       ),
     )
     .for('update');
@@ -176,7 +179,10 @@ export async function rearmFix(
  * spec §6.3, B4: the package's fix as a request leaves it: a new `requested` row on its first
  * unique branch (`created`), an ended one re-armed (`rearmed`, {@link rearmFix}), or an active
  * one as it is (`active`, no duplicate). The insert is `ON CONFLICT DO NOTHING`; a loser re-reads
- * the row. It checks no setting, cap or eligibility: the callers do, in their order.
+ * the row. It checks no setting, cap or eligibility: the callers do, in their order. A Python
+ * package's fix is named and found by its PEP 503 name (ruling T8b). `current` is the package's
+ * row the caller has already locked with {@link lockPackageFix} (null: it has none), so it is not
+ * read twice; without it the row is locked here.
  *
  * Precondition (ruling T2a): the caller holds the project row lock ({@link lockProject}) in `tx`.
  */
@@ -188,15 +194,20 @@ export async function requestFix(
     packageName: string;
     userId: string | null;
     origin: FixOrigin;
+    current?: DependencyFixRow | null;
   },
 ): Promise<{ row: DependencyFixRow; outcome: 'created' | 'rearmed' | 'active' }> {
-  const { project, family, packageName } = input;
+  const { project, family } = input;
+  const packageName = fixPackageName(family, input.packageName);
   const answer = async (row: DependencyFixRow) =>
     isActiveFix(row.state)
       ? { row, outcome: 'active' as const }
       : { row: await rearmFix(tx, row, input), outcome: 'rearmed' as const };
 
-  const existing = await lockPackageFix(tx, project.id, family, packageName);
+  const existing =
+    input.current === undefined
+      ? await lockPackageFix(tx, project.id, family, packageName)
+      : input.current;
   if (existing) return answer(existing);
   const [created] = await tx
     .insert(dependencyFixes)
@@ -231,9 +242,11 @@ export function requireCancellable(row: DependencyFixRow): void {
 
 /**
  * R10: cancels an active fix: `cancelled`, `generation` + 1 (an upload in flight gets 409), the
- * lease cleared. An open one keeps its MR number, URL and head, and a `close` job is queued to
- * comment, close the MR and delete the branch (each after a head re-read). `committing` is 409
- * `FIX_BUSY` ({@link requireCancellable}); an ended fix is answered as it is.
+ * lease cleared. A fix with an MR keeps its number, URL and head, and a `close` job is queued to
+ * comment, close the MR and delete the branch (each after a head re-read): an `open` one, and one
+ * a job is refreshing (`preparing` with its MR, R8), whose MR the sync pass would never read
+ * again. `committing` is 409 `FIX_BUSY` ({@link requireCancellable}); an ended fix is answered
+ * as it is.
  *
  * The caller holds the fix row lock ({@link lockFix}) and records the audit event first: the
  * audit chain before the job schedule, the settings save's order.
@@ -254,7 +267,7 @@ export async function cancelFix(tx: Executor, row: DependencyFixRow): Promise<De
     .where(and(eq(dependencyFixes.id, row.id), eq(dependencyFixes.state, row.state)))
     .returning();
   if (!cancelled) throw new Error(`fix ${row.id} changed while it was locked`);
-  if (row.state === 'open') {
+  if (cancelled.mrNumber !== null) {
     await enqueueFixJob(tx, {
       kind: 'close',
       fixId: cancelled.id,

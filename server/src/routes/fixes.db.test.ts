@@ -1,5 +1,6 @@
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import pg from 'pg';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
@@ -13,12 +14,14 @@ import {
   branches,
   dependencyFixes,
   jobs,
+  projectFixSettings,
   projectMemberships,
   projectVersions,
   scmConnections,
   users,
   type FixState,
 } from '../db/schema';
+import type { Executor } from '../db/client';
 import { FIX_QUEUE } from '../fixes/jobs';
 
 const NOW = new Date('2027-01-01T00:00:00Z');
@@ -509,6 +512,39 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
     expect(await queuedFixJobs()).toHaveLength(1);
   });
 
+  it('closes the MR of any cancelled fix that has one: a refresh in preparation, a requested one (R8, R10)', async () => {
+    // A claimed refresh of an open MR is `preparing` with its MR (R8); so is a released one later.
+    const mr = { mrNumber: 31, mrUrl: 'https://scm.example/mr/31', headSha: HEAD };
+    const preparing = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: fresh(),
+      state: 'preparing',
+      ...mr,
+    });
+    const requested = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: fresh(),
+      state: 'requested',
+      ...mr,
+    });
+    for (const id of [preparing, requested]) {
+      expect((await cancel(id)).statusCode).toBe(204);
+      expect(await row(id)).toMatchObject({ state: 'cancelled', generation: 2, ...mr });
+    }
+    const queued = await queuedFixJobs();
+    expect(
+      queued
+        .map((j) => j.payload)
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    ).toEqual(
+      [preparing, requested]
+        .map((fixId) => ({ kind: 'close', fixId, generation: 2, attempt: 0 }))
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    );
+  });
+
   it('embeds the fix and fixable in vulnerability items and Trivy issues of main (R12)', async () => {
     const pkg = fresh();
     await vulnerable(pkg);
@@ -668,9 +704,13 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
 
   /**
    * Starts the requests while a transaction holds the project row (which a fix request locks
-   * first), waits until all of them queue behind it, then lets them go at once.
+   * first), waits until all of them queue behind it, runs `whileHeld` in that transaction, then
+   * lets them go at once.
    */
-  const inLockstep = async <T>(start: () => Promise<T>[]): Promise<T[]> => {
+  const inLockstep = async <T>(
+    start: () => Promise<T>[],
+    whileHeld?: (tx: Executor) => Promise<unknown>,
+  ): Promise<T[]> => {
     let started: Promise<T>[] = [];
     await db().transaction(async (tx) => {
       await tx.execute(sql`SELECT 1 FROM projects WHERE id = ${projectId} FOR UPDATE`);
@@ -679,7 +719,10 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
         const waiting = await db().execute<{ n: number }>(sql`
           SELECT count(*)::int AS n FROM pg_stat_activity
            WHERE datname = current_database() AND wait_event_type = 'Lock'`);
-        if ((waiting.rows[0]?.n ?? 0) >= started.length) return;
+        if ((waiting.rows[0]?.n ?? 0) >= started.length) {
+          await whileHeld?.(tx);
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       throw new Error('the requests never queued behind the project row');
@@ -703,5 +746,118 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
       'qualor/fix/js/a-b',
       'qualor/fix/js/a-b-2',
     ]);
+  });
+
+  it('reads the switch and the cap under the project lock, as the settings save writes them', async () => {
+    const pkg = fresh();
+    await vulnerable(pkg);
+    const body = { ecosystem: 'npm', packageName: pkg };
+    const setSettings =
+      (values: Partial<typeof projectFixSettings.$inferInsert>) => (tx: Executor) =>
+        tx
+          .update(projectFixSettings)
+          .set(values)
+          .where(eq(projectFixSettings.projectId, projectId));
+
+    // Switched off while the request waits for the project row.
+    const [off] = await inLockstep(() => [post(body)], setSettings({ enabled: false }));
+    expect(answer(off!)).toEqual([409, 'FIXES_DISABLED']);
+    await enableFixes(h, projectId, { maxOpen: 20 });
+
+    // The cap lowered to the one fix in flight while the request waits.
+    await seedFix(db(), { projectId, family: 'js', packageName: fresh(), state: 'open' });
+    const [capped] = await inLockstep(() => [post(body)], setSettings({ maxOpen: 1 }));
+    expect(answer(capped!)).toEqual([409, 'FIX_LIMIT_REACHED']);
+
+    // A retry reads them under the lock too.
+    await enableFixes(h, projectId, { maxOpen: 20 });
+    const failed = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: pkg,
+      state: 'failed',
+    });
+    const [retried] = await inLockstep(() => [retry(failed)], setSettings({ enabled: false }));
+    expect(answer(retried!)).toEqual([409, 'FIXES_DISABLED']);
+    expect(await row(failed)).toMatchObject({ state: 'failed', generation: 1 });
+    expect(await events('dependency_fix.requested')).toEqual([]);
+    expect(await events('dependency_fix.retried')).toEqual([]);
+  });
+
+  it('runs one query at a time on its transaction (no pg queued-query deprecation)', async () => {
+    const pkg = fresh();
+    await vulnerable(pkg);
+    const failedPkg = fresh();
+    await vulnerable(failedPkg);
+    const failed = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: failedPkg,
+      state: 'failed',
+    });
+    // pg warns when a query is queued behind another one already waiting on the same client.
+    const proto = pg.Client.prototype as unknown as {
+      query: (...args: unknown[]) => unknown;
+    };
+    const original = proto.query;
+    let queuedBehind = 0;
+    const spy = vi.spyOn(proto, 'query').mockImplementation(function (
+      this: { _queryQueue?: unknown[] },
+      ...args: unknown[]
+    ) {
+      if ((this._queryQueue?.length ?? 0) > 0) queuedBehind += 1;
+      return original.apply(this, args);
+    });
+    try {
+      expect((await post({ ecosystem: 'npm', packageName: pkg })).statusCode).toBe(202);
+      expect((await retry(failed)).statusCode).toBe(202);
+      expect((await cancel(failed)).statusCode).toBe(204);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(queuedBehind).toBe(0);
+  });
+
+  it('names a Python fix by its PEP 503 name, whichever spelling asks (ruling T8b)', async () => {
+    await vulnerable('Django_Rest', {
+      ecosystem: 'uv',
+      version: '3.14.0',
+      vulnerabilityId: 'CVE-2026-5101',
+      fixedVersion: '3.15.2',
+    });
+    await vulnerable('django-rest', {
+      ecosystem: 'poetry',
+      version: '3.14.0',
+      vulnerabilityId: 'CVE-2026-5102',
+      fixedVersion: '3.15.2',
+    });
+    const made = await request('Django_Rest', 'uv');
+    expect(made).toMatchObject({
+      family: 'python',
+      packageName: 'django-rest',
+      branch: 'qualor/fix/python/django-rest',
+    });
+    expect((await request('django-rest', 'poetry')).id).toBe(made.id);
+    expect((await request('DJANGO.rest', 'uv')).id).toBe(made.id);
+    expect(await fixRows()).toHaveLength(1);
+    expect((await events('dependency_fix.requested')).map((e) => e.details)).toEqual([
+      { family: 'python', packageName: 'django-rest' },
+    ]);
+    type Item = { packageName: string; fix: Fix | null; fixable: boolean };
+    const items = (
+      await get<{ items: Item[] }>(
+        `/projects/${projectId}/vulnerabilities?pageSize=100&target=branch:${main}`,
+      )
+    ).items.filter((i) => ['Django_Rest', 'django-rest'].includes(i.packageName));
+    expect(items.map((i) => [i.packageName, i.fix?.id, i.fixable]).sort()).toEqual([
+      ['Django_Rest', made.id, true],
+      ['django-rest', made.id, true],
+    ]);
+    // A retry of the ended fix reads both spellings' rows as its vulnerabilities.
+    await db()
+      .update(dependencyFixes)
+      .set({ state: 'failed' })
+      .where(eq(dependencyFixes.id, made.id));
+    expect((await retry(made.id)).statusCode).toBe(202);
   });
 });

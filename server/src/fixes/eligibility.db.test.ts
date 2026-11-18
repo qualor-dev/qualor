@@ -269,4 +269,36 @@ describe('which vulnerabilities a fix handles (spec §6.2, B5, B7, R12)', () => 
       (await fixFacets(db(), projectId, [pairs[1]!])).get(pairKey(unfixable, 'CVE-2026-0402')),
     ).toEqual({ fix: null, fixable: false });
   });
+
+  it('matches Python names by PEP 503 and every other family exactly (ruling T8b)', async () => {
+    await onMain('Py_Pkg.One', { ecosystem: 'uv', vulnerabilityId: 'CVE-2026-0501' });
+    await onMain('py-pkg-one', { ecosystem: 'poetry', vulnerabilityId: 'CVE-2026-0502' });
+    // The same spellings in js are other packages, matched exactly.
+    await onMain('PY-pkg_one', { ecosystem: 'npm', vulnerabilityId: 'CVE-2026-0503' });
+    const python = await mainVulnerabilities(db(), projectId, 'python', 'PY.pkg_ONE');
+    expect(python.map((r) => [r.vulnerabilityId, r.ecosystem])).toEqual([
+      ['CVE-2026-0501', 'uv'],
+      ['CVE-2026-0502', 'poetry'],
+    ]);
+    expect(await mainVulnerabilities(db(), projectId, 'js', 'py-pkg-one')).toEqual([]);
+    expect(await mainVulnerabilities(db(), projectId, 'js', 'PY-pkg_one')).toHaveLength(1);
+
+    const fixId = await seedFix(db(), { projectId, family: 'python', packageName: 'py-pkg-one' });
+    const pairs = [
+      { packageName: 'Py_Pkg.One', vulnerabilityId: 'CVE-2026-0501' },
+      { packageName: 'py-pkg-one', vulnerabilityId: 'CVE-2026-0502' },
+      { packageName: 'PY-pkg_one', vulnerabilityId: 'CVE-2026-0503' },
+    ];
+    const facets = await fixFacets(db(), projectId, pairs);
+    expect(
+      pairs.map((p) => {
+        const facet = facets.get(pairKey(p.packageName, p.vulnerabilityId));
+        return [facet?.fix?.id ?? null, facet?.fixable];
+      }),
+    ).toEqual([
+      [fixId, true],
+      [fixId, true],
+      [null, true],
+    ]);
+  });
 });

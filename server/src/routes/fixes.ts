@@ -69,36 +69,35 @@ async function requireUnderCap(tx: Executor, projectId: string, maxOpen: number)
   }
 }
 
-/**
- * spec §6.2: 422 unless the package has something to fix on main (`fixProblem`); the family of a
- * fix that can be made.
- */
-async function requireFixable(
-  tx: Executor,
-  projectId: string,
-  family: FixFamily | null,
-  packageName: string,
-  ecosystem: string,
-): Promise<FixFamily> {
-  const rows = family === null ? [] : await mainVulnerabilities(tx, projectId, family, packageName);
-  const problem = fixProblem(family, packageName, rows);
-  if (family === null || problem === 'FIX_ECOSYSTEM_UNSUPPORTED') {
+/** spec §6.2, B7: the family of the request's Trivy type; 422 when it has none. */
+function requireFamily(ecosystem: string): FixFamily {
+  const family = familyOfEcosystem(ecosystem);
+  if (family === null) {
     throw new ProblemError(
       422,
       'FIX_ECOSYSTEM_UNSUPPORTED',
       `No automatic fix for ${ecosystem} yet`,
     );
   }
-  if (problem === 'NOT_FIXABLE') {
-    throw new ProblemError(
-      422,
-      'NOT_FIXABLE',
-      isGoStdlib(family, packageName)
-        ? "Go's standard library is fixed by the Go version, not by a module update"
-        : 'No open vulnerability of the package on the main branch has a fixed version',
-    );
-  }
   return family;
+}
+
+/** spec §6.2, R3: 422 unless the package has something to fix on main (`fixProblem`). */
+async function requireFixable(
+  tx: Executor,
+  projectId: string,
+  family: FixFamily,
+  packageName: string,
+): Promise<void> {
+  const rows = await mainVulnerabilities(tx, projectId, family, packageName);
+  if (fixProblem(family, packageName, rows) === null) return;
+  throw new ProblemError(
+    422,
+    'NOT_FIXABLE',
+    isGoStdlib(family, packageName)
+      ? "Go's standard library is fixed by the Go version, not by a module update"
+      : 'No open vulnerability of the package on the main branch has a fixed version',
+  );
 }
 
 /** R11: 409 for a fix in flight. */
@@ -186,28 +185,29 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
       );
       const { ecosystem, packageName } = request.body;
       const family = familyOfEcosystem(ecosystem);
-      // The preconditions first, read before the transaction as the Jira link request reads its
-      // own (their reads run side by side, which one transaction's client cannot).
-      const settings = await requireFixesUsable(deps.db, project);
       const row = await deps.db.transaction(async (tx) => {
-        // Requests of a project run one at a time (ruling T2a: the branch names, the cap).
+        // Requests of a project run one at a time (ruling T2a: the branch names, the cap) and read
+        // the switch and the cap as the settings save, which takes the same lock, left them.
         const locked = await requireLockedProject(tx, project.id);
-        const existing =
+        const settings = await requireFixesUsable(tx, locked);
+        const current =
           family === null ? null : await lockPackageFix(tx, locked.id, family, packageName);
-        if (existing && isActiveFix(existing.state)) return existing;
+        if (current && isActiveFix(current.state)) return current;
         await requireUnderCap(tx, locked.id, settings.maxOpen);
-        const fixFamily = await requireFixable(tx, locked.id, family, packageName, ecosystem);
+        const fixFamily = requireFamily(ecosystem);
+        await requireFixable(tx, locked.id, fixFamily, packageName);
         const made = await requestFix(tx, {
           project: locked,
           family: fixFamily,
           packageName,
           userId: principal.user.id,
           origin: 'manual',
+          current,
         });
         if (made.outcome !== 'active') {
           await recordProjectEvent(deps.audit, tx, request, locked, 'dependency_fix.requested', {
-            family: fixFamily,
-            packageName,
+            family: made.row.family,
+            packageName: made.row.packageName,
           });
         }
         return made.row;
@@ -244,14 +244,14 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
         request.params.id,
         'issue.triage',
       );
-      const settings = await requireFixesUsable(deps.db, project);
       const row = await deps.db.transaction(async (tx) => {
         const locked = await requireLockedProject(tx, project.id);
+        const settings = await requireFixesUsable(tx, locked);
         const current = await lockFix(tx, fix.id);
         if (!current) throw notFound('Fix');
         if (isActiveFix(current.state)) notRetryable();
         await requireUnderCap(tx, locked.id, settings.maxOpen);
-        await requireFixable(tx, locked.id, current.family, current.packageName, current.family);
+        await requireFixable(tx, locked.id, current.family, current.packageName);
         const rearmed = await rearmFix(tx, current, {
           userId: principal.user.id,
           origin: 'manual',
@@ -280,7 +280,7 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
       schema: {
         tags: ['fixes'],
         summary:
-          'Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused); an open MR is closed with a comment and its branch deleted by a background job, unless a person pushed to it. Cancelling an ended fix changes nothing',
+          'Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused). When it has an MR (open, or being refreshed), a background job closes the MR with a comment and deletes its branch, unless a person pushed to it. Cancelling an ended fix changes nothing',
         params: idParams,
         response: { 204: noContent },
       },

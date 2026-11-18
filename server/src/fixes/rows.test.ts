@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PACKAGE_SLUG, fixBranchName, packageSlug } from './rows';
+import { EMPTY_PACKAGE_SLUG, fixBranchName, fixPackageName, packageSlug } from './rows';
 
 /**
  * git's own ref rules (`git check-ref-format`, ruling T5a), as the test reads them: the reasons a
@@ -96,5 +96,20 @@ describe('fix branch names (spec §6.7, R32, Review Focus 3)', () => {
   it('refuses a number below 1', () => {
     expect(() => fixBranchName('go', 'x', 0)).toThrow(RangeError);
     expect(() => fixBranchName('go', 'x', 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('the package name of a fix (B7, ruling T8b)', () => {
+  it('is the PEP 503 name for python and the name as given for the other families', () => {
+    expect(fixPackageName('python', 'Django_Rest')).toBe('django-rest');
+    expect(fixPackageName('python', 'zope.Interface__x--y')).toBe('zope-interface-x-y');
+    expect(fixPackageName('js', '@Types/Node')).toBe('@Types/Node');
+    expect(fixPackageName('maven', 'org.springframework:spring-core')).toBe(
+      'org.springframework:spring-core',
+    );
+    expect(fixPackageName('go', 'golang.org/x/Net')).toBe('golang.org/x/Net');
+    expect(fixBranchName('python', fixPackageName('python', 'Django_Rest'), 1)).toBe(
+      'qualor/fix/python/django-rest',
+    );
   });
 });
