@@ -11,7 +11,7 @@ import {
   greatestVersion,
   sameVersion,
   schemeOf,
-  urlPasswordCount,
+  urlCredentialCount,
   type FixClaimItem,
   type FixFailureCode,
   type FixFamily,
@@ -88,7 +88,7 @@ type LocalRule =
 
 const LOCAL_RULE_TEXT: Readonly<Record<LocalRule, string>> = {
   secret_in_file:
-    "A changed file holds a credential of the job's environment (the project token, a registry token or password), or a URL with a password, that its text on the main branch does not.",
+    "A changed file holds a credential of the job's environment (the project token, a registry token or password), or a URL with a credential, that its text on the main branch does not.",
   new_file: 'The fix added a file; a fix only changes files that exist on the main branch.',
   not_a_file: 'A changed path is no longer a regular file (deleted, or a link).',
   path_not_allowed: 'A changed file is not a manifest or lockfile of the package family.',
@@ -118,9 +118,10 @@ function occurrences(text: string, part: string): number {
 
 /**
  * B9, §6.9, I1: the first changed file that holds one of the job's credentials (the project token,
- * credential-like values of the environment: `fixJobSecrets`) or a URL with a password more often
- * than its text at HEAD, so a package manager that wrote a registry credential into a lockfile
- * never has it uploaded. Ordinary text (`true`, a project key, `git@`) is no credential.
+ * credential-like values of the environment: `fixJobSecrets`) or a URL with a credential (any
+ * http(s) userinfo, an ssh one with a password: `urlCredentialCount`, ruling T12l) more often than
+ * its text at HEAD, so a package manager that wrote a registry credential into a lockfile never has
+ * it uploaded. Ordinary text (`true`, a project key, `git@`) is no credential.
  */
 function secretFile(
   files: readonly FixFileChange[],
@@ -129,7 +130,7 @@ function secretFile(
   const known = credentials.filter((s) => s.length >= 4);
   return files.find(
     (f) =>
-      urlPasswordCount(f.next) > urlPasswordCount(f.base) ||
+      urlCredentialCount(f.next) > urlCredentialCount(f.base) ||
       known.some((s) => occurrences(f.next, s) > occurrences(f.base, s)),
   )?.path;
 }

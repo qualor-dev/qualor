@@ -111,16 +111,25 @@ export function scrubUrlUserinfo(text: string): string {
   return text.replace(URL_AUTHORITY, urlUserinfo);
 }
 
+/** An ssh scheme (`ssh`, `git+ssh`, `svn+ssh`), whose userinfo is a login name unless it has a `:`. */
+const SSH_SCHEME = /(?:^|\+)ssh$/;
+
 /**
- * How many URLs of the text carry a password: a userinfo (up to the authority's last `@`) with a
- * `:`. A user name alone (`git+ssh://git@github.com/…`) is no credential (Task 12 fix round 1, I1).
+ * How many URLs of the text carry a credential (Task 12 fix round 1, I1, ruling T12l): any userinfo
+ * (up to the authority's last `@`) of an http(s) URL or any other non-ssh scheme, a token alone
+ * included (`https://<token>@github.com/…`); for an ssh URL only a userinfo with a `:`
+ * (`git+ssh://git@github.com/…` names a login, no secret). An scp-like `git@host:path` has no
+ * scheme and is no URL here.
  */
-export function urlPasswordCount(text: string): number {
+export function urlCredentialCount(text: string): number {
   let n = 0;
   for (const m of text.matchAll(URL_AUTHORITY)) {
+    const prefix = m[1] ?? '';
     const authority = m[2] ?? '';
     const at = authority.lastIndexOf('@');
-    if (at !== -1 && authority.slice(0, at).includes(':')) n += 1;
+    if (at === -1) continue;
+    const scheme = prefix.slice(0, prefix.indexOf(':')).toLowerCase();
+    if (!SSH_SCHEME.test(scheme) || authority.slice(0, at).includes(':')) n += 1;
   }
   return n;
 }

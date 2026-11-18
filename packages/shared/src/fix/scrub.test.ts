@@ -7,7 +7,7 @@ import {
   scrubToolOutput,
   scrubUrlUserinfo,
   secretEnvValues,
-  urlPasswordCount,
+  urlCredentialCount,
   utf8Head,
   utf8Tail,
 } from './scrub';
@@ -217,12 +217,26 @@ describe('the helpers the CLI shares (ruling T12c)', () => {
   });
 });
 
-describe('urlPasswordCount (I1: what a credential URL is)', () => {
-  it('counts URLs whose userinfo has a password, never a user name alone', () => {
-    expect(urlPasswordCount(`https://ci:${SECRET}@registry.example/x and http://u:p@h/`)).toBe(2);
-    expect(urlPasswordCount('git+ssh://git@github.com/x/y.git')).toBe(0);
-    expect(urlPasswordCount(`https://${NPM_TOKEN}@github.com/x`)).toBe(0);
-    expect(urlPasswordCount('https://registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz')).toBe(0);
-    expect(urlPasswordCount('https:\\/\\/u:pw@host\\/x')).toBe(1);
+describe('urlCredentialCount (I1, ruling T12l: what a credential URL is)', () => {
+  it('counts every userinfo of an http(s) URL, a token alone included', () => {
+    const GHP = j('ghp', '_abcdefgh', '12345678');
+    expect(urlCredentialCount(`https://${GHP}@github.com/o/r.git`)).toBe(1);
+    expect(urlCredentialCount(`git+https://${GHP}@github.com/o/r.git`)).toBe(1);
+    expect(urlCredentialCount(`http://oauth2:${SECRET}@gitlab.example/o/r.git`)).toBe(1);
+    expect(urlCredentialCount(`HTTPS:\\/\\/${GHP}@github.com\\/o`)).toBe(1);
+  });
+
+  it('counts an ssh URL only when its userinfo has a password: git@ is a user name', () => {
+    expect(urlCredentialCount('ssh://git@github.com/o/r.git')).toBe(0);
+    expect(urlCredentialCount('git+ssh://git@github.com/o/r.git')).toBe(0);
+    expect(urlCredentialCount(`git+ssh://git:${SECRET}@github.com/o/r.git`)).toBe(1);
+    expect(urlCredentialCount('git@github.com:o/r.git')).toBe(0);
+  });
+
+  it('counts URLs whose userinfo has a password', () => {
+    expect(urlCredentialCount(`https://ci:${SECRET}@registry.example/x and http://u:p@h/`)).toBe(2);
+    expect(urlCredentialCount('git+ssh://git@github.com/x/y.git')).toBe(0);
+    expect(urlCredentialCount('https://registry.npmjs.org/qf-a/-/qf-a-1.2.6.tgz')).toBe(0);
+    expect(urlCredentialCount('https:\\/\\/u:pw@host\\/x')).toBe(1);
   });
 });

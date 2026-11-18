@@ -578,6 +578,30 @@ describe('qualor fix: what an upload must hold (rulings T9c, T9i, T9l)', () => {
     expect(failure.message).not.toContain('secret_in_file');
   });
 
+  it('refuses locally a new https URL with a token as its user name (ruling T12l)', async () => {
+    const { dir } = repo();
+    const ghp = ['ghp', 'abcdefgh12345678'].join('_');
+    const tokenUrl = lockWith(
+      { 'node_modules/y': { version: '1.0.0', resolved: `https://${ghp}@github.com/o/r.git` } },
+      { dependencies: { y: 'github:o/r' } },
+    );
+    const writes: FixAdapter = {
+      ...goodJs,
+      apply: async (ws, fix, plan) => {
+        const applied = await goodJs.apply(ws, fix, plan);
+        writeTree(ws.root, { 'package-lock.json': tokenUrl });
+        return applied;
+      },
+    };
+    const server = await qualor({ claims: [claimOf(item(1))] });
+    const r = await run(dir, server, { deps: { adapters: { js: writes } } });
+    const failure = failureOf(server.results[0]?.body);
+    expect(failure.code).toBe('unplanned_change');
+    expect(failure.message).toContain('secret_in_file');
+    expect(JSON.stringify(server.results)).not.toContain(ghp);
+    expect(r.log).not.toContain(ghp);
+  });
+
   it('uploads the committed form of a file .gitattributes checks out with CRLF (ruling T12e)', async () => {
     const { dir } = repo({ ...BASE, '.gitattributes': 'package.json text eol=crlf\n' });
     const crlf: FixAdapter = {
