@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import { FIX_LIMITS } from '@qualor/shared/fix';
 import { CliError, EXIT } from './errors';
 
 export interface ScanFlags {
@@ -34,6 +35,19 @@ export interface UploadSbomFlags {
   tokenFile?: string;
   serverUrl?: string;
   caFile?: string;
+}
+
+/** `qualor fix` (0.16 fix MRs §6.5, R4). */
+export interface FixFlags {
+  config?: string;
+  projectKey?: string;
+  tokenFile?: string;
+  serverUrl?: string;
+  caFile?: string;
+  /** Fixes to prepare at most, 1–10. */
+  max: number;
+  /** The job's time, 60 s to 6 h. */
+  timeoutSeconds: number;
 }
 
 /** import-sonarqube.md §3: the steps of `--only`, in the order they run. */
@@ -74,6 +88,7 @@ export type Command =
   | { name: 'scan'; flags: ScanFlags }
   | { name: 'import-sonarqube'; flags: ImportFlags }
   | { name: 'upload-sbom'; flags: UploadSbomFlags }
+  | { name: 'fix'; flags: FixFlags }
   | { name: 'dotnet-begin'; config?: string }
   | { name: 'dotnet-end'; flags: ScanFlags }
   | { name: 'dotnet-abort' };
@@ -92,6 +107,8 @@ export const USAGE = `Usage:
               [--ca-file PATH] [--sonar-ca-file PATH] [--sonar-auth auto|bearer|basic]
               [--timeout SECONDS] [--max-issues N] [--allow-insecure-http]
   qualor upload-sbom FILE [--version LABEL] [--project-key KEY] [--config PATH] [--token-file PATH] [--server-url URL] [--ca-file PATH]
+  qualor fix [--project-key KEY] [--max N] [--timeout 30m] [--config PATH] [--token-file PATH]
+             [--server-url URL] [--ca-file PATH]
   qualor dotnet begin [--config PATH]
   qualor dotnet end [qualor scan options]
   qualor dotnet abort [--config PATH]
@@ -408,6 +425,66 @@ function parseUploadSbom(args: string[]): Command {
   return { name: 'upload-sbom', flags };
 }
 
+/** `<n>s`, `<n>m` or `<n>h`. */
+const DURATION = /^(\d{1,6})([smh])$/;
+const UNIT_SECONDS: Readonly<Record<string, number>> = { s: 1, m: 60, h: 3600 };
+
+/** A duration flag in seconds (`90s`, `30m`, `2h`), from `min` to `max` seconds. */
+function duration(
+  name: string,
+  v: string | undefined,
+  range: { min: number; max: number; fallback: number },
+): number {
+  if (v === undefined) return range.fallback;
+  const m = DURATION.exec(v);
+  const unit = UNIT_SECONDS[m?.[2] ?? ''];
+  const seconds = m === null || unit === undefined ? Number.NaN : Number(m[1]) * unit;
+  if (!(seconds >= range.min && seconds <= range.max)) {
+    throw usageError(
+      `--${name} must be a duration such as 90s, 30m or 2h, from ${range.min} seconds to ${range.max / 3600} hours`,
+    );
+  }
+  return seconds;
+}
+
+/** R4, §6.5: 60 s to 6 h, 30 minutes unless given. */
+const FIX_TIMEOUT_SECONDS = { min: 60, max: 6 * 3600, fallback: 1800 } as const;
+
+/** `qualor fix` (0.16 fix MRs §6.5, R4): the server flags of `qualor scan`, `--max` and `--timeout`. */
+function parseFix(args: string[]): Command {
+  const { values: v } = strict(() =>
+    parseArgs({
+      args,
+      strict: true,
+      allowPositionals: false,
+      options: {
+        config: { type: 'string' },
+        'project-key': { type: 'string' },
+        'token-file': { type: 'string' },
+        'server-url': { type: 'string' },
+        'ca-file': { type: 'string' },
+        max: { type: 'string' },
+        timeout: { type: 'string' },
+      },
+    }),
+  );
+  const flags: FixFlags = {
+    max: integer('max', v.max, 1, FIX_LIMITS.claimMax, FIX_LIMITS.claimMax),
+    timeoutSeconds: duration('timeout', v.timeout, FIX_TIMEOUT_SECONDS),
+  };
+  const optional = {
+    config: value('config', v.config),
+    projectKey: value('project-key', v['project-key']),
+    tokenFile: value('token-file', v['token-file']),
+    serverUrl: value('server-url', v['server-url']),
+    caFile: value('ca-file', v['ca-file']),
+  };
+  for (const [key, val] of Object.entries(optional)) {
+    if (val !== undefined) Object.assign(flags, { [key]: val });
+  }
+  return { name: 'fix', flags };
+}
+
 const isHelp = (arg: string) => arg === '--help' || arg === '-h';
 
 export function parseCommandLine(argv: readonly string[]): Command {
@@ -425,6 +502,7 @@ export function parseCommandLine(argv: readonly string[]): Command {
   if (name === 'scan') return parseScan(rest);
   if (name === 'import') return parseImport(rest);
   if (name === 'upload-sbom') return parseUploadSbom(rest);
+  if (name === 'fix') return parseFix(rest);
   if (name === 'dotnet') return parseDotnet(rest);
   throw usageError(`unknown command ${JSON.stringify(name)}`);
 }

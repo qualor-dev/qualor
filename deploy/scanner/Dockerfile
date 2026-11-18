@@ -33,8 +33,10 @@ COPY . .
 RUN case "$TARGETARCH" in amd64) T=linux-x64 ;; arm64) T=linux-arm64 ;; *) exit 1 ;; esac \
   && pnpm --filter @qualor/cli build "$T" \
   && install -m 0755 "cli/dist/qualor-$T" /qualor
-# The binary bundles the CLI's production npm packages: keep their licence files, as installed.
-RUN pnpm --filter @qualor/cli licenses list --prod --json > /tmp/npm-licenses.json \
+# The binary bundles the CLI's production npm packages, and those of the workspace package it
+# compiles in (@qualor/shared: semver, @renovatebot/pep440, smol-toml, …; hence "@qualor/cli..."):
+# keep their licence files, as installed.
+RUN pnpm --filter "@qualor/cli..." licenses list --prod --json > /tmp/npm-licenses.json \
   && node -e 'const fs = require("fs"), path = require("path"); \
     for (const list of Object.values(JSON.parse(fs.readFileSync("/tmp/npm-licenses.json", "utf8")))) \
       for (const pkg of list) pkg.paths.forEach((dir, i) => { \

@@ -52,6 +52,18 @@ const liveJira = process.argv.some(
 );
 
 /**
+ * 0.16 fix MRs (spec §9, R26): the opt-in live checks of the fix adapters (`pnpm fix:live`), which
+ * run the real package managers against the public registries. Never part of `pnpm test` or CI:
+ * the unit project excludes `*.live.test.ts`, and the project exists only when the command line
+ * names it. Each file skips without what it needs.
+ */
+const FIX_LIVE_FILES = 'cli/src/fix/**/*.live.test.ts';
+const liveFix = process.argv.some(
+  (arg, i, all) =>
+    arg === '--project=fix-live' || (arg === '--project' && all[i + 1] === 'fix-live'),
+);
+
+/**
  * Plan 4A (ruling RE5): tests that run Helm, cosign or Syft in the release toolbox (Docker). Never
  * part of `pnpm test`: the project exists only when `pnpm helm:test` or `pnpm release:test` sets
  * QUALOR_RELEASE_TOOLS=1 (tools/release/test-tools.ts), after building the toolbox image.
@@ -204,6 +216,18 @@ export default defineConfig({
                 include: [JIRA_LIVE_FILE],
                 testTimeout: 300_000,
                 hookTimeout: 120_000,
+              },
+            },
+          ]
+        : []),
+      ...(liveFix
+        ? [
+            {
+              test: {
+                name: 'fix-live',
+                include: [FIX_LIVE_FILES],
+                // A package manager resolving and fetching against a real registry, per adapter.
+                testTimeout: 600_000,
               },
             },
           ]

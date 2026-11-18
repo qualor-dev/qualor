@@ -37,7 +37,7 @@ table names another place.
 | Node.js                                                                               | 22.23.4                                        | MIT and bundled licences (`NODE-LICENSE.txt`)                                                                                                                                                  | https://github.com/nodejs/node/tree/v22.23.4                                                          |
 | npm, Corepack and Yarn (from the Node.js image)                                       | 10.9.9, 0.36.0, 1.22.22                        | Artistic-2.0, MIT, BSD-2-Clause (the `LICENSE` in each package's directory)                                                                                                                    | https://github.com/nodejs/docker-node                                                                 |
 | Bun runtime (inside the `qualor` binary)                                              | 1.3.13                                         | MIT; it links JavaScriptCore/WebKit (LGPL-2), tinycc (LGPL-2.1) and others (`BUN-LICENSE.txt`)                                                                                                 | https://github.com/oven-sh/bun/tree/bun-v1.3.13                                                       |
-| npm packages inside the `qualor` binary (below)                                       | as locked                                      | MIT or ISC (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp: `TREE-SITTER-C-SHARP-LICENSE.txt`; tree-sitter-kotlin: its `LICENSE` in the same directory)    | https://www.npmjs.com/                                                                                |
+| npm packages inside the `qualor` binary (below)                                       | as locked                                      | MIT, ISC, BSD-3-Clause, Apache-2.0 OR BSD-2-Clause (`qualor/npm/<package>@<version>/`; saxes: `SAXES-LICENSE.txt`; tree-sitter-c-sharp, tree-sitter-kotlin: see below)                         | https://www.npmjs.com/                                                                                |
 | SPDX License List identifiers (`spdx-ids.json`, in the Qualor packages)               | 3.29.0                                         | CC0-1.0                                                                                                                                                                                        | https://github.com/spdx/license-list-data                                                             |
 | Debian packages (git, ca-certificates, php8.2-cli, libyaml-0-2, python3, base system) | bookworm                                       | per package, `/usr/share/doc/*/copyright`                                                                                                                                                      | `qualor/scanner-sources` (`debian/`)                                                                  |
 | .NET SDK (software only in `qualor/scanner-dotnet`)                                   | 8.0.427 and 10.0.403                           | MIT (`DOTNET-LICENSE.txt`, identical for both versions); their own third-party notices, per version: `DOTNET-8.0.427-ThirdPartyNotices.txt`, `DOTNET-10.0.403-ThirdPartyNotices.txt`           | https://github.com/dotnet/sdk                                                                         |
@@ -227,18 +227,22 @@ OpenSSL, zlib and zstd, musl, the GCC runtime (GCC Runtime Library Exception), a
 mpdecimal. The Python packages are MIT, BSD, Apache-2.0, PSF or 0BSD (chardet 7).
 
 The npm packages compiled into the `qualor` binary are ignore, picomatch, saxes, xmlchars, yaml,
-zod, web-tree-sitter and the tree-sitter grammars for Java, JavaScript, TypeScript, C#, Python,
-HTML, CSS, Kotlin, PHP, Ruby, Go, C and C++ (`tree-sitter-c-sharp` 0.23.5, MIT,
-`TREE-SITTER-C-SHARP-LICENSE.txt`; `tree-sitter-html` 0.23.2, `tree-sitter-css` 0.25.0,
-`@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0, tree-sitter-php 0.24.2,
+zod, semver, @renovatebot/pep440, smol-toml, web-tree-sitter and the tree-sitter grammars for Java,
+JavaScript, TypeScript, C#, Python, HTML, CSS, Kotlin, PHP, Ruby, Go, C and C++
+(`tree-sitter-c-sharp` 0.23.5, MIT, `TREE-SITTER-C-SHARP-LICENSE.txt`; `tree-sitter-html` 0.23.2,
+`tree-sitter-css` 0.25.0, `@tree-sitter-grammars/tree-sitter-kotlin` 1.1.0, tree-sitter-php 0.24.2,
 tree-sitter-ruby 0.23.1, tree-sitter-go 0.25.0, tree-sitter-c 0.24.1 and tree-sitter-cpp 0.23.4,
-all MIT; tree-sitter-go's `LICENSE` is in `qualor/npm/tree-sitter-go@0.25.0/`), in the versions
-`pnpm-lock.yaml` locks. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
+all MIT; tree-sitter-go's `LICENSE` is in `qualor/npm/tree-sitter-go@0.25.0/`, tree-sitter-kotlin's
+in `qualor/npm/@tree-sitter-grammars/tree-sitter-kotlin@1.1.0/`), in the versions `pnpm-lock.yaml`
+locks. semver (ISC), @renovatebot/pep440 and smol-toml come with `@qualor/shared`, whose version
+and manifest readers `qualor fix` uses. @renovatebot/pep440 is under Apache-2.0 OR BSD-2-Clause, at
+the recipient's choice; both texts are in `qualor/npm/@renovatebot/pep440@<version>/`. smol-toml is
+under BSD-3-Clause. The Swift grammar, tree-sitter-swift 0.7.3 (MIT,
 `TREE-SITTER-SWIFT-LICENSE.txt`), is vendored in the CLI's source (`cli/grammars`), because no npm
 package ships it as WebAssembly. The `qualor` binary, and so this grammar, is the same in
 `qualor/scanner` and `qualor/scanner-dotnet`: the image only adds the .NET SDKs and Roslynator
-around it. The image keeps the licence files of every production dependency of the CLI, as
-installed, in `/opt/qualor/licenses/qualor/npm/`.
+around it. The image keeps the licence files of every production dependency of the CLI and of
+`@qualor/shared`, as installed, in `/opt/qualor/licenses/qualor/npm/`.
 
 PHPStan is PHPStan's own phar, unmodified, pinned by SHA-256 in `tools/analyzers/install.sh` and
 installed as `/opt/qualor/lib/phpstan/phpstan.phar`. `PHPSTAN-DEPENDENCIES.txt` lists the 67

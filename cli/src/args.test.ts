@@ -410,3 +410,73 @@ describe('parseCommandLine upload-sbom', () => {
     expect(parseCommandLine(['upload-sbom', '--help'])).toEqual({ name: 'help' });
   });
 });
+
+describe('parseCommandLine fix (0.16 fix MRs §6.5, R4)', () => {
+  it('defaults to 10 fixes and 30 minutes', () => {
+    expect(parseCommandLine(['fix'])).toEqual({
+      name: 'fix',
+      flags: { max: 10, timeoutSeconds: 1800 },
+    });
+  });
+
+  it('parses --timeout in seconds, minutes or hours, --max and the server flags', () => {
+    const flags = (...args: string[]) => {
+      const command = parseCommandLine(['fix', ...args]);
+      if (command.name !== 'fix') throw new Error('expected fix');
+      return command.flags;
+    };
+    expect(flags('--timeout', '90s').timeoutSeconds).toBe(90);
+    expect(flags('--timeout', '30m').timeoutSeconds).toBe(1800);
+    expect(flags('--timeout', '2h').timeoutSeconds).toBe(7200);
+    expect(flags('--timeout', '6h').timeoutSeconds).toBe(21_600);
+    expect(flags('--timeout=60s').timeoutSeconds).toBe(60);
+    expect(flags('--max', '1').max).toBe(1);
+    expect(
+      flags(
+        '--project-key',
+        'acme/app',
+        '--config',
+        'q.yml',
+        '--token-file',
+        't',
+        '--server-url',
+        'https://q.example',
+        '--ca-file',
+        'ca.pem',
+        '--max',
+        '3',
+      ),
+    ).toEqual({
+      projectKey: 'acme/app',
+      config: 'q.yml',
+      tokenFile: 't',
+      serverUrl: 'https://q.example',
+      caFile: 'ca.pem',
+      max: 3,
+      timeoutSeconds: 1800,
+    });
+  });
+
+  it('is a usage error for a bad duration, one outside 60 s to 6 h, or --max outside 1 to 10', () => {
+    for (const argv of [
+      ['fix', '--timeout', '1x'],
+      ['fix', '--timeout', '30s'],
+      ['fix', '--timeout', '7h'],
+      ['fix', '--timeout', '90'],
+      ['fix', '--timeout', ''],
+      ['fix', '--timeout', '-5m'],
+      ['fix', '--max', '0'],
+      ['fix', '--max', '11'],
+      ['fix', '--max', 'many'],
+      ['fix', 'extra'],
+      ['fix', '--branch', 'main'],
+      ['fix', '--project-key', ''],
+    ]) {
+      expect(usageError(argv).exitCode, argv.join(' ')).toBe(EXIT.USAGE);
+    }
+  });
+
+  it('shows help for --help', () => {
+    expect(parseCommandLine(['fix', '--help'])).toEqual({ name: 'help' });
+  });
+});

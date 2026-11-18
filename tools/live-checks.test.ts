@@ -336,3 +336,56 @@ describe('the live Jira check is never collected by pnpm test or CI', () => {
     }
   });
 });
+
+/**
+ * 0.16 fix MRs (spec §9, R26): the live checks of the fix adapters run real package managers
+ * against the public registries, so `pnpm test` and CI must never collect them. Their project
+ * exists only when the command line names it (`pnpm fix:live` runs `vitest run --project fix-live`).
+ */
+describe('the live fix adapter checks are never collected by pnpm test or CI', () => {
+  const FIX_LIVE_FILES = 'cli/src/fix/**/*.live.test.ts';
+
+  it('are a project only when the command line names it', async () => {
+    const names = (ps: Project[]) => ps.map((p) => p.test.name);
+    expect(names(await projects({}))).not.toContain('fix-live');
+    expect(names(await projects({}, []))).not.toContain('fix-live');
+    expect(names(await projects({}, ['run']))).not.toContain('fix-live');
+    expect(names(await projects({}, ['run', '--project', 'unit']))).not.toContain('fix-live');
+    expect(names(await projects({}, ['run', 'fix-live']))).not.toContain('fix-live');
+    for (const args of [
+      ['run', '--project', 'fix-live'],
+      ['run', '--project=fix-live'],
+    ]) {
+      const on = await projects({}, args);
+      expect(on.find((p) => p.test.name === 'fix-live')?.test.include).toEqual([FIX_LIVE_FILES]);
+    }
+  });
+
+  it('are excluded from the unit project, and no other pattern reaches them', async () => {
+    for (const p of await projects({}, ['run'])) {
+      const include = p.test.include ?? [];
+      if (include.includes('**/*.test.ts')) expect(p.test.exclude).toContain('**/*.live.test.ts');
+      else for (const pattern of include) expect(pattern).not.toMatch(/^(\*\*|cli)\//);
+    }
+  });
+
+  it('run only through pnpm fix:live, which no CI job calls', () => {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['fix:live']).toBe('vitest run --project fix-live');
+    for (const [name, script] of Object.entries(pkg.scripts)) {
+      if (name !== 'fix:live') expect(script, name).not.toMatch(/fix-live|fix:live/);
+    }
+    const ci = [
+      path.join(root, '.gitlab-ci.yml'),
+      ...readdirSync(path.join(root, '.github', 'workflows')).map((f) =>
+        path.join(root, '.github', 'workflows', f),
+      ),
+    ];
+    for (const file of ci) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/fix-live|fix:live/);
+    }
+  });
+});
