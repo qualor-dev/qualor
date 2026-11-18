@@ -112,6 +112,8 @@ export interface AcceptOptions {
   maxBaseBytes?: number;
   /** The SCM reads' deadline (ruling T9e); {@link FIX_READ_DEADLINE_MS}. */
   readDeadlineMs?: number;
+  /** How the repository is opened; a test holds a read with it (ruling T9k). */
+  openRepository?: typeof openFixRepository;
   /** Known secrets a stored message is scrubbed of: the request's own token (ruling T9j). */
   secrets?: readonly string[];
   /** Where a check that was given up is reported (no file content, no token). */
@@ -124,6 +126,16 @@ interface Attempt {
   fix: DependencyFixRow;
   lease: Lease;
   secrets: readonly string[];
+}
+
+/**
+ * Ruling T9k: the SCM reads of one upload: the signal that gives them up at the deadline, and the
+ * reads still in flight then, which the upload's place in the checks waits for.
+ */
+interface ReadPhase {
+  controller: AbortController;
+  /** Settles once the reads given up at the deadline have stopped; null before the deadline. */
+  abandoned: Promise<void> | null;
 }
 
 /** A path as a message or the log shows it: at most this many characters. */
@@ -483,8 +495,14 @@ async function throughScm<T>(read: () => Promise<T>): Promise<T> {
  * (B2), meanwhile is 409 and the fix stays `preparing` (its lease runs out; the claim no longer
  * hands it out). A connection no client can be made for ends the attempt (`scm_refused`, T9d).
  */
-async function repositoryOf(deps: FixScmDeps, project: ProjectRow): Promise<FixRepository> {
-  const repo = await throughScm(() => openFixRepository(deps, project));
+async function repositoryOf(
+  deps: FixScmDeps,
+  project: ProjectRow,
+  signal: AbortSignal,
+  options: AcceptOptions,
+): Promise<FixRepository> {
+  const open = options.openRepository ?? openFixRepository;
+  const repo = await throughScm(() => open(deps, project, { signal }));
   if (!('problem' in repo)) return repo;
   if (repo.problem === 'scm_not_bound') {
     throw conflict('SCM_NOT_BOUND', 'The project is not mapped to a repository');
@@ -507,22 +525,25 @@ async function repositoryOf(deps: FixScmDeps, project: ProjectRow): Promise<FixR
  * a file main does not have at `baseSha` is `new_file`; one main changed since is `base_outdated`
  * (ruling T3h: an older base cannot widen the hosts or sources a lockfile may use). The base files
  * may have `maxBaseBytes` together (fix round 1, I1): past it the reading stops, `too_large`. The
- * head's copy of a file is held only for its comparison.
+ * head's copy of a file is held only for its comparison. No read starts once `signal` has aborted
+ * (ruling T9k).
  */
 async function readBases(
   repo: FixRepository,
-  baseSha: string,
-  head: string,
+  upload: { baseSha: string; head: string },
   files: readonly UploadedFile[],
-  maxBaseBytes: number,
+  limits: { maxBaseBytes: number; signal: AbortSignal },
 ): Promise<FixFileChange[] | Refusal> {
+  const { baseSha, head } = upload;
   const changes: FixFileChange[] = [];
   let total = 0;
   for (const file of files) {
+    limits.signal.throwIfAborted();
     const base = await repo.fileAt(file.path, baseSha);
     if (base === null) return { rule: 'new_file', path: file.path };
     total += Buffer.byteLength(base);
-    if (total > maxBaseBytes) return { rule: 'too_large', path: file.path };
+    if (total > limits.maxBaseBytes) return { rule: 'too_large', path: file.path };
+    limits.signal.throwIfAborted();
     if (head !== baseSha && (await repo.fileAt(file.path, head)) !== base) {
       return { rule: 'base_outdated', path: file.path };
     }
@@ -537,28 +558,39 @@ async function withBases(
   project: ProjectRow,
   upload: FixUpload,
   files: readonly UploadedFile[],
-  maxBaseBytes: number,
+  read: { options: AcceptOptions; signal: AbortSignal },
 ): Promise<FixFileChange[] | Refusal> {
-  const repo = await repositoryOf(deps, project);
+  const { options, signal } = read;
+  const repo = await repositoryOf(deps, project, signal, options);
   return throughScm<FixFileChange[] | Refusal>(async () => {
     const head = await repo.branchHead(repo.mainBranch);
+    signal.throwIfAborted();
     if (head === null || !(await repo.isAncestor(upload.baseSha, head))) {
       return { rule: 'base_not_on_main', path: '' };
     }
-    return readBases(repo, upload.baseSha, head, files, maxBaseBytes);
+    const maxBaseBytes = options.maxBaseBytes ?? FIX_LIMITS.maxTotalBytes;
+    return readBases(repo, { baseSha: upload.baseSha, head }, files, { maxBaseBytes, signal });
   });
 }
 
 /**
- * Ruling T9e: `read`, or 503 `SCM_UNAVAILABLE` once `ms` have passed (the fix stays `preparing`,
- * the place in the checks is given back). The reads left behind end on their own, within their
- * request timeouts; nothing they answer is used.
+ * Rulings T9e, T9k: `read`, or 503 `SCM_UNAVAILABLE` once `ms` have passed (the fix stays
+ * `preparing`). Then the reads are given up through the phase's signal (the request in flight is
+ * cut, no later one is sent), and `phase.abandoned` settles once they have stopped; the upload
+ * keeps its place in the checks until then. Nothing they answer is used.
  */
-async function withinDeadline<T>(read: Promise<T>, ms: number): Promise<T> {
+async function withinDeadline<T>(read: Promise<T>, ms: number, phase: ReadPhase): Promise<T> {
   read.catch(() => undefined);
   let timer: NodeJS.Timeout | undefined;
   const passed = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(scmUnavailable(null)), ms);
+    timer = setTimeout(() => {
+      reject(scmUnavailable(null));
+      phase.abandoned = read.then(
+        () => undefined,
+        () => undefined,
+      );
+      phase.controller.abort();
+    }, ms);
   });
   try {
     return await Promise.race([read, passed]);
@@ -577,17 +609,15 @@ async function basesOrEnd(
   project: ProjectRow,
   upload: FixUpload,
   files: readonly UploadedFile[],
-  options: AcceptOptions,
+  read: { options: AcceptOptions; phase: ReadPhase },
 ): Promise<FixFileChange[] | Refusal | { ended: FixState }> {
-  const read = withBases(
-    deps,
-    project,
-    upload,
-    files,
-    options.maxBaseBytes ?? FIX_LIMITS.maxTotalBytes,
-  );
+  const { options, phase } = read;
+  const reading = withBases(deps, project, upload, files, {
+    options,
+    signal: phase.controller.signal,
+  });
   try {
-    return await withinDeadline(read, options.readDeadlineMs ?? FIX_READ_DEADLINE_MS);
+    return await withinDeadline(reading, options.readDeadlineMs ?? FIX_READ_DEADLINE_MS, phase);
   } catch (err) {
     if (!(err instanceof AttemptEnded)) throw err;
     return { ended: await endFix(attempt, 'failed', err.failure) };
@@ -660,14 +690,15 @@ async function checkedUpload(
   attempt: Attempt,
   project: ProjectRow,
   upload: FixUpload,
-  options: AcceptOptions,
+  read: { options: AcceptOptions; phase: ReadPhase },
 ): Promise<FixState> {
+  const { options } = read;
   const { fix } = attempt;
   const files = shapeOf(fix.family, upload.files);
   if (isRefusal(files)) return refuse(attempt, files);
   const rows = await checkTargets(attempt.db, fix, upload, files);
   if (isRefusal(rows)) return refuse(attempt, rows);
-  const changes = await basesOrEnd(deps, attempt, project, upload, files, options);
+  const changes = await basesOrEnd(deps, attempt, project, upload, files, read);
   if ('ended' in changes) return changes.ended;
   if (isRefusal(changes)) return refuse(attempt, changes);
   const checked = await checkUploadInWorker(
@@ -697,7 +728,8 @@ function checkBusy(why: FixCheckBusy): ProblemError {
  * The files of a prepared fix, admitted first (rulings T9a, T9e): one upload per organisation and
  * at most eight waiting behind the running check, else 503 `FIX_CHECK_BUSY` before any SCM call or
  * state change (the fix stays `preparing`, its lease valid). The place is held until the upload is
- * answered, {@link checkedUpload} in between; the SCM reads have a deadline.
+ * answered, {@link checkedUpload} in between, and past it while reads given up at the SCM read
+ * deadline are still stopping (ruling T9k).
  */
 async function acceptUpload(
   deps: FixScmDeps,
@@ -708,10 +740,13 @@ async function acceptUpload(
 ): Promise<FixState> {
   const admitted = (options.gate ?? fixCheckGate).admit(project.organizationId);
   if ('busy' in admitted) throw checkBusy(admitted.busy);
+  const phase: ReadPhase = { controller: new AbortController(), abandoned: null };
   try {
-    return await checkedUpload(deps, attempt, project, upload, options);
+    return await checkedUpload(deps, attempt, project, upload, { options, phase });
   } finally {
-    admitted.release();
+    // Ruling T9k: reads given up at the deadline keep the place until they have stopped.
+    if (phase.abandoned === null) admitted.release();
+    else void phase.abandoned.then(admitted.release);
   }
 }
 

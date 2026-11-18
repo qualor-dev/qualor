@@ -96,14 +96,27 @@ async function githubRepository(
   };
 }
 
+/** The SCM settings of the repository's client, bound to `signal` when one is given. */
+function boundTo(scm: ScmDeps, signal: AbortSignal | undefined): ScmDeps {
+  if (signal === undefined) return scm;
+  return {
+    ...scm,
+    clientOptions: { ...scm.clientOptions, signal },
+    githubClientOptions: { ...scm.githubClientOptions, signal },
+  };
+}
+
 /**
  * The fix repository of the project as it is mapped now: the project's binding and its
  * connection's `fix_mrs_allowed` are read again (fail closed), never taken from `project`. A
- * GitHub repository costs one request to bind the client; an SCM error of it is thrown.
+ * GitHub repository costs one request to bind the client; an SCM error of it is thrown. With a
+ * `signal`, every request of the repository is given up once it aborts (ruling T9k): the one in
+ * flight is cut and no later one is sent.
  */
 export async function openFixRepository(
   deps: FixScmDeps,
   project: ProjectRow,
+  options: { signal?: AbortSignal } = {},
 ): Promise<FixRepository | { problem: FixRepositoryProblem }> {
   const [row] = await deps.db
     .select({
@@ -116,7 +129,8 @@ export async function openFixRepository(
     .where(eq(projects.id, project.id));
   if (!row || row.ref === null) return { problem: 'scm_not_bound' };
   if (!row.connection.fixMrsAllowed) return { problem: 'fixes_disabled' };
+  const bound = { ...deps, scm: boundTo(deps.scm, options.signal) };
   return row.connection.provider === 'github'
-    ? githubRepository(row.connection, deps, row.ref, row.mainBranch)
-    : gitlabRepository(row.connection, deps, row.ref, row.mainBranch);
+    ? githubRepository(row.connection, bound, row.ref, row.mainBranch)
+    : gitlabRepository(row.connection, bound, row.ref, row.mainBranch);
 }

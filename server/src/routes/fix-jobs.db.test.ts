@@ -21,6 +21,7 @@ import {
 } from '../db/schema';
 import { fixCheckGate } from '../fixes/checker';
 import { FIX_QUEUE } from '../fixes/jobs';
+import { openFixRepository } from '../fixes/repository';
 import { acceptFixResult } from '../fixes/result';
 import { ProblemError } from '../http/problem';
 
@@ -1068,9 +1069,82 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
       'SCM_UNAVAILABLE',
       '10',
     ]);
-    expect(fixCheckGate.admitted).toBe(0);
+    // Ruling T9k: the place is given back once the aborted read has stopped, a moment later.
+    await vi.waitFor(() => expect(fixCheckGate.admitted).toBe(0));
     expect(await row(item.id)).toEqual(fix);
     open();
+    const res = await result(item.id, upload(item));
+    expect(res.statusCode, res.body).toBe(202);
+  });
+
+  it('reads given up at the deadline stop: no SCM request after it (ruling T9k)', async () => {
+    const item = await claimQfA();
+    const fix = await row(item.id);
+    // Main's head read is held: the deadline passes while it is in flight.
+    let open: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    opens.push(open);
+    fake.inject('GET', /\/repository\/branches\/main$/, {
+      status: 200,
+      passThrough: true,
+      before: () => held,
+    });
+    const error = (await acceptFixResult(
+      scmDeps(),
+      fix,
+      await projectRow(),
+      fixResultBodySchema.parse(upload(item)),
+      { readDeadlineMs: 300 },
+    ).catch((e: unknown) => e)) as ProblemError;
+    expect([error.status, error.code]).toEqual([503, 'SCM_UNAVAILABLE']);
+    const seen = fake.requests.length;
+    open();
+    // Time for a read left running to go on to its next request.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(fake.requests.slice(seen)).toEqual([]);
+    expect(fake.requests.some((r) => r.path.endsWith('/raw'))).toBe(false);
+    await vi.waitFor(() => expect(fixCheckGate.admitted).toBe(0));
+    expect(await row(item.id)).toEqual(fix);
+  });
+
+  it('the place in the checks waits for reads given up at the deadline to stop (ruling T9k)', async () => {
+    const item = await claimQfA();
+    const fix = await row(item.id);
+    let settle: () => void = () => undefined;
+    const stuck = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    opens.push(settle);
+    // A read that does not hear the signal: it stops only when the test lets it.
+    const openRepository: typeof openFixRepository = async (deps, p, o) => {
+      const repo = await openFixRepository(deps, p, o);
+      if ('problem' in repo) return repo;
+      return {
+        ...repo,
+        branchHead: async (name: string) => {
+          await stuck;
+          return repo.branchHead(name);
+        },
+      };
+    };
+    const error = (await acceptFixResult(
+      scmDeps(),
+      fix,
+      await projectRow(),
+      fixResultBodySchema.parse(upload(item)),
+      { readDeadlineMs: 300, openRepository },
+    ).catch((e: unknown) => e)) as ProblemError;
+    expect([error.status, error.code]).toEqual([503, 'SCM_UNAVAILABLE']);
+    expect(fixCheckGate.admitted).toBe(1);
+    // The same organisation's next upload waits while the given-up read is pending.
+    expect(problem(await result(item.id, upload(item)))).toEqual([503, 'FIX_CHECK_BUSY', null]);
+    const seen = fake.requests.length;
+    settle();
+    await vi.waitFor(() => expect(fixCheckGate.admitted).toBe(0));
+    // The read it let go sent nothing: its client had been given up.
+    expect(fake.requests.slice(seen)).toEqual([]);
     const res = await result(item.id, upload(item));
     expect(res.statusCode, res.body).toBe(202);
   });

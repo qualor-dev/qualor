@@ -346,6 +346,11 @@ export interface GitLabClientOptions {
   maxRequests?: number;
   /** The clock a membership's last day is compared with; `Date.now` unless a test sets one. */
   now?: () => number;
+  /**
+   * Gives up every request of this client once it aborts: one in flight is cut, a later one is
+   * not sent (0.16 fix MRs, ruling T9k: the upload check's read deadline).
+   */
+  signal?: AbortSignal;
 }
 
 /** Seconds from `Retry-After` (seconds or an HTTP date), else `RateLimit-Reset` (epoch seconds). */
@@ -507,6 +512,7 @@ export class GitLabClient {
         maxResponseBytes: maxResponseBytes ?? MAX_GITLAB_RESPONSE_BYTES,
         overflow: 'fail',
         names: { noun: 'GitLab', target: 'GitLab' },
+        ...(this.options.signal ? { signal: this.options.signal } : {}),
       },
     );
   }

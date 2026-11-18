@@ -452,6 +452,11 @@ export interface GitHubClientOptions {
   /** The worker's per-process cache and pacer (scm/runtime.ts); fresh ones otherwise. */
   tokens?: InstallationTokenCache;
   pacer?: MutationPacer;
+  /**
+   * Gives up every request of this client once it aborts: one in flight is cut, a later one is
+   * not sent (0.16 fix MRs, ruling T9k: the upload check's read deadline).
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -877,6 +882,7 @@ export class GitHubClient {
         maxResponseBytes: options.maxResponseBytes ?? MAX_GITHUB_RESPONSE_BYTES,
         overflow: 'fail',
         names: { noun: 'GitHub', target: 'GitHub' },
+        ...(this.options.signal ? { signal: this.options.signal } : {}),
       },
     );
   }
