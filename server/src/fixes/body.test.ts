@@ -350,3 +350,101 @@ describe('fixBody: every value is inert (spec §6.7, scm.md §6)', () => {
     expectInert(body);
   });
 });
+
+describe('fixBody: a bounded body (ruling T10d)', () => {
+  const LAST =
+    'Qualor keeps this MR current and closes it when the vulnerability is gone. Push to this branch to take it over.';
+  const long = (prefix: string, i: number) => `${prefix}-${i}-${'x'.repeat(300)}`;
+
+  it('caps the version and lockfile lines at 30 each, then how many more, and drops duplicate targets', () => {
+    const targets = Array.from({ length: 40 }, (_, i) => ({
+      installed: `1.0.${i}`,
+      target: `1.1.${i}`,
+      lockfile: `p${i}/package-lock.json`,
+    }));
+    const body = fixBody({
+      ...base,
+      targets: [targets[0]!, ...targets, targets[1]!],
+      lockfiles: targets.map((t) => ({
+        path: t.lockfile,
+        relation: 'direct' as const,
+        mechanism: null,
+        dependents: [],
+      })),
+    });
+    const lines = body.split('\n');
+    expect(lines.filter((l) => l.startsWith('**Versions:**'))).toHaveLength(30);
+    expect(lines.filter((l) => l.startsWith('**Versions:** ` 1.0.0 `'))).toHaveLength(1);
+    expect(body).toContain(
+      '**Versions:** ` 1.0.29 ` → ` 1.1.29 ` in ` p29/package-lock.json `\\\nand 10 more',
+    );
+    expect(lines.filter((l) => / `: direct$/.test(l))).toHaveLength(30);
+    expect(body).toContain('- ` p29/package-lock.json `: direct\n- and 10 more');
+    expectInert(body);
+    expect(html(body)).toMatch(/<code>p29\/package-lock\.json<\/code><br>\s*and 10 more/);
+  });
+
+  it('caps the targets a transitive pin names', () => {
+    const targets = Array.from({ length: 12 }, (_, i) => ({
+      installed: `${i}.0.0`,
+      target: `${i}.0.1`,
+      lockfile: 'package-lock.json',
+    }));
+    const body = fixBody({
+      ...base,
+      targets,
+      lockfiles: [
+        {
+          path: 'package-lock.json',
+          relation: 'transitive',
+          mechanism: 'overrides',
+          dependents: [],
+        },
+      ],
+    });
+    expect(body).toContain(
+      'bring ` 0.0.1 ` or ` 1.0.1 ` or ` 2.0.1 ` or ` 3.0.1 ` or ` 4.0.1 ` (and 7 more) or later',
+    );
+  });
+
+  it('keeps a body of 1 000 targets and lockfiles with long paths within 60 000 characters', () => {
+    const n = 1_000;
+    const targets = Array.from({ length: n }, (_, i) => ({
+      installed: `1.0.${i}`,
+      target: `2.0.${i}`,
+      lockfile: long('pkg', i),
+    }));
+    const body = fixBody({
+      ...base,
+      targets,
+      majorJumps: targets,
+      lockfiles: targets.map((t, i) => ({
+        path: t.lockfile,
+        relation: 'transitive' as const,
+        mechanism: long('mechanism', i),
+        dependents: Array.from({ length: 5 }, (_, d) => long(`dep${d}`, i)),
+      })),
+      vulnerabilities: Array.from({ length: 60 }, (_, i) => ({
+        id: `CVE-2026-${10_000 + i}`,
+        severity: 'high' as const,
+        title: long('title', i),
+        url: `https://advisories.example/${'a'.repeat(400)}/${i}`,
+      })),
+      unfixable: Array.from({ length: 60 }, (_, i) => ({
+        id: long('GHSA', i),
+        severity: 'low' as const,
+        title: null,
+        url: null,
+      })),
+      additions: targets.slice(0, 50).map((t, i) => ({
+        path: t.lockfile,
+        entries: [{ slot: long('slot', i), name: long('name', i), version: '1.0.0' }],
+      })),
+    });
+    expect(body.length).toBeLessThanOrEqual(60_000);
+    expect(body.endsWith(`\n\n${LAST}`)).toBe(true);
+    expectInert(body);
+    // Cut at whole lines: no line ends in a hard break before the blank line of the end.
+    expect(body).not.toContain('\\\n\n');
+  });
+});

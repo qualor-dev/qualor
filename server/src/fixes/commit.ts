@@ -1,5 +1,6 @@
 import { releaseLine, schemeOf, scrubToolOutput, type FixFamily } from '@qualor/shared/fix';
 import { and, eq, sql } from 'drizzle-orm';
+import type { PgUpdateSetSource } from 'drizzle-orm/pg-core';
 import { toStorableText } from '../audit/canonical';
 import type { Db } from '../db/client';
 import {
@@ -17,7 +18,7 @@ import { ScmError } from '../scm/provider';
 import { decorationRetryDelaySeconds, MAX_DECORATION_ATTEMPTS } from '../scm/queue';
 import { retryable } from '../scm/runtime';
 import { cancelComment, fixBody, fixTitle, type FixBodyVulnerability } from './body';
-import { claimVulnerabilities, hasOpenMr } from './claim';
+import { claimVulnerabilities } from './claim';
 import { mainVulnerabilities } from './eligibility';
 import { enqueueFixJob, type FixJobPayload } from './jobs';
 import {
@@ -32,8 +33,9 @@ import type { FixJobDeps } from './run';
 
 /**
  * The commit and close jobs of a fix (0.16 fix MRs §6.7, B10, R8, R10, R13, R17, rulings F7, F8,
- * F10, T8c). Every state write is fenced on the job's `(id, generation)` and the state it read, so a
- * job of a fix that a person re-armed or cancelled meanwhile changes nothing.
+ * F10, T8c, T10d). Every state write is fenced on the job's `(id, generation)` and the state it
+ * read, so a job of a fix that a person re-armed or cancelled meanwhile changes nothing; a write
+ * whose fence misses stops the job before any further SCM write ({@link FixMovedOn}).
  */
 
 /** One `commit` or `close` job: its fix, the generation it was queued for, the attempts before it. */
@@ -114,35 +116,73 @@ function scmFailure(err: ScmError): FixFailure {
 // ─── The commit job's state writes ───────────────────────────────────────────
 
 /**
+ * Ruling T10d: a fenced write matched no row: the fix moved on (a re-arm, a cancel, an end) while
+ * the job ran. The job stops there, with no further SCM write.
+ */
+class FixMovedOn extends Error {
+  constructor(readonly fixId: string) {
+    super(`fix ${fixId} moved on while its job ran`);
+    this.name = 'FixMovedOn';
+  }
+}
+
+/** One write of the job, fenced ({@link fence}); the state it left, or {@link FixMovedOn}. */
+async function fencedWrite(
+  db: Db,
+  row: DependencyFixRow,
+  set: PgUpdateSetSource<typeof dependencyFixes>,
+): Promise<FixState> {
+  const [written] = await db
+    .update(dependencyFixes)
+    .set({ ...set, updatedAt: sql`now()` })
+    .where(fence(row))
+    .returning({ state: dependencyFixes.state });
+  if (written === undefined) throw new FixMovedOn(row.id);
+  return written.state;
+}
+
+/**
  * Ends the commit with `set`: the prepared files cleared, `refresh` off. Fenced on the job's
  * generation while `committing`.
  */
-async function settle(
+const settle = (
   db: Db,
   row: CommittingFix,
   set: Pick<typeof dependencyFixes.$inferInsert, 'state'> &
     Partial<typeof dependencyFixes.$inferInsert>,
-): Promise<FixState> {
-  await db
-    .update(dependencyFixes)
-    .set({ refresh: false, prepared: null, failure: null, updatedAt: sql`now()`, ...set })
-    .where(fence(row));
-  return set.state;
-}
+): Promise<FixState> =>
+  fencedWrite(db, row, { refresh: false, prepared: null, failure: null, ...set });
+
+/**
+ * R8 (`hasOpenMr`), read from the row as it is stored now, not from the job's first read: an MR
+ * adopted by its branch during the job counts (ruling T10d).
+ */
+const OPEN_WITH_MR = sql<FixState>`CASE WHEN ${dependencyFixes.mrNumber} IS NOT NULL
+  AND ${dependencyFixes.headSha} IS NOT NULL THEN 'open' ELSE 'failed' END`;
 
 /**
  * The commit failed: `failed` with its failure, or (R8, ruling F7) for a fix with an MR Qualor
  * keeps, `open` with the failure shown, so the MR is neither orphaned nor left to a failed row.
  */
 const failCommit = (db: Db, row: CommittingFix, failure: FixFailure): Promise<FixState> =>
-  settle(db, row, { state: hasOpenMr(row) ? 'open' : 'failed', failure: stored(failure) });
+  fencedWrite(db, row, {
+    state: OPEN_WITH_MR,
+    refresh: false,
+    prepared: null,
+    failure: stored(failure),
+  });
 
 /** R13: Qualor's commit is on the branch before the MR is written; its sha is stored at once. */
 async function storeHead(db: Db, row: CommittingFix, sha: string): Promise<void> {
-  await db
-    .update(dependencyFixes)
-    .set({ headSha: sha, updatedAt: sql`now()` })
-    .where(fence(row));
+  await fencedWrite(db, row, { headSha: sha });
+}
+
+/**
+ * Ruling T10d: an MR adopted by its branch (the fix had no number) is the fix's at once, before
+ * any branch write, so a failure after it keeps the fix `open` with it (F7, R8).
+ */
+async function storeChange(db: Db, row: CommittingFix, change: ChangeRequest): Promise<void> {
+  await fencedWrite(db, row, { mrNumber: change.number, mrUrl: change.url });
 }
 
 // ─── The MR text ─────────────────────────────────────────────────────────────
@@ -260,6 +300,7 @@ async function writeFix(
 ): Promise<FixState> {
   const { row } = loaded;
   const change = await currentChange(repo, row);
+  if (change !== null && row.mrNumber === null) await storeChange(deps.db, row, change);
   const before = await endBeforeWrite(deps.db, repo, row, change);
   if ('ended' in before) return before.ended;
   const title = titleOf(row);
@@ -275,6 +316,26 @@ async function writeFix(
   const body = await bodyOf(deps, loaded, repo.provider);
   const open = await writeChange(repo, row, change, { title, body });
   return settle(deps.db, row, { state: 'open', mrNumber: open.number, mrUrl: open.url });
+}
+
+/**
+ * Ruling T10d: runs the job; one whose fix moved on ({@link FixMovedOn}) stops with one info line
+ * and no further write.
+ */
+async function untilMovedOn(
+  deps: FixJobDeps,
+  payload: JobPayload,
+  run: () => Promise<void>,
+): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    if (!(err instanceof FixMovedOn)) throw err;
+    deps.logger?.info(
+      { fixId: payload.fixId, kind: payload.kind },
+      'fix job stopped: the fix moved on while it ran',
+    );
+  }
 }
 
 // ─── Slots and retries (R17) ─────────────────────────────────────────────────
@@ -371,14 +432,16 @@ export async function runFixCommit(deps: FixJobDeps, job: FixJob): Promise<void>
     project: loaded.project,
   };
   const payload: JobPayload = { kind: 'commit', ...job };
-  await withSlot(deps, loaded.project, payload, () =>
-    againstRepository(deps, loaded, payload, {
-      work: async (repo) => {
-        const state = await writeFix(deps, committing, repo);
-        deps.logger?.info({ fixId: job.fixId, state }, 'fix commit job');
-      },
-      fail: (failure) => failCommit(deps.db, committing.row, failure),
-    }),
+  await untilMovedOn(deps, payload, () =>
+    withSlot(deps, loaded.project, payload, () =>
+      againstRepository(deps, loaded, payload, {
+        work: async (repo) => {
+          const state = await writeFix(deps, committing, repo);
+          deps.logger?.info({ fixId: job.fixId, state }, 'fix commit job');
+        },
+        fail: (failure) => failCommit(deps.db, committing.row, failure),
+      }),
+    ),
   );
 }
 
@@ -386,10 +449,7 @@ export async function runFixCommit(deps: FixJobDeps, job: FixJob): Promise<void>
 
 /** A close that could not be done is shown on the cancelled fix (its MR may still be open). */
 async function noteCloseFailure(db: Db, row: DependencyFixRow, failure: FixFailure): Promise<void> {
-  await db
-    .update(dependencyFixes)
-    .set({ failure: stored(failure), updatedAt: sql`now()` })
-    .where(fence(row));
+  await fencedWrite(db, row, { failure: stored(failure) });
 }
 
 /**
@@ -420,10 +480,12 @@ export async function runFixClose(deps: FixJobDeps, job: FixJob): Promise<void> 
   const mrNumber = loaded?.row.mrNumber ?? null;
   if (loaded === null || mrNumber === null) return;
   const payload: JobPayload = { kind: 'close', ...job };
-  await withSlot(deps, loaded.project, payload, () =>
-    againstRepository(deps, loaded, payload, {
-      work: (repo) => closeCancelled(repo, loaded.row, mrNumber),
-      fail: (failure) => noteCloseFailure(deps.db, loaded.row, failure),
-    }),
+  await untilMovedOn(deps, payload, () =>
+    withSlot(deps, loaded.project, payload, () =>
+      againstRepository(deps, loaded, payload, {
+        work: (repo) => closeCancelled(repo, loaded.row, mrNumber),
+        fail: (failure) => noteCloseFailure(deps.db, loaded.row, failure),
+      }),
+    ),
   );
 }

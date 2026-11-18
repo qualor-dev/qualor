@@ -741,4 +741,64 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
       expect(ended.failure?.code).toBe('scm_refused');
     });
   });
+
+  describe('ruling T10d', () => {
+    it('F7: an MR adopted by its branch is stored, so a later 403 keeps the fix open with it', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const first = await row(fixId);
+      // Cancel, then Retry before the close job: the MR number is cleared (ruling T8c).
+      for (const [method, url] of [
+        ['DELETE', `/api/v0/fixes/${fixId}`],
+        ['POST', `/api/v0/fixes/${fixId}/retry`],
+      ] as const) {
+        const res = await h.ctx.app.inject({ method, url, headers: h.orgAdmin.headers });
+        expect(res.statusCode, res.body).toBeLessThan(300);
+      }
+      await upload(repo, await claim(repo));
+      fake.inject('POST', /\/repository\/commits$/, { status: 403 });
+      await runFixJobs();
+
+      const kept = await row(fixId);
+      expect(kept).toMatchObject({
+        state: 'open',
+        refresh: false,
+        mrNumber: first.mrNumber,
+        mrUrl: first.mrUrl,
+        headSha: first.headSha,
+        prepared: null,
+      });
+      expect(kept.failure?.code).toBe('scm_permission');
+      expect(fake.mergeRequestsOf(repo.gitlabId)[0]!.state).toBe('opened');
+    });
+
+    it('a fence that misses after the branch write stops the job: no MR is opened or updated', async () => {
+      const repo = await freshRepo();
+      const fixId = await accepted(repo);
+      // The fix moves on (its generation is raised) while the branch is written.
+      fake.inject('POST', /\/repository\/commits$/, {
+        status: 201,
+        passThrough: true,
+        before: async () => {
+          await db()
+            .update(dependencyFixes)
+            .set({ generation: sql`${dependencyFixes.generation} + 1` })
+            .where(eq(dependencyFixes.id, fixId));
+        },
+      });
+      fake.clearRequests();
+      await runFixJobs();
+
+      expect(commitRequests()).toHaveLength(1);
+      expect(mrWrites()).toEqual([]);
+      expect(fake.mergeRequestsOf(repo.gitlabId)).toEqual([]);
+      expect(await row(fixId)).toMatchObject({
+        state: 'committing',
+        generation: 2,
+        headSha: null,
+        mrNumber: null,
+      });
+      expect(await queuedJob(fixId)).toEqual([]);
+    });
+  });
 });

@@ -1086,6 +1086,25 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
       expect(await client().openMergeRequestFrom(ref, source, 'main')).toBeNull();
     });
 
+    it('T10d: a row with null project ids is skipped, never the whole list refused', async () => {
+      const row = (iid: number, ids: Record<string, number | null>) => ({
+        ...(gitlabShape('merge_request') as Record<string, unknown>),
+        iid,
+        state: 'opened',
+        ...ids,
+      });
+      fake.inject('GET', new RegExp(`^/projects/${P}/merge_requests$`), {
+        status: 200,
+        body: [
+          row(905, { source_project_id: null, target_project_id: null, project_id: null }),
+          row(906, { source_project_id: 7, target_project_id: null, project_id: null }),
+          row(907, { source_project_id: 7, target_project_id: 7, project_id: 7 }),
+        ],
+      });
+      const found = await client().openMergeRequestFrom(String(P), 'qualor/fix/js/t10d', 'main');
+      expect(found?.iid).toBe(907);
+    });
+
     it('reads a detailed_merge_status of conflict as a conflict', async () => {
       fake.inject('GET', new RegExp(`^/projects/${P}/merge_requests/\\d+$`), {
         status: 200,

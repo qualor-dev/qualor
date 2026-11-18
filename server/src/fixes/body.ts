@@ -1,6 +1,7 @@
 import type { FixLockfileAdditions, FixPreparedValue, FixTargetValue } from '../db/schema';
 import {
   codeSpan,
+  linesWithinBytes,
   MAX_PATH_CHARS,
   MAX_VALUE_CHARS,
   plainValue,
@@ -49,6 +50,15 @@ export interface FixBodyInput {
 export const MAX_SHOWN_ADDITIONS = 30;
 /** Rows of the vulnerability table, and ids of the unfixable line, at most (a body is bounded). */
 export const MAX_SHOWN_VULNERABILITIES = 50;
+/** Ruling T10d: version lines, lockfile lines and major version pairs the body shows at most each. */
+export const MAX_SHOWN_LINES = 30;
+/** Ruling T10d: the versions a transitive pin's line names at most. */
+const MAX_PIN_TARGETS = 5;
+/**
+ * Ruling T10d: the whole body, at most, cut at whole lines with its last sentence kept. GitHub
+ * takes 65 536 characters in a pull request's body; GitLab takes more.
+ */
+export const MAX_BODY_CHARS = 60_000;
 /** A version as a title or a body shows it, at most. */
 const VERSION_CHARS = 64;
 
@@ -59,7 +69,7 @@ const path = (value: string): string => codeSpan(value, MAX_PATH_CHARS);
 
 /**
  * R30: `Bump <pkg> from <installed> to <target>`, the commit message and the MR title. One line of
- * at most 236 characters (GitLab takes 255): each value through `plainValue`.
+ * at most 243 characters (GitLab takes 255): each value through `plainValue`.
  */
 export function fixTitle(packageName: string, installed: string, target: string): string {
   const name = plainValue(packageName, MAX_VALUE_CHARS);
@@ -133,19 +143,54 @@ function unfixableLines(unfixable: readonly FixBodyVulnerability[]): string[] {
   return [`**No fixed version yet:** ${[...shown, ...(more === '' ? [] : [more])].join(', ')}`];
 }
 
-/** B3: one line per target, each but the last ended by a hard break (GitLab joins soft lines). */
-function versionLines(targets: readonly FixTargetValue[]): string[] {
-  return targets.map(
-    (t, i) =>
-      `**Versions:** ${version(t.installed)} → ${version(t.target)} in ${path(t.lockfile)}${i < targets.length - 1 ? '\\' : ''}`,
-  );
+/** Ruling T10d: each target once (the upload may name one twice). */
+function uniqueTargets(targets: readonly FixTargetValue[]): FixTargetValue[] {
+  const seen = new Set<string>();
+  return targets.filter((t) => {
+    const key = JSON.stringify([t.installed, t.target, t.lockfile]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
-/** The targets a lockfile's pin must reach: those named for it, else every target. */
+/**
+ * Ruling T10d: the lines of the first {@link MAX_SHOWN_LINES} items, then `more(hidden)` when some
+ * are left out.
+ */
+function capped<T>(
+  items: readonly T[],
+  render: (item: T) => string,
+  more: (hidden: number) => string,
+): string[] {
+  const lines = items.slice(0, MAX_SHOWN_LINES).map(render);
+  const hidden = items.length - lines.length;
+  return hidden > 0 ? [...lines, more(hidden)] : lines;
+}
+
+/**
+ * B3: one line per target (at most {@link MAX_SHOWN_LINES}, then `and N more`), each but the last
+ * ended by a hard break (GitLab joins soft lines).
+ */
+function versionLines(targets: readonly FixTargetValue[]): string[] {
+  const lines = capped(
+    targets,
+    (t) => `**Versions:** ${version(t.installed)} → ${version(t.target)} in ${path(t.lockfile)}`,
+    (hidden) => andMore(hidden),
+  );
+  return lines.map((line, i) => (i < lines.length - 1 ? `${line}\\` : line));
+}
+
+/**
+ * The targets a lockfile's pin must reach: those named for it, else every target; at most
+ * {@link MAX_PIN_TARGETS}, then how many more.
+ */
 function pinTargets(lockfile: string, targets: readonly FixTargetValue[]): string {
   const own = targets.filter((t) => t.lockfile === lockfile);
   const values = [...new Set((own.length > 0 ? own : targets).map((t) => t.target))];
-  return values.map(version).join(' or ');
+  const shown = values.slice(0, MAX_PIN_TARGETS).map(version).join(' or ');
+  const more = andMore(values.length - MAX_PIN_TARGETS);
+  return more === '' ? shown : `${shown} (${more})`;
 }
 
 /** Who must bring the target before the pin can go: the dependents, else fixed words. */
@@ -164,11 +209,16 @@ function relationText(lockfile: FixLockfile, targets: readonly FixTargetValue[])
   return `transitive — pinned through ${mechanism}; remove the pin when ${dependentsText(lockfile.dependents)} ${pinTargets(lockfile.path, targets)} or later`;
 }
 
+/** One line per lockfile, at most {@link MAX_SHOWN_LINES}, then `- and N more`. */
 function lockfileLines(
   lockfiles: readonly FixLockfile[],
   targets: readonly FixTargetValue[],
 ): string[] {
-  return lockfiles.map((l) => `- ${path(l.path)}: ${relationText(l, targets)}`);
+  return capped(
+    lockfiles,
+    (l) => `- ${path(l.path)}: ${relationText(l, targets)}`,
+    (hidden) => `- ${andMore(hidden)}`,
+  );
 }
 
 type LockEntry = FixLockfileAdditions['entries'][number];
@@ -199,9 +249,14 @@ function additionLines(additions: readonly FixLockfileAdditions[]): string[] {
   return ['**New in the lockfile:**', ...lines, ...(more === '' ? [] : [`- ${more}`])];
 }
 
+/** The major version warning, its pairs at most {@link MAX_SHOWN_LINES}, then `and N more`. */
 function majorLines(majorJumps: readonly FixTargetValue[]): string[] {
   if (majorJumps.length === 0) return [];
-  const pairs = majorJumps.map((t) => `${version(t.installed)} → ${version(t.target)}`).join(', ');
+  const pairs = capped(
+    majorJumps,
+    (t) => `${version(t.installed)} → ${version(t.target)}`,
+    (hidden) => andMore(hidden),
+  ).join(', ');
   return [`> **Major version change:** ${pairs} may need code changes.`];
 }
 
@@ -211,27 +266,38 @@ function qualorLines(url: string | null): string[] {
 }
 
 /**
- * spec §6.7, B3, R29, ruling T3i: the MR body, its parts separated by blank lines and the empty
- * ones left out: the vulnerabilities fixed (a table), the unfixable ones, one version line per
- * target, each lockfile direct or transitive, the lockfiles' new entries, a major version
+ * Ruling T10d: the parts, separated by blank lines, within {@link MAX_BODY_CHARS} with `last`
+ * after them: cut at whole lines (no code span or table row is cut open), and a hard break left
+ * last by the cut taken off, as no line follows it.
+ */
+function bounded(parts: readonly string[][], last: string): string {
+  const lines = parts
+    .filter((part) => part.length > 0)
+    .flatMap((part, i) => (i === 0 ? part : ['', ...part]));
+  const head = linesWithinBytes(lines, MAX_BODY_CHARS - last.length - 2).trimEnd();
+  const kept = head.endsWith('\\') ? head.slice(0, -1) : head;
+  return kept === '' ? last : `${kept}\n\n${last}`;
+}
+
+/**
+ * spec §6.7, B3, R29, rulings T3i, T10d: the MR body, its parts separated by blank lines and the
+ * empty ones left out: the vulnerabilities fixed (a table), the unfixable ones, one version line
+ * per target, each lockfile direct or transitive, the lockfiles' new entries, a major version
  * warning, the link to the project's Vulnerabilities tab, and the sentence that says how Qualor
- * keeps the MR ("PR" on GitHub).
+ * keeps the MR ("PR" on GitHub), which always stays. At most {@link MAX_BODY_CHARS} in all.
  */
 export function fixBody(input: FixBodyInput): string {
-  const parts = [
-    vulnerabilityTable(input.vulnerabilities),
-    unfixableLines(input.unfixable),
-    versionLines(input.targets),
-    lockfileLines(input.lockfiles, input.targets),
-    additionLines(input.additions),
-    majorLines(input.majorJumps),
-    qualorLines(input.vulnerabilitiesUrl),
+  const targets = uniqueTargets(input.targets);
+  return bounded(
     [
-      `Qualor keeps this ${changeWord(input.provider)} current and closes it when the vulnerability is gone. Push to this branch to take it over.`,
+      vulnerabilityTable(input.vulnerabilities),
+      unfixableLines(input.unfixable),
+      versionLines(targets),
+      lockfileLines(input.lockfiles, targets),
+      additionLines(input.additions),
+      majorLines(input.majorJumps),
+      qualorLines(input.vulnerabilitiesUrl),
     ],
-  ];
-  return parts
-    .filter((lines) => lines.length > 0)
-    .map((lines) => lines.join('\n'))
-    .join('\n\n');
+    `Qualor keeps this ${changeWord(input.provider)} current and closes it when the vulnerability is gone. Push to this branch to take it over.`,
+  );
 }

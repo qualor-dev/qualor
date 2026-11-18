@@ -111,19 +111,21 @@ const mergeRequestStateShape = z.looseObject({
   has_conflicts: z.boolean().nullish(),
   detailed_merge_status: z.string().nullish(),
   /** The project of the source branch: a fork's for a merge request from a fork (ruling T10a). */
-  source_project_id: z.number().int().optional(),
-  target_project_id: z.number().int().optional(),
-  project_id: z.number().int().optional(),
+  source_project_id: z.number().int().nullish(),
+  target_project_id: z.number().int().nullish(),
+  project_id: z.number().int().nullish(),
 });
 type MergeRequestStateAnswer = z.infer<typeof mergeRequestStateShape>;
 
 /**
  * Ruling T10a: the merge request's source branch is in its own project, not in a fork: a fork's
- * merge request from a branch of the same name is someone else's. An answer without the ids is not.
+ * merge request from a branch of the same name is someone else's. A row without the ids (absent
+ * or null, ruling T10d) is not, and is skipped.
  */
-const fromOwnProject = (mr: MergeRequestStateAnswer): boolean =>
-  mr.source_project_id !== undefined &&
-  mr.source_project_id === (mr.target_project_id ?? mr.project_id);
+function fromOwnProject(mr: MergeRequestStateAnswer): boolean {
+  const target = mr.target_project_id ?? mr.project_id;
+  return typeof mr.source_project_id === 'number' && mr.source_project_id === target;
+}
 const branchAnswer = z.looseObject({ commit: z.looseObject({ id: z.string() }) });
 const commitAnswer = z.looseObject({ id: z.string() });
 const mergeBaseAnswer = z.looseObject({ id: z.string() });
