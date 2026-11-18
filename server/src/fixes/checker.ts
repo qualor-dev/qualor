@@ -9,8 +9,8 @@ import type { FixCheckAnswer, FixCheckJob } from './check-worker';
  * answered, so its memory goes with it. One check runs at a time per server process; later uploads
  * wait for it, in order. A check that passes its time cap, overflows its heap or crashes is
  * refused as `unparsable` (fail closed), naming the largest file of the upload. Uploads are
- * admitted to the checks by {@link FixCheckGate} (ruling T9a): one per project, eight waiting at
- * most, so the queue is bounded and no project holds the others up.
+ * admitted to the checks by {@link FixCheckGate} (rulings T9a, T9e): one per organisation, eight
+ * waiting at most, so the queue is bounded and no organisation holds the others up.
  */
 
 /** Ruling T3k: the longest a check may take, its worker's start included. */
@@ -129,22 +129,23 @@ export function checkUploadInWorker(
   return run;
 }
 
-/** Ruling T9a: the uploads that may wait behind the one being checked, all projects together. */
+/** Ruling T9a: the uploads that may wait behind the one being checked, all organisations together. */
 export const FIX_CHECK_MAX_WAITING = 8;
 
-/** Why an upload was not admitted: its project has one in, or the server's queue is full. */
-export type FixCheckBusy = 'project' | 'server';
+/** Why an upload was not admitted: its organisation has one in, or the server's queue is full. */
+export type FixCheckBusy = 'organization' | 'server';
 
 /**
- * Ruling T9a: admission to the upload checks of a server process, fair and fail-fast. A project
- * has at most one upload admitted (being read, checked or waiting for the worker); all projects
- * together at most one running and `maxWaiting` (8) waiting. An upload that is not admitted is
+ * Rulings T9a, T9e: admission to the upload checks of a server process, fair and fail-fast. An
+ * organisation has at most one upload admitted (being read, checked or waiting for the worker); all
+ * organisations together at most one running and `maxWaiting` (8) waiting. An upload that is not admitted is
  * answered at once (503 `FIX_CHECK_BUSY`), before any SCM call or state change, so one project
- * token can neither starve the other organisations' uploads nor grow the queue without bound.
+ * token, or the projects of one organisation together, can neither starve the other organisations'
+ * uploads nor grow the queue without bound.
  */
 export class FixCheckGate {
   readonly maxWaiting: number;
-  private readonly projects = new Set<string>();
+  private readonly organizations = new Set<string>();
 
   constructor(limits: { maxWaiting?: number } = {}) {
     this.maxWaiting = limits.maxWaiting ?? FIX_CHECK_MAX_WAITING;
@@ -152,23 +153,23 @@ export class FixCheckGate {
 
   /** The uploads admitted now: the one running and those waiting. */
   get admitted(): number {
-    return this.projects.size;
+    return this.organizations.size;
   }
 
   /**
-   * Admits one upload of the project: a function that gives its place back (once, whatever is
-   * called after), or why it was not admitted.
+   * Admits one upload of the organisation: a function that gives its place back (once, whatever
+   * is called after), or why it was not admitted.
    */
-  admit(projectId: string): { release: () => void } | { busy: FixCheckBusy } {
-    if (this.projects.has(projectId)) return { busy: 'project' };
-    if (this.projects.size > this.maxWaiting) return { busy: 'server' };
-    this.projects.add(projectId);
+  admit(organizationId: string): { release: () => void } | { busy: FixCheckBusy } {
+    if (this.organizations.has(organizationId)) return { busy: 'organization' };
+    if (this.organizations.size > this.maxWaiting) return { busy: 'server' };
+    this.organizations.add(organizationId);
     let held = true;
     return {
       release: () => {
         if (!held) return;
         held = false;
-        this.projects.delete(projectId);
+        this.organizations.delete(organizationId);
       },
     };
   }

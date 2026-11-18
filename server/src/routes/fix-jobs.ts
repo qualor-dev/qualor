@@ -4,6 +4,7 @@ import {
   fixResultBodySchema,
   FIX_RESULT_BODY_LIMIT,
 } from '@qualor/shared/fix';
+import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
@@ -18,6 +19,20 @@ import { idParams } from '../http/schemas';
 import { PROJECT_KEY_PATTERN } from '../patterns';
 import { projectForUpload } from '../projects/access';
 import { createScmRuntime } from '../scm/runtime';
+
+/**
+ * Ruling T9f: anything but a project token is refused before the body is read (the result's body
+ * is up to 48 MiB of JSON). After the global authentication hook, which sets the principal.
+ */
+async function projectTokenOnly(request: FastifyRequest): Promise<void> {
+  requireProjectToken(request);
+}
+
+/** Ruling T9j: the request's own token, a known secret of every message it stores. */
+function bearerToken(header: string | undefined): string[] {
+  const token = /^Bearer\s+(\S+)$/i.exec(header ?? '')?.[1];
+  return token === undefined ? [] : [token];
+}
 
 /**
  * 0.16 fix MRs §6.5–§6.7, B1: the fix job of a project's CI claims requested fixes and uploads
@@ -36,6 +51,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
   app.post(
     '/projects/fixes/claim',
     {
+      onRequest: projectTokenOnly,
       config: {
         openapi: {
           problems: [404, 409],
@@ -78,6 +94,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
     {
       // R16: 32 MiB of files in base64 and the JSON around them.
       bodyLimit: FIX_RESULT_BODY_LIMIT,
+      onRequest: projectTokenOnly,
       config: {
         openapi: {
           problems: [404, 409, 413, 422, 503],
@@ -86,7 +103,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             409: 'FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (both leave the fix `preparing`)',
             413: `BODY_TOO_LARGE: a body over ${FIX_RESULT_BODY_LIMIT} bytes`,
             422: 'UPLOAD_REFUSED: the files break a rule, the fix is now failed (upload_refused); the title is the rule’s fixed text, `reason` the rule, `detail` the file; VALIDATION_FAILED',
-            503: 'SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this project is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After',
+            503: 'SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this organisation is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After',
           },
         },
       },
@@ -109,6 +126,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
       try {
         const result = await acceptFixResult(scm, fix, project, request.body, {
           log: request.log,
+          secrets: bearerToken(request.headers.authorization),
         });
         request.log.info({ fixId: fix.id, state: result.state }, 'fix result');
         return await reply.code(202).send(result);

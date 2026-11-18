@@ -10,6 +10,10 @@ describe('the rules of a fix upload (0.16 fix MRs §6.7, B1, R7, ruling T3h)', (
     expect(Object.keys(UPLOAD_RULE_TEXT).toSorted()).toEqual([...UPLOAD_RULES].toSorted());
     for (const rule of FIX_RULES) expect(UPLOAD_RULE_TEXT[rule]).toBe(FIX_RULE_TEXT[rule]);
     for (const rule of UPLOAD_RULES) expect(UPLOAD_RULE_TEXT[rule]).toMatch(/^[A-Zg].*\.$/);
+    // Rulings T9g, T9h, T9i: every way the targets can disagree with the upload.
+    expect(UPLOAD_RULE_TEXT.target_mismatch).toBe(
+      'The targets do not match the upload: each target must be above its installed version, the target version must be the greatest target, each target and each lockfile line must name an uploaded file, and each uploaded lockfile must have a target.',
+    );
     expect(UPLOAD_RULE_TEXT.base_outdated).toBe(
       'Main changed this file after the fix was prepared; the next run starts from the new main.',
     );

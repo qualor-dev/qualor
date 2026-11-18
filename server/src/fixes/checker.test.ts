@@ -137,15 +137,15 @@ describe('the fix upload check in a worker thread (rulings T3g, T3i, T3k)', () =
 });
 
 describe('the admission of upload checks (ruling T9a)', () => {
-  it('admits one upload per project and eight waiting behind the running one by default', () => {
+  it('admits one upload per organisation and eight waiting behind the running one by default', () => {
     const gate = new FixCheckGate();
     expect(gate.maxWaiting).toBe(FIX_CHECK_MAX_WAITING);
     expect(FIX_CHECK_MAX_WAITING).toBe(8);
-    const held = Array.from({ length: 9 }, (_, i) => gate.admit(`project-${i}`));
+    const held = Array.from({ length: 9 }, (_, i) => gate.admit(`organisation-${i}`));
     expect(held.every((h) => 'release' in h)).toBe(true);
     expect(gate.admitted).toBe(9);
-    expect(gate.admit('project-9')).toEqual({ busy: 'server' });
-    expect(gate.admit('project-0')).toEqual({ busy: 'project' });
+    expect(gate.admit('organisation-9')).toEqual({ busy: 'server' });
+    expect(gate.admit('organisation-0')).toEqual({ busy: 'organization' });
   });
 
   it('takes injected limits, and gives a place back once', () => {
@@ -153,7 +153,7 @@ describe('the admission of upload checks (ruling T9a)', () => {
     const a = gate.admit('a');
     const b = gate.admit('b');
     expect(gate.admit('c')).toEqual({ busy: 'server' });
-    expect(gate.admit('a')).toEqual({ busy: 'project' });
+    expect(gate.admit('a')).toEqual({ busy: 'organization' });
     if (!('release' in a) || !('release' in b)) throw new Error('not admitted');
     a.release();
     a.release();

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { fixResultBodySchema, type FixClaimAnswer, type FixClaimItem } from '@qualor/shared/fix';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bearer } from '../../test/app';
+import { addMember, bearer } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
@@ -11,10 +11,12 @@ import { mappedProject, scmTestConfig } from '../../test/scm';
 import {
   dependencyFixes,
   jobs,
+  organizations,
   projectFixSettings,
   projects,
   scmConnections,
   targetVulnerabilities,
+  users,
   type FixState,
 } from '../db/schema';
 import { fixCheckGate } from '../fixes/checker';
@@ -55,6 +57,12 @@ const packageLock = (version: string, filler = 0) => {
 };
 
 const b64 = (text: string | Buffer) => Buffer.from(text).toString('base64');
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+
+const GO_PKG = 'example.com/qf';
+const h1 = (c: string) => `h1:${c.repeat(43)}=`;
+const goMod = (qf: string) => `module example.com/app\n\ngo 1.22\n\nrequire ${GO_PKG} ${qf}\n`;
+const goSum = (qf: string) => `${GO_PKG} ${qf} ${h1('a')}\n${GO_PKG} ${qf}/go.mod ${h1('b')}\n`;
 
 interface Answer {
   statusCode: number;
@@ -124,6 +132,51 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
       payload: body,
     });
   const head = (id = GITLAB_ID) => fake.headOf(id, 'main')!;
+  /** Releases of held reads; afterEach runs those a failing test left. */
+  const opens: (() => void)[] = [];
+  /** Holds the next `merge_base` read until the returned function runs. */
+  const holdMergeBase = (): (() => void) => {
+    let open: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    fake.inject('GET', /\/merge_base$/, { status: 200, passThrough: true, before: () => held });
+    opens.push(open);
+    return open;
+  };
+  /** A requested fix of the package, claimed alone. */
+  const claimPackage = async (packageName: string) => {
+    await seedFix(db(), { projectId, family: 'js', packageName });
+    const answer = await claimed({ max: 1 });
+    expect(answer.items).toHaveLength(1);
+    return answer.items[0]!;
+  };
+  /** What the route gives `acceptFixResult`, for the tests that call it with injected limits. */
+  const scmDeps = () => ({
+    db: db(),
+    scm: { secretKey: h.ctx.config.secretKey, internalHosts: h.ctx.config.scmInternalHosts },
+  });
+  const projectRow = async () =>
+    (await db().select().from(projects).where(eq(projects.id, projectId)))[0]!;
+  const personalToken = async () => {
+    const res = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/tokens',
+      headers: h.orgAdmin.headers,
+      payload: { name: `fix-pat-${++pkgs}`, scopes: ['analysis:write'] },
+    });
+    return bearer((res.json() as { token: string }).token);
+  };
+  /** A project of a second organisation, made once. */
+  const otherOrganizationProject = async () => {
+    const [org] = await db()
+      .insert(organizations)
+      .values({ key: 'fj-elsewhere', name: 'Elsewhere' })
+      .returning({ id: organizations.id });
+    const [admin] = await db().select().from(users).where(eq(users.username, 'ingest-admin'));
+    await addMember(h.ctx, org!.id, admin!.id, 'admin');
+    return h.project('FJ-ELSEWHERE', { organizationId: org!.id, session: h.orgAdmin });
+  };
   /** The good upload of qf-a 1.2.5 → 1.2.6 on main's head. */
   const upload = (item: FixClaimItem, over: Record<string, unknown> = {}) => ({
     generation: item.generation,
@@ -166,6 +219,8 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
     fake.addProject({ id: GITLAB_ID, path: 'acme/fixes/jobs' });
     fake.addFile(GITLAB_ID, 'main', 'package.json', packageJson('^1.2.5'));
     fake.addFile(GITLAB_ID, 'main', 'package-lock.json', packageLock('1.2.5'));
+    fake.addFile(GITLAB_ID, 'main', 'go.mod', goMod('v1.2.5'));
+    fake.addFile(GITLAB_ID, 'main', 'go.sum', goSum('v1.2.5'));
     fake.addProject({ id: BIG_GITLAB_ID, path: 'acme/fixes/big' });
     fake.addFile(BIG_GITLAB_ID, 'main', 'package.json', packageJson('^1.2.5'));
     fake.addFile(BIG_GITLAB_ID, 'main', 'package-lock.json', packageLock('1.2.5', 52_000));
@@ -189,6 +244,7 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
     fake.clearRequests();
   });
   afterEach(async () => {
+    for (const open of opens.splice(0)) open();
     await db().delete(dependencyFixes);
     await db().delete(jobs).where(eq(jobs.queue, FIX_QUEUE));
   });
@@ -483,6 +539,11 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
               ...upload(item).files,
               { path: 'yarn.lock', content: b64('# yarn lockfile v1\n') },
             ],
+            // Ruling T9i: an uploaded lockfile needs a target.
+            targets: [
+              ...upload(item).targets,
+              { installed: '1.2.5', target: '1.2.6', lockfile: 'yarn.lock' },
+            ],
           }),
       ],
       [
@@ -563,8 +624,9 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
       [
         'below_target',
         {
-          targetVersion: '1.2.5',
-          targets: [{ installed: '1.2.5', target: '1.2.5', lockfile: 'package-lock.json' }],
+          // Above the installed version (ruling T9g), below the server's choice 1.2.6.
+          targetVersion: '1.2.6-rc.1',
+          targets: [{ installed: '1.2.5', target: '1.2.6-rc.1', lockfile: 'package-lock.json' }],
         },
       ],
       [
@@ -831,11 +893,7 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
     const { items } = await claimed({ max: 10 });
     const holder = items.find((i) => i.packageName === other)!;
     const second = items.find((i) => i.packageName === 'qf-a')!;
-    let open: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      open = resolve;
-    });
-    fake.inject('GET', /\/merge_base$/, { status: 200, passThrough: true, before: () => held });
+    const open = holdMergeBase();
     // The holder's upload names its own package; it is held while main's ancestry is read.
     const first = result(
       holder.id,
@@ -929,6 +987,213 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
       },
     });
     expect(await fixJobs()).toEqual([]);
+  });
+
+  it('base files over the limit together are too_large, read no further (fix round 1, I1)', async () => {
+    const item = await claimQfA();
+    const fix = await row(item.id);
+    fake.clearRequests();
+    const error = (await acceptFixResult(
+      scmDeps(),
+      fix,
+      await projectRow(),
+      fixResultBodySchema.parse(upload(item)),
+      { maxBaseBytes: Buffer.byteLength(packageJson('^1.2.5')) - 1 },
+    ).catch((e: unknown) => e)) as ProblemError;
+    expect([error.status, error.code, error.extensions.reason, error.detail]).toEqual([
+      422,
+      'UPLOAD_REFUSED',
+      'too_large',
+      'package.json',
+    ]);
+    // The first base passed the limit: neither its head copy nor the lockfile was read.
+    expect(fake.requests.filter((r) => r.path.endsWith('/raw')).map((r) => r.path)).toEqual([
+      `/projects/${GITLAB_ID}/repository/files/package.json/raw`,
+    ]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'upload_refused' },
+      leaseTokenHash: null,
+    });
+    expect(await fixJobs()).toEqual([]);
+    expect(writes()).toEqual([]);
+  });
+
+  it('one upload check per organisation (ruling T9e): its other project is 503, another organisation is admitted', async () => {
+    const item = await claimQfA();
+    const open = holdMergeBase();
+    const first = result(item.id, upload(item, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) }));
+    await vi.waitFor(() => expect(fixCheckGate.admitted).toBe(1));
+    const lease = 'a-lease-of-another-project';
+    const preparing = (id: string) =>
+      seedFix(db(), {
+        projectId: id,
+        family: 'js',
+        packageName: 'qf-a',
+        state: 'preparing',
+        leaseTokenHash: sha256(lease),
+      });
+    const body = { ...upload(item), generation: 1, leaseToken: lease };
+    const sibling = await preparing(big.id);
+    const busy = await result(sibling, body, bearer(big.token));
+    expect(problem(busy)).toEqual([503, 'FIX_CHECK_BUSY', null]);
+    expect((await row(sibling)).state).toBe('preparing');
+    // A project of another organisation gets past the gate (and is refused on its own merits).
+    const foreign = await otherOrganizationProject();
+    const theirs = await preparing(foreign.id);
+    const admitted = await result(theirs, body, bearer(foreign.token));
+    expect(problem(admitted)).toEqual([422, 'UPLOAD_REFUSED', 'not_vulnerable']);
+    open();
+    expect((await first).statusCode).toBe(422);
+    expect(fixCheckGate.admitted).toBe(0);
+  });
+
+  it('the read phase has a deadline (ruling T9e): past it 503, the fix preparing, the place given back', async () => {
+    const item = await claimQfA();
+    const fix = await row(item.id);
+    const open = holdMergeBase();
+    const projectOf = await projectRow();
+    const started = performance.now();
+    const error = (await acceptFixResult(
+      scmDeps(),
+      fix,
+      projectOf,
+      fixResultBodySchema.parse(upload(item, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) })),
+      { readDeadlineMs: 300 },
+    ).catch((e: unknown) => e)) as ProblemError;
+    // The deadline, not the client's own 10 s timeout of the held request, ended the reads.
+    expect(performance.now() - started).toBeLessThan(5_000);
+    expect([error.status, error.code, error.headers['retry-after']]).toEqual([
+      503,
+      'SCM_UNAVAILABLE',
+      '10',
+    ]);
+    expect(fixCheckGate.admitted).toBe(0);
+    expect(await row(item.id)).toEqual(fix);
+    open();
+    const res = await result(item.id, upload(item));
+    expect(res.statusCode, res.body).toBe(202);
+  });
+
+  it('anything but a project token is refused before the body is read (ruling T9f)', async () => {
+    const headers = { ...(await personalToken()), 'content-type': 'application/json' };
+    const put = await h.ctx.app.inject({
+      method: 'PUT',
+      url: `/api/v0/fixes/${randomUUID()}/result`,
+      headers,
+      payload: '{ not json',
+    });
+    expect(problem(put)).toEqual([403, 'TOKEN_NOT_ALLOWED', null]);
+    const post = await h.ctx.app.inject({
+      method: 'POST',
+      url: `/api/v0/projects/fixes/claim?projectKey=${project.key}`,
+      headers,
+      payload: '{ not json',
+    });
+    expect(problem(post)).toEqual([403, 'TOKEN_NOT_ALLOWED', null]);
+  });
+
+  it('a target must be above its installed version, whatever the server chooses (ruling T9g)', async () => {
+    const name = fresh();
+    await vulnerable(name);
+    // 1.3.0 is vulnerable with no fixed version: the server chooses no target for it.
+    await vulnerable(name, { vulnerabilityId: 'GHSA-none', version: '1.3.0', fixedVersion: null });
+    const item = await claimPackage(name);
+    fake.clearRequests();
+    const res = await result(
+      item.id,
+      upload(item, {
+        installedVersion: '1.3.0',
+        targetVersion: '1.3.0',
+        targets: [{ installed: '1.3.0', target: '1.3.0', lockfile: 'package-lock.json' }],
+      }),
+    );
+    await refused(item, res, 'target_mismatch');
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('lockfile lines name uploaded files; unknown unfixable ids are dropped (ruling T9h)', async () => {
+    const item = await claimQfA();
+    const res = await result(
+      item.id,
+      upload(item, {
+        lockfiles: [
+          {
+            path: 'apps/web/package-lock.json',
+            relation: 'direct',
+            mechanism: null,
+            dependents: [],
+          },
+        ],
+      }),
+    );
+    await refused(item, res, 'target_mismatch');
+
+    const next = await claimQfA();
+    const ok = await result(next.id, upload(next, { unfixable: [CVE, 'CVE-2000-0001'] }));
+    expect(ok.statusCode, ok.body).toBe(202);
+    expect((await row(next.id)).prepared!.unfixable).toEqual([CVE]);
+  });
+
+  it('every uploaded lockfile is named by a target, go.sum through its go.mod (ruling T9i)', async () => {
+    const item = await claimQfA();
+    fake.clearRequests();
+    const res = await result(
+      item.id,
+      upload(item, {
+        files: [
+          ...upload(item).files,
+          { path: 'npm-shrinkwrap.json', content: b64(packageLock('1.2.6')) },
+        ],
+      }),
+    );
+    await refused(item, res, 'target_mismatch');
+    expect(res.json().detail).toBe('npm-shrinkwrap.json');
+    expect(fake.requests).toEqual([]);
+
+    // Go: a target on go.mod covers its go.sum.
+    await vulnerable(GO_PKG, {
+      ecosystem: 'gomod',
+      version: 'v1.2.5',
+      fixedVersion: 'v1.2.6',
+      vulnerabilityId: 'GO-2026-0001',
+    });
+    await seedFix(db(), { projectId, family: 'go', packageName: GO_PKG });
+    const go = (await claimed({ families: ['go'], max: 1 })).items[0]!;
+    const accepted = await result(
+      go.id,
+      upload(go, {
+        installedVersion: 'v1.2.5',
+        targetVersion: 'v1.2.6',
+        targets: [{ installed: 'v1.2.5', target: 'v1.2.6', lockfile: 'go.mod' }],
+        files: [
+          { path: 'go.mod', content: b64(goMod('v1.2.6')) },
+          { path: 'go.sum', content: b64(goSum('v1.2.6')) },
+        ],
+        lockfiles: [{ path: 'go.mod', relation: 'direct', mechanism: null, dependents: [] }],
+      }),
+    );
+    expect(accepted.statusCode, accepted.body).toBe(202);
+    expect((await row(go.id)).prepared!.additions).toEqual([
+      {
+        path: 'go.sum',
+        entries: [
+          { slot: null, name: GO_PKG, version: 'v1.2.6' },
+          { slot: null, name: GO_PKG, version: 'v1.2.6/go.mod' },
+        ],
+      },
+    ]);
+  });
+
+  it("scrubs the request's own token from a stored message (ruling T9j)", async () => {
+    const item = await claimQfA();
+    const res = await result(item.id, {
+      generation: item.generation,
+      leaseToken: item.leaseToken,
+      failure: { code: 'package_manager', message: `sent ${project.token} to the registry\n` },
+    });
+    expect(res.statusCode, res.body).toBe(202);
+    expect((await row(item.id)).failure!.message).toBe('sent [redacted] to the registry\n');
   });
 
   it('9 MiB base (Review Focus 2): a large package-lock.json on main and its upload are accepted', async () => {

@@ -17686,7 +17686,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this project is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After */
+                /** @description SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this organisation is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After */
                 503: {
                     headers: {
                         [name: string]: unknown;
