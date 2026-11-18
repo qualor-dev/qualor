@@ -1,5 +1,5 @@
 import type { Severity } from '@qualor/shared';
-import { inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { uuidList, withoutNul } from '../db/bulk';
 import type { Db } from '../db/client';
 import { jiraLinks, projectJiraSettings } from '../db/schema';
@@ -85,24 +85,43 @@ const LATE_CREATED = sql.raw(
 
 /**
  * R1: up to `n` of the connection's never-attempted pending rows, oldest first, stamped with
- * `attempted_at` by one statement that commits before the call. `SKIP LOCKED` and the condition
- * on `attempted_at` let a create job and a sync pass of the organisation never take one row twice.
- * None once the connection has another address than the run's client (M1).
+ * `attempted_at` in one short transaction that commits before the call. `SKIP LOCKED` and the
+ * condition on `attempted_at` let a create job and a sync pass of the organisation never take one
+ * row twice. None once the connection has another address than the run's client (M1).
+ *
+ * Ruling T8a: the ids are picked first (`LIMIT n … FOR UPDATE SKIP LOCKED`), then exactly those
+ * rows are updated. An `UPDATE … WHERE id IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` is not
+ * bounded by n: under a nested-loop semi join PostgreSQL runs the subquery again for each row,
+ * and each run skips the rows already updated and takes n more.
  */
-async function claim(ctx: JiraRunContext, n: number): Promise<JiraLinkRow[]> {
-  const rows = await ctx.deps.db
-    .update(jiraLinks)
-    .set({ attemptedAt: sql`now()`, updatedAt: sql`now()` })
-    .where(
-      sql`${jiraLinks.id} IN (
-        SELECT id FROM jira_links
-         WHERE connection_id = ${ctx.connection.id} AND state = 'pending' AND attempted_at IS NULL
-           AND ${connectionUnmoved(ctx.connection)}
-         ORDER BY created_at, id
-         LIMIT ${n}
-         FOR UPDATE SKIP LOCKED)`,
-    )
-    .returning();
+export async function claimPending(ctx: JiraRunContext, n: number): Promise<JiraLinkRow[]> {
+  const rows = await ctx.deps.db.transaction(async (tx) => {
+    const picked = await tx
+      .select({ id: jiraLinks.id })
+      .from(jiraLinks)
+      .where(
+        and(
+          eq(jiraLinks.connectionId, ctx.connection.id),
+          eq(jiraLinks.state, 'pending'),
+          isNull(jiraLinks.attemptedAt),
+          connectionUnmoved(ctx.connection),
+        ),
+      )
+      .orderBy(jiraLinks.createdAt, jiraLinks.id)
+      .limit(n)
+      .for('update', { skipLocked: true });
+    if (picked.length === 0) return [];
+    return tx
+      .update(jiraLinks)
+      .set({ attemptedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(
+        inArray(
+          jiraLinks.id,
+          picked.map((p) => p.id),
+        ),
+      )
+      .returning();
+  });
   return rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || compare(a.id, b.id));
 }
 
@@ -390,7 +409,7 @@ export async function createPending(
   const { db } = ctx.deps;
   let taken = 0;
   while (outcome.stop === null && taken < limit) {
-    const rows = await claim(ctx, Math.min(JIRA_BULK_MAX, limit - taken));
+    const rows = await claimPending(ctx, Math.min(JIRA_BULK_MAX, limit - taken));
     if (rows.length === 0) break;
     taken += rows.length;
     await createCall(run, rows);

@@ -19,7 +19,7 @@ import {
 import { communityLimits } from '../limits';
 import { claimJob, completeJob, enqueueMany } from '../queue/queue';
 import type { WorkerLogger } from '../queue/worker';
-import { CREATE_PER_RUN, createPending } from './create';
+import { claimPending, CREATE_PER_RUN, createPending } from './create';
 import { enqueueJiraCreate, JIRA_QUEUE, jiraCreateKey } from './jobs';
 import { insertPendingLinks, JIRA_FAILURE_TEXT } from './links';
 import { JIRA_PROBLEM_TEXT, setConnectionProblem } from './problems';
@@ -616,6 +616,44 @@ describe('the Jira create job (spec §6.4, §11.2–11.5)', () => {
     const owner = claims[0] === null ? 'jira-b' : 'jira-a';
     expect(await completeJob(db(), claimed[0]!, owner)).toBe('completed');
     expect((await claimJob(db(), JIRA_QUEUE, 'jira-c', JIRA_LEASE_MS))?.id).toBe(second);
+  });
+
+  it('a claim takes at most its limit (ruling T8a): eight claims of one at a time take 40 rows once each', async () => {
+    const ids = await pendingLinks(40);
+    const runs = await Promise.all(
+      Array.from({ length: 8 }, () => openRun(deps, h.organizationId)),
+    );
+    const claimed: string[] = [];
+    for (let round = 0; round < ids.length && claimed.length < ids.length; round++) {
+      const answers = await Promise.all(runs.map((run) => claimPending(run!, 1)));
+      for (const answer of answers) expect(answer.length).toBeLessThanOrEqual(1);
+      claimed.push(...answers.flat().map((r) => r.id));
+    }
+    expect(claimed.toSorted()).toEqual(ids.toSorted());
+    expect(await claimPending(runs[0]!, 1)).toEqual([]);
+  });
+
+  it('a claim takes at most its limit whatever plan the database picks (ruling T8a)', async () => {
+    const ids = await pendingLinks(30);
+    const ctx = (await openRun(deps, h.organizationId))!;
+    let taken: { id: string }[] = [];
+    await db().transaction(async (tx) => {
+      // The plan of the flake: a nested-loop semi join that runs the claim's subquery again for
+      // each row of the table, so `LIMIT n … SKIP LOCKED` picks n more rows each time.
+      for (const setting of [
+        'enable_hashjoin',
+        'enable_mergejoin',
+        'enable_hashagg',
+        'enable_material',
+        'enable_sort',
+      ]) {
+        await tx.execute(sql.raw(`SET LOCAL ${setting} = off`));
+      }
+      taken = await claimPending({ ...ctx, deps: { ...ctx.deps, db: tx as unknown as Db } }, 1);
+    });
+    expect(taken).toHaveLength(1);
+    const stamped = (await rows()).filter((r) => ids.includes(r.id) && r.attemptedAt !== null);
+    expect(stamped.map((r) => r.id)).toEqual([taken[0]!.id]);
   });
 
   it('never the token (spec §11.5): not in failure.message, jobs.last_error or a log line', async () => {
