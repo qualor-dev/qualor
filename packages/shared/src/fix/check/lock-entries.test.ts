@@ -34,6 +34,25 @@ describe('belowTarget', () => {
   it('is false without targets', () => {
     expect(belowTarget(['1.0.0'], [], 'semver')).toBe(false);
   });
+
+  it('is true for a new version below the target of its own line (Ruling T3a)', () => {
+    expect(belowTarget(['1.2.6', '2.0.0', '2.0.3'], targets, 'semver')).toBe(true);
+    expect(belowTarget(['1.2.6', '2.0.0', '2.0.3'], targets, 'semver', ['2.0.0'])).toBe(false);
+    expect(belowTarget(['1.2.6', '2.0.5'], targets, 'semver')).toBe(false);
+    expect(belowTarget(['1.2.6', '2.0.3', '3.0.0'], targets, 'semver')).toBe(false);
+  });
+
+  it('reads line 0 by its minor (Ruling T3a)', () => {
+    const zero: FixTarget[] = [{ installed: '0.4.1', target: '0.4.3', lockfile: LOCK }];
+    expect(belowTarget(['0.4.2'], zero, 'semver', ['0.4.1'])).toBe(true);
+    expect(belowTarget(['0.5.0'], zero, 'semver', ['0.4.1'])).toBe(false);
+    const twoLines: FixTarget[] = [
+      { installed: '0.3.1', target: '0.3.4', lockfile: LOCK },
+      { installed: '0.4.5', target: '0.4.7', lockfile: LOCK },
+    ];
+    expect(belowTarget(['0.3.4', '0.4.2', '0.4.7'], twoLines, 'semver')).toBe(true);
+    expect(belowTarget(['0.3.4', '0.4.7', '0.5.0'], twoLines, 'semver')).toBe(false);
+  });
 });
 
 const entry = (over: Partial<LockEntry> = {}): LockEntry => ({

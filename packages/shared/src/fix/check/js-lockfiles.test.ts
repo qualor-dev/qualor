@@ -211,6 +211,32 @@ describe('checkJsLockfile: npm', () => {
     });
   });
 
+  it('refuses a new version below the target of its own line (Ruling T3a)', () => {
+    const ctx: FixCheckContext = {
+      family: 'js',
+      packageName: 'qf-a',
+      targets: [
+        { installed: '1.2.5', target: '1.2.6', lockfile: 'package-lock.json' },
+        { installed: '2.0.1', target: '2.0.3', lockfile: 'package-lock.json' },
+      ],
+    };
+    const base = npmV3(npmQfA('1.2.5'), {
+      'node_modules/qf-b/node_modules/qf-a': npmQfA('2.0.1'),
+    });
+    const next = npmV3(npmQfA('1.2.6'), {
+      'node_modules/qf-b/node_modules/qf-a': npmQfA('2.0.3'),
+      'node_modules/qf-c/node_modules/qf-a': npmQfA('2.0.0'),
+    });
+    const change = { path: 'package-lock.json', base, next };
+    expect(checkJsLockfile(change, ctx)).toEqual({
+      ok: false,
+      rule: 'below_target',
+      path: 'package-lock.json',
+    });
+    const fixed = next.replaceAll('2.0.0', '2.0.4');
+    expect(checkJsLockfile({ ...change, next: fixed }, ctx)).toEqual({ ok: true });
+  });
+
   it('refuses a new tarball URL entry, even on a host the lockfile uses', () => {
     const tarball = npmV3(npmQfA('1.2.6', { resolved: `${NPM}/qf-a.tgz` }));
     expect(check('package-lock.json', NPM_V3_BASE, tarball)).toMatchObject({

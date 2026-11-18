@@ -2,7 +2,13 @@
  * Lockfile entries (spec §12 B1, B3): what a fix may add to a lockfile, whatever its format, and
  * whether the package still resolves below its targets.
  */
-import { compareVersions, schemeOf, versionParses, type VersionScheme } from '../versions';
+import {
+  compareVersions,
+  releaseLine,
+  schemeOf,
+  versionParses,
+  type VersionScheme,
+} from '../versions';
 import {
   FIX_CHECK_OK,
   fixRefused,
@@ -106,16 +112,37 @@ function stillVulnerable(v: string, targets: readonly FixTarget[], scheme: Versi
   );
 }
 
-/** A new version lies below the smallest target, or cannot be compared with it (fail closed). */
-function newBelow(v: string, smallest: string | null, scheme: VersionScheme): boolean {
-  const c = smallest === null ? null : compareVersions(scheme, v, smallest);
-  return c === null || c < 0;
+/** Whether `v < target` for a target on `v`'s own release line (Ruling T3a). */
+function belowLineTarget(v: string, targets: readonly FixTarget[], scheme: VersionScheme): boolean {
+  const line = releaseLine(scheme, v);
+  return (
+    line !== null &&
+    targets.some(
+      ({ target }) =>
+        releaseLine(scheme, target) === line && (compareVersions(scheme, v, target) ?? 0) < 0,
+    )
+  );
 }
 
 /**
- * B3: whether the package's resolved versions still miss a target: some `v` has `installed ≤ v <
- * target` for a target, or a new version (one `baseVersions` lacks) lies below the smallest target.
- * Without `baseVersions` every version counts as new.
+ * A new version lies below the smallest target or below the target of its own line, or cannot be
+ * compared with the smallest target (fail closed).
+ */
+function newBelow(
+  v: string,
+  smallest: string | null,
+  targets: readonly FixTarget[],
+  scheme: VersionScheme,
+): boolean {
+  const c = smallest === null ? null : compareVersions(scheme, v, smallest);
+  return c === null || c < 0 || belowLineTarget(v, targets, scheme);
+}
+
+/**
+ * B3, §12 B1: whether the package's resolved versions still miss a target: some `v` has
+ * `installed ≤ v < target` for a target, or a new version (one `baseVersions` lacks) lies below the
+ * smallest target or below the target of its own release line (Ruling T3a). Without
+ * `baseVersions` every version counts as new.
  */
 export function belowTarget(
   versions: readonly string[],
@@ -127,7 +154,9 @@ export function belowTarget(
   const old = new Set(baseVersions);
   const smallest = smallestTarget(targets, scheme);
   return versions.some(
-    (v) => stillVulnerable(v, targets, scheme) || (!old.has(v) && newBelow(v, smallest, scheme)),
+    (v) =>
+      stillVulnerable(v, targets, scheme) ||
+      (!old.has(v) && newBelow(v, smallest, targets, scheme)),
   );
 }
 
