@@ -225,36 +225,43 @@ function shapeOf({ extras, marker }: Pick<Requirement, 'extras' | 'marker'>): st
   return JSON.stringify([extras, marker]);
 }
 
-/**
- * Fix round 1, M1: the extras and markers a new or changed override of the package may have:
- * those of the base's overrides of it, or none when the base has none (a never-true marker would
- * drop the package).
- */
-function overrideShapes(before: readonly unknown[], pkg: string): Set<string> {
-  const shapes = new Set<string>();
-  for (const entry of before) {
+const PLAIN_SHAPE = shapeOf({ extras: '', marker: '' });
+
+/** The (extras, marker) shapes of the package's entries in a list, each with its count. */
+function shapeCounts(list: readonly unknown[], pkg: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of list) {
     const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
     if (requirement !== null && normalizePythonName(requirement.name) === pkg) {
-      shapes.add(shapeOf(requirement));
+      const shape = shapeOf(requirement);
+      counts.set(shape, (counts.get(shape) ?? 0) + 1);
     }
   }
-  if (shapes.size === 0) shapes.add(shapeOf({ extras: '', marker: '' }));
-  return shapes;
+  return counts;
 }
 
-/** A new or changed override of the package: no URL and plain (`bad_spec`), a known shape. */
-function overrideRule(entry: unknown, shapes: ReadonlySet<string>): FixRule | null {
+/**
+ * M1 (fix rounds 1 and 2): the package's overrides keep their extras and markers: the same
+ * shapes, each as often, as the base's, so none is dropped or turned into another (a marker
+ * moved onto both would drop the package elsewhere); with none in the base, only overrides
+ * without extras or marker may come.
+ */
+function sameShapes(before: ReadonlyMap<string, number>, after: ReadonlyMap<string, number>) {
+  if (before.size === 0) return [...after.keys()].every((shape) => shape === PLAIN_SHAPE);
+  return before.size === after.size && [...before].every(([shape, n]) => after.get(shape) === n);
+}
+
+/** A new or changed override of the package: no URL, and a plain specifier (`bad_spec`). */
+function overrideRule(entry: unknown): FixRule | null {
   const requirement = typeof entry === 'string' ? parseRequirement(entry) : null;
   if (requirement === null || requirement.url !== null) return 'bad_spec';
-  if (!shapes.has(shapeOf(requirement))) return 'other_change';
   return isPlainSpecifier(requirement.spec) ? null : 'bad_spec';
 }
 
 /**
  * `tool.uv.override-dependencies`: the package's entries may be added or changed, each plain
- * (`bad_spec`) and with the extras and marker of the base's (none when the base has none,
- * `other_change`, M1); they are taken out of both sides, the array and tables dropped when the
- * change created them for those entries alone.
+ * (`bad_spec`), their shapes kept ({@link sameShapes}, else `other_change`); they are taken out of
+ * both sides, the array and tables dropped when the change created them for those entries alone.
  */
 function uvOverridesRule(base: JsonObject, next: JsonObject, pkg: string): FixRule | null {
   const uv = at(next, UV_PATH);
@@ -264,12 +271,12 @@ function uvOverridesRule(base: JsonObject, next: JsonObject, pkg: string): FixRu
   const before = isObject(baseUv) ? own(baseUv, OVERRIDES) : undefined;
   const oldList: readonly unknown[] = Array.isArray(before) ? before : [];
   const old = new Set<unknown>(oldList);
-  const shapes = overrideShapes(oldList, pkg);
   for (const entry of after) {
     if (!namesPackage(entry, pkg) || old.has(entry)) continue;
-    const rule = overrideRule(entry, shapes);
+    const rule = overrideRule(entry);
     if (rule !== null) return rule;
   }
+  if (!sameShapes(shapeCounts(oldList, pkg), shapeCounts(after, pkg))) return 'other_change';
   const rest = after.filter((entry) => !namesPackage(entry, pkg));
   if (isObject(baseUv) && Array.isArray(before)) {
     setOwn(uv, OVERRIDES, rest);
@@ -637,29 +644,56 @@ const SOURCE_FIELDS = ['reference', 'resolved_reference', 'subdirectory'];
 /** Marks the reference folded into a legacy source; Poetry picks the repository by it (I2). */
 const LEGACY_REFERENCE = '#poetry-reference=';
 
-function fieldOf(table: JsonObject, name: string): string {
-  return encodeURIComponent(str(own(table, name)) ?? '');
+/**
+ * A source field's text: a string as it is, absent as empty, and any other value (a number, an
+ * array, a table) serialised with its type, so changing it changes the entry (fix round 2, C1
+ * residual). Such an entry is kind `other` anyway.
+ */
+function rawField(value: unknown): string {
+  if (value === undefined) return '';
+  if (typeof value === 'string') return value;
+  const typed = (_key: string, v: unknown): unknown =>
+    typeof v === 'number' || typeof v === 'bigint' ? `${typeof v}:${String(v)}` : v;
+  return `!${typeof value}:${JSON.stringify(value, typed)}`;
+}
+
+/** Whether a field is absent or a string, the only values Poetry reads as written. */
+function isTextField(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }
 
 /**
- * No `[package.source]`: PyPI, no source. A legacy source is its `url` with its `reference`
- * folded in (a url that holds `#` already, or none, is `other`). Any other type's source is its
- * `url` with `reference`, `resolved_reference` and `subdirectory` folded in, so moving any of them
- * makes a new entry (C1); an unknown type is `other`.
+ * A legacy source: its `url` with its `reference` folded in. It is a registry source only with a
+ * string url that holds no `#` and a string reference (or none); else kind `other` (I2).
+ */
+function legacySource(table: JsonObject): Pick<RawEntry, 'kind' | 'source'> {
+  const url = own(table, 'url');
+  const reference = own(table, 'reference');
+  const source = `${rawField(url)}${LEGACY_REFERENCE}${encodeURIComponent(rawField(reference))}`;
+  const plain = typeof url === 'string' && !url.includes('#') && isTextField(reference);
+  return { kind: plain ? 'registry' : 'other', source };
+}
+
+/**
+ * No `[package.source]`: PyPI, no source. A legacy source is {@link legacySource}. Any other
+ * type's source is its `url` with `reference`, `resolved_reference` and `subdirectory` folded in,
+ * so moving any of them makes a new entry (C1). Without a string url, or with a field that is no
+ * string, the entry is kind `other`, its fields still in its source (fix round 2); an unknown
+ * type is `other`.
  */
 function poetrySource(pkg: JsonObject): Pick<RawEntry, 'kind' | 'source'> {
   const value = own(pkg, 'source');
   if (value === undefined) return { kind: 'registry', source: null };
   const table = objectAt(value, 'a poetry package source');
-  const url = str(own(table, 'url'));
   const kind = POETRY_KINDS.get(str(own(table, 'type')) ?? '') ?? 'other';
-  if (url === null) return { kind: 'other', source: null };
-  if (kind === 'registry') {
-    if (url.includes('#')) return { kind: 'other', source: url };
-    return { kind, source: `${url}${LEGACY_REFERENCE}${fieldOf(table, 'reference')}` };
-  }
-  const fields = SOURCE_FIELDS.map((name) => `${name}=${fieldOf(table, name)}`).join('&');
-  return { kind, source: `${url}#${fields}` };
+  if (kind === 'registry') return legacySource(table);
+  const url = own(table, 'url');
+  const values = SOURCE_FIELDS.map((name) => own(table, name));
+  const fields = SOURCE_FIELDS.map(
+    (name, i) => `${name}=${encodeURIComponent(rawField(values[i]))}`,
+  ).join('&');
+  const plain = typeof url === 'string' && values.every(isTextField);
+  return { kind: plain ? kind : 'other', source: `${rawField(url)}#${fields}` };
 }
 
 /**

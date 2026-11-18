@@ -108,7 +108,6 @@ function lexGoLine(line: string): GoLine {
   return { tokens, comment: null };
 }
 
-/** `// indirect` or `// indirect; …`, as `modfile` reads it. */
 /**
  * Go's `strings.Fields`: split at runs of `unicode.IsSpace`, which is the Unicode White_Space
  * property (U+0085 included, U+FEFF not, unlike JS `\s`), empty fields dropped.
@@ -132,8 +131,10 @@ function isIndirect(comment: string | null): boolean {
 
 /**
  * A Go pseudo-version (`vX.0.0-yyyymmddhhmmss-abcdefabcdef`, `vX.Y.Z-pre.0.yyyymmddhhmmss-…`,
- * `vX.Y.(Z+1)-0.yyyymmddhhmmss-…`, optionally `+incompatible`), as `module.IsPseudoVersion` tells
- * them; anchored, with no nested quantifier.
+ * `vX.Y.(Z+1)-0.yyyymmddhhmmss-…`, optionally `+incompatible`). The first form is anchored at both
+ * ends; the `[.-]0.` branch only at the end, so any version that ends like a pseudo-version
+ * matches: a superset of `module.IsPseudoVersion`, which fails safe (`bad_spec`). No nested
+ * quantifier.
  */
 const PSEUDO_VERSION = /(?:^v\d+\.0\.0-|[.-]0\.)\d{14}-[A-Za-z\d]+(?:\+[\dA-Za-z.-]+)?$/;
 
@@ -344,11 +345,6 @@ export function checkGoMod(change: FixFileChange, ctx: FixCheckContext): FixChec
 }
 
 /**
- * B1 and R24 for `go.sum`: every new line has an `h1:` hash (`missing_integrity`). There are no
- * hosts, no graph to follow (no reachability, as Ruling F14 skips the targets), and old lines may
- * stay.
- */
-/**
  * Ruling T4g: a `go.sum` line (zip or `/go.mod`) of a pseudo-version whose exact line form the
  * base does not have.
  */
@@ -361,6 +357,11 @@ function newPseudoVersion(base: readonly LockEntry[], next: readonly LockEntry[]
   );
 }
 
+/**
+ * B1 and R24 for `go.sum`: no line of a pseudo-version the base lacks (`bad_spec`, Ruling T4g),
+ * and every new line has an `h1:` hash (`missing_integrity`). There are no hosts, no graph to
+ * follow (no reachability, as Ruling F14 skips the targets), and old lines may stay.
+ */
 export function checkGoSum(change: FixFileChange, ctx: FixCheckContext): FixCheckResult {
   let base: LockEntry[];
   let next: LockEntry[];

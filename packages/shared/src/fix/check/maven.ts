@@ -229,21 +229,30 @@ export function pomDependencyVersion(
  */
 const MAVEN_VERSION = /^[\w.+-]+$/;
 
-/** A timestamped snapshot build (`1.0-20240101.123456-1`), as Maven's `ArtifactUtils` tells it. */
-const TIMESTAMPED_SNAPSHOT = /-\d{8}\.\d{6}-\d+$/;
+/** The timestamp tail of a snapshot build: `yyyyMMdd.HHmmss-<build number>`. */
+const SNAPSHOT_TIMESTAMP = /\d{8}\.\d{6}-\d+$/;
 
 /**
- * Fix round 1, M2: a snapshot version (`-SNAPSHOT` in any case, or a timestamped snapshot) moves
- * with every deployment, so no new or changed version may be one.
+ * Maven Resolver's snapshot test (`AbstractArtifact.isSnapshot`): the version ends with
+ * `SNAPSHOT` (here in any case, so `5.2.22.SNAPSHOT` and `5.2.22SNAPSHOT` too), or it matches
+ * `^(.*-)?[0-9]{8}\.[0-9]{6}-[0-9]+$`. The tail's `-` before the build number is the version's
+ * last `-`, so the tail has one possible place: the match here, which must start the version or
+ * follow a `-`.
+ */
+function isSnapshot(version: string): boolean {
+  if (version.toUpperCase().endsWith('SNAPSHOT')) return true;
+  const tail = SNAPSHOT_TIMESTAMP.exec(version);
+  return tail !== null && (tail.index === 0 || version.charAt(tail.index - 1) === '-');
+}
+
+/**
+ * Fix round 1, M2 (fix round 2: Maven Resolver's own test): a snapshot version moves with every
+ * deployment, so no new or changed version may be one.
  */
 function isPlainMavenVersion(version: string): boolean {
   const upper = version.toUpperCase();
   return (
-    MAVEN_VERSION.test(version) &&
-    upper !== 'LATEST' &&
-    upper !== 'RELEASE' &&
-    !upper.endsWith('-SNAPSHOT') &&
-    !TIMESTAMPED_SNAPSHOT.test(version)
+    MAVEN_VERSION.test(version) && upper !== 'LATEST' && upper !== 'RELEASE' && !isSnapshot(version)
   );
 }
 

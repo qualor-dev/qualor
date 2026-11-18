@@ -962,3 +962,75 @@ describe('fix round 1: PEP 508 white space is space and tab only (I1)', () => {
     expect(pyproject(base, UV_PYPROJECT('qf-a >=\t1.2.6 '))).toEqual({ ok: true });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Fix round 2 (task-4-fix-2.md): the C1 and M1 residuals
+
+describe('fix round 2: Poetry source fields that are no strings, or no url (C1 residual)', () => {
+  const lib = (fields: string) =>
+    poetryPackage('lib', '0.1.0', { files: ' ', source: `type = "git"\n${fields}` });
+  const at = (qfA: string, fields: string) => POETRY_LOCK(qfA, lib(fields));
+  const GIT = 'url = "https://github.com/org/lib.git"\nreference = "main"';
+
+  it.each([
+    ['resolved_reference added as a TOML integer', GIT, `${GIT}\nresolved_reference = 1234567`],
+    ['subdirectory added as a TOML array', GIT, `${GIT}\nsubdirectory = ["evil"]`],
+    ['reference changed on a source without url', 'reference = "main"', 'reference = "evil"'],
+  ])('refuses a git dependency with its %s as source_kind', (_name, before, after) => {
+    expect(lock('poetry.lock', at('1.2.5', before), at('1.2.6', after))).toEqual(
+      refused('source_kind', 'poetry.lock'),
+    );
+  });
+
+  it('reads such a source as kind other, the raw field values in its source', () => {
+    const entry = readPoetryLock(at('1.2.6', `${GIT}\nsubdirectory = ["evil"]`)).find(
+      (e) => e.name === 'lib',
+    );
+    expect(entry?.kind).toBe('other');
+    expect(entry?.source).toContain(encodeURIComponent('["evil"]'));
+    const noUrl = readPoetryLock(at('1.2.6', 'reference = "main"')).find((e) => e.name === 'lib');
+    expect(noUrl).toMatchObject({ kind: 'other' });
+    expect(noUrl?.source).toContain('reference=main');
+  });
+
+  it('accepts such an entry the base has unchanged', () => {
+    const odd = `${GIT}\nsubdirectory = ["evil"]`;
+    expect(lock('poetry.lock', at('1.2.5', odd), at('1.2.6', odd))).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 2: the shapes of the package’s overrides stay as they were (M1 residual)', () => {
+  const base = UV_PYPROJECT('requests-toolbelt>=1');
+  const overrides = (...entries: string[]) => {
+    const list = entries.map((e) => JSON.stringify(e)).join(', ');
+    return `${base}\n[tool.uv]\noverride-dependencies = [${list}]\n`;
+  };
+  const linux = (v: string) => `qf-a>=${v} ; sys_platform == 'linux'`;
+  const win = (v: string) => `qf-a>=${v} ; sys_platform == 'win32'`;
+
+  it('refuses two base markers turned into one as other_change', () => {
+    expect(
+      pyproject(overrides(linux('1.2.5'), win('1.2.5')), overrides(win('1.2.6'), win('1.2.6'))),
+    ).toEqual(refused('other_change', 'pyproject.toml'));
+  });
+
+  it('accepts both markers bumped, in any order', () => {
+    const before = overrides(linux('1.2.5'), win('1.2.5'));
+    expect(pyproject(before, overrides(win('1.2.6'), linux('1.2.6')))).toEqual({ ok: true });
+  });
+
+  it('refuses the package’s override removed, wholly or one of two, as other_change', () => {
+    expect(pyproject(overrides('qf-a>=1.2.5'), overrides())).toEqual(
+      refused('other_change', 'pyproject.toml'),
+    );
+    expect(pyproject(overrides(linux('1.2.5'), win('1.2.5')), overrides(linux('1.2.6')))).toEqual(
+      refused('other_change', 'pyproject.toml'),
+    );
+  });
+
+  it('still accepts a brand-new override without extras or marker', () => {
+    expect(pyproject(overrides('other>=1'), overrides('other>=1', 'qf-a>=1.2.6'))).toEqual({
+      ok: true,
+    });
+  });
+});

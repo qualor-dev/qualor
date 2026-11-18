@@ -446,16 +446,23 @@ describe('fix round 1: Java trim, snapshot versions and the XML declaration (I1,
     expect(check(BASE, next)).toEqual(refused('other_change'));
   });
 
-  it.each(['5.2.22-SNAPSHOT', '5.2.22-snapshot', '5.2.22-20240101.123456-1'])(
-    'refuses the snapshot version %s as bad_spec (M2, P2d)',
-    (version) => {
-      expect(check(BASE, POM({ version }))).toEqual(refused('bad_spec'));
-      expect(check(BASE, POM({ managed: MANAGED(version) }))).toMatchObject({ rule: 'bad_spec' });
-      expect(check(viaProperty('5.2.20.RELEASE'), viaProperty(version))).toMatchObject({
-        rule: 'bad_spec',
-      });
-    },
-  );
+  it.each([
+    '5.2.22-SNAPSHOT',
+    '5.2.22-snapshot',
+    '5.2.22-20240101.123456-1',
+    // Fix round 2: Maven Resolver's own test (`endsWith("SNAPSHOT")` or the timestamp form).
+    '5.2.22.SNAPSHOT',
+    '5.2.22SNAPSHOT',
+    '5.2.22_SNAPSHOT',
+    '5.2.22+SNAPSHOT',
+    '20240101.123456-1',
+  ])('refuses the snapshot version %s as bad_spec (M2, P2d)', (version) => {
+    expect(check(BASE, POM({ version }))).toEqual(refused('bad_spec'));
+    expect(check(BASE, POM({ managed: MANAGED(version) }))).toMatchObject({ rule: 'bad_spec' });
+    expect(check(viaProperty('5.2.20.RELEASE'), viaProperty(version))).toMatchObject({
+      rule: 'bad_spec',
+    });
+  });
 
   it('accepts a snapshot version the base has, unchanged, on another dependency', () => {
     const snapshot = (v: string) =>
@@ -465,5 +472,12 @@ describe('fix round 1: Java trim, snapshot versions and the XML declaration (I1,
           '\n    <dependency><groupId>x</groupId><artifactId>y</artifactId><version>1.0-SNAPSHOT</version></dependency>',
       });
     expect(check(snapshot('5.2.20.RELEASE'), snapshot('5.2.21'))).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 2: Maven Resolver’s snapshot test (M2)', () => {
+  it('accepts a timestamp Maven does not read as a snapshot (no - before it)', () => {
+    expect(check(BASE, POM({ version: '5.2.22.20240101.123456-1' }))).toEqual({ ok: true });
+    expect(check(BASE, POM({ version: '5.2.22-x20240101.123456-1' }))).toEqual({ ok: true });
   });
 });
