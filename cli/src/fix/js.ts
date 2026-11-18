@@ -7,6 +7,7 @@ import {
   FIX_FILES,
   FIX_MAX_DEPENDENTS,
   greatestVersion,
+  isPlainSpec,
   pinsPackage,
   readNpmLock,
   readPnpmLock,
@@ -361,6 +362,88 @@ function berrySourceStop(ws: FixWorkspace, projects: readonly Project[]): FixSto
         );
       }
     }
+  }
+  return null;
+}
+
+/** Ruling T13g: the manifest sections whose specs Berry resolves (and `resolutions`, its pins). */
+const BERRY_SPEC_SECTIONS = [
+  'dependencies',
+  'devDependencies',
+  'optionalDependencies',
+  'peerDependencies',
+  'resolutions',
+] as const;
+
+/** An npm dist-tag (`latest`, `next`, `beta-2`): a word, no `:`, `/` or white space. */
+const DIST_TAG = /^[A-Za-z][\w.-]*$/;
+/** A package name, scoped or not, as an `npm:` alias names it. */
+const ALIASED_NAME = /^(?:@[\w.~-]+\/)?[\w.~-]+$/;
+
+const isRangeOrTag = (spec: string) => spec === '' || isPlainSpec(spec) || DIST_TAG.test(spec);
+
+/** `npm:<range or tag>` or an alias `npm:<name>[@<range or tag>]`, after the `npm:`. */
+function isNpmSpec(rest: string): boolean {
+  if (isRangeOrTag(rest)) return true;
+  const at = rest.indexOf('@', 1);
+  const name = at < 1 ? rest : rest.slice(0, at);
+  return ALIASED_NAME.test(name) && (at < 1 || isRangeOrTag(rest.slice(at + 1)));
+}
+
+/** A range or tag, `npm:` (aliases included) or `workspace:`. */
+function isRegistryOrWorkspaceSpec(spec: string): boolean {
+  if (spec.startsWith('npm:')) return isNpmSpec(spec.slice('npm:'.length));
+  return spec.startsWith('workspace:') || isRangeOrTag(spec);
+}
+
+/**
+ * Ruling T13g: a manifest spec Berry resolves without fetching or building anything itself: a
+ * range or dist-tag, `npm:` (aliases included), `workspace:`, or a `patch:` of one of those.
+ */
+function allowedBerrySpec(spec: string): boolean {
+  if (!spec.startsWith('patch:')) return isRegistryOrWorkspaceSpec(spec);
+  const patched = patchedLocator(spec);
+  const range = patched === null ? null : referenceOf(patched);
+  return range !== null && isRegistryOrWorkspaceSpec(range);
+}
+
+/** The first spec of a manifest that Berry would fetch from elsewhere: its section, name and spec. */
+function foreignSpec(manifest: Json): { section: string; name: string; spec: unknown } | null {
+  for (const section of BERRY_SPEC_SECTIONS) {
+    const specs = manifest[section];
+    if (!isRecord(specs)) continue;
+    for (const [name, spec] of Object.entries(specs)) {
+      if (typeof spec !== 'string' || !allowedBerrySpec(spec)) return { section, name, spec };
+    }
+  }
+  return null;
+}
+
+/** One Berry project's manifests: the first spec the allowlist refuses, as a stop. */
+function berryManifestsStop(ws: FixWorkspace, project: Project): FixStop | null {
+  for (const file of [project.manifest, ...project.members]) {
+    const manifest = parseManifest(readText(ws, file));
+    if (manifest === null) return unsupported(`${file} is not a JSON object.`);
+    const foreign = foreignSpec(manifest);
+    if (foreign !== null) {
+      return unsupported(
+        `${file} declares ${foreign.name} as ${specText(foreign.spec)} in ${foreign.section}; under Yarn Berry, Qualor fixes only a project whose specs are ranges, tags, npm:, workspace: or a patch of those, since Yarn may run scripts to prepare any other source.`,
+      );
+    }
+  }
+  return null;
+}
+
+/**
+ * Ruling T13g: Berry also resolves the manifests' specs that are not in the lockfile yet, so under
+ * Berry every spec of the root and workspace manifests passes {@link allowedBerrySpec}, before any
+ * tool runs.
+ */
+function berrySpecStop(ws: FixWorkspace, projects: readonly Project[]): FixStop | null {
+  for (const project of projects) {
+    if (!project.lockfiles.some((l) => l.manager === 'yarn-berry')) continue;
+    const stop = berryManifestsStop(ws, project);
+    if (stop !== null) return stop;
   }
   return null;
 }
@@ -721,11 +804,18 @@ interface Command {
   errors: 'stdout' | 'stderr';
 }
 
-/** Berry: no scripts (ruling F20), no immutable installs in CI, no telemetry. */
+/**
+ * Berry: no scripts (ruling F20), no immutable installs in CI, no telemetry. Ruling T13g: git may
+ * use no protocol (`GIT_ALLOW_PROTOCOL` names none that exists) and reads no system configuration,
+ * so a git dependency that appears during the run (a new version's own dependency) cannot be
+ * cloned or prepared; the run fails instead.
+ */
 const BERRY_ENV = {
   YARN_ENABLE_SCRIPTS: 'false',
   YARN_ENABLE_IMMUTABLE_INSTALLS: 'false',
   YARN_ENABLE_TELEMETRY: 'false',
+  GIT_ALLOW_PROTOCOL: 'qualor-none',
+  GIT_CONFIG_NOSYSTEM: '1',
 } as const;
 
 /** §6.5's lockfile regeneration per manager, scripts off (ruling F20); CI defaults turned off. */
@@ -974,7 +1064,8 @@ async function apply(
 ): Promise<AppliedFix | FixStop> {
   const projects = projectsOf(ws, plan);
   if (isStop(projects)) return projects;
-  const refused = zeroInstallStop(ws, projects) ?? berrySourceStop(ws, projects);
+  const refused =
+    zeroInstallStop(ws, projects) ?? berrySourceStop(ws, projects) ?? berrySpecStop(ws, projects);
   if (refused !== null) return refused;
   const edits = new ManifestEdits(ws);
   const plans = planAll(ws, edits, projects, fix, plan);

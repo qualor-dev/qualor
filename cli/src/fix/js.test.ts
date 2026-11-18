@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -926,6 +926,14 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
     expect(r.calls).toEqual([]);
   });
 
+  /** A Yarn Berry fake: the flavour check answers 4.18.1, the install fails. */
+  const fakeBerry: ToolRunner = (_tool, args) =>
+    Promise.resolve(
+      args[0] === '--version'
+        ? { exitCode: 0, timedOut: false, stdout: '4.18.1\n', stderr: '' }
+        : { exitCode: 1, timedOut: false, stdout: 'install stopped by the test', stderr: '' },
+    );
+
   /** BERRY_LOCK with one more entry, `extra@<descriptor>` resolving to `resolution`. */
   const berryWith = (descriptor: string, resolution: string) =>
     BERRY_LOCK.concat(`
@@ -1013,14 +1021,117 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
   linkType: soft
 `);
     const dir = committed({ 'package.json': app, 'yarn.lock': lock });
-    const berry: ToolRunner = (_tool, args) =>
-      Promise.resolve(
-        args[0] === '--version'
-          ? { exitCode: 0, timedOut: false, stdout: '4.18.1\n', stderr: '' }
-          : { exitCode: 1, timedOut: false, stdout: 'install stopped by the test', stderr: '' },
-      );
 
-    const r = await fix(dir, managerEnv('http://127.0.0.1:9'), claim(['1.2.5'], '1.2.6'), berry);
+    const r = await fix(
+      dir,
+      managerEnv('http://127.0.0.1:9'),
+      claim(['1.2.5'], '1.2.6'),
+      fakeBerry,
+    );
+
+    // Past the gate: the flavour check and the install ran (the fake install fails).
+    expect(r.calls.map((c) => [c.tool, ...c.args])).toEqual([
+      ['yarn', '--version'],
+      ['yarn', 'install', '--mode=update-lockfile'],
+    ]);
+    expect(r.outcome).toMatchObject({ failure: { code: 'package_manager' } });
+  });
+
+  it('Yarn Berry with an exec: spec in a workspace manifest: failure manifest_unsupported naming it, nothing run (Ruling T13g)', async () => {
+    const root = json([
+      '{',
+      '  "name": "app",',
+      '  "private": true,',
+      '  "workspaces": ["packages/*"],',
+      '  "dependencies": { "qf-a": "^1.2.5" }',
+      '}',
+    ]);
+    const member = json([
+      '{',
+      '  "name": "gen",',
+      '  "dependencies": { "generated": "exec:./gen.js" }',
+      '}',
+    ]);
+    const dir = committed({
+      'package.json': root,
+      'packages/gen/package.json': member,
+      'yarn.lock': BERRY_LOCK,
+    });
+
+    const r = await fix(
+      dir,
+      managerEnv('http://127.0.0.1:9'),
+      claim(['1.2.5'], '1.2.6'),
+      fakeBerry,
+    );
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) {
+      expect(r.outcome.failure.message).toContain('packages/gen/package.json');
+      expect(r.outcome.failure.message).toContain('exec:./gen.js');
+    }
+    expect(r.calls).toEqual([]);
+  });
+
+  it('Yarn Berry with a github: spec in resolutions: failure manifest_unsupported naming it, nothing run (Ruling T13g)', async () => {
+    const app = json([
+      '{',
+      '  "name": "app",',
+      '  "dependencies": { "qf-a": "^1.2.5" },',
+      '  "resolutions": { "evil": "github:attacker/evil" }',
+      '}',
+    ]);
+    const dir = committed({ 'package.json': app, 'yarn.lock': BERRY_LOCK });
+
+    const r = await fix(
+      dir,
+      managerEnv('http://127.0.0.1:9'),
+      claim(['1.2.5'], '1.2.6'),
+      fakeBerry,
+    );
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+    if ('failure' in r.outcome) {
+      expect(r.outcome.failure.message).toContain('resolutions');
+      expect(r.outcome.failure.message).toContain('github:attacker/evil');
+    }
+    expect(r.calls).toEqual([]);
+  });
+
+  it('Yarn Berry with ranges, tags, npm: aliases, workspace:* and a patch: of npm: only: not refused by the spec gate (Ruling T13g)', async () => {
+    const app = json([
+      '{',
+      '  "name": "app",',
+      '  "private": true,',
+      '  "workspaces": ["packages/*"],',
+      '  "dependencies": {',
+      '    "qf-a": "^1.2.5",',
+      '    "any": "*",',
+      '    "tagged": "latest",',
+      '    "aliased": "npm:other@^1.0.0",',
+      '    "scoped": "npm:@scope/other@1.0.0",',
+      '    "lib": "workspace:*",',
+      '    "patched": "patch:other@npm%3A1.0.0#~/.yarn/patches/other-npm-1.0.0-abc.patch"',
+      '  },',
+      '  "devDependencies": { "ranged": ">=1 <3" },',
+      '  "peerDependencies": { "peer": "^2 || ^3" },',
+      '  "optionalDependencies": { "maybe": "~1.0.0" },',
+      '  "resolutions": { "qf-b": "1.0.0", "qf-c": "npm:^2.0.0" }',
+      '}',
+    ]);
+    const lib = json(['{', '  "name": "lib",', '  "dependencies": { "ranged": "^1.0.0" }', '}']);
+    const dir = committed({
+      'package.json': app,
+      'packages/lib/package.json': lib,
+      'yarn.lock': BERRY_LOCK,
+    });
+
+    const r = await fix(
+      dir,
+      managerEnv('http://127.0.0.1:9'),
+      claim(['1.2.5'], '1.2.6'),
+      fakeBerry,
+    );
 
     // Past the gate: the flavour check and the install ran (the fake install fails).
     expect(r.calls.map((c) => [c.tool, ...c.args])).toEqual([
@@ -1207,6 +1318,94 @@ describe('the JS adapter: reading lockfiles and verifying them (B3)', () => {
     expect(warnings[0]).toContain('test/fixtures/broken/package-lock.json');
   });
 });
+
+interface GitCall {
+  args: string[];
+  allow: string | null;
+  nosystem: string | null;
+}
+
+/** The fake git: records its arguments and the two variables that stop a real git, then fails. */
+const FAKE_GIT = [
+  "const fs = require('node:fs');",
+  "const path = require('node:path');",
+  'const call = {',
+  '  args: process.argv.slice(2),',
+  '  allow: process.env.GIT_ALLOW_PROTOCOL ?? null,',
+  '  nosystem: process.env.GIT_CONFIG_NOSYSTEM ?? null,',
+  '};',
+  "fs.appendFileSync(path.join(__dirname, 'calls.jsonl'), JSON.stringify(call) + String.fromCharCode(10));",
+  "process.stderr.write('fatal: git is blocked by the test' + String.fromCharCode(10));",
+  'process.exit(128);',
+  '',
+].join('\n');
+
+/**
+ * A `git` first on `PATH` (a `.cmd` for Windows, a shell script elsewhere) that records each call
+ * and fails (ruling T13g), so no test reaches a real repository host.
+ */
+function fakeGit(): { dir: string; calls: () => GitCall[] } {
+  const dir = tmp('qualor-fix-fake-git-');
+  writeTree(dir, {
+    'fake-git.cjs': FAKE_GIT,
+    'git.cmd': ['@echo off', 'node "%~dp0fake-git.cjs" %*', 'exit /b %errorlevel%', ''].join(
+      '\r\n',
+    ),
+    git: ['#!/bin/sh', 'exec node "$(dirname "$0")/fake-git.cjs" "$@"', ''].join('\n'),
+  });
+  chmodSync(path.join(dir, 'git'), 0o755);
+  const log = path.join(dir, 'calls.jsonl');
+  const calls = () =>
+    existsSync(log)
+      ? readFileSync(log, 'utf8')
+          .split('\n')
+          .filter((l) => l !== '')
+          .map((l) => JSON.parse(l) as GitCall)
+      : [];
+  return { dir, calls };
+}
+
+describe.runIf(AVAILABLE['yarn-berry'])(
+  'the JS adapter with Yarn Berry: git during the run',
+  () => {
+    it(
+      'a git dependency the target version brings cannot be cloned: git runs with no protocol allowed (Ruling T13g)',
+      async () => {
+        const git = fakeGit();
+        const qfA: FakeNpmVersion[] = [{ version: '1.2.5' }];
+        const reg = await registry({ 'qf-a': qfA, 'qf-other': OTHER });
+        const env = managerEnv(reg.url, [git.dir, processPath()].join(path.delimiter));
+        // Yarn 4.10+ blocks git repositories outside `approvedGitRepositories` by itself; approve
+        // every one, as a project may (and older Yarn has no such list), so the run reaches git.
+        const yarnrc = path.join(env['HOME'] ?? '', '.yarnrc.yml');
+        writeFileSync(
+          yarnrc,
+          `${readFileSync(yarnrc, 'utf8')}approvedGitRepositories:\n  - '**'\n`,
+        );
+        const dir = await repository({ 'package.json': APP }, ['yarn-berry'], env);
+        qfA.push({ version: '1.2.6', dependencies: { evil: 'github:attacker/evil' } });
+
+        const r = await fix(dir, env, claim(['1.2.5'], '1.2.6'));
+
+        const install = r.calls.find((c) => c.args[0] === 'install');
+        expect(install?.env).toMatchObject({
+          GIT_ALLOW_PROTOCOL: 'qualor-none',
+          GIT_CONFIG_NOSYSTEM: '1',
+        });
+        // Berry asked git for the new dependency's refs; each call had no protocol it could use,
+        // so a real git could clone nothing.
+        const calls = git.calls();
+        expect(calls.some((c) => c.args.includes('ls-remote'))).toBe(true);
+        for (const call of calls) {
+          expect(call).toMatchObject({ allow: 'qualor-none', nosystem: '1' });
+        }
+        expect(r.outcome).toHaveProperty('failure');
+        expect(r.files.size).toBe(0);
+      },
+      SLOW,
+    );
+  },
+);
 
 describe.runIf(AVAILABLE['yarn-berry'])('the JS adapter with Yarn Berry: two lines', () => {
   it(
