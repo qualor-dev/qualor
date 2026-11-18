@@ -20,6 +20,7 @@ import type { FixAdapter, FixWorkspace } from '../fix/adapter';
 import { fixJobSecrets, fixToolEnv } from '../fix/env';
 import { goAdapter } from '../fix/go';
 import { jsAdapter } from '../fix/js';
+import { mavenAdapter } from '../fix/maven';
 import { muslProblem } from '../fix/musl';
 import { prepareFix, type FixOutcome } from '../fix/run';
 import { createToolRunner, type ToolRunner } from '../fix/runner';
@@ -37,7 +38,11 @@ import { clean, type ServerEndpoint } from '../server/http';
  * The package managers of each family (Tasks 13–16 register theirs here). A family without an
  * adapter is never claimed.
  */
-const ADAPTERS: Partial<Record<FixFamily, FixAdapter>> = { js: jsAdapter, go: goAdapter };
+const ADAPTERS: Partial<Record<FixFamily, FixAdapter>> = {
+  js: jsAdapter,
+  go: goAdapter,
+  maven: mavenAdapter,
+};
 
 export interface FixDeps {
   adapters?: Partial<Record<FixFamily, FixAdapter>>;
