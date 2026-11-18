@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./tar": "./src/tar.ts",
+    "./fix": "./src/fix/index.ts",
     "./test/trivy-archive": "./test/trivy-archive.ts",
     "./test/ci-cache": "./test/ci-cache.ts",
     "./test/sbom": "./test/sbom.ts"
@@ -15,6 +16,11 @@
     "schemas": "tsx scripts/export-schemas.ts"
   },
   "dependencies": {
+    "@renovatebot/pep440": "^5.0.1",
+    "semver": "^7.8.6",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/semver": "^7.8.0"
   }
 }
