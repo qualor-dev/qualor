@@ -5,11 +5,14 @@ import type { Config } from '../src/config';
 import {
   analyses,
   branches,
+  dependencyFixes,
   instanceSettings,
   issues,
   jiraLinks,
   jobs,
+  projects,
   projectVersions,
+  scmConnections,
 } from '../src/db/schema';
 import { gateHandlers } from '../src/gates/reevaluate';
 import { jobHandlers } from '../src/ingest/handlers';
@@ -38,6 +41,7 @@ import {
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
 import { createFakeJira, type FakeJira } from './fake-jira';
 import { createFakeLlm, type FakeLlm } from './fake-llm';
+import { seedMainVulnerability } from './fixes';
 import { mainBranchId, seedIssue, seedRule } from './issues';
 import { closedPort } from './mail';
 import { signTest, testPayload, testSigner, verifyWith, type TestSigner } from './license';
@@ -815,6 +819,43 @@ export async function runAuditScenario(
     silentLogger,
   );
   await call('POST', `/ai-requests/${requestId}/post`, 202, {});
+
+  // dependency_fix.requested, .retried, .cancelled (0.16 fix MRs): main (fixes switched on above)
+  // is bound to the mapped connection, which allows fix MRs; both are set in the database, since
+  // the events of those changes are driven above. A fix of a vulnerable package of main is
+  // requested, fails, is retried and is cancelled. Nothing calls GitLab: no fix job runs here.
+  await ctx.db
+    .update(projects)
+    .set({ scmConnectionId: mapping, scmProjectRef: '501' })
+    .where(eq(projects.id, main.id));
+  await ctx.db
+    .update(scmConnections)
+    .set({ fixMrsAllowed: true })
+    .where(eq(scmConnections.id, mapping));
+  await seedMainVulnerability(
+    ctx.db,
+    { id: main.id, mainBranchId: await mainBranchId(ctx.db, main.id) },
+    {
+      ecosystem: 'npm',
+      packageName: 'scenario-fix',
+      version: '1.0.0',
+      vulnerabilityId: 'CVE-2026-0002',
+      severity: 'high',
+      fixedVersion: '1.0.1',
+    },
+  );
+  const fix = (
+    await call('POST', `/projects/${main.id}/fixes`, 202, {
+      ecosystem: 'npm',
+      packageName: 'scenario-fix',
+    })
+  ).json() as { id: string };
+  await ctx.db
+    .update(dependencyFixes)
+    .set({ state: 'failed', failure: { code: 'package_manager', message: 'scenario' } })
+    .where(eq(dependencyFixes.id, fix.id));
+  await call('POST', `/fixes/${fix.id}/retry`, 202);
+  await call('DELETE', `/fixes/${fix.id}`, 204);
 
   // project_token.revoked, then project.deleted last (ruling P-B1)
   await call('DELETE', `/projects/${main.id}/tokens/${mainToken.id}`, 204);

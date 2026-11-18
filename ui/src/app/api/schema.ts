@@ -6481,6 +6481,24 @@ export interface paths {
                                     createdAt: string;
                                 } | null;
                                 jiraLinkable: boolean;
+                                fix: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                    refresh: boolean;
+                                    targetVersion: string | null;
+                                    mrNumber: number | null;
+                                    mrUrl: string | null;
+                                    failure: {
+                                        /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    /** Format: date-time */
+                                    updatedAt: string;
+                                } | null;
+                                fixable: boolean;
                             }[];
                             total: number;
                         };
@@ -7766,6 +7784,24 @@ export interface paths {
                                     createdAt: string;
                                 } | null;
                                 jiraLinkable: boolean;
+                                fix: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                    refresh: boolean;
+                                    targetVersion: string | null;
+                                    mrNumber: number | null;
+                                    mrUrl: string | null;
+                                    failure: {
+                                        /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    /** Format: date-time */
+                                    updatedAt: string;
+                                } | null;
+                                fixable: boolean;
                             }[];
                             nextCursor: string | null;
                             facets?: {
@@ -7921,6 +7957,24 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            fix: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                refresh: boolean;
+                                targetVersion: string | null;
+                                mrNumber: number | null;
+                                mrUrl: string | null;
+                                failure: {
+                                    /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            fixable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8115,6 +8169,24 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            fix: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                refresh: boolean;
+                                targetVersion: string | null;
+                                mrNumber: number | null;
+                                mrUrl: string | null;
+                                failure: {
+                                    /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            fixable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8347,6 +8419,24 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            fix: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                refresh: boolean;
+                                targetVersion: string | null;
+                                mrNumber: number | null;
+                                mrUrl: string | null;
+                                failure: {
+                                    /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            fixable: boolean;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -16936,6 +17026,401 @@ export interface paths {
         };
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/fixes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The project's fixes, newest first, in keyset pages; `state` keeps one state */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    cursor?: string;
+                    state?: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                                refresh: boolean;
+                                targetVersion: string | null;
+                                mrNumber: number | null;
+                                mrUrl: string | null;
+                                failure: {
+                                    /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                /** Format: date-time */
+                                updatedAt: string;
+                                /** @enum {string} */
+                                family: "js" | "go" | "maven" | "python";
+                                packageName: string;
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                installedVersion: string | null;
+                                branch: string;
+                                /** Format: date-time */
+                                createdAt: string;
+                            }[];
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Request a fix MR for a vulnerable package of the main branch: the fix of the package's family (js, go, maven, python) becomes `requested` for the fix job of the project's CI. A fix in flight is answered as it is; an ended one is re-armed (a taken-over one on a new branch). Checked in this order: the preconditions, a fix in flight, the cap, the package */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The vulnerability item's ecosystem (Trivy's package type: npm, pnpm, yarn, gomod, pom, uv, poetry); its family names the fix */
+                        ecosystem: string;
+                        packageName: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                            refresh: boolean;
+                            targetVersion: string | null;
+                            mrNumber: number | null;
+                            mrUrl: string | null;
+                            failure: {
+                                /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** @enum {string} */
+                            family: "js" | "go" | "maven" | "python";
+                            packageName: string;
+                            /** @enum {string} */
+                            origin: "manual" | "auto";
+                            installedVersion: string | null;
+                            branch: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED); NOT_FIXABLE: no open, not ignored vulnerability of the package on the main branch has a fixed version, or it is Go's standard library; FIX_ECOSYSTEM_UNSUPPORTED: the ecosystem has no automatic fix (npm, pnpm, Yarn, Go modules, Maven, uv and Poetry have) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/fixes/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. Checked as a request: the preconditions, the state, the cap, the package */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            state: "requested" | "preparing" | "committing" | "open" | "failed" | "no_fix" | "merged" | "fixed" | "declined" | "taken_over" | "cancelled";
+                            refresh: boolean;
+                            targetVersion: string | null;
+                            mrNumber: number | null;
+                            mrUrl: string | null;
+                            failure: {
+                                /** @description For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable) */
+                                code: string;
+                                message: string;
+                            } | null;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** @enum {string} */
+                            family: "js" | "go" | "maven" | "python";
+                            packageName: string;
+                            /** @enum {string} */
+                            origin: "manual" | "auto";
+                            installedVersion: string | null;
+                            branch: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, open); FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED); NOT_FIXABLE: no open, not ignored vulnerability of the package on the main branch has a fixed version, or it is Go's standard library */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/fixes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused); an open MR is closed with a comment and its branch deleted by a background job, unless a person pushed to it. Cancelling an ended fix changes nothing */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description FIX_BUSY: the server is writing the fix's branch and MR (committing); cancel again in a few seconds; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;

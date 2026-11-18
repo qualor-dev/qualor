@@ -5,6 +5,7 @@ import {
   SEVERITIES,
   type LicenseGroupId,
 } from '@qualor/shared';
+import { FIX_FAMILIES } from '@qualor/shared/fix';
 import { z } from 'zod';
 import { JIRA_ISSUE_KEY_PATTERN, ORGANIZATION_KEY_PATTERN, PROJECT_KEY_PATTERN } from '../patterns';
 import { REVIEW_SCOPES } from '../review/schema';
@@ -226,6 +227,8 @@ const webhookRef = z.strictObject({
   kind: z.enum(['generic', 'slack', 'teams']),
 });
 const tokenRef = z.strictObject({ name: str, prefix: z.string().max(16) });
+/** 0.16 fix MRs: a dependency fix by its identity, the family and the package (B7). */
+const fixRef = z.strictObject({ family: z.enum(FIX_FAMILIES), packageName: str });
 /** sso-scim.md §12.8: every SCIM event names the token and the connection that made it. */
 const scim = { scimTokenId: id, connectionId: id };
 /** sso-scim.md §15: a bounded count (members, mappings changed, sessions ended, …). */
@@ -669,6 +672,10 @@ export const AUDIT_CATALOGUE = {
       key: z.string().max(255).regex(JIRA_ISSUE_KEY_PATTERN).nullable(),
     }),
   },
+  // 0.16 fix MRs §6.8: the fix's family and package (a public package name, never a secret).
+  'dependency_fix.requested': { target: 'project', details: fixRef },
+  'dependency_fix.retried': { target: 'project', details: fixRef },
+  'dependency_fix.cancelled': { target: 'project', details: fixRef },
   'webhook.created': { target: 'webhook', details: webhookRef },
   'webhook.updated': { target: 'webhook', details: changed },
   'webhook.deleted': { target: 'webhook', details: webhookRef },

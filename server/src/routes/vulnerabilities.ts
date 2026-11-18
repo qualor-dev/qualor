@@ -6,6 +6,8 @@ import { actorOf } from '../audit/recorder';
 import { accessOf, requireUser } from '../auth/access';
 import type { Executor } from '../db/client';
 import { branches, projectVersions } from '../db/schema';
+import { fixFacets } from '../fixes/eligibility';
+import { dependencyFixSchema } from '../fixes/rows';
 import { notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, noNul } from '../http/schemas';
 import { transitionComment } from '../issues/comment';
@@ -163,6 +165,16 @@ const itemSchema = z.object({
    * target, or a non-closed Trivy issue of main or a tracked branch (not only an untracked target).
    */
   jiraLinkable: z.boolean(),
+  /**
+   * 0.16 fix MRs R12: the fix of the pair's package while main has a row of the pair; null
+   * otherwise (also on a pair only another target has).
+   */
+  fix: dependencyFixSchema.nullable(),
+  /**
+   * R12: whether a fix MR may be requested: the pair has an effective-open, not ignored row on the
+   * main branch with a fixed version, in a supported ecosystem, and is not Go's standard library.
+   */
+  fixable: z.boolean(),
 });
 
 const TARGET_PATTERN =
@@ -326,6 +338,7 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
       // One batched lookup each for the page, never a query per item.
       const links = await linksForPairs(deps.db, project.id, page.items);
       const presence = await pairPresence(deps.db, project.id, page.items);
+      const fixes = await fixFacets(deps.db, project.id, page.items);
       return {
         ...page,
         items: page.items.map((item) => {
@@ -334,6 +347,8 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
             ...item,
             jira: links.get(key) ?? null,
             jiraLinkable: presence.linkable.has(key),
+            fix: fixes.get(key)?.fix ?? null,
+            fixable: fixes.get(key)?.fixable ?? false,
           };
         }),
       };

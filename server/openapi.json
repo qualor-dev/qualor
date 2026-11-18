@@ -13616,6 +13616,109 @@
                           },
                           "jiraLinkable": {
                             "type": "boolean"
+                          },
+                          "fix": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "requested",
+                                      "preparing",
+                                      "committing",
+                                      "open",
+                                      "failed",
+                                      "no_fix",
+                                      "merged",
+                                      "fixed",
+                                      "declined",
+                                      "taken_over",
+                                      "cancelled"
+                                    ]
+                                  },
+                                  "refresh": {
+                                    "type": "boolean"
+                                  },
+                                  "targetVersion": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "mrNumber": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mrUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "failure": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "code": {
+                                            "type": "string",
+                                            "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                          },
+                                          "message": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "code",
+                                          "message"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "state",
+                                  "refresh",
+                                  "targetVersion",
+                                  "mrNumber",
+                                  "mrUrl",
+                                  "failure",
+                                  "updatedAt"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "fixable": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -13638,7 +13741,9 @@
                           "exploited",
                           "epss",
                           "jira",
-                          "jiraLinkable"
+                          "jiraLinkable",
+                          "fix",
+                          "fixable"
                         ],
                         "additionalProperties": false
                       }
@@ -16216,6 +16321,109 @@
                           },
                           "jiraLinkable": {
                             "type": "boolean"
+                          },
+                          "fix": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "requested",
+                                      "preparing",
+                                      "committing",
+                                      "open",
+                                      "failed",
+                                      "no_fix",
+                                      "merged",
+                                      "fixed",
+                                      "declined",
+                                      "taken_over",
+                                      "cancelled"
+                                    ]
+                                  },
+                                  "refresh": {
+                                    "type": "boolean"
+                                  },
+                                  "targetVersion": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "mrNumber": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mrUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "failure": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "code": {
+                                            "type": "string",
+                                            "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                          },
+                                          "message": {
+                                            "type": "string"
+                                          }
+                                        },
+                                        "required": [
+                                          "code",
+                                          "message"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "updatedAt": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "state",
+                                  "refresh",
+                                  "targetVersion",
+                                  "mrNumber",
+                                  "mrUrl",
+                                  "failure",
+                                  "updatedAt"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "fixable": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -16243,7 +16451,9 @@
                           "createdAt",
                           "updatedAt",
                           "jira",
-                          "jiraLinkable"
+                          "jiraLinkable",
+                          "fix",
+                          "fixable"
                         ],
                         "additionalProperties": false
                       }
@@ -16769,6 +16979,109 @@
                     "jiraLinkable": {
                       "type": "boolean"
                     },
+                    "fix": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "requested",
+                                "preparing",
+                                "committing",
+                                "open",
+                                "failed",
+                                "no_fix",
+                                "merged",
+                                "fixed",
+                                "declined",
+                                "taken_over",
+                                "cancelled"
+                              ]
+                            },
+                            "refresh": {
+                              "type": "boolean"
+                            },
+                            "targetVersion": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "mrNumber": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mrUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "failure": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "code": {
+                                      "type": "string",
+                                      "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "code",
+                                    "message"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "refresh",
+                            "targetVersion",
+                            "mrNumber",
+                            "mrUrl",
+                            "failure",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fixable": {
+                      "type": "boolean"
+                    },
                     "fingerprint": {
                       "type": "string"
                     },
@@ -17100,6 +17413,8 @@
                     "updatedAt",
                     "jira",
                     "jiraLinkable",
+                    "fix",
+                    "fixable",
                     "fingerprint",
                     "snippet",
                     "secondaryLocations",
@@ -17608,6 +17923,109 @@
                     "jiraLinkable": {
                       "type": "boolean"
                     },
+                    "fix": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "requested",
+                                "preparing",
+                                "committing",
+                                "open",
+                                "failed",
+                                "no_fix",
+                                "merged",
+                                "fixed",
+                                "declined",
+                                "taken_over",
+                                "cancelled"
+                              ]
+                            },
+                            "refresh": {
+                              "type": "boolean"
+                            },
+                            "targetVersion": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "mrNumber": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mrUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "failure": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "code": {
+                                      "type": "string",
+                                      "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "code",
+                                    "message"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "refresh",
+                            "targetVersion",
+                            "mrNumber",
+                            "mrUrl",
+                            "failure",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fixable": {
+                      "type": "boolean"
+                    },
                     "fingerprint": {
                       "type": "string"
                     },
@@ -17939,6 +18357,8 @@
                     "updatedAt",
                     "jira",
                     "jiraLinkable",
+                    "fix",
+                    "fixable",
                     "fingerprint",
                     "snippet",
                     "secondaryLocations",
@@ -18497,6 +18917,109 @@
                     "jiraLinkable": {
                       "type": "boolean"
                     },
+                    "fix": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "state": {
+                              "type": "string",
+                              "enum": [
+                                "requested",
+                                "preparing",
+                                "committing",
+                                "open",
+                                "failed",
+                                "no_fix",
+                                "merged",
+                                "fixed",
+                                "declined",
+                                "taken_over",
+                                "cancelled"
+                              ]
+                            },
+                            "refresh": {
+                              "type": "boolean"
+                            },
+                            "targetVersion": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "mrNumber": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "mrUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "failure": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "code": {
+                                      "type": "string",
+                                      "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                    },
+                                    "message": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "code",
+                                    "message"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "state",
+                            "refresh",
+                            "targetVersion",
+                            "mrNumber",
+                            "mrUrl",
+                            "failure",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fixable": {
+                      "type": "boolean"
+                    },
                     "fingerprint": {
                       "type": "string"
                     },
@@ -18828,6 +19351,8 @@
                     "updatedAt",
                     "jira",
                     "jiraLinkable",
+                    "fix",
+                    "fixable",
                     "fingerprint",
                     "snippet",
                     "secondaryLocations",
@@ -39954,6 +40479,789 @@
           },
           "409": {
             "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/fixes": {
+      "get": {
+        "summary": "The project's fixes, newest first, in keyset pages; `state` keeps one state",
+        "tags": [
+          "fixes"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requested",
+                "preparing",
+                "committing",
+                "open",
+                "failed",
+                "no_fix",
+                "merged",
+                "fixed",
+                "declined",
+                "taken_over",
+                "cancelled"
+              ]
+            },
+            "in": "query",
+            "name": "state",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "requested",
+                              "preparing",
+                              "committing",
+                              "open",
+                              "failed",
+                              "no_fix",
+                              "merged",
+                              "fixed",
+                              "declined",
+                              "taken_over",
+                              "cancelled"
+                            ]
+                          },
+                          "refresh": {
+                            "type": "boolean"
+                          },
+                          "targetVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "mrNumber": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "mrUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "failure": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string",
+                                    "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "message"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          },
+                          "family": {
+                            "type": "string",
+                            "enum": [
+                              "js",
+                              "go",
+                              "maven",
+                              "python"
+                            ]
+                          },
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string",
+                            "enum": [
+                              "manual",
+                              "auto"
+                            ]
+                          },
+                          "installedVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "branch": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state",
+                          "refresh",
+                          "targetVersion",
+                          "mrNumber",
+                          "mrUrl",
+                          "failure",
+                          "updatedAt",
+                          "family",
+                          "packageName",
+                          "origin",
+                          "installedVersion",
+                          "branch",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Request a fix MR for a vulnerable package of the main branch: the fix of the package's family (js, go, maven, python) becomes `requested` for the fix job of the project's CI. A fix in flight is answered as it is; an ended one is re-armed (a taken-over one on a new branch). Checked in this order: the preconditions, a fix in flight, the cap, the package",
+        "tags": [
+          "fixes"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ecosystem": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]{1,32}$",
+                    "description": "The vulnerability item's ecosystem (Trivy's package type: npm, pnpm, yarn, gomod, pom, uv, poetry); its family names the fix"
+                  },
+                  "packageName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "ecosystem",
+                  "packageName"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "requested",
+                        "preparing",
+                        "committing",
+                        "open",
+                        "failed",
+                        "no_fix",
+                        "merged",
+                        "fixed",
+                        "declined",
+                        "taken_over",
+                        "cancelled"
+                      ]
+                    },
+                    "refresh": {
+                      "type": "boolean"
+                    },
+                    "targetVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mrNumber": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mrUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failure": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "family": {
+                      "type": "string",
+                      "enum": [
+                        "js",
+                        "go",
+                        "maven",
+                        "python"
+                      ]
+                    },
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "manual",
+                        "auto"
+                      ]
+                    },
+                    "installedVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "state",
+                    "refresh",
+                    "targetVersion",
+                    "mrNumber",
+                    "mrUrl",
+                    "failure",
+                    "updatedAt",
+                    "family",
+                    "packageName",
+                    "origin",
+                    "installedVersion",
+                    "branch",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED); NOT_FIXABLE: no open, not ignored vulnerability of the package on the main branch has a fixed version, or it is Go's standard library; FIX_ECOSYSTEM_UNSUPPORTED: the ecosystem has no automatic fix (npm, pnpm, Yarn, Go modules, Maven, uv and Poetry have)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/fixes/{id}/retry": {
+      "post": {
+        "summary": "Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. Checked as a request: the preconditions, the state, the cap, the package",
+        "tags": [
+          "fixes"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "requested",
+                        "preparing",
+                        "committing",
+                        "open",
+                        "failed",
+                        "no_fix",
+                        "merged",
+                        "fixed",
+                        "declined",
+                        "taken_over",
+                        "cancelled"
+                      ]
+                    },
+                    "refresh": {
+                      "type": "boolean"
+                    },
+                    "targetVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mrNumber": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mrUrl": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failure": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "description": "For `failed` a failure code (manifest_unsupported, missing_tool, package_manager, verify_failed, unplanned_change, timeout, upload_refused, scm_permission, scm_refused, scm_unavailable, scm_not_bound, fixes_disabled), for `no_fix` its reason (no_fixed_version, declined, several_lines, not_installed, unresolvable)"
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "family": {
+                      "type": "string",
+                      "enum": [
+                        "js",
+                        "go",
+                        "maven",
+                        "python"
+                      ]
+                    },
+                    "packageName": {
+                      "type": "string"
+                    },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "manual",
+                        "auto"
+                      ]
+                    },
+                    "installedVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "state",
+                    "refresh",
+                    "targetVersion",
+                    "mrNumber",
+                    "mrUrl",
+                    "failure",
+                    "updatedAt",
+                    "family",
+                    "packageName",
+                    "origin",
+                    "installedVersion",
+                    "branch",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, open); FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED); NOT_FIXABLE: no open, not ignored vulnerability of the package on the main branch has a fixed version, or it is Go's standard library",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/fixes/{id}": {
+      "delete": {
+        "summary": "Cancel a fix in flight: it becomes `cancelled` with a new generation (an upload in flight is refused); an open MR is closed with a comment and its branch deleted by a background job, unless a person pushed to it. Cancelling an ended fix changes nothing",
+        "tags": [
+          "fixes"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "FIX_BUSY: the server is writing the fix's branch and MR (committing); cancel again in a few seconds; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -14,6 +14,8 @@ import { actorOf } from '../audit/recorder';
 import { accessOf, requireUser } from '../auth/access';
 import { first } from '../db/rows';
 import { AI_CATEGORIES, branches, issueChanges, reviewFindings, rules, users } from '../db/schema';
+import { fixFacets, type FixFacet } from '../fixes/eligibility';
+import { dependencyFixSchema } from '../fixes/rows';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import { conflict, forbidden, notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, iso, isoOrNull, noNul, text, timestamp } from '../http/schemas';
@@ -43,6 +45,7 @@ import {
   issueLinkable,
   jiraLinkSchema,
   linksForIssues,
+  pairKey,
   type IssueLinkLookup,
   type JiraLink,
 } from '../jira/links';
@@ -105,6 +108,17 @@ export const issueSchema = z.object({
    * issue of main or a tracked branch, that is not closed.
    */
   jiraLinkable: z.boolean(),
+  /**
+   * 0.16 fix MRs R12: a Trivy issue of main shows the fix of its package while main has a row of
+   * its vulnerability; null otherwise (a code issue, another branch, a merge request).
+   */
+  fix: dependencyFixSchema.nullable(),
+  /**
+   * R12: whether a fix MR may be requested for a Trivy issue of main: its pair has an
+   * effective-open, not ignored row on the main branch with a fixed version (B5), in a supported
+   * ecosystem, and is not Go's standard library.
+   */
+  fixable: z.boolean(),
 });
 export type IssueDto = z.infer<typeof issueSchema>;
 
@@ -278,7 +292,10 @@ export function facetList(raw: string | undefined): IssueFacet[] {
   return names as IssueFacet[];
 }
 
-export function issueDto(row: IssueListRow, jira: IssueJira): IssueDto {
+/** A code issue's, or an issue off main's: no fix, none to request. */
+const NO_FIX: FixFacet = Object.freeze({ fix: null, fixable: false });
+
+export function issueDto(row: IssueListRow, jira: IssueJira, fix: FixFacet): IssueDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -305,6 +322,8 @@ export function issueDto(row: IssueListRow, jira: IssueJira): IssueDto {
     updatedAt: iso(row.updatedAt),
     jira: jira.link,
     jiraLinkable: jira.linkable,
+    fix: fix.fix,
+    fixable: fix.fixable,
   };
 }
 
@@ -342,6 +361,30 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       link: links.get(row.id) ?? null,
       linkable: issueLinkable(row, branch, settings),
     });
+  };
+
+  /**
+   * R12: the fix of each Trivy issue of main, in one batched lookup (`fixFacets`, two queries);
+   * every other issue (a code issue, another branch, a merge request) has none.
+   */
+  const fixOf = async (
+    projectId: string,
+    branch: Branch,
+    rows: readonly IssueListRow[],
+  ): Promise<(row: IssueListRow) => FixFacet> => {
+    const pairOf = (row: IssueListRow) =>
+      branch.isMain && isPairIssue(row) && row.packageName !== null
+        ? { packageName: row.packageName, vulnerabilityId: row.engineRuleId }
+        : null;
+    const pairs = rows.flatMap((row) => pairOf(row) ?? []);
+    if (pairs.length === 0) return () => NO_FIX;
+    const facets = await fixFacets(deps.db, projectId, pairs);
+    return (row) => {
+      const pair = pairOf(row);
+      return pair
+        ? (facets.get(pairKey(pair.packageName, pair.vulnerabilityId)) ?? NO_FIX)
+        : NO_FIX;
+    };
   };
 
   /** The pair of a Trivy issue and the decision in force on its branch; null for other issues. */
@@ -414,8 +457,9 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       engineRuleId: rule.engineRuleId,
     };
     const jira = await jiraOf(issue.projectId, branch, settings, [row]);
+    const fix = await fixOf(issue.projectId, branch, [row]);
     return {
-      ...issueDto(row, jira(row)),
+      ...issueDto(row, jira(row), fix(row)),
       rule: {
         key: rule.key,
         name: rule.name,
@@ -491,8 +535,9 @@ export const issueRoutes: FastifyPluginAsyncZod<{
               await vulnerabilitySettings(deps.db, branch.projectId),
               page.items,
             );
+      const fix = await fixOf(branch.projectId, branch, page.items);
       return {
-        items: page.items.map((row) => issueDto(row, jira(row))),
+        items: page.items.map((row) => issueDto(row, jira(row), fix(row))),
         nextCursor: page.nextCursor,
         ...(counts === undefined ? {} : { facets: counts }),
       };
