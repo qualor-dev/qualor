@@ -8,9 +8,11 @@ import {
   Lexer,
   parseDocument,
   Parser,
+  Schema,
   visit,
   type CST,
   type Document,
+  type Scalar,
   type YAMLMap,
 } from 'yaml';
 
@@ -183,35 +185,126 @@ export interface YamlReadOptions {
   /** `failsafe` reads every scalar as a string, as Yarn Berry reads `yarn.lock`. */
   schema?: 'core' | 'failsafe';
   /**
-   * Ruling T3o: a lockfile (`pnpm-lock.yaml`, Berry `yarn.lock`) may hold no anchor (`&`), alias
-   * (`*`) or merge key (`<<`); pnpm and Yarn never write them. The first anchor or alias stops
-   * the read as soon as it is lexed, before the document is built.
+   * Rulings T3o and T3p: a lockfile (`pnpm-lock.yaml`, Berry `yarn.lock`) may hold no anchor
+   * (`&`), alias (`*`), tag (`!`), directive (`%`), merge key (`<<`) or key that is not a string;
+   * pnpm and Yarn never write them. The first anchor, alias, tag or directive stops the read as
+   * soon as it is lexed, before the document is built. Ruling T3q: nor a plain scalar that YAML
+   * readers may resolve differently ({@link AMBIGUOUS_PLAIN}).
    */
   lockfile?: boolean;
 }
 
 /**
+ * A key's text. Ruling T3p: in a lockfile only a string key has one; any other key (a tagged
+ * `!!merge`, a `<<` that a `%YAML 1.1` directive makes a merge, `null`, a number, a collection)
+ * throws, because the package manager may read it differently.
+ */
+function keyText(key: unknown, lockfile: boolean): string {
+  if (isScalar(key) && typeof key.value === 'string') return key.value;
+  if (lockfile) throw new Error('a YAML key that is not a string in a lockfile');
+  return isScalar(key) ? String(key.value) : String(key);
+}
+
+/**
  * Refuses a mapping with two equal keys, compared as text (so `1` and `'1'` collide, as they do
  * in the parsed object), with one set per mapping: linear, unlike `yaml`'s own `uniqueKeys` check.
- * In a lockfile it also refuses a merge key (Ruling T3o), quoted or not.
+ * In a lockfile it also refuses a merge key (Ruling T3o), quoted or not, and any key that is not
+ * a string (Ruling T3p).
  */
 function assertKeys(map: YAMLMap, lockfile: boolean): void {
   const seen = new Set<string>();
   for (const { key } of map.items) {
-    const text = isScalar(key) ? String(key.value) : String(key);
+    const text = keyText(key, lockfile);
     if (lockfile && text === '<<') throw new Error('a YAML merge key in a lockfile');
     if (seen.has(text)) throw new Error(`duplicate YAML key ${text.slice(0, 100)}`);
     seen.add(text);
   }
 }
 
-/** Ruling T3o: a lockfile's tokens, refusing an anchor or an alias as soon as it is lexed. */
+/**
+ * Ruling T3q: plain scalars that pnpm's js-yaml (YAML 1.1 habits) and `yaml` (YAML 1.2 core) may
+ * resolve to different values, as keys or values. Each pattern is anchored and has no nested
+ * quantifier. pnpm and Berry quote such strings, so a lockfile holding one plain is refused.
+ */
+const AMBIGUOUS_PLAIN: readonly RegExp[] = [
+  // 0b, 0o and 0x numbers, each with its own digits only: a hex checksum that starts with `0b`
+  // (Berry writes them plain) is no binary number.
+  /^[-+]?0b[01_]+$/i,
+  /^[-+]?0o[0-7_]+$/i,
+  /^[-+]?0x[\da-f_]+$/i,
+  // A leading-zero octal such as 0755.
+  /^[-+]?0[0-9_]+$/,
+  /^[-+]?\.(?:inf|nan)$/i,
+  // A timestamp, or anything that starts like one.
+  /^\d{4}-\d\d?-\d\d?/,
+  // Sexagesimal numbers such as 1:20 or 190:20:30.15.
+  /^[-+]?\d+(?::[0-5]?\d)+(?:\.\d*)?$/,
+  // YAML 1.1 booleans.
+  /^(?:y|n|yes|no|on|off)$/i,
+];
+
+/** A number with an `_` (`1_000`, `.5_0`), which YAML 1.1 readers read as a number. */
+const UNDERSCORE_NUMBER = /^[-+]?[\d_.]+(?:e[-+]?\d+)?$/i;
+
+function isAmbiguousPlain(text: string): boolean {
+  if (text.includes('_') && /\d/.test(text) && UNDERSCORE_NUMBER.test(text)) return true;
+  return AMBIGUOUS_PLAIN.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Ruling T3r: the tests by which the YAML 1.2 core schema resolves a plain scalar to a null,
+ * boolean or number (`yaml`'s own core tags), also for Berry's lockfile, read as failsafe.
+ */
+const CORE_NON_STRING: readonly RegExp[] = new Schema({ schema: 'core' }).tags.flatMap((tag) =>
+  'test' in tag && tag.test instanceof RegExp && tag.default === true ? [tag.test] : [],
+);
+
+/** Ruling T3r: the only plain scalars a lockfile may hold that the core schema reads as no string. */
+const PLAIN_NUMBER = /^-?\d+(?:\.\d+)?$/;
+const PLAIN_WORDS: ReadonlySet<string> = new Set(['true', 'false', 'null', '']);
+
+function isAllowedNonString(text: string): boolean {
+  return PLAIN_WORDS.has(text) || PLAIN_NUMBER.test(text);
+}
+
+/**
+ * Rulings T3q and T3r: refuses a plain scalar of a lockfile, key or value, that YAML readers may
+ * resolve differently. One the core schema reads as no string must be `-?digits(.digits)`, `true`,
+ * `false`, `null` or empty (an allowlist); and none may match {@link AMBIGUOUS_PLAIN} or be a
+ * number with an `_` (a denylist of what js-yaml reads as no string).
+ */
+function assertPlainScalar(scalar: Scalar): void {
+  if (scalar.type !== 'PLAIN' || typeof scalar.source !== 'string') return;
+  const text = scalar.source;
+  const nonString =
+    typeof scalar.value !== 'string' || CORE_NON_STRING.some((test) => test.test(text));
+  if ((nonString && !isAllowedNonString(text)) || isAmbiguousPlain(text)) {
+    throw new Error(`an ambiguous plain YAML scalar in a lockfile: ${text.slice(0, 100)}`);
+  }
+}
+
+/**
+ * What a lockfile's lexeme may not start with (Rulings T3o and T3p). pnpm's js-yaml dump and
+ * Berry's syml stringifier quote every plain string that starts with one of these, so only an
+ * anchor, an alias, a tag (`!!merge`, `!<tag:yaml.org,2002:merge>`, `!!str`) or a directive
+ * (`%YAML 1.1`, which turns a plain `<<` into a merge) starts so.
+ */
+const REFUSED_LEXEMES: ReadonlyMap<string, string> = new Map([
+  ['&', 'an anchor'],
+  ['*', 'an alias'],
+  ['!', 'a tag'],
+  ['%', 'a directive'],
+]);
+
+/**
+ * Rulings T3o and T3p: a lockfile's tokens, refusing an anchor, an alias, a tag or a directive as
+ * soon as it is lexed.
+ */
 function* lockfileTokens(text: string): Generator<CST.Token> {
   const parser = new Parser();
   for (const lexeme of new Lexer().lex(text)) {
-    if (lexeme.startsWith('&') || lexeme.startsWith('*')) {
-      throw new Error('a YAML anchor or alias in a lockfile');
-    }
+    const refused = REFUSED_LEXEMES.get(lexeme.charAt(0));
+    if (refused !== undefined) throw new Error(`${refused} in a YAML lockfile`);
     yield* parser.next(lexeme);
   }
   yield* parser.end();
@@ -232,7 +325,9 @@ function lockfileDocument(text: string, options: YamlReadOptions): Document.Pars
 /**
  * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases)
  * and unique keys (checked in linear time, fix round 1 I1); a lockfile with no anchors, aliases
- * or merge keys at all (Ruling T3o). Errors throw; warnings are not printed.
+ * or merge keys at all (Ruling T3o), no tags, directives or keys that are not strings (Ruling
+ * T3p), and no plain scalars that readers may resolve differently (Ruling T3q). Errors throw;
+ * warnings are not printed.
  */
 export function parseYaml(text: string, options: YamlReadOptions = {}): unknown {
   const source = stripBom(text);
@@ -242,6 +337,9 @@ export function parseYaml(text: string, options: YamlReadOptions = {}): unknown 
     : parseDocument(source, { ...options, uniqueKeys: false });
   const [error] = doc.errors;
   if (error !== undefined) throw error;
-  visit(doc, { Map: (_key, map) => assertKeys(map, lockfile) });
+  visit(doc, {
+    Map: (_key, map) => assertKeys(map, lockfile),
+    Scalar: (_key, scalar) => (lockfile ? assertPlainScalar(scalar) : undefined),
+  });
   return doc.toJS({ maxAliasCount: lockfile ? 0 : 100 });
 }

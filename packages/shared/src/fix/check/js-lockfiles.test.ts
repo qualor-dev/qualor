@@ -8,6 +8,7 @@ import {
   readYarnLock,
 } from './js-lockfiles';
 import { withDependents } from './lock-read';
+import { parseYaml } from './values';
 import type { FixCheckContext, FixFileChange, LockEntry } from './types';
 
 /** The `(name, version, kind)`, alias slot and dependents of each entry, sorted. */
@@ -2309,5 +2310,274 @@ describe('fix round 5: no YAML anchors, aliases or merge keys in a lockfile (R5-
     lines.push('  evil@1.0.0:', '    dependencies:');
     lines.push(...Array.from({ length: 3000 }, (_, j) => `      d${j}: 1.0.0`));
     expect(() => readPnpmLock(lines.join('\n') + '\n')).toThrow(/pnpm packages and references/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Ruling T3p (carried into Task 4): every spelling of a YAML merge, through tags and directives
+
+describe('Ruling T3p: no YAML tags, directives or non-string keys in pnpm and Berry lockfiles', () => {
+  const unparsable = (path: string) => ({ ok: false, rule: 'unparsable', path });
+  const EVIL = 'https://evil.example/qf-a.tgz';
+  /** pnpm v9 at 1.2.6 whose qf-a resolution holds one more `<key>: <value>` pair. */
+  const pnpmWith = (key: string, value: string) =>
+    pnpmV9('1.2.6').replace(
+      'resolution: {integrity: sha512-a1.2.6}',
+      `resolution: {integrity: sha512-a1.2.6, ${key}: ${value}}`,
+    );
+  /** Berry at 1.2.6 whose qf-a entry holds one more `<key>: <value>` line. */
+  const berryWith = (key: string, value: string) =>
+    berry('1.2.6').replace(
+      '  checksum: 10c0/a1.2.6\n',
+      `  checksum: 10c0/a1.2.6\n  ${key}: ${value}\n`,
+    );
+
+  it.each(['!!merge <<', '!!merge foo', '!<tag:yaml.org,2002:merge> "<<"'])(
+    'pnpm-lock.yaml: refuses the merge key %s',
+    (key) => {
+      const next = pnpmWith(key, `{tarball: ${EVIL}}`);
+      expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), next)).toEqual(unparsable('pnpm-lock.yaml'));
+      expect(() => readPnpmLock(next)).toThrow();
+    },
+  );
+
+  it.each(['!!merge <<', '!!merge foo', '!<tag:yaml.org,2002:merge> "<<"'])(
+    'Berry yarn.lock: refuses the merge key %s',
+    (key) => {
+      const next = berryWith(key, '{checksum: 10c0/evil}');
+      expect(check('yarn.lock', berry('1.2.5'), next)).toEqual(unparsable('yarn.lock'));
+      expect(() => readYarnLock(next)).toThrow();
+    },
+  );
+
+  it('refuses a plain << after a %YAML 1.1 directive in pnpm-lock.yaml', () => {
+    const evil = `{tarball: ${EVIL}}`;
+    const next = `%YAML 1.1\n---\n${pnpmWith('<<', evil)}`;
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), next)).toEqual(unparsable('pnpm-lock.yaml'));
+    // The same directive on both sides, and with a harmless merge, is still refused.
+    const harmless = `%YAML 1.1\n---\n${pnpmWith('<<', '{name: qf-a}')}`;
+    expect(check('pnpm-lock.yaml', `%YAML 1.1\n---\n${pnpmV9('1.2.5')}`, harmless)).toEqual(
+      unparsable('pnpm-lock.yaml'),
+    );
+    expect(() => readPnpmLock(next)).toThrow();
+  });
+
+  it('refuses any directive, also without a merge', () => {
+    const directive = `%YAML 1.2\n---\n${pnpmV9('1.2.6')}`;
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), directive)).toEqual(
+      unparsable('pnpm-lock.yaml'),
+    );
+    const tagDirective = `%TAG !e! tag:example.com,2000:\n---\n${berry('1.2.6')}`;
+    expect(check('yarn.lock', berry('1.2.5'), tagDirective)).toEqual(unparsable('yarn.lock'));
+  });
+
+  it('refuses a !!str tag in pnpm-lock.yaml and in Berry yarn.lock', () => {
+    const pnpm = pnpmV9('1.2.6').replace('version: 2.0.0', 'version: !!str 2.0.0');
+    expect(pnpm).not.toBe(pnpmV9('1.2.6'));
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpm)).toEqual(unparsable('pnpm-lock.yaml'));
+    const yarn = berry('1.2.6').replace('  version: 1.2.6\n', '  version: !!str 1.2.6\n');
+    expect(yarn).not.toBe(berry('1.2.6'));
+    expect(check('yarn.lock', berry('1.2.5'), yarn)).toEqual(unparsable('yarn.lock'));
+  });
+
+  it.each([
+    ['null', 'null'],
+    ['~', 'null'],
+    ['123', 'a number'],
+    ['true', 'a boolean'],
+  ])('pnpm-lock.yaml: refuses the key %s, which pnpm reads as %s', (key) => {
+    const next = pnpmV9('1.2.6').replace(
+      '  autoInstallPeers: true\n',
+      `  autoInstallPeers: true\n  ${key}: x\n`,
+    );
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), next)).toEqual(unparsable('pnpm-lock.yaml'));
+  });
+
+  it('still reads quoted keys, and values that hold ! or %', () => {
+    const quoted = pnpmV9('1.2.6').replace(
+      '  autoInstallPeers: true\n',
+      "  autoInstallPeers: true\n  '123': '!x'\n  'null': '%y'\n",
+    );
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), quoted)).toEqual({ ok: true });
+    const yarn = berry('1.2.6').replace(
+      '  linkType: hard\n',
+      '  linkType: hard\n  bin:\n    "123": "!x"\n    "null": "%y"\n',
+    );
+    expect(check('yarn.lock', berry('1.2.5'), yarn)).toEqual({ ok: true });
+  });
+
+  /**
+   * The re-reviewer's merge-nest probe: d nested merges of a flow map of n keys, through the
+   * !!merge tag or a %YAML 1.1 directive, each level copying the n keys inside it.
+   */
+  const mergeNest = (format: 'pnpm-tag' | 'pnpm-11' | 'berry-tag', a: string, big: boolean) => {
+    const n = 103_000;
+    const d = 100;
+    const key = format === 'pnpm-11' ? '<<' : '!!merge <<';
+    const keys = Array.from({ length: n }, (_, j) => `k${j}: v`);
+    const inner = `{${keys.join(', ')}}`;
+    const nest = `{${key}: `.repeat(d) + inner + '}'.repeat(d);
+    if (format === 'berry-tag') {
+      const lines = ['__metadata:', '  version: 8', '  cacheKey: 10', '', '"qf-a@npm:^1.2.5":'];
+      lines.push(`  version: ${a}`, `  resolution: "qf-a@npm:${a}"`, '  checksum: 10/abc');
+      if (big) lines.push(`  bin: ${nest}`);
+      return lines.join('\n') + '\n';
+    }
+    const head = format === 'pnpm-11' ? '%YAML 1.1\n---\n' : '';
+    const lines = [`${head}lockfileVersion: '9.0'`, '', 'importers:', '  .:', '    dependencies:'];
+    lines.push('      qf-a:', '        specifier: ^1.2.5', `        version: ${a}`, '');
+    lines.push('packages:', `  qf-a@${a}:`, '    resolution: {integrity: sha512-a}', '');
+    lines.push('snapshots:', `  qf-a@${a}: {}`, '');
+    if (big) lines.push(`settings: ${nest}`);
+    return lines.join('\n') + '\n';
+  };
+
+  it.each(['pnpm-tag', 'pnpm-11', 'berry-tag'] as const)(
+    'refuses the %s merge nest of 1.07 MiB in under 1 s',
+    { timeout: 120_000 },
+    (format) => {
+      const path = format === 'berry-tag' ? 'yarn.lock' : 'pnpm-lock.yaml';
+      const next = mergeNest(format, '1.2.6', true);
+      expect(next.length).toBeGreaterThan(1.07 * 1024 * 1024);
+      const { result, ms } = timedCheck(path, mergeNest(format, '1.2.5', false), next);
+      expect(result).toEqual(unparsable(path));
+      expect(ms).toBeLessThan(1000);
+    },
+  );
+
+  it('still accepts ordinary pnpm v6, v9 and Berry lockfiles', () => {
+    expect(check('pnpm-lock.yaml', pnpmV6('1.2.5'), pnpmV6('1.2.6'))).toEqual({ ok: true });
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmV9('1.2.6'))).toEqual({ ok: true });
+    expect(check('yarn.lock', berry('1.2.5'), berry('1.2.6'))).toEqual({ ok: true });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Ruling T3q (with T3p): plain scalars that js-yaml (pnpm) and `yaml` (YAML 1.2 core) may read
+// differently
+
+describe('Ruling T3q: no plain scalars the YAML readers may resolve differently in a lockfile', () => {
+  const AMBIGUOUS = ['1_000', '0b101', '0o17', '0x1F', '0755', '.inf', '-.Inf', '.NaN'];
+  const MORE = [
+    '2001-12-14',
+    '2001-12-14T21:59:43Z',
+    '1:20',
+    '190:20:30.15',
+    'yes',
+    'No',
+    'ON',
+    'y',
+  ];
+  const unparsable = (path: string) => ({ ok: false, rule: 'unparsable', path });
+  const pnpmSetting = (line: string) =>
+    pnpmV9('1.2.6').replace('  autoInstallPeers: true\n', `  autoInstallPeers: true\n  ${line}\n`);
+  const berryBin = (line: string) =>
+    berry('1.2.6').replace('  linkType: hard\n', `  linkType: hard\n  bin:\n    ${line}\n`);
+
+  it.each([...AMBIGUOUS, ...MORE])('refuses %s as a plain key or value', (plain) => {
+    for (const line of [`${plain}: x`, `x: ${plain}`]) {
+      expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmSetting(line))).toEqual(
+        unparsable('pnpm-lock.yaml'),
+      );
+      expect(check('yarn.lock', berry('1.2.5'), berryBin(line))).toEqual(unparsable('yarn.lock'));
+    }
+  });
+
+  it.each(['1_000', '0b101', '.inf', '2001-12-14', 'yes'])(
+    'refuses %s as a plain version',
+    (plain) => {
+      const pnpm = pnpmV9('1.2.6').replace('version: 2.0.0', `version: ${plain}`);
+      expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpm)).toEqual(unparsable('pnpm-lock.yaml'));
+      const yarn = berry('1.2.6').replace('  version: 1.2.6\n', `  version: ${plain}\n`);
+      expect(check('yarn.lock', berry('1.2.5'), yarn)).toEqual(unparsable('yarn.lock'));
+    },
+  );
+
+  it.each([...AMBIGUOUS, ...MORE])('reads %s quoted, as a key or a value', (plain) => {
+    expect(parseYaml(`'${plain}': '${plain}'\nx: "${plain}"\n`, { lockfile: true })).toEqual({
+      [plain]: plain,
+      x: plain,
+    });
+    const quoted = `'${plain}': '${plain}'`;
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmSetting(quoted))).toEqual({ ok: true });
+    expect(check('yarn.lock', berry('1.2.5'), berryBin(`"${plain}": "${plain}"`))).toEqual({
+      ok: true,
+    });
+  });
+
+  // Ruling T3r: an allowlist for plain scalars the core schema reads as no string.
+  it.each(['+.5', '-.5', '.5', '1e3', '~', '+1', 'True', 'NULL', '0x1F', '0o17'])(
+    'refuses %s, which is no plain -?digits(.digits), true, false or null (Ruling T3r)',
+    (plain) => {
+      for (const line of [`${plain}: x`, `x: ${plain}`]) {
+        expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmSetting(line))).toEqual(
+          unparsable('pnpm-lock.yaml'),
+        );
+        expect(check('yarn.lock', berry('1.2.5'), berryBin(line))).toEqual(unparsable('yarn.lock'));
+      }
+    },
+  );
+
+  it('reads 5.4, 8, -1, true, false, null and an empty value (Ruling T3r)', () => {
+    const text = 'a: 5.4\nb: 8\nc: -1\nd: true\ne: false\nf: null\ng:\n';
+    expect(parseYaml(text, { lockfile: true })).toEqual({
+      a: 5.4,
+      b: 8,
+      c: -1,
+      d: true,
+      e: false,
+      f: null,
+      g: null,
+    });
+    expect(parseYaml(text, { lockfile: true, schema: 'failsafe' })).toEqual({
+      a: '5.4',
+      b: '8',
+      c: '-1',
+      d: 'true',
+      e: 'false',
+      f: 'null',
+      g: '',
+    });
+    const lines = 'x5: 5.4\n  x8: 8\n  xt: true\n  xn: null';
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmSetting(lines))).toEqual({ ok: true });
+    expect(
+      check('yarn.lock', berry('1.2.5'), berryBin(lines.replaceAll('\n  ', '\n    '))),
+    ).toEqual({ ok: true });
+  });
+
+  it('reads a Berry checksum of plain hex that starts with 0b, 0e or digits', () => {
+    const hex = (head: string) => head + 'a1'.repeat(64 - head.length / 2);
+    for (const head of ['0b08b5', '0e12', '1e34', '0755', '2001']) {
+      const lock = berry('1.2.6').replace('checksum: 10c0/a1.2.6', `checksum: ${hex(head)}`);
+      expect(lock).not.toBe(berry('1.2.6'));
+      expect(check('yarn.lock', berry('1.2.5'), lock)).toEqual({ ok: true });
+    }
+  });
+
+  it('still reads the plain values real lockfiles hold', () => {
+    const text = [
+      'lockfileVersion: 5.4',
+      'a: true',
+      'b: false',
+      'c: 1.2.6',
+      'd: sha512-abc==',
+      'e: 10c0/abc',
+      'f: node',
+      'g: 0.0.0-use.local',
+      'h: 0',
+      'i: 10',
+      'j: 2.0.0(react@18.0.0)',
+      'k: link:../x',
+      'l: ^1.2.5',
+      '',
+    ].join('\n');
+    expect(parseYaml(text, { lockfile: true })).toMatchObject({
+      lockfileVersion: 5.4,
+      a: true,
+      c: '1.2.6',
+      e: '10c0/abc',
+      h: 0,
+      j: '2.0.0(react@18.0.0)',
+    });
   });
 });

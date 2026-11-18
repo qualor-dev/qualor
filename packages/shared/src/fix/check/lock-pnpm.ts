@@ -277,8 +277,8 @@ function pnpmReferences(
 /**
  * `pnpm-lock.yaml`: v5 `/a/1.0.0`, v6 `/a@1.0.0` and v9 `a@1.0.0` package keys with their
  * dependencies (v9 `snapshots`, or the v5/v6 packages' own), and the links and aliases of the
- * references. The format is `pnpm-<major>`. Ruling T3o: no YAML anchors, aliases or merge keys
- * (pnpm writes none). Fix round 5 (R5-2): the dependency names of the entries are counted while
+ * references. The format is `pnpm-<major>`. Rulings T3o and T3p: no YAML anchors, aliases, merge
+ * keys, tags, directives or keys that are not strings (pnpm writes none). Fix round 5 (R5-2): the dependency names of the entries are counted while
  * they are made, and the read stops as soon as the count is over the budget.
  */
 export function parsePnpmLock(text: string): ReadLock {

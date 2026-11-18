@@ -144,8 +144,9 @@ function berryEntries(key: string, entry: JsonObject): RawEntry[] {
 }
 
 /**
- * Yarn Berry: YAML with every scalar a string, as Berry reads it, and no anchors, aliases or merge
- * keys (Ruling T3o: Berry's writer emits none); dependents from `dependencies` and
+ * Yarn Berry: YAML with every scalar a string, as Berry reads it, and no anchors, aliases, merge
+ * keys, tags, directives or keys that are not strings (Rulings T3o and T3p: Berry's writer emits
+ * none); dependents from `dependencies` and
  * `peerDependencies`. The format is `yarn-berry-<__metadata.version>`.
  */
 export function parseYarnBerry(source: string): ReadLock {
