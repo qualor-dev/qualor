@@ -257,6 +257,9 @@ function assertKeys(map: YAMLMap, lockfile: boolean): void {
  * Ruling T3q: plain scalars that pnpm's js-yaml (YAML 1.1 habits) and `yaml` (YAML 1.2 core) may
  * resolve to different values, as keys or values. Each pattern is anchored and has no nested
  * quantifier. pnpm and Berry quote such strings, so a lockfile holding one plain is refused.
+ * Ruling T4c: `y`, `n`, `yes`, `no`, `on` and `off` are not among them; js-yaml 4 and the core
+ * schema both read them as strings (packages such as `n` are written plain), and Berry reads every
+ * scalar as a string.
  */
 const AMBIGUOUS_PLAIN: readonly RegExp[] = [
   // 0b, 0o and 0x numbers, each with its own digits only: a hex checksum that starts with `0b`
@@ -271,8 +274,6 @@ const AMBIGUOUS_PLAIN: readonly RegExp[] = [
   /^\d{4}-\d\d?-\d\d?/,
   // Sexagesimal numbers such as 1:20 or 190:20:30.15.
   /^[-+]?\d+(?::[0-5]?\d)+(?:\.\d*)?$/,
-  // YAML 1.1 booleans.
-  /^(?:y|n|yes|no|on|off)$/i,
 ];
 
 /** A number with an `_` (`1_000`, `.5_0`), which YAML 1.1 readers read as a number. */
@@ -342,31 +343,23 @@ function* lockfileTokens(text: string): Generator<CST.Token> {
   yield* parser.end();
 }
 
-/** One document from the lockfile's tokens, as `parseDocument` composes it. */
-function lockfileDocument(text: string, options: YamlReadOptions): Document.Parsed {
+/**
+ * The lockfile's documents from its tokens, as `parseDocument` composes each; at least one and at
+ * most `max`, else it throws. The token rules hold for every document.
+ */
+function lockfileDocuments(text: string, options: YamlReadOptions, max: number): Document.Parsed[] {
   const composer = new Composer({ ...options, uniqueKeys: false });
-  let doc: Document.Parsed | undefined;
+  const docs: Document.Parsed[] = [];
   for (const next of composer.compose(lockfileTokens(text), true, text.length)) {
-    if (doc !== undefined) throw new Error('several YAML documents in a lockfile');
-    doc = next;
+    if (docs.length === max) throw new Error(`more than ${max} YAML documents in a lockfile`);
+    docs.push(next);
   }
-  if (doc === undefined) throw new Error('no YAML document');
-  return doc;
+  if (docs.length === 0) throw new Error('no YAML document');
+  return docs;
 }
 
-/**
- * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases)
- * and unique keys (checked in linear time, fix round 1 I1); a lockfile with no anchors, aliases
- * or merge keys at all (Ruling T3o), no tags, directives or keys that are not strings (Ruling
- * T3p), and no plain scalars that readers may resolve differently (Ruling T3q). Errors throw;
- * warnings are not printed.
- */
-export function parseYaml(text: string, options: YamlReadOptions = {}): unknown {
-  const source = stripBom(text);
-  const lockfile = options.lockfile === true;
-  const doc = lockfile
-    ? lockfileDocument(source, options)
-    : parseDocument(source, { ...options, uniqueKeys: false });
+/** A composed document's value, after its errors and the key and scalar rules. */
+function documentValue(doc: Document.Parsed, lockfile: boolean): unknown {
   const [error] = doc.errors;
   if (error !== undefined) throw error;
   visit(doc, {
@@ -374,4 +367,34 @@ export function parseYaml(text: string, options: YamlReadOptions = {}): unknown 
     Scalar: (_key, scalar) => (lockfile ? assertPlainScalar(scalar) : undefined),
   });
   return doc.toJS({ maxAliasCount: lockfile ? 0 : 100 });
+}
+
+/**
+ * One YAML document, with the `yaml` package's safe defaults (no custom tags, at most 100 aliases)
+ * and unique keys (checked in linear time, fix round 1 I1); a lockfile with no anchors, aliases
+ * or merge keys at all (Ruling T3o), no tags, directives or keys that are not strings (Ruling
+ * T3p), no plain scalars that readers may resolve differently (Rulings T3q, T3r and T4c), and
+ * one document only. Errors throw; warnings are not printed.
+ */
+export function parseYaml(text: string, options: YamlReadOptions = {}): unknown {
+  const source = stripBom(text);
+  const lockfile = options.lockfile === true;
+  const doc = lockfile
+    ? lockfileDocuments(source, options, 1)[0]
+    : parseDocument(source, { ...options, uniqueKeys: false });
+  if (doc === undefined) throw new Error('no YAML document');
+  return documentValue(doc, lockfile);
+}
+
+/**
+ * Ruling T4b: the documents of a lockfile (pnpm 11 writes a boot document before the lockfile),
+ * one to `max`, each read as {@link parseYaml} reads a lockfile. Errors throw.
+ */
+export function parseYamlDocuments(
+  text: string,
+  options: Omit<YamlReadOptions, 'lockfile'>,
+  max: number,
+): unknown[] {
+  const lockfile = { ...options, lockfile: true };
+  return lockfileDocuments(stripBom(text), lockfile, max).map((doc) => documentValue(doc, true));
 }

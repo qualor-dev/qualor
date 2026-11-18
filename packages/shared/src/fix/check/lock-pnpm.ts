@@ -16,7 +16,7 @@ import {
   type ReadLock,
 } from './lock-read';
 import type { LockEntry } from './types';
-import { isObject, own, parseYaml, str, type JsonObject } from './values';
+import { isObject, own, parseYamlDocuments, str, type JsonObject } from './values';
 
 interface PackageId {
   name: string;
@@ -274,15 +274,64 @@ function pnpmReferences(
   return holders.flatMap((holder) => holderReferences(holder, refs));
 }
 
+/** What pnpm 11's boot document holds: the root importer's two kinds of boot dependencies. */
+const BOOT_KEYS = new Set(['lockfileVersion', 'settings', 'importers', 'packages', 'snapshots']);
+const BOOT_DEPENDENCIES = ['configDependencies', 'packageManagerDependencies'];
+
+/**
+ * Ruling T4b: the first of two documents must be pnpm 11's boot document: an importer `.` with
+ * `configDependencies` and/or `packageManagerDependencies` and nothing else, besides
+ * `lockfileVersion`, `settings`, `packages` and `snapshots`.
+ */
+function bootDocument(value: unknown): JsonObject {
+  const boot = objectAt(value, 'the boot document');
+  const importers = sectionOf(boot, 'importers');
+  const root = objectAt(own(importers, '.'), 'the boot document importer');
+  const rootKeys = Object.keys(root);
+  const shaped =
+    Object.keys(boot).every((key) => BOOT_KEYS.has(key)) &&
+    Object.keys(importers).length === 1 &&
+    rootKeys.length > 0 &&
+    rootKeys.every((key) => BOOT_DEPENDENCIES.includes(key));
+  return shaped ? boot : unreadable('a first document that is no pnpm boot document');
+}
+
+/**
+ * Ruling T4b: the lockfile document holds no boot dependencies, wherever pnpm might read them
+ * from (an importer, or a v5/v6 single-project lockfile's top level).
+ */
+function assertNoBootDependencies(lock: JsonObject): void {
+  const holders = [lock, ...Object.values(sectionOf(lock, 'importers'))];
+  const found = holders.some(
+    (holder) => isObject(holder) && BOOT_DEPENDENCIES.some((key) => Object.hasOwn(holder, key)),
+  );
+  if (found) unreadable('boot dependencies in the lockfile document');
+}
+
+/**
+ * Ruling T4b: the lockfile document and, when the file has two documents, the boot document
+ * before it. Three or more documents throw.
+ */
+function pnpmDocuments(text: string): { lock: JsonObject; boot?: JsonObject } {
+  const docs = parseYamlDocuments(text, {}, 2);
+  const [first, second] = docs;
+  const lock = objectAt(second ?? first, 'pnpm-lock.yaml');
+  assertNoBootDependencies(lock);
+  return second === undefined ? { lock } : { lock, boot: bootDocument(first) };
+}
+
 /**
  * `pnpm-lock.yaml`: v5 `/a/1.0.0`, v6 `/a@1.0.0` and v9 `a@1.0.0` package keys with their
  * dependencies (v9 `snapshots`, or the v5/v6 packages' own), and the links and aliases of the
  * references. The format is `pnpm-<major>`. Rulings T3o and T3p: no YAML anchors, aliases, merge
- * keys, tags, directives or keys that are not strings (pnpm writes none). Fix round 5 (R5-2): the dependency names of the entries are counted while
- * they are made, and the read stops as soon as the count is over the budget.
+ * keys, tags, directives or keys that are not strings (pnpm writes none). Ruling T4b: pnpm 11
+ * writes its boot document (config and package-manager dependencies) first, as a document of its
+ * own; it is returned as `boot` and not read for entries. Fix round 5 (R5-2): the dependency
+ * names of the entries are counted while they are made, and the read stops as soon as the count
+ * is over the budget.
  */
 export function parsePnpmLock(text: string): ReadLock {
-  const lock = objectAt(parseYaml(text, { lockfile: true }), 'pnpm-lock.yaml');
+  const { lock, boot } = pnpmDocuments(text);
   const major = pnpmMajor(lock);
   const count = entryCounter('pnpm packages and references');
   const snapshots = major >= 9 ? snapshotDependencies(sectionOf(lock, 'snapshots')) : null;
@@ -291,7 +340,8 @@ export function parsePnpmLock(text: string): ReadLock {
     byKey.set(key, count(pnpmEntry(key, value, major, snapshots)));
   }
   const all = [...byKey.values(), ...pnpmReferences(lock, major, byKey, count)];
-  return { format: `pnpm-${major}`, entries: withDependents(all) };
+  const read: ReadLock = { format: `pnpm-${major}`, entries: withDependents(all) };
+  return boot === undefined ? read : { ...read, boot };
 }
 
 export function readPnpmLock(text: string): LockEntry[] {

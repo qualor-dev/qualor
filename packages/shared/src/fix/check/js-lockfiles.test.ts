@@ -2458,16 +2458,7 @@ describe('Ruling T3p: no YAML tags, directives or non-string keys in pnpm and Be
 
 describe('Ruling T3q: no plain scalars the YAML readers may resolve differently in a lockfile', () => {
   const AMBIGUOUS = ['1_000', '0b101', '0o17', '0x1F', '0755', '.inf', '-.Inf', '.NaN'];
-  const MORE = [
-    '2001-12-14',
-    '2001-12-14T21:59:43Z',
-    '1:20',
-    '190:20:30.15',
-    'yes',
-    'No',
-    'ON',
-    'y',
-  ];
+  const MORE = ['2001-12-14', '2001-12-14T21:59:43Z', '1:20', '190:20:30.15'];
   const unparsable = (path: string) => ({ ok: false, rule: 'unparsable', path });
   const pnpmSetting = (line: string) =>
     pnpmV9('1.2.6').replace('  autoInstallPeers: true\n', `  autoInstallPeers: true\n  ${line}\n`);
@@ -2483,7 +2474,7 @@ describe('Ruling T3q: no plain scalars the YAML readers may resolve differently 
     }
   });
 
-  it.each(['1_000', '0b101', '.inf', '2001-12-14', 'yes'])(
+  it.each(['1_000', '0b101', '.inf', '2001-12-14', '1:20'])(
     'refuses %s as a plain version',
     (plain) => {
       const pnpm = pnpmV9('1.2.6').replace('version: 2.0.0', `version: ${plain}`);
@@ -2545,6 +2536,35 @@ describe('Ruling T3q: no plain scalars the YAML readers may resolve differently 
     ).toEqual({ ok: true });
   });
 
+  it('reads packages plainly named yes and n, and y, no, on, off (Ruling T4c)', () => {
+    const packages = [
+      '',
+      '  n@9.0.0:',
+      '    resolution: {integrity: sha512-n}',
+      '',
+      '  yes@1.0.0:',
+      '    resolution: {integrity: sha512-yes}',
+      '',
+    ].join('\n');
+    const snapshots = [
+      '',
+      '  n@9.0.0:',
+      '    dependencies:',
+      '      yes: 1.0.0',
+      '',
+      '  yes@1.0.0: {}',
+      '',
+    ].join('\n');
+    const at = (v: string) => pnpmV9(v, packages, snapshots);
+    expect(at('1.2.6')).toContain('      yes: 1.0.0\n');
+    expect(check('pnpm-lock.yaml', at('1.2.5'), at('1.2.6'))).toEqual({ ok: true });
+    const words = 'n: yes\n  y: No\n  on: OFF';
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), pnpmSetting(words))).toEqual({ ok: true });
+    const bins = berryBin('n: n\n    yes: yes\n    on: off');
+    expect(check('yarn.lock', berry('1.2.5'), bins)).toEqual({ ok: true });
+    expect(parseYaml('n: yes\ny: No\n', { lockfile: true })).toEqual({ n: 'yes', y: 'No' });
+  });
+
   it('reads a Berry checksum of plain hex that starts with 0b, 0e or digits', () => {
     const hex = (head: string) => head + 'a1'.repeat(64 - head.length / 2);
     for (const head of ['0b08b5', '0e12', '1e34', '0755', '2001']) {
@@ -2579,5 +2599,161 @@ describe('Ruling T3q: no plain scalars the YAML readers may resolve differently 
       h: 0,
       j: '2.0.0(react@18.0.0)',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Ruling T4b: pnpm 11's boot document before the lockfile
+
+describe('Ruling T4b: a pnpm lockfile with a boot document', () => {
+  const unparsable = { ok: false, rule: 'unparsable', path: 'pnpm-lock.yaml' };
+  const otherChange = { ok: false, rule: 'other_change', path: 'pnpm-lock.yaml' };
+  /**
+   * The boot document of gitea's pnpm-lock.yaml (pnpm 12.6.0, `"packageManager": "pnpm@12.6.0"`),
+   * two of its fourteen platform packages kept.
+   */
+  const BOOT = [
+    '---',
+    "lockfileVersion: '9.0'",
+    '',
+    'importers:',
+    '',
+    '  .:',
+    '    configDependencies: {}',
+    '    packageManagerDependencies:',
+    '      pnpm:',
+    '        specifier: 12.6.0',
+    '        version: 12.6.0',
+    '',
+    'packages:',
+    '',
+    "  '@pnpm/exe.linux-x64@12.6.0':",
+    '    resolution: {integrity: sha512-qFWBneHJAJ73W4whtbaFOL1M/7DBC6ILHXuxc7ZPtEhfPuT1zeZiGrmKHoMAfJA+mcm6xhOFljqVTUS+00Jabw==}',
+    '    cpu: [x64]',
+    '    os: [linux]',
+    '    libc: [glibc]',
+    '',
+    "  '@pnpm/exe.win32-x64@12.6.0':",
+    '    resolution: {integrity: sha512-L2tuyrD2+Imgxs3VK/ST/2L3xD6vDP0ktJQxM0TaGw7TbAQEMq+RMc8iK6Ew7Id579uzjJe8jSfJID2ZGsOHCA==}',
+    '    cpu: [x64]',
+    '    os: [win32]',
+    '',
+    '  pnpm@12.6.0:',
+    '    resolution: {integrity: sha512-PvaPlRyxEawgS0paFvCy3fDaVqluBBPoHYVdnwtV75JnFHCQKOHNAMQFwsX7e56OxNxGd3yAXQNzwvL/AP0g7A==}',
+    "    engines: {node: '>=18.*'}",
+    '    hasBin: true',
+    '',
+    'snapshots:',
+    '',
+    "  '@pnpm/exe.linux-x64@12.6.0':",
+    '    optional: true',
+    '',
+    "  '@pnpm/exe.win32-x64@12.6.0':",
+    '    optional: true',
+    '',
+    '  pnpm@12.6.0:',
+    '    optionalDependencies:',
+    "      '@pnpm/exe.linux-x64': 12.6.0",
+    "      '@pnpm/exe.win32-x64': 12.6.0",
+    '',
+    '',
+  ].join('\n');
+  const twoDocuments = (qfA: string, boot = BOOT) => `${boot}---\n${pnpmV9(qfA)}`;
+
+  it('accepts the package bumped in the lockfile document, the boot document unchanged', () => {
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), twoDocuments('1.2.6'))).toEqual({
+      ok: true,
+    });
+    // Only the lockfile document is read for entries.
+    expect(shape(readPnpmLock(twoDocuments('1.2.6'))).map((e) => e.name)).toEqual([
+      '@scope/qf-b',
+      'qf-a',
+    ]);
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), twoDocuments('1.2.5'))).toMatchObject({
+      rule: 'below_target',
+    });
+  });
+
+  it.each([
+    ['the pnpm pin', BOOT.replaceAll('12.6.0', '12.7.0')],
+    [
+      'an added config dependency',
+      BOOT.replace(
+        '    configDependencies: {}',
+        '    configDependencies:\n      evil:\n        specifier: 1.0.0\n        version: 1.0.0+sha512-e',
+      ),
+    ],
+    ['a changed integrity', BOOT.replace('sha512-PvaP', 'sha512-EvaP')],
+    ['a dropped platform package', BOOT.replace("      '@pnpm/exe.win32-x64': 12.6.0\n", '')],
+  ])('refuses a changed boot document (%s) as other_change', (_name, boot) => {
+    expect(boot).not.toBe(BOOT);
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), twoDocuments('1.2.6', boot))).toEqual(
+      otherChange,
+    );
+  });
+
+  it('refuses a boot document the base has and the upload drops as other_change', () => {
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), pnpmV9('1.2.6'))).toEqual(otherChange);
+  });
+
+  it('refuses a boot document a one-document base does not have as unparsable', () => {
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), twoDocuments('1.2.6'))).toEqual(unparsable);
+  });
+
+  it('refuses three documents as unparsable', () => {
+    const three = `${BOOT}---\n${BOOT.slice('---\n'.length)}---\n${pnpmV9('1.2.6')}`;
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), three)).toEqual(unparsable);
+    expect(check('pnpm-lock.yaml', three, three)).toEqual(unparsable);
+    expect(() => readPnpmLock(three)).toThrow(/more than 2 YAML documents/);
+  });
+
+  it('refuses a first document that is no boot document, and boot dependencies in the lockfile', () => {
+    const twoLockfiles = `---\n${pnpmV9('1.2.5')}---\n${pnpmV9('1.2.6')}`;
+    expect(check('pnpm-lock.yaml', twoLockfiles, twoLockfiles)).toEqual(unparsable);
+    const settingsOnly = BOOT.replace(
+      /importers:[\s\S]*?\n\npackages:/,
+      'importers:\n\n  .: {}\n\npackages:',
+    );
+    expect(settingsOnly).not.toBe(BOOT);
+    expect(
+      check(
+        'pnpm-lock.yaml',
+        twoDocuments('1.2.5', settingsOnly),
+        twoDocuments('1.2.6', settingsOnly),
+      ),
+    ).toEqual(unparsable);
+    const smuggled = pnpmV9('1.2.6').replace(
+      '    dependencies:\n      qf-b:',
+      '    configDependencies:\n      evil:\n        specifier: 1.0.0\n        version: 1.0.0+sha512-e\n    dependencies:\n      qf-b:',
+    );
+    expect(smuggled).not.toBe(pnpmV9('1.2.6'));
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), smuggled)).toEqual(unparsable);
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), `${BOOT}---\n${smuggled}`)).toEqual(
+      unparsable,
+    );
+  });
+
+  it.each([
+    ['an anchor', ['configDependencies: {}', 'configDependencies: &c {}']],
+    ['a tag', ['configDependencies: {}', 'configDependencies: !!map {}']],
+    ['a non-string plain scalar', ['specifier: 12.6.0', 'specifier: 0x1F']],
+    ['a timestamp-like plain scalar', ['specifier: 12.6.0', 'specifier: 2026-11-18']],
+  ])('applies the token rules to the boot document: %s → unparsable', (_name, [from, to]) => {
+    const boot = BOOT.replace(from ?? '', to ?? '');
+    expect(boot).not.toBe(BOOT);
+    expect(check('pnpm-lock.yaml', twoDocuments('1.2.5'), twoDocuments('1.2.6', boot))).toEqual(
+      unparsable,
+    );
+  });
+
+  it('reads the jsLockfileAdditions of a two-document lockfile', () => {
+    const change = {
+      path: 'pnpm-lock.yaml',
+      base: twoDocuments('1.2.5'),
+      next: twoDocuments('1.2.6'),
+    };
+    expect(jsLockfileAdditions(change)?.map((e) => `${e.name}@${e.version}`)).toEqual([
+      'qf-a@1.2.6',
+    ]);
   });
 });

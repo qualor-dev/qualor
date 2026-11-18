@@ -8,7 +8,7 @@
 import { checkLockEntries, lockfileBelowTarget, newLockEntries } from './lock-entries';
 import { parseNpmLock } from './lock-npm';
 import { parsePnpmLock } from './lock-pnpm';
-import { readBoth, type ReadLock } from './lock-read';
+import { readBoth, readLocks, type ReadLock } from './lock-read';
 import { parseYarnBerry } from './lock-yarn-berry';
 import { isYarnClassic, parseYarnClassic } from './lock-yarn-classic';
 import {
@@ -17,9 +17,10 @@ import {
   type FixCheckContext,
   type FixCheckResult,
   type FixFileChange,
+  type FixRule,
   type LockEntry,
 } from './types';
-import { stripBom } from './values';
+import { sameValue, stripBom } from './values';
 
 export { readNpmLock } from './lock-npm';
 export { readPnpmLock } from './lock-pnpm';
@@ -59,17 +60,29 @@ export function jsLockfileAdditions(change: FixFileChange): LockEntry[] | null {
 }
 
 /**
- * B1 for a JS lockfile: both sides are read in one format (`unparsable` otherwise), every new
- * entry passes {@link checkLockEntries} (the npm and Yarn public registries allowed; integrity
- * required when a base registry entry has one; new entries reachable from the package), and the
- * package's versions reach their targets in this lockfile (`below_target`).
+ * Ruling T4b: a boot document (pnpm 11) stays exactly as the base has it (`other_change`); a file
+ * without one does not gain one (`unparsable`).
+ */
+function bootRule(base: ReadLock, next: ReadLock): FixRule | null {
+  if (base.boot === undefined) return next.boot === undefined ? null : 'unparsable';
+  return next.boot !== undefined && sameValue(base.boot, next.boot) ? null : 'other_change';
+}
+
+/**
+ * B1 for a JS lockfile: both sides are read in one format (`unparsable` otherwise), with the same
+ * boot document if any (Ruling T4b), every new entry passes {@link checkLockEntries} (the npm and
+ * Yarn public registries allowed; integrity required when a base registry entry has one; new
+ * entries reachable from the package), and the package's versions reach their targets in this
+ * lockfile (`below_target`).
  */
 export function checkJsLockfile(change: FixFileChange, ctx: FixCheckContext): FixCheckResult {
   const read = readerFor(change.path);
   if (read === undefined) return fixRefused('other_change', change.path);
-  const both = readBoth(read, change);
-  if (both === null) return fixRefused('unparsable', change.path);
-  const [base, next] = both;
+  const locks = readLocks(read, change);
+  if (locks === null) return fixRefused('unparsable', change.path);
+  const boot = bootRule(...locks);
+  if (boot !== null) return fixRefused(boot, change.path);
+  const [base, next] = [locks[0].entries, locks[1].entries];
   const integrityRequired = base.some((e) => e.kind === 'registry' && (e.integrity ?? '') !== '');
   const options = {
     lockfile: change.path,

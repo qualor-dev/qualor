@@ -14,24 +14,38 @@ export type RawEntry = Omit<LockEntry, 'dependents'>;
 export interface ReadLock {
   format: string;
   entries: LockEntry[];
+  /**
+   * Ruling T4b: a document the file holds before the lockfile (pnpm 11's boot document), parsed;
+   * absent when there is none. A fix leaves it as it is.
+   */
+  boot?: unknown;
 }
 
 /**
- * Both sides' entries; null when either cannot be read, or when `next` is not in the base's
- * format (fix round 1, C4: a run for one package does not switch Yarn classic to Berry or change
- * a lockfile's major version).
+ * Both sides read, each whole; null when either cannot be read, or when `next` is not in the
+ * base's format (fix round 1, C4: a run for one package does not switch Yarn classic to Berry or
+ * change a lockfile's major version).
  */
+export function readLocks(
+  read: (text: string) => ReadLock,
+  change: Pick<FixFileChange, 'base' | 'next'>,
+): [ReadLock, ReadLock] | null {
+  try {
+    const base = read(change.base);
+    const next = read(change.next);
+    return base.format === next.format ? [base, next] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** {@link readLocks}, the entries of both sides. */
 export function readBoth(
   read: (text: string) => ReadLock,
   change: Pick<FixFileChange, 'base' | 'next'>,
 ): [LockEntry[], LockEntry[]] | null {
-  try {
-    const base = read(change.base);
-    const next = read(change.next);
-    return base.format === next.format ? [base.entries, next.entries] : null;
-  } catch {
-    return null;
-  }
+  const both = readLocks(read, change);
+  return both === null ? null : [both[0].entries, both[1].entries];
 }
 
 export function unreadable(what: string): never {
