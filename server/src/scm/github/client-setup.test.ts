@@ -303,7 +303,7 @@ describe('GitHub client: files, pull requests and Actions secrets (onboarding)',
       fake.clearRequests();
       expect(await client.findOpenPullRequest('qualor/pr')).toEqual(pr);
       expect(requests()).toEqual([
-        `GET /repos/acme/api/pulls?state=open&head=${encodeURIComponent('acme:qualor/pr')}&per_page=1`,
+        `GET /repos/acme/api/pulls?state=open&head=${encodeURIComponent('acme:qualor/pr')}&per_page=100`,
       ]);
       const again = await failure(
         client.openPullRequest({ head: 'qualor/pr', base: 'trunk', title: 't', body: '' }),

@@ -80,6 +80,11 @@ export interface FakeMergeRequest {
   /** Answered as a GitLab before 14 does: no `draft`, a draft said by `work_in_progress` only. */
   legacyDraft?: boolean;
   sourceBranch: string;
+  /**
+   * The project the source branch is in (GitLab's `source_project_id`): a fork's id for a merge
+   * request from a fork; the merge request's own project when left out.
+   */
+  sourceProjectId?: number;
   targetBranch: string;
   headSha: string;
   baseSha: string;
@@ -491,6 +496,8 @@ export async function createFakeGitLab(
       detailed_merge_status: mr.conflict ? 'conflict' : 'mergeable',
       source_branch: mr.sourceBranch,
       target_branch: mr.targetBranch,
+      source_project_id: mr.sourceProjectId ?? project.id,
+      target_project_id: project.id,
       sha: mr.headSha,
       web_url: `${url}/${project.path}/-/merge_requests/${mr.iid}`,
       diff_refs: { base_sha: mr.baseSha, head_sha: mr.headSha, start_sha: mr.startSha },
@@ -849,6 +856,7 @@ export async function createFakeGitLab(
     if (rest[0] === 'merge_requests' && rest.length === 1) {
       if (req.method === 'GET') {
         const source = params.get('source_branch');
+        const target = params.get('target_branch');
         return paged(
           res,
           params,
@@ -856,7 +864,8 @@ export async function createFakeGitLab(
             .filter(
               (m) =>
                 (params.get('state') === null || m.state === params.get('state')) &&
-                (source === null || m.sourceBranch === source),
+                (source === null || m.sourceBranch === source) &&
+                (target === null || m.targetBranch === target),
             )
             .map((m) => mrJson(project, m)),
         );
@@ -870,8 +879,14 @@ export async function createFakeGitLab(
         if (!project.heads.has(source) || !project.heads.has(target)) {
           return send(res, 400, { message: 'Branch does not exist' });
         }
+        // One open merge request per source project and branch and target: a fork's from a
+        // branch of the same name is another one.
         const open = [...project.mergeRequests.values()].find(
-          (m) => m.state === 'opened' && m.sourceBranch === source && m.targetBranch === target,
+          (m) =>
+            m.state === 'opened' &&
+            (m.sourceProjectId ?? project.id) === project.id &&
+            m.sourceBranch === source &&
+            m.targetBranch === target,
         );
         if (open) {
           return send(res, 409, {

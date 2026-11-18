@@ -2017,7 +2017,7 @@ describe('GitHub REST client (github.md §4–§6)', () => {
         });
         expect(opened.url).toMatch(/\/acme\/fixes\/pull\/\d+$/);
         expect(opened.number).toBeGreaterThan(0);
-        const found = await client.openPullRequestFrom(PR_BRANCH);
+        const found = await client.openPullRequestFrom(PR_BRANCH, 'main');
         expect(found).toEqual({
           number: opened.number,
           url: opened.url,
@@ -2026,7 +2026,7 @@ describe('GitHub REST client (github.md §4–§6)', () => {
           conflict: false,
           headSha: fake.headOf(R, PR_BRANCH),
         });
-        expect(await client.openPullRequestFrom('qualor/fix/js/nothing')).toBeNull();
+        expect(await client.openPullRequestFrom('qualor/fix/js/nothing', 'main')).toBeNull();
         await client.updatePullRequest(opened.number, { title: 'Bump qf-a again', body: 'second' });
         expect(fake.pullsOf(R).find((p) => p.number === opened.number)).toMatchObject({
           title: 'Bump qf-a again',
@@ -2047,7 +2047,7 @@ describe('GitHub REST client (github.md §4–§6)', () => {
         });
         expect(JSON.parse(fake.requests[0]!.body)).toEqual({ state: 'closed' });
         expect((await client.pullRequestState(opened.number)).state).toBe('closed');
-        expect(await client.openPullRequestFrom(PR_BRANCH)).toBeNull();
+        expect(await client.openPullRequestFrom(PR_BRANCH, 'main')).toBeNull();
         // The pull request is no longer open: the branch can have another.
         const second = await client.openPullRequest({
           head: PR_BRANCH,
@@ -2085,6 +2085,30 @@ describe('GitHub REST client (github.md §4–§6)', () => {
         const err = await failure(client.updatePullRequest(number, { state: 'closed' }));
         expect(err).toMatchObject({ kind: 'refused', status: 422 });
         expect((await client.pullRequestState(number)).merged).toBe(true);
+      });
+
+      it('T10a: finds only an open pull request from this repository’s branch into the base', async () => {
+        const client = await fixes();
+        const head = 'qualor/fix/js/t10a';
+        await client.createBranch(head, main0);
+        // A fork whose owner has the repository owner's login (a rename), and this repository's
+        // pull request into another branch.
+        fake.openPullAs(R, {
+          head,
+          base: 'main',
+          title: 'fork',
+          body: '',
+          headRepo: { id: 9031, owner: 'acme', name: 'fixes-fork' },
+        });
+        const release = fake.openPullAs(R, { head, base: 'release', title: 'release', body: '' });
+        fake.clearRequests();
+        expect(await client.openPullRequestFrom(head, 'main')).toBeNull();
+        const query = new URL(`http://x${fake.requests.at(-1)!.path}`).searchParams;
+        expect([query.get('head'), query.get('base')]).toEqual([`acme:${head}`, 'main']);
+        const own = fake.openPullAs(R, { head, base: 'main', title: 'own', body: '' });
+        expect((await client.openPullRequestFrom(head, 'main'))?.number).toBe(own.number);
+        // Without a base (the onboarding's lookup), the first of this repository's, never the fork's.
+        expect((await client.findOpenPullRequest(head))?.number).toBe(release.number);
       });
 
       it('a pull request the repository has not is not found', async () => {

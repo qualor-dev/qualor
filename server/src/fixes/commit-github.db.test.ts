@@ -296,4 +296,34 @@ describe('the fix commit job on GitHub (0.16 fix MRs §6.7, B10, R14; Git Data A
     expect(writes()).toEqual([]);
     expect(await row(fixId)).toMatchObject({ state: 'merged', prepared: null });
   });
+
+  it('T10a: a fork’s PR from a branch of the same name (its owner of the same login) is never the fix’s', async () => {
+    const repo = await freshRepo();
+    const fork = fake.openPullAs(repo.id, {
+      head: BRANCH,
+      base: 'main',
+      title: 'Their title',
+      body: 'their body',
+      headRepo: { id: 9000 + repo.id, owner: 'acme', name: `${repo.name}-fork` },
+    });
+    const fixId = await accepted(repo);
+    fake.clearRequests();
+    await runFixJobs();
+
+    const opened = await row(fixId);
+    expect(opened.state).toBe('open');
+    expect(opened.mrNumber).not.toBe(fork.number);
+    expect(writes()).toContain('POST /pulls');
+    expect(writes().filter((w) => w.startsWith('PATCH /pulls/'))).toEqual([]);
+    expect(fork).toMatchObject({ title: 'Their title', body: 'their body', state: 'open' });
+
+    // F8: the fork's PR merged never ends the fix, which keeps its own PR.
+    fake.setPull(repo.id, fork.number, { merged: true });
+    await refreshed(repo, fixId);
+    fake.clearRequests();
+    await runFixJobs();
+    expect(await row(fixId)).toMatchObject({ state: 'open', mrNumber: opened.mrNumber });
+    expect(writes()).toContain(`PATCH /pulls/${opened.mrNumber}`);
+    expect(fork).toMatchObject({ title: 'Their title', body: 'their body' });
+  });
 });

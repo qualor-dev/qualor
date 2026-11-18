@@ -178,6 +178,14 @@ const contentsFile = z.looseObject({
 const contentsEntries = z.array(z.looseObject({ name: z.string() }));
 const gitRef = z.looseObject({ object: z.looseObject({ sha: z.string() }) });
 const createdPullRequest = z.looseObject({ html_url: z.string(), number: z.number().int() });
+/**
+ * A row of `GET /pulls`: with the repository of its head branch (null once a fork is deleted) and
+ * its base branch (ruling T10a).
+ */
+const listedPullRequest = createdPullRequest.extend({
+  head: z.looseObject({ repo: z.looseObject({ id: z.number().int() }).nullish() }),
+  base: z.looseObject({ ref: z.string() }),
+});
 const blobAnswer = z.looseObject({ sha });
 const gitCommitAnswer = z.looseObject({ sha, tree: z.looseObject({ sha }) });
 const compareAnswer = z.looseObject({
@@ -763,6 +771,8 @@ export class GitHubClient {
   /** The permissions the current token is asked for, and whether the cache key holds them whole. */
   #permissions: Record<string, string> = { ...INSTALLATION_PERMISSIONS };
   #repo: GitHubRepoRef | null = null;
+  /** The repository's id, read by `useRepository`: what a pull request's `head.repo` is checked against. */
+  #repoId: number | null = null;
   #refreshed = false;
 
   constructor(
@@ -1076,7 +1086,9 @@ export class GitHubClient {
     this.#token = this.tokens.get(this.#tokenKey);
     if (this.#token === null) await this.issueToken();
     const { json } = await this.repoCall('GET', this.repoPath());
-    return this.parse(repository, json);
+    const bound = this.parse(repository, json);
+    this.#repoId = bound.id;
+    return bound;
   }
 
   private async issueToken(): Promise<void> {
@@ -1345,16 +1357,28 @@ export class GitHubClient {
     return { url: created.html_url, number: created.number };
   }
 
-  /** The open pull request whose head is the branch `head` of this repository, or null. */
-  async findOpenPullRequest(head: string): Promise<{ url: string; number: number } | null> {
+  /**
+   * The open pull request whose head is the branch `head` of this repository (into `base` when
+   * given), or null. Ruling T10a: GitHub's `owner:branch` filter is checked again by the head's
+   * repository id, so a fork whose owner came to have this owner's login (a rename) is never it.
+   */
+  async findOpenPullRequest(
+    head: string,
+    base?: string,
+  ): Promise<{ url: string; number: number } | null> {
     this.branchPath(head);
+    if (base !== undefined) this.branchPath(base);
     const { owner } = this.repoRef();
-    const qualifiedHead = encodeURIComponent(`${owner}:${head}`);
-    const { json } = await this.repoCall(
-      'GET',
-      `${this.repoPath()}/pulls?state=open&head=${qualifiedHead}&per_page=1`,
+    const query = new URLSearchParams({ state: 'open', head: `${owner}:${head}` });
+    if (base !== undefined) query.set('base', base);
+    query.set('per_page', '100');
+    const { json } = await this.repoCall('GET', `${this.repoPath()}/pulls?${query.toString()}`);
+    const found = this.parse(z.array(listedPullRequest), json).find(
+      (pull) =>
+        this.#repoId !== null &&
+        pull.head.repo?.id === this.#repoId &&
+        (base === undefined || pull.base.ref === base),
     );
-    const [found] = this.parse(z.array(createdPullRequest), json);
     return found ? { url: found.html_url, number: found.number } : null;
   }
 
@@ -1371,9 +1395,9 @@ export class GitHubClient {
     };
   }
 
-  /** The open pull request from the branch `head` of this repository, in full, or null. */
-  async openPullRequestFrom(head: string): Promise<GitHubPullState | null> {
-    const found = await this.findOpenPullRequest(head);
+  /** The open pull request from the branch `head` of this repository into `base`, in full, or null. */
+  async openPullRequestFrom(head: string, base: string): Promise<GitHubPullState | null> {
+    const found = await this.findOpenPullRequest(head, base);
     return found === null ? null : this.pullRequestState(found.number);
   }
 

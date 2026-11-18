@@ -10,6 +10,7 @@ import {
   createFakeGitLab,
   gitlabShape,
   type FakeGitLab,
+  type FakeMergeRequest,
 } from '../../../test/fake-gitlab';
 import {
   accessLevelOf,
@@ -1008,7 +1009,7 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
 
     it('reads, finds, updates and closes a merge request', async () => {
       const ref = String(P);
-      expect(await client().openMergeRequestFrom(ref, BRANCH)).toBeNull();
+      expect(await client().openMergeRequestFrom(ref, BRANCH, 'main')).toBeNull();
       const opened = await client().openMergeRequest(ref, {
         source: BRANCH,
         target: 'main',
@@ -1016,7 +1017,7 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
         description: 'first',
       });
       expect(opened.url).toMatch(/\/merge_requests\/\d+$/);
-      const found = await client().openMergeRequestFrom(ref, BRANCH);
+      const found = await client().openMergeRequestFrom(ref, BRANCH, 'main');
       expect(found).toEqual({
         iid: opened.iid,
         url: opened.url,
@@ -1035,7 +1036,7 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
       await client().updateMergeRequest(ref, opened.iid, { stateEvent: 'close' });
       expect(JSON.parse(fake.requests.at(-1)!.body)).toEqual({ state_event: 'close' });
       expect((await client().mergeRequestState(ref, opened.iid)).state).toBe('closed');
-      expect(await client().openMergeRequestFrom(ref, BRANCH)).toBeNull();
+      expect(await client().openMergeRequestFrom(ref, BRANCH, 'main')).toBeNull();
       fake.setMergeRequest(P, opened.iid, { state: 'merged', conflict: false });
       const merged = await client().mergeRequestState(ref, opened.iid);
       expect(merged).toMatchObject({ state: 'merged', conflict: false });
@@ -1044,6 +1045,45 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
       expect(fake.discussions(P, opened.iid).at(-1)!.notes[0]!.body).toBe(
         'Qualor no longer finds it',
       );
+    });
+
+    it('T10a: finds only an open merge request from this project’s branch into the target', async () => {
+      const ref = String(P);
+      const source = 'qualor/fix/js/t10a';
+      const mr = (iid: number, over: Partial<FakeMergeRequest>): FakeMergeRequest => ({
+        iid,
+        title: `!${iid}`,
+        state: 'opened',
+        sourceBranch: source,
+        targetBranch: 'main',
+        headSha: 'd'.repeat(40),
+        baseSha: main0,
+        startSha: main0,
+        diffs: [],
+        ...over,
+      });
+      // A fork's from a branch of the same name, and this project's into another branch.
+      fake.addMergeRequest(P, mr(901, { sourceProjectId: 4242 }));
+      fake.addMergeRequest(P, mr(902, { targetBranch: 'release' }));
+      fake.clearRequests();
+      expect(await client().openMergeRequestFrom(ref, source, 'main')).toBeNull();
+      const query = new URLSearchParams(fake.requests.at(-1)!.query);
+      expect([query.get('source_branch'), query.get('target_branch')]).toEqual([source, 'main']);
+      fake.addMergeRequest(P, mr(903, {}));
+      expect((await client().openMergeRequestFrom(ref, source, 'main'))?.iid).toBe(903);
+      // An answer without the source project's id is no merge request of this project.
+      fake.inject('GET', new RegExp(`^/projects/${P}/merge_requests$`), {
+        status: 200,
+        body: [
+          {
+            ...(gitlabShape('merge_request') as Record<string, unknown>),
+            iid: 904,
+            state: 'opened',
+            source_project_id: undefined,
+          },
+        ],
+      });
+      expect(await client().openMergeRequestFrom(ref, source, 'main')).toBeNull();
     });
 
     it('reads a detailed_merge_status of conflict as a conflict', async () => {

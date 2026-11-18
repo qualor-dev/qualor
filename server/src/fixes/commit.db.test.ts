@@ -3,7 +3,7 @@ import type { FixClaimAnswer, FixClaimItem } from '@qualor/shared/fix';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { bearer } from '../../test/app';
-import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
+import { createFakeGitLab, type FakeGitLab, type FakeMergeRequest } from '../../test/fake-gitlab';
 import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
@@ -629,5 +629,116 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
     // The job gave its slot back.
     expect(runtime.slots.tryTake(h.organizationId)).toBe(true);
     expect(runtime.slots.tryTake(h.organizationId)).toBe(true);
+  });
+
+  describe('ruling T10a: an MR found by the branch name is the fix’s only when it is Qualor’s', () => {
+    /** An open MR into main from a branch named like the fix's, as someone else opened it. */
+    const strangerMr = (iid: number, over: Partial<FakeMergeRequest> = {}): FakeMergeRequest => ({
+      iid,
+      title: 'Their title',
+      description: 'their description',
+      state: 'opened',
+      sourceBranch: BRANCH,
+      targetBranch: 'main',
+      headSha: 'd'.repeat(40),
+      baseSha: 'e'.repeat(40),
+      startSha: 'e'.repeat(40),
+      diffs: [],
+      ...over,
+    });
+
+    it('a fork’s MR from a branch of the same name is ignored, never written, and never ends the fix', async () => {
+      const repo = await freshRepo();
+      const forkId = ++gitlabIds;
+      fake.addProject({ id: forkId, path: `mallory/fix-commit-${forkId}` });
+      fake.addMergeRequest(repo.gitlabId, strangerMr(1, { sourceProjectId: forkId }));
+      const fixId = await accepted(repo);
+      fake.clearRequests();
+      await runFixJobs();
+
+      const opened = await row(fixId);
+      expect(opened.state).toBe('open');
+      expect(opened.mrNumber).not.toBe(1);
+      expect(mrWrites().map((r) => `${r.method} ${r.path}`)).toEqual([
+        `POST /projects/${repo.gitlabId}/merge_requests`,
+      ]);
+      const [fork, own] = fake.mergeRequestsOf(repo.gitlabId);
+      expect(fork).toMatchObject({
+        iid: 1,
+        title: 'Their title',
+        description: 'their description',
+      });
+      expect(own).toMatchObject({ iid: opened.mrNumber, sourceBranch: BRANCH, title: TITLE });
+
+      // F8: whatever becomes of the fork's MR, the fix keeps its own.
+      for (const state of ['merged', 'closed'] as const) {
+        fake.setMergeRequest(repo.gitlabId, 1, { state });
+        await refreshed(repo, fixId);
+        await runFixJobs();
+        expect(await row(fixId)).toMatchObject({
+          state: 'open',
+          mrNumber: opened.mrNumber,
+          declinedTarget: null,
+        });
+      }
+      expect(fake.mergeRequestsOf(repo.gitlabId)[0]).toMatchObject({
+        title: 'Their title',
+        description: 'their description',
+      });
+    });
+
+    it('a re-armed fix (no MR number) finds its own MR by the branch, never a fork’s beside it', async () => {
+      const repo = await freshRepo();
+      const forkId = ++gitlabIds;
+      fake.addProject({ id: forkId, path: `mallory/fix-commit-${forkId}` });
+      // The fork's MR comes first in GitLab's list.
+      fake.addMergeRequest(repo.gitlabId, strangerMr(1, { sourceProjectId: forkId }));
+      const fixId = await openFix(repo);
+      const own = (await row(fixId)).mrNumber;
+      expect(own).not.toBe(1);
+      // Cancel, then Retry before the close job: the MR number is cleared (ruling T8c).
+      for (const [method, url] of [
+        ['DELETE', `/api/v0/fixes/${fixId}`],
+        ['POST', `/api/v0/fixes/${fixId}/retry`],
+      ] as const) {
+        const res = await h.ctx.app.inject({ method, url, headers: h.orgAdmin.headers });
+        expect(res.statusCode, res.body).toBeLessThan(300);
+      }
+      expect((await row(fixId)).mrNumber).toBeNull();
+      await upload(repo, await claim(repo));
+      fake.clearRequests();
+      await runFixJobs();
+
+      expect(mrWrites().map((r) => `${r.method} ${r.path}`)).toEqual([
+        `PUT /projects/${repo.gitlabId}/merge_requests/${own}`,
+      ]);
+      expect(await row(fixId)).toMatchObject({ state: 'open', mrNumber: own });
+      expect(fake.mergeRequestsOf(repo.gitlabId)[0]).toMatchObject({
+        title: 'Their title',
+        description: 'their description',
+        state: 'opened',
+      });
+    });
+
+    it('rule 3: an MR of the branch whose head is not Qualor’s commit is not adopted', async () => {
+      const repo = await freshRepo();
+      // A person's MR from the branch, which they deleted since: the MR keeps their head.
+      fake.addMergeRequest(repo.gitlabId, strangerMr(1));
+      const fixId = await accepted(repo);
+      fake.clearRequests();
+      await runFixJobs();
+
+      expect(mrWrites().filter((r) => r.method === 'PUT')).toEqual([]);
+      expect(fake.mergeRequestsOf(repo.gitlabId)[0]).toMatchObject({
+        title: 'Their title',
+        description: 'their description',
+        headSha: 'd'.repeat(40),
+      });
+      // GitLab takes one open MR per source branch and target: the new one is refused, so the fix
+      // fails with nothing of theirs written.
+      const ended = await row(fixId);
+      expect(ended).toMatchObject({ state: 'failed', mrNumber: null });
+      expect(ended.failure?.code).toBe('scm_refused');
+    });
   });
 });

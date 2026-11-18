@@ -64,7 +64,10 @@ export interface FixRepository {
    * `deleted`, `gone` when there is no such branch, `taken_over` (kept) when a person moved it.
    */
   deleteBranch(name: string, expectedHead: string): Promise<'deleted' | 'gone' | 'taken_over'>;
-  /** The open MR whose source is `branch`, or null (a closed or merged one is not found). */
+  /**
+   * The open MR from `branch` of this repository into the main branch, or null: a closed or
+   * merged one is not found, nor a fork's from a branch of the same name (ruling T10a).
+   */
   findChange(branch: string): Promise<ChangeRequest | null>;
   readChange(number: number): Promise<ChangeRequest>;
   /** A new MR from `branch` into the main branch. */
@@ -149,7 +152,7 @@ function gitlabWrites(client: GitLabClient, ref: string, mainBranch: string): Fi
       return { sha };
     },
     findChange: async (branch) => {
-      const found = await client.openMergeRequestFrom(ref, branch);
+      const found = await client.openMergeRequestFrom(ref, branch, mainBranch);
       return found === null ? null : gitlabChange(found);
     },
     readChange: async (number) => gitlabChange(await client.mergeRequestState(ref, number)),
@@ -195,7 +198,7 @@ function githubWrites(client: GitHubClient, mainBranch: string): FixWrites {
       return { sha };
     },
     findChange: async (branch) => {
-      const found = await client.openPullRequestFrom(branch);
+      const found = await client.openPullRequestFrom(branch, mainBranch);
       return found === null ? null : githubChange(found);
     },
     readChange: async (number) => githubChange(await client.pullRequestState(number)),

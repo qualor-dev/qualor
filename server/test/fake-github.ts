@@ -124,6 +124,12 @@ export interface FakeOpenedPull {
   /** The last head the fake knew of the head branch: what a read gives once the branch is deleted. */
   headSha?: string;
   baseSha?: string;
+  /**
+   * The repository the head branch is in (`head.repo`): a fork's for a pull request from a fork,
+   * whose head is then `headSha` and never this repository's branch of that name; this repository
+   * when left out.
+   */
+  headRepo?: { id: number; owner: string; name: string };
 }
 export interface FakeFile {
   filename: string;
@@ -310,6 +316,14 @@ export interface FakeGitHub {
   ): void;
   /** The pull requests opened through the API in the repository. */
   pullsOf(repoId: number): FakeOpenedPull[];
+  /**
+   * An open pull request into the repository that someone else opened (from a fork when it has a
+   * `headRepo`), with the next number; it is answered as one opened through the API.
+   */
+  openPullAs(
+    repoId: number,
+    pull: Omit<FakeOpenedPull, 'repoId' | 'number' | 'state'>,
+  ): FakeOpenedPull;
   addRepository(repo: FakeRepository): void;
   addPull(repoId: number, pull: FakePull): void;
   updatePull(repoId: number, number: number, changes: Partial<FakePull>): void;
@@ -708,6 +722,16 @@ export async function createFakeGitHub(
       if (changes.mergeable !== undefined) opened.mergeable = changes.mergeable;
     },
     pullsOf: (repoId) => fake.openedPulls.filter((o) => o.repoId === repoId),
+    openPullAs: (repoId, pull) => {
+      const opened: FakeOpenedPull = {
+        ...pull,
+        repoId,
+        number: nextPullNumber++,
+        state: 'open',
+      };
+      fake.openedPulls.push(opened);
+      return opened;
+    },
     addRepository: (repo) => repos.set(`${repo.owner}/${repo.name}`.toLowerCase(), repo),
     addPull: (repoId, pull) => pulls.set(`${repoId}#${pull.number}`, structuredClone(pull)),
     updatePull: (repoId, number, changes) => {
@@ -1677,6 +1701,19 @@ export async function createFakeGitHub(
       o[field] = sha;
       return sha;
     };
+    /** A repository as a pull request's `head.repo` and `base.repo` name it. */
+    const repoOf = (r: { id: number; owner: string; name: string }) => ({
+      id: r.id,
+      name: r.name,
+      full_name: `${r.owner}/${r.name}`,
+      owner: { login: r.owner },
+    });
+    /** The head of a fork's pull request is its own; any other follows this repository's branch. */
+    const headOf = (o: FakeOpenedPull) => {
+      if (o.headRepo === undefined) return lastKnown(o, 'headSha', o.head);
+      o.headSha ??= newSha();
+      return o.headSha;
+    };
     const openedPullJson = (o: FakeOpenedPull) => ({
       ...githubShape('pull_request'),
       number: o.number,
@@ -1684,8 +1721,13 @@ export async function createFakeGitHub(
       body: o.body,
       state: o.state,
       html_url: `${webBase()}/${repo.owner}/${repo.name}/pull/${o.number}`,
-      head: { ref: o.head, sha: lastKnown(o, 'headSha', o.head), label: o.head },
-      base: { ref: o.base, sha: lastKnown(o, 'baseSha', o.base), label: o.base },
+      head: { ref: o.head, sha: headOf(o), label: o.head, repo: repoOf(o.headRepo ?? repo) },
+      base: {
+        ref: o.base,
+        sha: lastKnown(o, 'baseSha', o.base),
+        label: o.base,
+        repo: repoOf(repo),
+      },
     });
     /** `GET /pulls/{n}`: the list's shape plus what only a single read has. */
     const openedPullDetail = (o: FakeOpenedPull) => {
@@ -1704,6 +1746,7 @@ export async function createFakeGitHub(
     if (method === 'GET' && rest === '/pulls') {
       if (!need('pull_requests', 'read')) return forbidden();
       const head = url.searchParams.get('head');
+      const base = url.searchParams.get('base');
       const state = url.searchParams.get('state') ?? 'open';
       return page(
         url,
@@ -1713,7 +1756,9 @@ export async function createFakeGitHub(
             (o) =>
               o.repoId === repo.id &&
               (state === 'all' || o.state === state) &&
-              (head === null || head === `${repo.owner}:${o.head}`),
+              // GitHub's `head` filter is `<owner of the head repository>:<branch>`.
+              (head === null || head === `${(o.headRepo ?? repo).owner}:${o.head}`) &&
+              (base === null || base === o.base),
           )
           .map(openedPullJson),
       );
@@ -1733,7 +1778,11 @@ export async function createFakeGitHub(
         return deny(res, 422, 'Validation Failed');
       if (
         fake.openedPulls.some(
-          (o) => o.repoId === repo.id && o.head === b.head && o.state === 'open',
+          (o) =>
+            o.repoId === repo.id &&
+            o.headRepo === undefined &&
+            o.head === b.head &&
+            o.state === 'open',
         )
       )
         return deny(res, 422, 'A pull request already exists');

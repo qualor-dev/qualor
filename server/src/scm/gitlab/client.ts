@@ -110,7 +110,20 @@ const mergeRequestStateShape = z.looseObject({
   sha: z.string().nullable().optional(),
   has_conflicts: z.boolean().nullish(),
   detailed_merge_status: z.string().nullish(),
+  /** The project of the source branch: a fork's for a merge request from a fork (ruling T10a). */
+  source_project_id: z.number().int().optional(),
+  target_project_id: z.number().int().optional(),
+  project_id: z.number().int().optional(),
 });
+type MergeRequestStateAnswer = z.infer<typeof mergeRequestStateShape>;
+
+/**
+ * Ruling T10a: the merge request's source branch is in its own project, not in a fork: a fork's
+ * merge request from a branch of the same name is someone else's. An answer without the ids is not.
+ */
+const fromOwnProject = (mr: MergeRequestStateAnswer): boolean =>
+  mr.source_project_id !== undefined &&
+  mr.source_project_id === (mr.target_project_id ?? mr.project_id);
 const branchAnswer = z.looseObject({ commit: z.looseObject({ id: z.string() }) });
 const commitAnswer = z.looseObject({ id: z.string() });
 const mergeBaseAnswer = z.looseObject({ id: z.string() });
@@ -1068,7 +1081,10 @@ export class GitLabClient {
   }
 
   private mergeRequestStateOf(json: unknown): GitLabMergeRequestState {
-    const found = this.parse(mergeRequestStateShape, json);
+    return this.stateOf(this.parse(mergeRequestStateShape, json));
+  }
+
+  private stateOf(found: MergeRequestStateAnswer): GitLabMergeRequestState {
     return {
       iid: found.iid,
       url: found.web_url,
@@ -1084,15 +1100,27 @@ export class GitLabClient {
     return this.mergeRequestStateOf(json);
   }
 
-  /** The open merge request from `source`, or null. */
-  async openMergeRequestFrom(ref: string, source: string): Promise<GitLabMergeRequestState | null> {
-    const query = new URLSearchParams({ state: 'opened', source_branch: source });
+  /**
+   * The open merge request from the branch `source` of this project into `target`, or null.
+   * Ruling T10a: a fork's merge request from a branch of the same name is never it.
+   */
+  async openMergeRequestFrom(
+    ref: string,
+    source: string,
+    target: string,
+  ): Promise<GitLabMergeRequestState | null> {
+    const query = new URLSearchParams({
+      state: 'opened',
+      source_branch: source,
+      target_branch: target,
+      per_page: String(GITLAB_PAGE_SIZE),
+    });
     const { json } = await this.call(
       'GET',
       `${this.projectPath(ref)}/merge_requests?${query.toString()}`,
     );
-    const found = this.parse(z.array(z.unknown()), json)[0];
-    return found === undefined ? null : this.mergeRequestStateOf(found);
+    const found = this.parse(z.array(mergeRequestStateShape), json).find(fromOwnProject);
+    return found === undefined ? null : this.stateOf(found);
   }
 
   /** Changes a merge request's title or description, or closes it. */

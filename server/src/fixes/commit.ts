@@ -198,12 +198,19 @@ async function bodyOf(
 /**
  * Ruling F8: the fix's MR before any branch write: its own (`mr_number`), else the open one from
  * its branch (a crash after the MR was opened, or a re-armed fix whose MR is still open, T8c).
+ * Ruling T10a: one found by its branch is the fix's only when its head is Qualor's last commit
+ * (the stored `head_sha`, read before the write): an MR someone else opened from a branch of that
+ * name is never written and its state never ends the fix; a new MR is opened instead.
  */
-const currentChange = (
+async function currentChange(
   repo: FixRepository,
   row: DependencyFixRow,
-): Promise<ChangeRequest | null> =>
-  row.mrNumber === null ? repo.findChange(row.branch) : repo.readChange(row.mrNumber);
+): Promise<ChangeRequest | null> {
+  if (row.mrNumber !== null) return repo.readChange(row.mrNumber);
+  const found = await repo.findChange(row.branch);
+  const ours = found !== null && found.headSha !== null && found.headSha === row.headSha;
+  return ours ? found : null;
+}
 
 /**
  * Ruling F8, §11.2: how the fix ends before anything is written: a merged MR (`merged`), one a
