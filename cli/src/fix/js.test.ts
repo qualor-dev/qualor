@@ -926,6 +926,110 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
     expect(r.calls).toEqual([]);
   });
 
+  /** BERRY_LOCK with one more entry, `extra@<descriptor>` resolving to `resolution`. */
+  const berryWith = (descriptor: string, resolution: string) =>
+    BERRY_LOCK.concat(`
+"extra@${descriptor}":
+  version: 1.0.0
+  resolution: "${resolution}"
+  checksum: 10c0/fedcba9876543210
+  languageName: node
+  linkType: hard
+`);
+
+  it.each([
+    ['exec:', 'exec:./gen.js', 'extra@exec:./gen.js::locator=app%40workspace%3A.'],
+    [
+      'git+ssh:',
+      'git+ssh://git@github.com/acme/extra.git',
+      'extra@git+ssh://git@github.com/acme/extra.git#commit=0123456789abcdef0123456789abcdef01234567',
+    ],
+    [
+      'ssh:',
+      'ssh://git@github.com/acme/extra.git',
+      'extra@ssh://git@github.com/acme/extra.git#commit=0123456789abcdef0123456789abcdef01234567',
+    ],
+    [
+      'an https tarball',
+      'https://cdn.example/extra-1.0.0.tgz',
+      'extra@https://cdn.example/extra-1.0.0.tgz',
+    ],
+    ['file:', 'file:./extra.tgz', 'extra@file:./extra.tgz::locator=app%40workspace%3A.'],
+    ['portal:', 'portal:./extra', 'extra@portal:./extra::locator=app%40workspace%3A.'],
+    [
+      'a patch of a tarball',
+      'patch:extra@https%3A//cdn.example/extra.tgz#./extra.patch',
+      'extra@patch:extra@https%3A//cdn.example/extra.tgz#./extra.patch::version=1.0.0&hash=1',
+    ],
+  ])(
+    'Yarn Berry with an entry from %s: failure manifest_unsupported naming it, nothing run (Ruling T13f)',
+    async (_what, descriptor, resolution) => {
+      const app = json(['{', '  "name": "app",', '  "dependencies": { "qf-a": "^1.2.5" }', '}']);
+      const dir = committed({
+        'package.json': app,
+        'yarn.lock': berryWith(descriptor, resolution),
+      });
+
+      const r = await fix(
+        dir,
+        managerEnv('http://127.0.0.1:9', pathWithoutYarn()),
+        claim(['1.2.5'], '1.2.6'),
+      );
+
+      expect(r.outcome).toMatchObject({ failure: { code: 'manifest_unsupported' } });
+      if ('failure' in r.outcome)
+        expect(r.outcome.failure.message).toContain(`extra@${descriptor}`);
+      expect(r.calls).toEqual([]);
+    },
+  );
+
+  it('Yarn Berry with npm:, workspace: and patch: entries of those only: not refused by the source gate (Ruling T13f)', async () => {
+    const app = json(['{', '  "name": "app",', '  "dependencies": { "qf-a": "^1.2.5" }', '}']);
+    const lock = BERRY_LOCK.concat(`
+"lib@workspace:packages/lib":
+  version: 0.0.0-use.local
+  resolution: "lib@workspace:packages/lib"
+  languageName: unknown
+  linkType: soft
+
+"other@patch:other@npm%3A1.0.0#~/.yarn/patches/other-npm-1.0.0-abc.patch":
+  version: 1.0.0
+  resolution: "other@patch:other@npm%3A1.0.0#~/.yarn/patches/other-npm-1.0.0-abc.patch::version=1.0.0&hash=abc"
+  checksum: 10c0/fedcba9876543210
+  languageName: node
+  linkType: hard
+
+"fsevents@patch:fsevents@npm%3A2.3.3#optional!builtin<compat/fsevents>":
+  version: 2.3.3
+  resolution: "fsevents@patch:fsevents@npm%3A2.3.3#optional!builtin<compat/fsevents>::version=2.3.3&hash=df0bf1"
+  checksum: 10c0/0123456789abcdef
+  languageName: node
+  linkType: hard
+
+"lib@patch:lib@workspace%3Apackages/lib#./lib.patch":
+  version: 0.0.0-use.local
+  resolution: "lib@patch:lib@workspace%3Apackages/lib#./lib.patch::version=0.0.0-use.local&hash=1"
+  languageName: unknown
+  linkType: soft
+`);
+    const dir = committed({ 'package.json': app, 'yarn.lock': lock });
+    const berry: ToolRunner = (_tool, args) =>
+      Promise.resolve(
+        args[0] === '--version'
+          ? { exitCode: 0, timedOut: false, stdout: '4.18.1\n', stderr: '' }
+          : { exitCode: 1, timedOut: false, stdout: 'install stopped by the test', stderr: '' },
+      );
+
+    const r = await fix(dir, managerEnv('http://127.0.0.1:9'), claim(['1.2.5'], '1.2.6'), berry);
+
+    // Past the gate: the flavour check and the install ran (the fake install fails).
+    expect(r.calls.map((c) => [c.tool, ...c.args])).toEqual([
+      ['yarn', '--version'],
+      ['yarn', 'install', '--mode=update-lockfile'],
+    ]);
+    expect(r.outcome).toMatchObject({ failure: { code: 'package_manager' } });
+  });
+
   it('a workspace manifest that is not a JSON object: failure manifest_unsupported (Ruling T13e)', async () => {
     const root = json([
       '{',

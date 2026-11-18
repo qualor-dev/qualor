@@ -297,18 +297,67 @@ function zeroInstallStop(ws: FixWorkspace, projects: readonly Project[]): FixSto
   return null;
 }
 
+/** Ruling T13f: what a Berry lockfile entry may resolve to; a `patch:` must patch one of them. */
+const BERRY_SOURCES: readonly string[] = ['npm:', 'workspace:'];
+
+/** The reference after `name@` of a descriptor or locator (a scope keeps its `@`); null without one. */
+function referenceOf(descriptor: string): string | null {
+  const at = descriptor.indexOf('@', 1);
+  return at < 1 ? null : descriptor.slice(at + 1);
+}
+
+const protocolOf = (reference: string) => reference.slice(0, reference.indexOf(':') + 1);
+
+/** The locator a `patch:` reference patches (`other@npm:1.0.0`), decoded; null when unreadable. */
+function patchedLocator(reference: string): string | null {
+  const body = reference.slice('patch:'.length).split('::', 1)[0] ?? '';
+  const hash = body.indexOf('#');
+  if (hash < 0) return null;
+  try {
+    return decodeURIComponent(body.slice(0, hash));
+  } catch {
+    return null;
+  }
+}
+
+/** Whether a Berry resolution is the npm registry, a workspace, or a patch of one of those. */
+function allowedBerryResolution(resolution: string): boolean {
+  const reference = referenceOf(resolution);
+  if (reference === null) return false;
+  const protocol = protocolOf(reference);
+  if (BERRY_SOURCES.includes(protocol)) return true;
+  const patched = protocol === 'patch:' ? patchedLocator(reference) : null;
+  const inner = patched === null ? null : referenceOf(patched);
+  return inner !== null && BERRY_SOURCES.includes(protocolOf(inner));
+}
+
+/** The first entry of a Berry lockfile that resolves anywhere else: its key and resolution. */
+function foreignBerryEntry(text: string): { key: string; resolution: string } | null {
+  const lock: unknown = parseYaml(text, { schema: 'failsafe' });
+  if (!isRecord(lock)) return { key: '(the whole file)', resolution: '' };
+  for (const [key, entry] of Object.entries(lock)) {
+    if (key === '__metadata') continue;
+    const resolution = isRecord(entry) ? entry['resolution'] : undefined;
+    if (typeof resolution !== 'string') return { key, resolution: '' };
+    if (!allowedBerryResolution(resolution)) return { key, resolution };
+  }
+  return null;
+}
+
 /**
- * Ruling T13c: Yarn Berry prepares a git dependency by installing and packing it, and
- * `enableScripts: false` may not cover that step, so a project whose Berry lockfile holds any git
- * entry is left to a person. npm and pnpm skip the prepare step under `--ignore-scripts`.
+ * Rulings T13c and T13f: Yarn Berry prepares a dependency from git, ssh, `exec:` (a generator
+ * script), a tarball URL, `file:`, `link:` or `portal:` by fetching and building it, and
+ * `enableScripts: false` may not cover that step. So under Berry every lockfile entry must resolve
+ * to the npm registry, a workspace, or a patch of one of those; any other source is left to a
+ * person, before any tool runs. npm and pnpm skip the prepare step under `--ignore-scripts`.
  */
-function berryGitStop(ws: FixWorkspace, projects: readonly Project[]): FixStop | null {
+function berrySourceStop(ws: FixWorkspace, projects: readonly Project[]): FixStop | null {
   for (const project of projects) {
     for (const lockfile of project.lockfiles.filter((l) => l.manager === 'yarn-berry')) {
-      const git = lockEntries(ws, lockfile.path).find((e) => e.kind === 'git');
-      if (git !== undefined) {
+      const foreign = foreignBerryEntry(readText(ws, lockfile.path));
+      if (foreign !== null) {
         return unsupported(
-          `${lockfile.path} holds the git dependency ${git.name} (${specText(git.source ?? '')}); Yarn Berry may run its scripts to prepare it, so Qualor does not regenerate this lockfile.`,
+          `${lockfile.path}: the entry ${specText(foreign.key)} resolves to ${specText(foreign.resolution)}; under Yarn Berry, Qualor regenerates only a lockfile whose entries come from the npm registry, a workspace or a patch of one of those, since Yarn may run scripts to prepare any other source.`,
         );
       }
     }
@@ -925,7 +974,7 @@ async function apply(
 ): Promise<AppliedFix | FixStop> {
   const projects = projectsOf(ws, plan);
   if (isStop(projects)) return projects;
-  const refused = zeroInstallStop(ws, projects) ?? berryGitStop(ws, projects);
+  const refused = zeroInstallStop(ws, projects) ?? berrySourceStop(ws, projects);
   if (refused !== null) return refused;
   const edits = new ManifestEdits(ws);
   const plans = planAll(ws, edits, projects, fix, plan);

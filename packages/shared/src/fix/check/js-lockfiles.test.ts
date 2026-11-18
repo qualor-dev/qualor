@@ -783,6 +783,7 @@ describe('readYarnLock: Berry', () => {
     ['qf-a@https://evil.example/qf-a.tgz', 'tarball'],
     ['qf-a@https://github.com/x/qf-a.git#commit=abc', 'git'],
     ['qf-a@git+ssh://git@github.com/x/qf-a.git#commit=abc', 'git'],
+    ['qf-a@ssh://git@github.com/x/qf-a.git#commit=abc', 'git'],
     ['qf-a@file:../qf-a#../qf-a::hash=1&locator=app%40workspace%3A.', 'file'],
     ['qf-a@link:../qf-a::locator=app%40workspace%3A.', 'link'],
     ['qf-a@portal:../qf-a::locator=app%40workspace%3A.', 'link'],

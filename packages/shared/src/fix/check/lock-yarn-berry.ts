@@ -92,7 +92,8 @@ function berryPatch(reference: string, name: string, version: string | null): Be
 }
 
 function berryKind(protocol: string, reference: string): LockEntryKind {
-  if (protocol.startsWith('git')) return 'git';
+  // Ruling T13f: `ssh:` is git too (`git+ssh:`, `git:` and `github:` start with `git`).
+  if (protocol.startsWith('git') || protocol === 'ssh:') return 'git';
   if (protocol === 'http:' || protocol === 'https:') {
     return BERRY_GIT_URL.test(reference) ? 'git' : 'tarball';
   }
