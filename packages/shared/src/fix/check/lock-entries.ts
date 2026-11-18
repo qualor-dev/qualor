@@ -18,6 +18,7 @@ import {
   type FixTarget,
   type LockEntry,
 } from './types';
+import { parseUrl } from './values';
 
 /** What a lockfile check adds to the fix: the file, the format's public registries and hashes. */
 export interface LockCheckOptions {
@@ -29,26 +30,22 @@ export interface LockCheckOptions {
 }
 
 /**
- * The scheme and authority of a URL. The authority ends at `/`, `?`, `#` or `\` (WHATWG reads a
- * `\` as `/` in http(s) URLs), so `https://evil\@registry.npmjs.org` is host `evil`.
- */
-const URL_AUTHORITY = /^([a-z][a-z0-9+.-]*):\/\/([^/?#\\]*)/i;
-
-/**
- * `scheme://host[:port]` of a URL source, in lower case and without user info (everything up to
- * the authority's last `@`); null for a source that is not a `scheme://` URL.
+ * `scheme://host[:port]` of a URL source, as the WHATWG URL parser reads it (so `https:\\evil`,
+ * `https:/evil` and surrounding space are host `evil`): lower case, without user info, without a
+ * default port. Null for a source that does not parse or has no host (`file:…`, `npm:1.2.3`).
  */
 export function sourceOrigin(source: string): string | null {
-  const match = URL_AUTHORITY.exec(source);
-  if (match === null) return null;
-  const authority = match[2] ?? '';
-  const host = authority.slice(authority.lastIndexOf('@') + 1);
-  return `${(match[1] ?? '').toLowerCase()}://${host.toLowerCase()}`;
+  const url = parseUrl(source);
+  if (url === null || url.host === '') return null;
+  return `${url.protocol}//${url.host}`.toLowerCase();
 }
 
-/** An entry is new when its `(name, version, source)` is not in the base. */
+/**
+ * An entry is new when its `(name, version, source, kind, integrity)` is not in the base (Ruling
+ * T3b), so a base entry whose kind or integrity changed is checked again.
+ */
 function entryKey(entry: LockEntry): string {
-  return JSON.stringify([entry.name, entry.version, entry.source]);
+  return JSON.stringify([entry.name, entry.version, entry.source, entry.kind, entry.integrity]);
 }
 
 function originOf(entry: LockEntry): string | null {
@@ -61,17 +58,21 @@ function newEntryRule(
   integrityRequired: boolean,
 ): FixRule | null {
   if (entry.kind !== 'registry') return 'source_kind';
-  const origin = originOf(entry);
-  if (origin !== null && !origins.has(origin)) return 'new_source';
+  if (entry.source !== null) {
+    // Ruling T3c: a source that gives no origin fails closed; the readers write null, not a
+    // reference, for a registry entry the format names no URL for.
+    const origin = originOf(entry);
+    if (origin === null || !origins.has(origin)) return 'new_source';
+  }
   if (integrityRequired && (entry.integrity ?? '') === '') return 'missing_integrity';
   return null;
 }
 
 /**
- * B1 for lockfiles: every new entry is a registry entry (`source_kind`), from an origin the base
- * lockfile or a public registry of the format uses (`new_source`; an entry without a URL source has
- * no host check), with an integrity hash where the format has them (`missing_integrity`). The
- * first failing new entry, in `next` order, names the rule.
+ * B1 for lockfiles: every new entry is a registry entry (`source_kind`) whose source is null or a
+ * URL on an origin the base lockfile or a public registry of the format uses (`new_source`), with
+ * an integrity hash where the format has them (`missing_integrity`). The first failing new entry,
+ * in `next` order, names the rule.
  */
 export function checkLockEntries(
   base: readonly LockEntry[],

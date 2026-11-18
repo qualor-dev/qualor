@@ -14,7 +14,7 @@ import {
   type LockEntry,
   type LockEntryKind,
 } from './types';
-import { isObject, own, parseYaml, str, stripBom, type JsonObject } from './values';
+import { isObject, own, parseUrl, parseYaml, str, stripBom, type JsonObject } from './values';
 
 /** An entry before its dependents are known. */
 type RawEntry = Omit<LockEntry, 'dependents'>;
@@ -83,31 +83,54 @@ function splitDescriptor(text: string): { name: string; range: string } | null {
 // ---------------------------------------------------------------------------------------------
 // Source kinds
 
-/** Spec and version prefixes that name a source other than a registry. */
+/** Spec and version prefixes that name a git, file or link source. */
 const SPEC_KINDS: readonly (readonly [RegExp, LockEntryKind])[] = [
   [/^(?:git\+|git:|git@|ssh:|github:|gitlab:|bitbucket:|gist:)/i, 'git'],
   [/^file:/i, 'file'],
   [/^link:/i, 'link'],
-  [/^https?:\/\//i, 'tarball'],
 ];
 
-/** The kind a dependency spec or a version names; null for a registry spec (version, range, tag). */
-function specKind(spec: string): LockEntryKind | null {
-  return SPEC_KINDS.find(([pattern]) => pattern.test(spec))?.[1] ?? null;
+/** An http(s) URL as the package managers parse it (Ruling T3c); null for anything else. */
+function httpUrl(text: string): URL | null {
+  const url = text.includes(':') ? parseUrl(text) : null;
+  return url?.protocol === 'http:' || url?.protocol === 'https:' ? url : null;
 }
 
-const HTTP_AUTHORITY = /^https?:\/\/[^/?#\\]*/i;
+/**
+ * The kind a dependency spec or a version names: git, `file:`, `link:`, or `tarball` for an
+ * http(s) URL; null for a registry spec (a version, range or tag).
+ */
+function specKind(spec: string): LockEntryKind | null {
+  const kind = SPEC_KINDS.find(([pattern]) => pattern.test(spec.trim()))?.[1];
+  if (kind !== undefined) return kind;
+  return httpUrl(spec) === null ? null : 'tarball';
+}
 
 /**
- * The kind of a `resolved` URL (npm, Yarn classic). An http(s) URL whose path has a `/-/` segment
- * is a registry tarball, as npm registries name them (`<registry>/<name>/-/<name>-<v>.tgz`); any
- * other http(s) URL is a tarball dependency.
+ * Where an npm registry serves a package's tarball, after any registry prefix (Ruling T3b):
+ * `/<name>/-/<base>-<version>.tgz`, `<base>` the name without its scope, a scope's `/` also
+ * written `%2f` or `%2F`.
  */
-function resolvedKind(resolved: string): LockEntryKind {
-  const authority = HTTP_AUTHORITY.exec(resolved);
-  if (authority === null) return specKind(resolved) ?? 'other';
-  const path = resolved.slice(authority[0].length).split(/[?#]/, 1)[0] ?? '';
-  return path.includes('/-/') ? 'registry' : 'tarball';
+function tarballPaths(name: string, version: string): string[] {
+  const slash = name.indexOf('/');
+  const scoped = name.startsWith('@') && slash > 0;
+  const base = scoped ? name.slice(slash + 1) : name;
+  const tail = `/-/${base}-${version}.tgz`;
+  if (!scoped) return [`/${name}${tail}`];
+  const scope = name.slice(0, slash);
+  return [`/${name}${tail}`, `/${scope}%2f${base}${tail}`, `/${scope}%2F${base}${tail}`];
+}
+
+/**
+ * The kind of a `resolved` source (npm, Yarn classic). An http(s) URL is the registry tarball of
+ * the entry's own name and version only when its path ends with {@link tarballPaths}; any other
+ * http(s) URL is a tarball dependency, so a resolved URL cannot fetch another package (T3b).
+ */
+function resolvedKind(resolved: string, name: string, version: string): LockEntryKind {
+  const url = httpUrl(resolved);
+  if (url === null) return specKind(resolved) ?? 'other';
+  const paths = version === '' ? [] : tarballPaths(name, version);
+  return paths.some((path) => url.pathname.endsWith(path)) ? 'registry' : 'tarball';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -115,24 +138,34 @@ function resolvedKind(resolved: string): LockEntryKind {
 
 const NODE_MODULES = 'node_modules/';
 
+/**
+ * An npm entry's real package: the `name` field of a v2/v3 alias, the `npm:<name>@<version>`
+ * version of a v1 alias, else the key's name and the entry's version.
+ */
+function npmPackage(keyName: string, entry: JsonObject): { name: string; version: string } {
+  const version = str(own(entry, 'version')) ?? '';
+  const alias = version.startsWith('npm:') ? splitDescriptor(version.slice('npm:'.length)) : null;
+  if (alias !== null) return { name: alias.name, version: alias.range };
+  return { name: str(own(entry, 'name')) ?? keyName, version };
+}
+
 /** The kind and source of an npm entry: `link`, a URL or `file:` version, or its `resolved`. */
-function npmSource(key: string, entry: JsonObject): Pick<RawEntry, 'kind' | 'source'> {
+function npmSource(
+  key: string,
+  entry: JsonObject,
+  { name, version }: { name: string; version: string },
+): Pick<RawEntry, 'kind' | 'source'> {
   const resolved = str(own(entry, 'resolved'));
   if (own(entry, 'link') === true) return { kind: 'link', source: resolved };
-  const version = str(own(entry, 'version'));
-  const versionKind = version === null ? null : specKind(version);
+  const versionKind = specKind(version);
   if (versionKind !== null) return { kind: versionKind, source: resolved ?? version };
-  if (resolved !== null) return { kind: resolvedKind(resolved), source: resolved };
+  if (resolved !== null) return { kind: resolvedKind(resolved, name, version), source: resolved };
   return { kind: key.includes(NODE_MODULES) ? 'registry' : 'path', source: null };
 }
 
-function npmEntry(key: string, name: string, entry: JsonObject): RawEntry {
-  return {
-    name: str(own(entry, 'name')) ?? name,
-    version: str(own(entry, 'version')) ?? '',
-    ...npmSource(key, entry),
-    integrity: str(own(entry, 'integrity')),
-  };
+function npmEntry(key: string, keyName: string, entry: JsonObject): RawEntry {
+  const pkg = npmPackage(keyName, entry);
+  return { ...pkg, ...npmSource(key, entry, pkg), integrity: str(own(entry, 'integrity')) };
 }
 
 /** v2 and v3 `packages`: the name after the last `node_modules/` (or the entry's `name`). */
@@ -227,13 +260,44 @@ function pnpmResolution(value: unknown): Resolution {
   return { kind: integrity === null ? 'other' : 'registry', source: null, integrity };
 }
 
+interface PnpmFields {
+  name: string | null;
+  version: string | null;
+}
+
+/**
+ * Ruling T3b: pnpm fetches a registry package (integrity only) by its key, so the key names it.
+ * `name` or `version` fields that disagree with the key, or a key without a version, make the
+ * entry `other`, so a new one is refused.
+ */
+function pnpmRegistryEntry(
+  key: string,
+  parts: { name: string; version: string } | null,
+  fields: PnpmFields,
+  resolution: Resolution,
+): RawEntry {
+  const agrees =
+    parts !== null &&
+    (fields.name ?? parts.name) === parts.name &&
+    (fields.version ?? parts.version) === parts.version;
+  return {
+    name: parts?.name ?? fields.name ?? unreadable(key),
+    version: parts?.version ?? fields.version ?? unreadable(key),
+    ...resolution,
+    kind: agrees ? 'registry' : 'other',
+  };
+}
+
 function pnpmEntry(key: string, value: unknown, major: number): RawEntry {
   const entry = objectAt(value, key);
   const parts = pnpmKeyParts(key, major);
+  const fields = { name: str(own(entry, 'name')), version: str(own(entry, 'version')) };
+  const resolution = pnpmResolution(own(entry, 'resolution'));
+  if (resolution.kind === 'registry') return pnpmRegistryEntry(key, parts, fields, resolution);
   return {
-    name: str(own(entry, 'name')) ?? parts?.name ?? unreadable(key),
-    version: str(own(entry, 'version')) ?? parts?.version ?? unreadable(key),
-    ...pnpmResolution(own(entry, 'resolution')),
+    name: fields.name ?? parts?.name ?? unreadable(key),
+    version: fields.version ?? parts?.version ?? unreadable(key),
+    ...resolution,
   };
 }
 
@@ -393,12 +457,14 @@ function classicRangeKind(range: string): LockEntryKind | null {
   return specKind(range) ?? (range.includes('/') ? 'git' : null);
 }
 
-function classicKind(ranges: readonly string[], resolved: string | null): LockEntryKind {
+/** A block's kind for one package it names: from its ranges, then from `resolved` (T3b). */
+function classicKind(ranges: readonly string[], entry: RawEntry): LockEntryKind {
   for (const range of ranges) {
     const kind = classicRangeKind(range);
     if (kind !== null) return kind;
   }
-  return resolved === null ? 'registry' : resolvedKind(resolved);
+  if (entry.source === null) return 'registry';
+  return resolvedKind(entry.source, entry.name, entry.version);
 }
 
 /** Yarn classic: one entry per package its block's patterns name. */
@@ -407,19 +473,16 @@ function readYarnClassic(source: string): LockEntry[] {
   const edges: Edge[] = [];
   for (const block of classicBlocks(source)) {
     const patterns = block.patterns.map(classicPattern);
-    const resolved = block.fields.get('resolved') ?? null;
+    const ranges = patterns.map((p) => p.range);
     const fields = {
       version: block.fields.get('version') ?? unreadable(block.patterns.join(', ')),
-      source: resolved,
-      kind: classicKind(
-        patterns.map((p) => p.range),
-        resolved,
-      ),
+      source: block.fields.get('resolved') ?? null,
       integrity: block.fields.get('integrity') ?? null,
     };
     const dependencies = block.maps.get('dependencies') ?? [];
     for (const name of new Set(patterns.map((p) => p.name))) {
-      entries.push({ name, ...fields });
+      const entry: RawEntry = { name, ...fields, kind: 'registry' };
+      entries.push({ ...entry, kind: classicKind(ranges, entry) });
       edges.push({ from: name, to: dependencies });
     }
   }
@@ -431,7 +494,8 @@ function readYarnClassic(source: string): LockEntry[] {
 
 interface BerryLocator {
   kind: LockEntryKind;
-  source: string;
+  /** The archive URL of a registry package (null without one); the reference for the others. */
+  source: string | null;
   /** The version a registry reference names; null for other protocols. */
   version: string | null;
 }
@@ -458,13 +522,15 @@ function splitParams(reference: string): [string, string] {
 
 /**
  * `npm:<version>`: a registry package. Berry fetches it from `__archiveUrl` when that parameter is
- * set, so that URL is its source; two of them are refused (Berry refuses them too).
+ * set, so that URL is its source (null without one); two of them, or one that is not a URL, are
+ * refused (Berry refuses them too).
  */
 function berryNpm(reference: string): BerryLocator {
   const [selector, params] = splitParams(reference.slice('npm:'.length));
   const archive = new URLSearchParams(params).getAll('__archiveUrl');
-  if (archive.length > 1) unreadable(reference);
-  return { kind: 'registry', source: archive[0] ?? reference, version: selector };
+  const url = archive[0] ?? null;
+  if (archive.length > 1 || (url !== null && parseUrl(url) === null)) unreadable(reference);
+  return { kind: 'registry', source: url, version: selector };
 }
 
 function decoded(text: string): string {
@@ -477,7 +543,8 @@ function decoded(text: string): string {
 
 /**
  * `patch:<descriptor>#<patch>`: a builtin compat patch of an `npm:` package counts as that registry
- * package (its source is the patch, or the archive URL); a patch file of the repository is `file`.
+ * package (with its archive URL, if any); a patch file of the repository is `file`. The patched
+ * package's checksum differs from the original's, so a new patch entry is checked as new.
  */
 function berryPatch(reference: string): BerryLocator {
   const [body] = splitParams(reference.slice('patch:'.length));
@@ -490,8 +557,7 @@ function berryPatch(reference: string): BerryLocator {
   if (original?.range.startsWith('npm:') !== true) {
     return { kind: 'other', source: reference, version: null };
   }
-  const npm = berryNpm(original.range);
-  return { ...npm, source: npm.source === original.range ? reference : npm.source };
+  return berryNpm(original.range);
 }
 
 function berryKind(protocol: string, reference: string): LockEntryKind {

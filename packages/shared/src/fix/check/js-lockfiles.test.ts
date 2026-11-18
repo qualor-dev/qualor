@@ -237,6 +237,62 @@ describe('checkJsLockfile: npm', () => {
     expect(checkJsLockfile({ ...change, next: fixed }, ctx)).toEqual({ ok: true });
   });
 
+  it.each([
+    ['another package', `${NPM}/evil/-/evil-6.6.6.tgz`],
+    ['another version', `${NPM}/qf-a/-/qf-a-1.2.5.tgz`],
+    ['the name only in a prefix', `${NPM}/qf-a/-/x/evil/-/evil-1.2.6.tgz`],
+  ])('refuses a resolved URL that names %s (Ruling T3b)', (_name, resolved) => {
+    const evil = npmV3(npmQfA('1.2.6', { resolved, integrity: 'sha512-evil' }));
+    expect(check('package-lock.json', NPM_V3_BASE, evil)).toMatchObject({
+      rule: 'source_kind',
+    });
+  });
+
+  it.each([
+    ['a scoped package', '@scope/qf-d', `${NPM}/@scope/qf-d/-/qf-d-1.0.0.tgz`],
+    ['a scoped package with %2F', '@scope/qf-d', `${NPM}/@scope%2Fqf-d/-/qf-d-1.0.0.tgz`],
+    ['a scoped package with %2f', '@scope/qf-d', `${NPM}/@scope%2fqf-d/-/qf-d-1.0.0.tgz`],
+    ['an alias by its real name', 'qf-d', `${NPM}/qf-d/-/qf-d-1.0.0.tgz`],
+  ])('accepts %s on the registry (Ruling T3b)', (_name, realName, resolved) => {
+    const added = { version: '1.0.0', resolved, integrity: 'sha512-d', name: realName };
+    const next = npmV3(npmQfA('1.2.6'), { 'node_modules/qf-alias': added });
+    expect(check('package-lock.json', NPM_V3_BASE, next)).toEqual({ ok: true });
+  });
+
+  it.each([
+    ['backslashes', 'https:\\\\evil.example/qf-a/-/qf-a-1.2.6.tgz'],
+    ['one slash', 'https:/evil.example/qf-a/-/qf-a-1.2.6.tgz'],
+    ['no slashes', 'https:evil.example/qf-a/-/qf-a-1.2.6.tgz'],
+    ['a leading space', ' https://evil.example/qf-a/-/qf-a-1.2.6.tgz'],
+    ['a tab in the host', 'https://registry.npm\tjs.org.evil.example/qf-a/-/qf-a-1.2.6.tgz'],
+  ])('reads a resolved URL with %s as a URL does (Ruling T3c)', (_name, resolved) => {
+    const evil = npmV3(npmQfA('1.2.6', { resolved }));
+    expect(check('package-lock.json', NPM_V3_BASE, evil)).toMatchObject({ rule: 'new_source' });
+  });
+
+  it('accepts a registry path prefix, as Artifactory and Verdaccio write it (Ruling T3b)', () => {
+    const prefix = 'https://artifactory.example/artifactory/api/npm/npm-remote';
+    const at = (version: string) =>
+      npmQfA(version, { resolved: `${prefix}/qf-a/-/qf-a-${version}.tgz` });
+    expect(check('package-lock.json', npmV3(at('1.2.5')), npmV3(at('1.2.6')))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('reads a v1 alias by its real name and version', () => {
+    const alias = {
+      version: 'npm:string-width@4.2.3',
+      resolved: `${NPM}/string-width/-/string-width-4.2.3.tgz`,
+      integrity: 'sha512-s',
+    };
+    const entries = readNpmLock(npmV1(npmQfA('1.2.5'), { 'string-width-cjs': alias }));
+    expect(entries.find((e) => e.integrity === 'sha512-s')).toMatchObject({
+      name: 'string-width',
+      version: '4.2.3',
+      kind: 'registry',
+    });
+  });
+
   it('refuses a new tarball URL entry, even on a host the lockfile uses', () => {
     const tarball = npmV3(npmQfA('1.2.6', { resolved: `${NPM}/qf-a.tgz` }));
     expect(check('package-lock.json', NPM_V3_BASE, tarball)).toMatchObject({
@@ -414,6 +470,27 @@ packages:
 });
 
 describe('checkJsLockfile: pnpm', () => {
+  it('reads a registry entry by its key, as pnpm installs it (Ruling T3b)', () => {
+    const lying = pnpmV9('1.2.5').replace(
+      'resolution: {integrity: sha512-a1.2.5}',
+      'resolution: {integrity: sha512-a1.2.5}\n    version: 1.2.6',
+    );
+    expect(readPnpmLock(lying).find((e) => e.name === 'qf-a')).toMatchObject({
+      version: '1.2.5',
+      kind: 'other',
+    });
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), lying)).toMatchObject({
+      rule: 'source_kind',
+    });
+    const renamed = pnpmV9('1.2.6').replace(
+      'resolution: {integrity: sha512-a1.2.6}',
+      'resolution: {integrity: sha512-a1.2.6}\n    name: qf-other',
+    );
+    expect(check('pnpm-lock.yaml', pnpmV9('1.2.5'), renamed)).toMatchObject({
+      rule: 'source_kind',
+    });
+  });
+
   it('refuses a direct dependency the lockfile alone turns into a link', () => {
     const linked = pnpmV9('1.2.6').replace(
       '        specifier: ^2.0.0\n        version: 2.0.0',
@@ -632,9 +709,18 @@ describe('readYarnLock: Berry', () => {
       { name: 'qf-b', version: '2.0.0', kind: 'registry', dependents: ['app'] },
     ]);
     expect(readYarnLock(berry('1.2.5')).find((e) => e.name === 'qf-a')).toMatchObject({
-      source: 'npm:1.2.5',
+      source: null,
       integrity: '10c0/a1.2.5',
     });
+  });
+
+  it('reads an archive URL as the source, and refuses one that does not parse', () => {
+    const archive = encodeURIComponent('https://npm.example/qf-a/-/qf-a-1.2.5.tgz');
+    const custom = berry('1.2.5', `qf-a@npm:1.2.5::__archiveUrl=${archive}`);
+    expect(readYarnLock(custom).find((e) => e.name === 'qf-a')?.source).toBe(
+      'https://npm.example/qf-a/-/qf-a-1.2.5.tgz',
+    );
+    expect(() => readYarnLock(berry('1.2.5', 'qf-a@npm:1.2.5::__archiveUrl=not-a-url'))).toThrow();
   });
 
   it.each([
@@ -689,6 +775,13 @@ describe('checkJsLockfile: Yarn', () => {
     expect(check('yarn.lock', berry('1.2.5'), evil)).toMatchObject({ rule: 'new_source' });
     const twice = berry('1.2.6', `qf-a@npm:1.2.6::__archiveUrl=${archive}&__archiveUrl=${archive}`);
     expect(check('yarn.lock', berry('1.2.5'), twice)).toMatchObject({ rule: 'unparsable' });
+  });
+
+  it('refuses a classic resolved URL that names another package (Ruling T3b)', () => {
+    const evil = yarnClassic('1.2.6', 'https://registry.yarnpkg.com/evil/-/evil-6.6.6.tgz#0a1b');
+    expect(check('yarn.lock', yarnClassic('1.2.5'), evil)).toMatchObject({
+      rule: 'source_kind',
+    });
   });
 
   it('refuses git+https and tarball sources', () => {

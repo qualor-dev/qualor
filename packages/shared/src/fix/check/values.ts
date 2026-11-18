@@ -32,6 +32,18 @@ export function at(object: JsonObject, path: readonly string[]): unknown {
   return value;
 }
 
+/**
+ * A source as the package managers read it: the WHATWG URL parser (`new URL`), which also takes
+ * `https:\\host`, `https:/host` and surrounding space; null when it does not parse.
+ */
+export function parseUrl(source: string): URL | null {
+  try {
+    return new URL(source.trim());
+  } catch {
+    return null;
+  }
+}
+
 export function str(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }

@@ -138,10 +138,41 @@ describe('checkLockEntries', () => {
     });
   });
 
-  it('checks no host for an entry without a URL source', () => {
+  it('checks no host for an entry without a source', () => {
     expect(checkLockEntries(baseEntries, [entry({ source: null })], ctx)).toEqual({ ok: true });
-    expect(checkLockEntries(baseEntries, [entry({ source: 'npm:1.2.6' })], ctx)).toEqual({
+  });
+
+  it.each([
+    'https:\\\\evil.example/qf-a/-/qf-a-1.2.6.tgz',
+    'https:/evil.example/qf-a/-/qf-a-1.2.6.tgz',
+    ' https://evil.example/qf-a/-/qf-a-1.2.6.tgz',
+  ])('reads %j as a URL does (Ruling T3c)', (source) => {
+    expect(checkLockEntries(baseEntries, [entry({ source })], ctx)).toMatchObject({
+      rule: 'new_source',
+    });
+  });
+
+  it.each(['garbage', '../qf-a-1.2.6.tgz', 'npm:1.2.6', 'https://', ''])(
+    'refuses a new registry entry whose source %j gives no origin (Ruling T3c)',
+    (source) => {
+      expect(checkLockEntries(baseEntries, [entry({ source })], ctx)).toMatchObject({
+        rule: 'new_source',
+      });
+    },
+  );
+
+  it('checks an entry whose integrity or kind changed as new (Ruling T3b)', () => {
+    const base = [entry({ integrity: 'sha512-old' })];
+    expect(checkLockEntries(base, [entry({ integrity: 'sha512-other' })], ctx)).toEqual({
       ok: true,
+    });
+    expect(checkLockEntries(base, [entry({ integrity: null })], ctx)).toMatchObject({
+      rule: 'missing_integrity',
+    });
+    expect(
+      checkLockEntries(base, [entry({ integrity: 'sha512-old', kind: 'other' })], ctx),
+    ).toMatchObject({
+      rule: 'source_kind',
     });
   });
 });
@@ -151,11 +182,17 @@ describe('sourceOrigin', () => {
     ['https://registry.npmjs.org/a/-/a-1.0.0.tgz', 'https://registry.npmjs.org'],
     ['git+SSH://git@GitHub.com/x/y.git', 'git+ssh://github.com'],
     ['https://a:b@host:8080?x', 'https://host:8080'],
+    ['https://registry.npmjs.org:443/a', 'https://registry.npmjs.org'],
     ['https://evil\\@registry.npmjs.org/', 'https://evil'],
+    ['https:\\\\evil.example/x', 'https://evil.example'],
+    ['https:/evil.example/x', 'https://evil.example'],
+    ['https:evil.example/x', 'https://evil.example'],
+    ['  https://evil.example/x  ', 'https://evil.example'],
     ['file:../x', null],
     ['github:x/y', null],
-    ['https:evil.example/x', null],
-  ])('%s → %s', (source, origin) => {
+    ['npm:1.2.6', null],
+    ['garbage', null],
+  ])('%j → %s', (source, origin) => {
     expect(sourceOrigin(source)).toBe(origin);
   });
 });
