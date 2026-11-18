@@ -425,11 +425,12 @@ describe('parseCommandLine fix (0.16 fix MRs §6.5, R4)', () => {
       if (command.name !== 'fix') throw new Error('expected fix');
       return command.flags;
     };
-    expect(flags('--timeout', '90s').timeoutSeconds).toBe(90);
+    expect(flags('--timeout', '120s').timeoutSeconds).toBe(120);
+    expect(flags('--timeout', '2m').timeoutSeconds).toBe(120);
     expect(flags('--timeout', '30m').timeoutSeconds).toBe(1800);
     expect(flags('--timeout', '2h').timeoutSeconds).toBe(7200);
     expect(flags('--timeout', '6h').timeoutSeconds).toBe(21_600);
-    expect(flags('--timeout=60s').timeoutSeconds).toBe(60);
+    expect(flags('--timeout=150s').timeoutSeconds).toBe(150);
     expect(flags('--max', '1').max).toBe(1);
     expect(
       flags(
@@ -457,10 +458,13 @@ describe('parseCommandLine fix (0.16 fix MRs §6.5, R4)', () => {
     });
   });
 
-  it('is a usage error for a bad duration, one outside 60 s to 6 h, or --max outside 1 to 10', () => {
+  it('is a usage error for a bad duration, one outside 2 min to 6 h (ruling T12k), or --max outside 1 to 10', () => {
     for (const argv of [
       ['fix', '--timeout', '1x'],
       ['fix', '--timeout', '30s'],
+      ['fix', '--timeout', '90s'],
+      ['fix', '--timeout', '60s'],
+      ['fix', '--timeout', '1m'],
       ['fix', '--timeout', '7h'],
       ['fix', '--timeout', '90'],
       ['fix', '--timeout', ''],

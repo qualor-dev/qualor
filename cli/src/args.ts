@@ -46,7 +46,7 @@ export interface FixFlags {
   caFile?: string;
   /** Fixes to prepare at most, 1–10. */
   max: number;
-  /** The job's time, 60 s to 6 h. */
+  /** The job's time, 2 min to 6 h. */
   timeoutSeconds: number;
 }
 
@@ -441,14 +441,17 @@ function duration(
   const seconds = m === null || unit === undefined ? Number.NaN : Number(m[1]) * unit;
   if (!(seconds >= range.min && seconds <= range.max)) {
     throw usageError(
-      `--${name} must be a duration such as 90s, 30m or 2h, from ${range.min} seconds to ${range.max / 3600} hours`,
+      `--${name} must be a duration such as 300s, 30m or 2h, from ${range.min / 60} minutes to ${range.max / 3600} hours`,
     );
   }
   return seconds;
 }
 
-/** R4, §6.5: 60 s to 6 h, 30 minutes unless given. */
-const FIX_TIMEOUT_SECONDS = { min: 60, max: 6 * 3600, fallback: 1800 } as const;
+/**
+ * R4, §6.5, ruling T12k: 2 min to 6 h, 30 minutes unless given. No fix is claimed with less than a
+ * minute left (T12g), so a shorter job could claim nothing.
+ */
+const FIX_TIMEOUT_SECONDS = { min: 120, max: 6 * 3600, fallback: 1800 } as const;
 
 /** `qualor fix` (0.16 fix MRs §6.5, R4): the server flags of `qualor scan`, `--max` and `--timeout`. */
 function parseFix(args: string[]): Command {
