@@ -10,3 +10,7 @@ export { compareSemver } from './versions/semver';
 export { compareGo, goSameModuleMajor } from './versions/go';
 export { comparePep440 } from './versions/pep440';
 export { compareMaven, mavenItems, type MavenItem, type MavenPrefix } from './versions/maven';
+export * from './check/types';
+export * from './check/lock-entries';
+export * from './check/js-manifest';
+export * from './check/js-lockfiles';
