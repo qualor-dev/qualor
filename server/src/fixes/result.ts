@@ -26,8 +26,16 @@ import {
 import { conflict, ProblemError } from '../http/problem';
 import type { ProjectRow } from '../projects/access';
 import { ScmError } from '../scm/provider';
+import { retryable } from '../scm/runtime';
 import { claimVulnerabilities, hasOpenMr, leaseHash, leaseMatches } from './claim';
-import { checkUploadInWorker, type FixCheckGiveUp, type FixCheckLimits } from './checker';
+import {
+  checkUploadInWorker,
+  fixCheckGate,
+  type FixCheckBusy,
+  type FixCheckGate,
+  type FixCheckGiveUp,
+  type FixCheckLimits,
+} from './checker';
 import { mainVulnerabilities, type MainVulnerability } from './eligibility';
 import { enqueueFixJob } from './jobs';
 import { openFixRepository, type FixRepository, type FixScmDeps } from './repository';
@@ -94,6 +102,8 @@ type Lease = Pick<FixResultBody, 'generation' | 'leaseToken'>;
 export interface AcceptOptions {
   /** The worker's limits (ruling T3k); a test makes them tiny. */
   check?: Partial<FixCheckLimits>;
+  /** The admission of the checks (ruling T9a); the process's own unless a test gives one. */
+  gate?: FixCheckGate;
   /** Where a check that was given up is reported (no file content, no token). */
   log?: { warn(fields: object, message: string): void };
 }
@@ -359,26 +369,51 @@ async function targetsProblem(
 
 // ─── The base, read from the SCM (§6.7, ruling T3h) ─────────────────────────
 
-/** R16: the SCM could not answer; the fix stays `preparing` and the job tries again. */
+/** R16: the SCM could not answer now; the fix stays `preparing` and the job tries again. */
 function scmUnavailable(err: ScmError): ProblemError {
   return new ProblemError(503, 'SCM_UNAVAILABLE', 'The repository could not be read; try again', {
     headers: { 'retry-after': String(err.retryAfterSeconds ?? 10) },
   });
 }
 
-/** An SCM failure as the answer 503; anything else (the database, a bug) as it is. */
-async function throughScm<T>(read: () => Promise<T>): Promise<T> {
-  try {
-    return await read();
-  } catch (err) {
-    throw err instanceof ScmError ? scmUnavailable(err) : err;
+/**
+ * Ruling T9d: an SCM failure no retry mends (a refused token, a refused request, a missing project,
+ * a connection no client can be made for). It ends the attempt with its failure, so the fix is not
+ * claimed, refused and expired again and again without anybody seeing why.
+ */
+class AttemptEnded extends Error {
+  constructor(readonly failure: { code: 'scm_permission' | 'scm_refused'; message: string }) {
+    super(failure.message);
+    this.name = 'AttemptEnded';
   }
 }
 
 /**
- * The project's repository now; a project unbound, or a connection that no longer allows fix MRs
- * (B2), meanwhile is 409 and the fix stays `preparing` (its lease runs out); a connection no
- * client can be made for is 503.
+ * Ruling T9d: an SCM failure as the answer: a transient one (`retryable`: down, a timeout, a rate
+ * limit) is 503 and the fix stays `preparing` (R16); any other ends the attempt, `scm_permission`
+ * for a refused token or permission, `scm_refused` otherwise, with the client's fixed text.
+ */
+function scmFailure(err: ScmError): ProblemError | AttemptEnded {
+  if (retryable(err)) return scmUnavailable(err);
+  return new AttemptEnded({
+    code: err.kind === 'auth' ? 'scm_permission' : 'scm_refused',
+    message: `The repository could not be read to check the upload: ${err.message}`,
+  });
+}
+
+/** An SCM failure as {@link scmFailure} says; anything else (the database, a bug) as it is. */
+async function throughScm<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (err) {
+    throw err instanceof ScmError ? scmFailure(err) : err;
+  }
+}
+
+/**
+ * The project's repository now. A project unbound, or a connection that no longer allows fix MRs
+ * (B2), meanwhile is 409 and the fix stays `preparing` (its lease runs out; the claim no longer
+ * hands it out). A connection no client can be made for ends the attempt (`scm_refused`, T9d).
  */
 async function repositoryOf(deps: FixScmDeps, project: ProjectRow): Promise<FixRepository> {
   const repo = await throughScm(() => openFixRepository(deps, project));
@@ -392,8 +427,10 @@ async function repositoryOf(deps: FixScmDeps, project: ProjectRow): Promise<FixR
       "An organisation admin has not allowed fix merge requests on the project's SCM connection",
     );
   }
-  throw new ProblemError(503, 'SCM_UNAVAILABLE', 'The repository could not be read; try again', {
-    headers: { 'retry-after': '10' },
+  throw new AttemptEnded({
+    code: 'scm_refused',
+    message:
+      "The project's SCM connection cannot be used (its key no longer decrypts, its address is no longer allowed, or the repository reference is wrong); an organisation admin must check it",
   });
 }
 
@@ -490,11 +527,30 @@ const isRefusal = (value: unknown): value is Refusal =>
   typeof value === 'object' && value !== null && 'rule' in value;
 
 /**
+ * The base files, or the end of the attempt (ruling T9d): a permanent SCM failure fails the fix
+ * with its code (R8: one with an MR stays `open` with the failure shown), fenced on the claim.
+ */
+async function basesOrEnd(
+  deps: FixScmDeps,
+  fix: DependencyFixRow,
+  project: ProjectRow,
+  upload: FixUpload,
+  files: readonly UploadedFile[],
+): Promise<FixFileChange[] | Refusal | { ended: FixState }> {
+  try {
+    return await withBases(deps, project, upload.baseSha, files);
+  } catch (err) {
+    if (!(err instanceof AttemptEnded)) throw err;
+    return { ended: await endFix(deps.db, fix, upload, 'failed', err.failure) };
+  }
+}
+
+/**
  * The files of a prepared fix, checked in this order, the first failure answering: the shape,
  * the targets (R7), the SCM (main's head, the ancestry of `baseSha`, each file's base), then the
  * content (B1) in a worker thread.
  */
-async function acceptUpload(
+async function checkedUpload(
   deps: FixScmDeps,
   fix: DependencyFixRow,
   project: ProjectRow,
@@ -505,7 +561,8 @@ async function acceptUpload(
   if (isRefusal(files)) return refuse(deps.db, fix, upload, files);
   const targets = await targetsProblem(deps.db, fix, upload, files);
   if (targets !== null) return refuse(deps.db, fix, upload, targets);
-  const changes = await withBases(deps, project, upload.baseSha, files);
+  const changes = await basesOrEnd(deps, fix, project, upload, files);
+  if ('ended' in changes) return changes.ended;
   if (isRefusal(changes)) return refuse(deps.db, fix, upload, changes);
   const checked = await checkUploadInWorker(
     { family: fix.family, packageName: fix.packageName, targets: upload.targets, files: changes },
@@ -516,6 +573,40 @@ async function acceptUpload(
     return refuse(deps.db, fix, upload, checked);
   }
   return storeAccepted(deps.db, fix, upload, changes, checked.additions);
+}
+
+/** Ruling T9a: 503 for an upload the checks do not admit now; nothing is read or changed. */
+function checkBusy(why: FixCheckBusy): ProblemError {
+  return new ProblemError(
+    503,
+    'FIX_CHECK_BUSY',
+    why === 'project'
+      ? "Another upload of this project's fixes is being checked; try again in a few seconds"
+      : 'The server is checking other uploads; try again in a few seconds',
+    { headers: { 'retry-after': '10' } },
+  );
+}
+
+/**
+ * The files of a prepared fix, admitted first (ruling T9a): one upload per project and at most
+ * eight waiting behind the running check, else 503 `FIX_CHECK_BUSY` before any SCM call or state
+ * change (the fix stays `preparing`, its lease valid). The place is held until the upload is
+ * answered, {@link checkedUpload} in between.
+ */
+async function acceptUpload(
+  deps: FixScmDeps,
+  fix: DependencyFixRow,
+  project: ProjectRow,
+  upload: FixUpload,
+  options: AcceptOptions,
+): Promise<FixState> {
+  const admitted = (options.gate ?? fixCheckGate).admit(fix.projectId);
+  if ('busy' in admitted) throw checkBusy(admitted.busy);
+  try {
+    return await checkedUpload(deps, fix, project, upload, options);
+  } finally {
+    admitted.release();
+  }
 }
 
 function logGiveUp(options: AcceptOptions, fix: DependencyFixRow, why: FixCheckGiveUp): void {

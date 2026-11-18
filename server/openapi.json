@@ -41553,7 +41553,7 @@
     },
     "/api/v0/fixes/{id}/result": {
       "put": {
-        "summary": "The fix job's result for a claimed fix: its files (checked by path, target, base and content, then committed by a background job), a failure, no fix, or the claim handed back. A project analysis token only",
+        "summary": "The fix job's result for a claimed fix: its files (checked by path, target, base and content, then committed by a background job), a failure, no fix, or the claim handed back. A repository that refuses the read for good (a permission, a refused request) ends the attempt: 202 with the fix failed (scm_permission, scm_refused). A project analysis token only",
         "tags": [
           "fixes"
         ],
@@ -41953,7 +41953,7 @@
             }
           },
           "503": {
-            "description": "SCM_UNAVAILABLE: the repository could not be read to check the upload; the fix stays `preparing`, try again after Retry-After",
+            "description": "SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this project is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After",
             "content": {
               "application/problem+json": {
                 "schema": {

@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fixResultBodySchema, type FixClaimAnswer, type FixClaimItem } from '@qualor/shared/fix';
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bearer } from '../../test/app';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { enableFixes, seedFix, seedMainVulnerability } from '../../test/fixes';
@@ -17,6 +17,7 @@ import {
   targetVulnerabilities,
   type FixState,
 } from '../db/schema';
+import { fixCheckGate } from '../fixes/checker';
 import { FIX_QUEUE } from '../fixes/jobs';
 import { acceptFixResult } from '../fixes/result';
 import { ProblemError } from '../http/problem';
@@ -754,6 +755,133 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
     expect(res.headers['retry-after']).toBe('10');
     expect(await row(item.id)).toMatchObject({ state: 'preparing', failure: null });
     expect(await fixJobs()).toEqual([]);
+  });
+
+  it('permanent SCM failures end the upload (ruling T9d): a 403 is failed scm_permission, 202', async () => {
+    const item = await claimQfA();
+    fake.clearRequests();
+    fake.inject('GET', /\/merge_base$/, { status: 403, body: { message: '403 Forbidden' } });
+    const res = await result(
+      item.id,
+      upload(item, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) }),
+    );
+    expect([res.statusCode, res.json()]).toEqual([202, { state: 'failed' }]);
+    expect(await row(item.id)).toMatchObject({
+      state: 'failed',
+      failure: { code: 'scm_permission' },
+      leaseTokenHash: null,
+      prepared: null,
+    });
+    expect((await row(item.id)).failure!.message).not.toContain('403 Forbidden');
+    expect(await fixJobs()).toEqual([]);
+    expect(writes()).toEqual([]);
+
+    // R8, ruling F7: a fix with an MR stays open with the failure shown.
+    const withMr = await claimQfA({ state: 'open', refresh: true });
+    fake.inject('GET', /\/repository\/files\/.+\/raw$/, { status: 403, body: {} });
+    const open = await result(withMr.id, upload(withMr));
+    expect([open.statusCode, open.json()]).toEqual([202, { state: 'open' }]);
+    expect(await row(withMr.id)).toMatchObject({
+      state: 'open',
+      refresh: false,
+      mrNumber: 12,
+      failure: { code: 'scm_permission' },
+      leaseTokenHash: null,
+    });
+
+    // A refused request (GitLab 400 on the branch read) is scm_refused.
+    const refused = await claimQfA();
+    fake.inject('GET', /\/repository\/branches\/main$/, { status: 400, body: {} });
+    const answer = await result(refused.id, upload(refused));
+    expect([answer.statusCode, answer.json()]).toEqual([202, { state: 'failed' }]);
+    expect((await row(refused.id)).failure).toMatchObject({ code: 'scm_refused' });
+    expect(await fixJobs()).toEqual([]);
+    expect(writes()).toEqual([]);
+  });
+
+  it('a connection no client can be made for ends the upload as scm_refused (ruling T9d)', async () => {
+    const item = await claimQfA();
+    const [connection] = await db()
+      .select()
+      .from(scmConnections)
+      .where(eq(scmConnections.id, project.connectionId));
+    await db()
+      .update(scmConnections)
+      .set({ tokenEnc: { v: 1, iv: 'AAAA', ct: 'AAAA', tag: 'AAAA' } })
+      .where(eq(scmConnections.id, project.connectionId));
+    try {
+      fake.clearRequests();
+      const res = await result(item.id, upload(item));
+      expect([res.statusCode, res.json()]).toEqual([202, { state: 'failed' }]);
+      expect((await row(item.id)).failure).toMatchObject({ code: 'scm_refused' });
+      expect(fake.requests).toEqual([]);
+    } finally {
+      await db()
+        .update(scmConnections)
+        .set({ tokenEnc: connection!.tokenEnc })
+        .where(eq(scmConnections.id, project.connectionId));
+    }
+  });
+
+  it('one upload check per project at a time (ruling T9a): a second is 503 FIX_CHECK_BUSY, then accepted', async () => {
+    const other = fresh();
+    await vulnerable(other);
+    await seedFix(db(), { projectId, family: 'js', packageName: other });
+    await seedFix(db(), { projectId, family: 'js', packageName: 'qf-a' });
+    const { items } = await claimed({ max: 10 });
+    const holder = items.find((i) => i.packageName === other)!;
+    const second = items.find((i) => i.packageName === 'qf-a')!;
+    let open: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    fake.inject('GET', /\/merge_base$/, { status: 200, passThrough: true, before: () => held });
+    // The holder's upload names its own package; it is held while main's ancestry is read.
+    const first = result(
+      holder.id,
+      upload(holder, { baseSha: fake.pushAs(GITLAB_ID, 'side', {}) }),
+    );
+    await vi.waitFor(() =>
+      expect(fake.requests.some((r) => r.path.endsWith('/merge_base'))).toBe(true),
+    );
+    expect(fixCheckGate.admitted).toBe(1);
+    const before = await row(second.id);
+    const seen = fake.requests.length;
+    const busy = await result(second.id, upload(second));
+    expect(problem(busy)).toEqual([503, 'FIX_CHECK_BUSY', null]);
+    expect(busy.headers['retry-after']).toBe('10');
+    expect(fake.requests).toHaveLength(seen);
+    expect(await row(second.id)).toEqual(before);
+
+    open();
+    expect((await first).statusCode).toBe(422);
+    expect(fixCheckGate.admitted).toBe(0);
+    // The same upload again, on its still valid lease: accepted.
+    const again = await result(second.id, upload(second));
+    expect(again.statusCode, again.body).toBe(202);
+    expect((await row(second.id)).state).toBe('committing');
+  });
+
+  it('at most eight uploads wait behind the running check (ruling T9a): the next one is 503', async () => {
+    const item = await claimQfA();
+    const places = Array.from({ length: 9 }, () => fixCheckGate.admit(randomUUID()));
+    try {
+      expect(places.every((p) => 'release' in p)).toBe(true);
+      fake.clearRequests();
+      const before = await row(item.id);
+      const busy = await result(item.id, upload(item));
+      expect(problem(busy)).toEqual([503, 'FIX_CHECK_BUSY', null]);
+      expect(busy.headers['retry-after']).toBe('10');
+      expect(fake.requests).toEqual([]);
+      expect(await row(item.id)).toEqual(before);
+      const [one] = places;
+      if (one !== undefined && 'release' in one) one.release();
+      const res = await result(item.id, upload(item));
+      expect(res.statusCode, res.body).toBe(202);
+    } finally {
+      for (const place of places) if ('release' in place) place.release();
+    }
+    expect(fixCheckGate.admitted).toBe(0);
   });
 
   it('a project unbound or a connection no longer allowed meanwhile: 409, the fix stays preparing', async () => {

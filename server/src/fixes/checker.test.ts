@@ -3,7 +3,9 @@ import type { FixCheckJob } from './check-worker';
 import {
   checkUploadInWorker,
   FIX_CHECK_HEAP_MB,
+  FIX_CHECK_MAX_WAITING,
   FIX_CHECK_TIMEOUT_MS,
+  FixCheckGate,
   largestPath,
 } from './checker';
 
@@ -131,5 +133,37 @@ describe('the fix upload check in a worker thread (rulings T3g, T3i, T3k)', () =
       ]),
     ).toBe('b');
     expect(largestPath([])).toBe('');
+  });
+});
+
+describe('the admission of upload checks (ruling T9a)', () => {
+  it('admits one upload per project and eight waiting behind the running one by default', () => {
+    const gate = new FixCheckGate();
+    expect(gate.maxWaiting).toBe(FIX_CHECK_MAX_WAITING);
+    expect(FIX_CHECK_MAX_WAITING).toBe(8);
+    const held = Array.from({ length: 9 }, (_, i) => gate.admit(`project-${i}`));
+    expect(held.every((h) => 'release' in h)).toBe(true);
+    expect(gate.admitted).toBe(9);
+    expect(gate.admit('project-9')).toEqual({ busy: 'server' });
+    expect(gate.admit('project-0')).toEqual({ busy: 'project' });
+  });
+
+  it('takes injected limits, and gives a place back once', () => {
+    const gate = new FixCheckGate({ maxWaiting: 1 });
+    const a = gate.admit('a');
+    const b = gate.admit('b');
+    expect(gate.admit('c')).toEqual({ busy: 'server' });
+    expect(gate.admit('a')).toEqual({ busy: 'project' });
+    if (!('release' in a) || !('release' in b)) throw new Error('not admitted');
+    a.release();
+    a.release();
+    expect(gate.admitted).toBe(1);
+    const c = gate.admit('c');
+    expect('release' in c).toBe(true);
+    // A second release of `a` must not free the place `c` took.
+    a.release();
+    expect(gate.admit('d')).toEqual({ busy: 'server' });
+    b.release();
+    expect('release' in gate.admit('a')).toBe(true);
   });
 });

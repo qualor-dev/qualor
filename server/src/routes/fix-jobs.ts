@@ -86,14 +86,14 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
             409: 'FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (both leave the fix `preparing`)',
             413: `BODY_TOO_LARGE: a body over ${FIX_RESULT_BODY_LIMIT} bytes`,
             422: 'UPLOAD_REFUSED: the files break a rule, the fix is now failed (upload_refused); the title is the rule’s fixed text, `reason` the rule, `detail` the file; VALIDATION_FAILED',
-            503: 'SCM_UNAVAILABLE: the repository could not be read to check the upload; the fix stays `preparing`, try again after Retry-After',
+            503: 'SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this project is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After',
           },
         },
       },
       schema: {
         tags: ['fixes'],
         summary:
-          "The fix job's result for a claimed fix: its files (checked by path, target, base and content, then committed by a background job), a failure, no fix, or the claim handed back. A project analysis token only",
+          "The fix job's result for a claimed fix: its files (checked by path, target, base and content, then committed by a background job), a failure, no fix, or the claim handed back. A repository that refuses the read for good (a permission, a refused request) ends the attempt: 202 with the fix failed (scm_permission, scm_refused). A project analysis token only",
         params: idParams,
         body: fixResultBodySchema,
         response: { 202: z.object({ state: z.enum(FIX_STATES) }) },
