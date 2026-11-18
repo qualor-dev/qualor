@@ -101,7 +101,29 @@ const projectRow = z.looseObject({
   archived: z.boolean().optional(),
 });
 const languagesAnswer = z.record(z.string(), z.number());
-const createdMergeRequest = z.looseObject({ web_url: z.string() });
+const createdMergeRequest = z.looseObject({ web_url: z.string(), iid: z.number().int() });
+/** What a fix pass reads of a merge request (`GET …/merge_requests/:iid`, or a row of the list). */
+const mergeRequestStateShape = z.looseObject({
+  iid: z.number().int(),
+  web_url: z.string(),
+  state: z.enum(['opened', 'closed', 'merged', 'locked']),
+  sha: z.string().nullable().optional(),
+  has_conflicts: z.boolean().nullish(),
+  detailed_merge_status: z.string().nullish(),
+});
+const branchAnswer = z.looseObject({ commit: z.looseObject({ id: z.string() }) });
+const commitAnswer = z.looseObject({ id: z.string() });
+const mergeBaseAnswer = z.looseObject({ id: z.string() });
+
+/** A merge request as a fix reads it: its state, its head and whether it conflicts with its target. */
+export interface GitLabMergeRequestState {
+  iid: number;
+  url: string;
+  state: 'opened' | 'closed' | 'merged' | 'locked';
+  sha: string | null;
+  /** `has_conflicts`, or `detailed_merge_status` of `conflict`. */
+  conflict: boolean;
+}
 const variableAnswer = z.looseObject({ masked: z.boolean(), protected: z.boolean() });
 
 /** A project the token can set up, as the onboarding page lists it. */
@@ -457,7 +479,7 @@ export class GitLabClient {
     return `${this.projectPath(ref)}/merge_requests/${iid}`;
   }
 
-  private send(method: GitLabMethod, url: string, body?: unknown) {
+  private send(method: GitLabMethod, url: string, body?: unknown, maxResponseBytes?: number) {
     if (this.requestCount >= this.maxRequests) {
       throw new GitLabError('budget', `More than ${this.maxRequests} GitLab requests in one job`);
     }
@@ -482,7 +504,7 @@ export class GitLabClient {
           ? {}
           : { connectTimeoutMs: this.options.connectTimeoutMs }),
         ...(this.options.resolve ? { resolve: this.options.resolve } : {}),
-        maxResponseBytes: MAX_GITLAB_RESPONSE_BYTES,
+        maxResponseBytes: maxResponseBytes ?? MAX_GITLAB_RESPONSE_BYTES,
         overflow: 'fail',
         names: { noun: 'GitLab', target: 'GitLab' },
       },
@@ -510,13 +532,18 @@ export class GitLabClient {
   }
 
   /** Sends a request; a GET that a moved project redirects is sent once more, to its new place. */
-  private async sendFollowing(method: GitLabMethod, path: string, body: unknown) {
+  private async sendFollowing(
+    method: GitLabMethod,
+    path: string,
+    body: unknown,
+    maxResponseBytes?: number,
+  ) {
     const url = `${this.#connection.baseUrl}/api/v4${path}`;
-    const result = await this.send(method, url, body);
+    const result = await this.send(method, url, body, maxResponseBytes);
     if (method !== 'GET' || result.kind === 'failed') return result;
     // A renamed or moved project answers 301 with its numeric id: follow once, on this GitLab only.
     const moved = this.movedProject(result.status, result.headers.location, url);
-    return moved ? this.send(method, moved, body) : result;
+    return moved ? this.send(method, moved, body, maxResponseBytes) : result;
   }
 
   /** `forbidden` is the text of a 403 ({@link GITLAB_FORBIDDEN}), which says what was refused. */
@@ -547,9 +574,10 @@ export class GitLabClient {
     path: string,
     body?: unknown,
     forbidden: string = GITLAB_FORBIDDEN.request,
+    maxResponseBytes?: number,
   ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
     try {
-      return await this.callRawOnce(method, path, body, forbidden);
+      return await this.callRawOnce(method, path, body, forbidden, maxResponseBytes);
     } catch (err) {
       throw namedRequest(err, gitlabRoute(method, path));
     }
@@ -560,8 +588,9 @@ export class GitLabClient {
     path: string,
     body: unknown,
     forbidden: string,
+    maxResponseBytes?: number,
   ): Promise<{ status: number; headers: IncomingHttpHeaders; body: Buffer }> {
-    const result = await this.sendFollowing(method, path, body);
+    const result = await this.sendFollowing(method, path, body, maxResponseBytes);
     if (result.kind === 'failed') throw transportError(result);
     const { status, headers } = result;
     if (status >= 200 && status < 300) return { status, headers, body: result.body };
@@ -898,12 +927,24 @@ export class GitLabClient {
       .map(([language]) => language);
   }
 
-  /** A file's text on a branch (the raw endpoint), or null when the file or branch is not there. */
-  async fileText(ref: string, filePath: string, branch: string): Promise<string | null> {
+  /**
+   * A file's text on a branch or at a sha (the raw endpoint), or null when the file or ref is not
+   * there. `maxBytes` raises the answer cap above the 8 MiB default (a fix reads lockfiles up to
+   * 32 MiB, R15).
+   */
+  async fileText(
+    ref: string,
+    filePath: string,
+    branch: string,
+    options: { maxBytes?: number } = {},
+  ): Promise<string | null> {
     try {
       const { body } = await this.callRaw(
         'GET',
         `${this.projectPath(ref)}/repository/files/${encodeURIComponent(filePath)}/raw?ref=${encodeURIComponent(branch)}`,
+        undefined,
+        GITLAB_FORBIDDEN.request,
+        options.maxBytes,
       );
       return body.toString('utf8');
     } catch (err) {
@@ -948,28 +989,145 @@ export class GitLabClient {
     });
   }
 
+  /** The head sha of a branch (`commit.id`), or null when the branch is not there. */
+  async branchHead(ref: string, name: string): Promise<string | null> {
+    try {
+      const { json } = await this.call(
+        'GET',
+        `${this.projectPath(ref)}/repository/branches/${encodeURIComponent(name)}`,
+      );
+      return this.parse(branchAnswer, json).commit.id;
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Deletes a branch; false when it was not there. */
+  async deleteBranch(ref: string, name: string): Promise<boolean> {
+    try {
+      await this.call(
+        'DELETE',
+        `${this.projectPath(ref)}/repository/branches/${encodeURIComponent(name)}`,
+      );
+      return true;
+    } catch (err) {
+      if (err instanceof GitLabError && err.status === 404) return false;
+      throw err;
+    }
+  }
+
+  /**
+   * One commit with all the file actions on top of `startSha` (`POST …/repository/commits`):
+   * the branch is made there, or with `force` moved there when it exists (GitLab refuses an
+   * existing branch otherwise). Answers the new commit's sha.
+   */
+  async commitOnto(
+    ref: string,
+    input: {
+      branch: string;
+      startSha: string;
+      message: string;
+      actions: GitLabFileAction[];
+      force: boolean;
+    },
+  ): Promise<string> {
+    const { json } = await this.call('POST', `${this.projectPath(ref)}/repository/commits`, {
+      branch: input.branch,
+      start_sha: input.startSha,
+      force: input.force,
+      commit_message: input.message,
+      actions: input.actions.map((a) => ({
+        action: a.action,
+        file_path: a.path,
+        content: a.content,
+      })),
+    });
+    return this.parse(commitAnswer, json).id;
+  }
+
+  /** The best common ancestor of two refs, or null when GitLab knows none (400 or 404). */
+  async mergeBase(ref: string, a: string, b: string): Promise<string | null> {
+    const query = `refs[]=${encodeURIComponent(a)}&refs[]=${encodeURIComponent(b)}`;
+    try {
+      const { json } = await this.call(
+        'GET',
+        `${this.projectPath(ref)}/repository/merge_base?${query}`,
+      );
+      return this.parse(mergeBaseAnswer, json).id;
+    } catch (err) {
+      if (err instanceof GitLabError && (err.status === 404 || err.status === 400)) return null;
+      throw err;
+    }
+  }
+
+  private mergeRequestStateOf(json: unknown): GitLabMergeRequestState {
+    const found = this.parse(mergeRequestStateShape, json);
+    return {
+      iid: found.iid,
+      url: found.web_url,
+      state: found.state,
+      sha: found.sha ?? null,
+      conflict: found.has_conflicts === true || found.detailed_merge_status === 'conflict',
+    };
+  }
+
+  /** A merge request's state, head and conflict flag. */
+  async mergeRequestState(ref: string, iid: number): Promise<GitLabMergeRequestState> {
+    const { json } = await this.call('GET', this.mergeRequestPath(ref, String(iid)));
+    return this.mergeRequestStateOf(json);
+  }
+
+  /** The open merge request from `source`, or null. */
+  async openMergeRequestFrom(ref: string, source: string): Promise<GitLabMergeRequestState | null> {
+    const query = new URLSearchParams({ state: 'opened', source_branch: source });
+    const { json } = await this.call(
+      'GET',
+      `${this.projectPath(ref)}/merge_requests?${query.toString()}`,
+    );
+    const found = this.parse(z.array(z.unknown()), json)[0];
+    return found === undefined ? null : this.mergeRequestStateOf(found);
+  }
+
+  /** Changes a merge request's title or description, or closes it. */
+  async updateMergeRequest(
+    ref: string,
+    iid: number,
+    input: { title?: string; description?: string; stateEvent?: 'close' },
+  ): Promise<void> {
+    await this.call('PUT', this.mergeRequestPath(ref, String(iid)), {
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.description === undefined ? {} : { description: input.description }),
+      ...(input.stateEvent === undefined ? {} : { state_event: input.stateEvent }),
+    });
+  }
+
   async openMergeRequest(
     ref: string,
     input: { source: string; target: string; title: string; description: string },
-  ): Promise<{ url: string }> {
+  ): Promise<{ url: string; iid: number }> {
     const { json } = await this.call('POST', `${this.projectPath(ref)}/merge_requests`, {
       source_branch: input.source,
       target_branch: input.target,
       title: input.title,
       description: input.description,
     });
-    return { url: this.parse(createdMergeRequest, json).web_url };
+    const created = this.parse(createdMergeRequest, json);
+    return { url: created.web_url, iid: created.iid };
   }
 
   /** An open merge request from `source`, or null. */
-  async findOpenMergeRequest(ref: string, source: string): Promise<{ url: string } | null> {
+  async findOpenMergeRequest(
+    ref: string,
+    source: string,
+  ): Promise<{ url: string; iid: number } | null> {
     const query = new URLSearchParams({ state: 'opened', source_branch: source });
     const { json } = await this.call(
       'GET',
       `${this.projectPath(ref)}/merge_requests?${query.toString()}`,
     );
     const found = this.parse(z.array(createdMergeRequest), json)[0];
-    return found ? { url: found.web_url } : null;
+    return found ? { url: found.web_url, iid: found.iid } : null;
   }
 
   /** What a CI/CD variable is (never its value), or null when the project has none by that key. */

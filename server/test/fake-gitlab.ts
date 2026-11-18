@@ -85,6 +85,15 @@ export interface FakeMergeRequest {
   baseSha: string;
   startSha: string;
   diffs: FakeDiff[];
+  /** The description (a PUT changes it); empty when left out. */
+  description?: string;
+  /** GitLab's `has_conflicts`; false when left out. */
+  conflict?: boolean;
+  /**
+   * The merge request's head is its source branch's head, wherever that moves (a merge request
+   * made through the API); a hand-made one keeps its `headSha`.
+   */
+  followsBranch?: boolean;
 }
 
 export interface FakeNote {
@@ -163,8 +172,10 @@ interface FakeProject {
   languages: Record<string, number>;
   /** The project's CI/CD configuration file (`ci_config_path`); null: GitLab's default. */
   ciConfigPath: string | null;
-  /** Branch name -> its files (path -> text). */
-  branches: Map<string, Map<string, string>>;
+  /** Every commit by sha: its parent, the files it holds (path -> text) and who made it. */
+  commits: Map<string, FakeCommit>;
+  /** Branch name -> its head commit. */
+  heads: Map<string, string>;
   variables: Map<string, FakeVariable>;
   mergeRequests: Map<number, FakeMergeRequest>;
   discussions: Map<number, FakeDiscussion[]>;
@@ -172,6 +183,13 @@ interface FakeProject {
   pipelines: Map<number, string>;
   /** User id -> the membership of a member, inherited or not; anyone else is no member. */
   members: Map<number, FakeMembership>;
+}
+
+/** A commit of the fake's graph: one parent (or none) and every file as of the commit. */
+export interface FakeCommit {
+  parent: string | null;
+  files: Map<string, string>;
+  author: string;
 }
 
 /** A user's membership of a project, as `GET …/members/all/:user_id` answers it. */
@@ -210,9 +228,31 @@ export interface FakeGitLab {
     languages?: Record<string, number>;
     ciConfigPath?: string | null;
   }): void;
-  /** A branch of the project, empty or with a copy of the files of `from`. */
+  /** A branch of the project, empty or at the head of `from` (the same commit). */
   addBranch(projectId: number, name: string, from?: string): void;
+  /** One new commit on the branch with the file set (author `fake`). */
   addFile(projectId: number, branch: string, path: string, content: string): void;
+  /** The branch's head sha, or null when there is no such branch. */
+  headOf(projectId: number, branch: string): string | null;
+  /**
+   * A person's push: one commit on `branch` (made if it is missing) with `files` laid over the
+   * head's files; `sha` names the commit (a test mirrors a real local commit), else one is made.
+   */
+  pushAs(
+    projectId: number,
+    branch: string,
+    files: Record<string, string>,
+    options?: { author?: string; sha?: string },
+  ): string;
+  /** The text of a file as of a commit, or null. */
+  fileAt(projectId: number, sha: string, path: string): string | null;
+  /** Sets the state or the conflict flag of a merge request, as people would on GitLab. */
+  setMergeRequest(
+    projectId: number,
+    iid: number,
+    changes: { state?: 'opened' | 'closed' | 'merged'; conflict?: boolean },
+  ): void;
+  mergeRequestsOf(projectId: number): FakeMergeRequest[];
   /** The text of a file on a branch, or undefined. */
   file(projectId: number, branch: string, path: string): string | undefined;
   branches(projectId: number): string[];
@@ -350,6 +390,45 @@ export async function createFakeGitLab(
     if (/^\d+$/.test(ref)) return projects.get(Number(ref));
     return [...projects.values()].find((p) => p.path === ref);
   };
+  let commitCounter = 0;
+  /** A sha the fake has not used: 40 hex digits from a counter. */
+  const nextSha = () => (++commitCounter).toString(16).padStart(40, '5');
+  const addCommit = (
+    project: FakeProject,
+    parent: string | null,
+    files: Map<string, string>,
+    commitAuthor: string,
+    sha = nextSha(),
+  ): string => {
+    project.commits.set(sha, { parent, files, author: commitAuthor });
+    return sha;
+  };
+  /** A branch name or a sha, as a commit sha; undefined when the project knows neither. */
+  const resolveRef = (project: FakeProject, ref: string): string | undefined => {
+    const head = project.heads.get(ref);
+    if (head !== undefined) return head;
+    return project.commits.has(ref) ? ref : undefined;
+  };
+  const filesOfRef = (project: FakeProject, ref: string): Map<string, string> | undefined => {
+    const sha = resolveRef(project, ref);
+    return sha === undefined ? undefined : project.commits.get(sha)?.files;
+  };
+  /** A branch's head moves: a merge request that follows the branch follows it. */
+  const moveHead = (project: FakeProject, branch: string, sha: string) => {
+    project.heads.set(branch, sha);
+    for (const mr of project.mergeRequests.values()) {
+      if (mr.followsBranch && mr.sourceBranch === branch) mr.headSha = sha;
+    }
+  };
+  /** The shas from `sha` back to its root, nearest first. */
+  const ancestry = (project: FakeProject, sha: string): string[] => {
+    const chain: string[] = [];
+    for (let at: string | null = sha; at !== null && !chain.includes(at);) {
+      chain.push(at);
+      at = project.commits.get(at)?.parent ?? null;
+    }
+    return chain;
+  };
   const noteJson = (note: FakeNote) => {
     const shape = note.position ? diffNoteShape : noteShape;
     return {
@@ -407,6 +486,9 @@ export async function createFakeGitLab(
       state: mr.state,
       draft: mr.draft ?? false,
       work_in_progress: mr.draft ?? false,
+      description: mr.description ?? '',
+      has_conflicts: mr.conflict ?? false,
+      detailed_merge_status: mr.conflict ? 'conflict' : 'mergeable',
       source_branch: mr.sourceBranch,
       target_branch: mr.targetBranch,
       sha: mr.headSha,
@@ -431,6 +513,51 @@ export async function createFakeGitLab(
       'x-next-page': page < pages ? String(page + 1) : '',
       'x-prev-page': page > 1 ? String(page - 1) : '',
     });
+  };
+
+  /**
+   * `POST …/repository/commits`. With `start_sha` the commit goes on that sha: a branch that is
+   * missing is made, one that exists is refused ("already exists") unless `force` moves it. Without
+   * `start_sha` it goes on the head of the branch, which must exist.
+   */
+  const postCommit = (res: ServerResponse, project: FakeProject, json: Record<string, unknown>) => {
+    const branch = String(json['branch'] ?? '');
+    const startSha = typeof json['start_sha'] === 'string' ? json['start_sha'] : undefined;
+    const exists = project.heads.has(branch);
+    if (startSha === undefined && !exists) {
+      return send(res, 400, { message: `A branch called '${branch}' does not exist` });
+    }
+    if (startSha !== undefined && exists && json['force'] !== true) {
+      return send(res, 400, {
+        message: `A branch called '${branch}' already exists. Switch to that branch in order to make changes`,
+      });
+    }
+    const baseSha =
+      startSha === undefined ? project.heads.get(branch)! : resolveRef(project, startSha);
+    if (baseSha === undefined || !project.commits.has(baseSha)) {
+      return send(res, 400, { message: `Invalid start_sha: ${String(startSha)}` });
+    }
+    const actions = Array.isArray(json['actions'])
+      ? (json['actions'] as Record<string, unknown>[])
+      : [];
+    if (typeof json['commit_message'] !== 'string' || actions.length === 0) {
+      return send(res, 400, { error: 'commit_message, actions are missing' });
+    }
+    const files = new Map(project.commits.get(baseSha)!.files);
+    // GitLab applies all actions or none: check first.
+    for (const a of actions) {
+      const present = files.has(String(a['file_path']));
+      if (a['action'] === 'create' && present) {
+        return send(res, 400, { message: 'A file with this name already exists' });
+      }
+      if (a['action'] === 'update' && !present) {
+        return send(res, 400, { message: "A file with this name doesn't exist" });
+      }
+    }
+    for (const a of actions) files.set(String(a['file_path']), String(a['content'] ?? ''));
+    const sha = addCommit(project, baseSha, files, 'qualor');
+    moveHead(project, branch, sha);
+    return send(res, 201, { id: sha, message: json['commit_message'] });
   };
 
   const handle = (
@@ -645,52 +772,50 @@ export async function createFakeGitLab(
     }
     if (rest[0] === 'repository') {
       if (req.method === 'GET' && rest.length === 4 && rest[1] === 'files' && rest[3] === 'raw') {
-        const text = project.branches.get(params.get('ref') ?? '')?.get(rest[2]!);
+        const text = filesOfRef(project, params.get('ref') ?? '')?.get(rest[2]!);
         if (text === undefined) return send(res, 404, { message: '404 File Not Found' });
         res.writeHead(200, { 'content-type': 'text/plain' }).end(text);
         return;
       }
       if (req.method === 'GET' && rest.length === 3 && rest[1] === 'branches') {
-        if (!project.branches.has(rest[2]!)) {
+        const head = project.heads.get(rest[2]!);
+        if (head === undefined) return send(res, 404, { message: '404 Branch Not Found' });
+        return send(res, 200, {
+          name: rest[2],
+          default: rest[2] === project.defaultBranch,
+          commit: { id: head },
+        });
+      }
+      if (req.method === 'DELETE' && rest.length === 3 && rest[1] === 'branches') {
+        if (!project.heads.delete(rest[2]!)) {
           return send(res, 404, { message: '404 Branch Not Found' });
         }
-        return send(res, 200, { name: rest[2], default: rest[2] === project.defaultBranch });
+        res.writeHead(204).end();
+        return;
+      }
+      if (req.method === 'GET' && rest.length === 2 && rest[1] === 'merge_base') {
+        const [first, second] = params.getAll('refs[]').map((r) => resolveRef(project, r));
+        if (first === undefined || second === undefined) {
+          return send(res, 404, { message: '404 Commit Not Found' });
+        }
+        const mine = new Set(ancestry(project, first));
+        const common = ancestry(project, second).find((s) => mine.has(s));
+        if (common === undefined) return send(res, 404, { message: '404 Not Found' });
+        return send(res, 200, { id: common });
       }
       if (req.method === 'POST' && rest.length === 2 && rest[1] === 'branches') {
         const name = String(json['branch'] ?? '');
         const from = String(json['ref'] ?? '');
-        if (project.branches.has(name)) return send(res, 400, { message: 'Branch already exists' });
-        if (!project.branches.has(from)) {
+        if (project.heads.has(name)) return send(res, 400, { message: 'Branch already exists' });
+        const fromSha = resolveRef(project, from);
+        if (fromSha === undefined) {
           return send(res, 400, { message: 'Invalid reference name: ' + from });
         }
-        project.branches.set(name, new Map(project.branches.get(from)));
-        return send(res, 201, { name, default: false });
+        project.heads.set(name, fromSha);
+        return send(res, 201, { name, default: false, commit: { id: fromSha } });
       }
       if (req.method === 'POST' && rest.length === 2 && rest[1] === 'commits') {
-        const files = project.branches.get(String(json['branch'] ?? ''));
-        if (!files) {
-          return send(res, 400, {
-            message: `A branch called '${String(json['branch'])}' does not exist`,
-          });
-        }
-        const actions = Array.isArray(json['actions'])
-          ? (json['actions'] as Record<string, unknown>[])
-          : [];
-        if (typeof json['commit_message'] !== 'string' || actions.length === 0) {
-          return send(res, 400, { error: 'commit_message, actions are missing' });
-        }
-        // GitLab applies all actions or none: check first.
-        for (const a of actions) {
-          const exists = files.has(String(a['file_path']));
-          if (a['action'] === 'create' && exists) {
-            return send(res, 400, { message: 'A file with this name already exists' });
-          }
-          if (a['action'] === 'update' && !exists) {
-            return send(res, 400, { message: "A file with this name doesn't exist" });
-          }
-        }
-        for (const a of actions) files.set(String(a['file_path']), String(a['content'] ?? ''));
-        return send(res, 201, { id: 'c'.repeat(40), message: json['commit_message'] });
+        return postCommit(res, project, json);
       }
       return send(res, 404, { error: '404 Not Found' });
     }
@@ -742,7 +867,7 @@ export async function createFakeGitLab(
         if (typeof json['title'] !== 'string' || json['title'] === '') {
           return send(res, 400, { error: 'title is missing' });
         }
-        if (!project.branches.has(source) || !project.branches.has(target)) {
+        if (!project.heads.has(source) || !project.heads.has(target)) {
           return send(res, 400, { message: 'Branch does not exist' });
         }
         const open = [...project.mergeRequests.values()].find(
@@ -762,10 +887,12 @@ export async function createFakeGitLab(
           state: 'opened',
           sourceBranch: source,
           targetBranch: target,
-          headSha: 'd'.repeat(40),
+          headSha: project.heads.get(source)!,
           baseSha: 'e'.repeat(40),
           startSha: 'e'.repeat(40),
           diffs: [],
+          description: typeof json['description'] === 'string' ? json['description'] : '',
+          followsBranch: true,
         };
         project.mergeRequests.set(iid, created);
         return send(res, 201, mrJson(project, created));
@@ -780,6 +907,13 @@ export async function createFakeGitLab(
     project.discussions.set(mr.iid, discussions);
     const tail = rest.slice(2);
     if (req.method === 'GET' && tail.length === 0) return send(res, 200, mrJson(project, mr));
+    if (req.method === 'PUT' && tail.length === 0) {
+      if (typeof json['title'] === 'string' && json['title'] !== '') mr.title = json['title'];
+      if (typeof json['description'] === 'string') mr.description = json['description'];
+      if (json['state_event'] === 'close') mr.state = 'closed';
+      if (json['state_event'] === 'reopen') mr.state = 'opened';
+      return send(res, 200, mrJson(project, mr));
+    }
     if (req.method === 'GET' && tail[0] === 'diffs' && tail.length === 1) {
       return paged(
         res,
@@ -941,25 +1075,53 @@ export async function createFakeGitLab(
         archived: archived ?? false,
         languages: languages ?? {},
         ciConfigPath: ciConfigPath ?? null,
-        branches: new Map(branch === null ? [] : [[branch, new Map<string, string>()]]),
+        commits: new Map(),
+        heads: new Map(),
         variables: new Map(),
         mergeRequests: new Map(),
         discussions: new Map(),
         pipelines: new Map(),
         members: new Map(),
       });
+      if (branch !== null) {
+        const created = projects.get(id)!;
+        created.heads.set(branch, addCommit(created, null, new Map(), 'fake'));
+      }
     },
     addBranch(projectId, name, from) {
-      const { branches } = projectOf(projectId);
-      branches.set(name, new Map(from === undefined ? [] : branches.get(from)));
+      const project = projectOf(projectId);
+      const fromSha = from === undefined ? undefined : project.heads.get(from);
+      project.heads.set(name, fromSha ?? addCommit(project, null, new Map(), 'fake'));
     },
     addFile(projectId, branch, filePath, content) {
-      const files = projectOf(projectId).branches.get(branch);
-      if (!files) throw new Error(`fake GitLab: no branch ${branch}`);
+      const project = projectOf(projectId);
+      const head = project.heads.get(branch);
+      if (head === undefined) throw new Error(`fake GitLab: no branch ${branch}`);
+      const files = new Map(project.commits.get(head)!.files);
       files.set(filePath, content);
+      moveHead(project, branch, addCommit(project, head, files, 'fake'));
     },
-    file: (projectId, branch, filePath) => projectOf(projectId).branches.get(branch)?.get(filePath),
-    branches: (projectId) => [...projectOf(projectId).branches.keys()],
+    headOf: (projectId, branch) => projectOf(projectId).heads.get(branch) ?? null,
+    pushAs(projectId, branch, pushed, options = {}) {
+      const project = projectOf(projectId);
+      const head = project.heads.get(branch) ?? null;
+      const files = new Map(head === null ? [] : project.commits.get(head)!.files);
+      for (const [filePath, content] of Object.entries(pushed)) files.set(filePath, content);
+      const sha = addCommit(project, head, files, options.author ?? 'person', options.sha);
+      moveHead(project, branch, sha);
+      return sha;
+    },
+    fileAt: (projectId, sha, filePath) =>
+      projectOf(projectId).commits.get(sha)?.files.get(filePath) ?? null,
+    setMergeRequest(projectId, iid, changes) {
+      const mr = projectOf(projectId).mergeRequests.get(iid);
+      if (!mr) throw new Error(`fake GitLab: no merge request !${iid}`);
+      if (changes.state !== undefined) mr.state = changes.state;
+      if (changes.conflict !== undefined) mr.conflict = changes.conflict;
+    },
+    mergeRequestsOf: (projectId) => [...projectOf(projectId).mergeRequests.values()],
+    file: (projectId, branch, filePath) => filesOfRef(projectOf(projectId), branch)?.get(filePath),
+    branches: (projectId) => [...projectOf(projectId).heads.keys()],
     setVariable(projectId, key, variable) {
       projectOf(projectId).variables.set(key, variable);
     },

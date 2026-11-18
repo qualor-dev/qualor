@@ -930,6 +930,164 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
     expect(String(err.stack)).not.toContain(fake.token);
     expect(JSON.stringify(client())).not.toContain(fake.token);
   });
+
+  describe('fix writes', () => {
+    const P = 21;
+    const BRANCH = 'qualor/fix/js/qf-a';
+    const BRANCH_PATH = `/projects/${P}/repository/branches/qualor%2Ffix%2Fjs%2Fqf-a`;
+    let main0: string;
+    beforeAll(() => {
+      fake.addProject({ id: P, path: 'acme/fixes' });
+      fake.addFile(P, 'main', 'package.json', '{"a":1}\n');
+      main0 = fake.headOf(P, 'main')!;
+    });
+    const actions = (content: string) => [
+      { action: 'update' as const, path: 'package.json', content },
+    ];
+
+    it('commits onto a sha: a new branch whose parent is that sha', async () => {
+      const sha = await client().commitOnto(String(P), {
+        branch: BRANCH,
+        startSha: main0,
+        message: 'Bump qf-a from 1.0.0 to 1.0.1',
+        actions: actions('{"a":2}\n'),
+        force: false,
+      });
+      const sent = JSON.parse(fake.requests.at(-1)!.body) as Record<string, unknown>;
+      expect(fake.requests.at(-1)!.path).toBe(`/projects/${P}/repository/commits`);
+      expect(sent).toMatchObject({ branch: BRANCH, start_sha: main0, force: false });
+      expect(await client().branchHead(String(P), BRANCH)).toBe(sha);
+      // The branch name has slashes: the request path carries them encoded.
+      expect(fake.requests.at(-1)!.path).toBe(BRANCH_PATH);
+      expect(fake.headOf(P, BRANCH)).toBe(sha);
+      expect(fake.fileAt(P, sha, 'package.json')).toBe('{"a":2}\n');
+      expect(fake.fileAt(P, main0, 'package.json')).toBe('{"a":1}\n');
+      expect(await client().mergeBase(String(P), sha, main0)).toBe(main0);
+    });
+
+    it('refuses an existing branch without force, and force starts again from startSha', async () => {
+      const first = fake.headOf(P, BRANCH)!;
+      const err = await failure(
+        client().commitOnto(String(P), {
+          branch: BRANCH,
+          startSha: main0,
+          message: 'again',
+          actions: actions('{"a":3}\n'),
+          force: false,
+        }),
+      );
+      expect(err.kind).toBe('refused');
+      expect(err.gitlabMessage).toContain('already exists');
+      expect(fake.headOf(P, BRANCH)).toBe(first);
+      const forced = await client().commitOnto(String(P), {
+        branch: BRANCH,
+        startSha: main0,
+        message: 'again',
+        actions: actions('{"a":3}\n'),
+        force: true,
+      });
+      expect(forced).not.toBe(first);
+      expect(fake.headOf(P, BRANCH)).toBe(forced);
+      expect(fake.fileAt(P, forced, 'package.json')).toBe('{"a":3}\n');
+      // Its parent is startSha, not the old head: the merge base with main0 is main0 itself.
+      expect(await client().mergeBase(String(P), forced, main0)).toBe(main0);
+      expect(await client().mergeBase(String(P), forced, first)).toBe(main0);
+    });
+
+    it('finds the merge base of two commits; an unknown one is null', async () => {
+      fake.addFile(P, 'main', 'later.txt', 'x');
+      const main1 = fake.headOf(P, 'main')!;
+      expect(main1).not.toBe(main0);
+      expect(await client().mergeBase(String(P), main0, main1)).toBe(main0);
+      const other = fake.headOf(P, BRANCH)!;
+      expect(await client().mergeBase(String(P), other, main1)).toBe(main0);
+      expect(await client().mergeBase(String(P), 'f'.repeat(40), main1)).toBeNull();
+      const query = new URLSearchParams(fake.requests.at(-1)!.query);
+      expect(query.getAll('refs[]')).toEqual(['f'.repeat(40), main1]);
+    });
+
+    it('reads, finds, updates and closes a merge request', async () => {
+      const ref = String(P);
+      expect(await client().openMergeRequestFrom(ref, BRANCH)).toBeNull();
+      const opened = await client().openMergeRequest(ref, {
+        source: BRANCH,
+        target: 'main',
+        title: 'Bump qf-a',
+        description: 'first',
+      });
+      expect(opened.url).toMatch(/\/merge_requests\/\d+$/);
+      const found = await client().openMergeRequestFrom(ref, BRANCH);
+      expect(found).toEqual({
+        iid: opened.iid,
+        url: opened.url,
+        state: 'opened',
+        sha: fake.headOf(P, BRANCH),
+        conflict: false,
+      });
+      await client().updateMergeRequest(ref, opened.iid, {
+        title: 'Bump qf-a 2',
+        description: 'x',
+      });
+      expect(fake.requests.at(-1)!.method).toBe('PUT');
+      expect(fake.mergeRequestsOf(P)[0]).toMatchObject({ title: 'Bump qf-a 2', description: 'x' });
+      fake.setMergeRequest(P, opened.iid, { conflict: true });
+      expect((await client().mergeRequestState(ref, opened.iid)).conflict).toBe(true);
+      await client().updateMergeRequest(ref, opened.iid, { stateEvent: 'close' });
+      expect(JSON.parse(fake.requests.at(-1)!.body)).toEqual({ state_event: 'close' });
+      expect((await client().mergeRequestState(ref, opened.iid)).state).toBe('closed');
+      expect(await client().openMergeRequestFrom(ref, BRANCH)).toBeNull();
+      fake.setMergeRequest(P, opened.iid, { state: 'merged', conflict: false });
+      const merged = await client().mergeRequestState(ref, opened.iid);
+      expect(merged).toMatchObject({ state: 'merged', conflict: false });
+      // A note goes through the existing method and the fake records it.
+      await client().createNote(ref, String(opened.iid), 'Qualor no longer finds it');
+      expect(fake.discussions(P, opened.iid).at(-1)!.notes[0]!.body).toBe(
+        'Qualor no longer finds it',
+      );
+    });
+
+    it('reads a detailed_merge_status of conflict as a conflict', async () => {
+      fake.inject('GET', new RegExp(`^/projects/${P}/merge_requests/\\d+$`), {
+        status: 200,
+        body: {
+          ...(gitlabShape('merge_request') as Record<string, unknown>),
+          iid: 1,
+          state: 'opened',
+          has_conflicts: false,
+          detailed_merge_status: 'conflict',
+        },
+      });
+      expect((await client().mergeRequestState(String(P), 1)).conflict).toBe(true);
+    });
+
+    it('deletes a branch: true, then false', async () => {
+      expect(await client().deleteBranch(String(P), BRANCH)).toBe(true);
+      expect(fake.requests.at(-1)!.method).toBe('DELETE');
+      expect(fake.requests.at(-1)!.path).toBe(BRANCH_PATH);
+      expect(await client().deleteBranch(String(P), BRANCH)).toBe(false);
+      expect(await client().branchHead(String(P), BRANCH)).toBeNull();
+    });
+
+    it('reads a 9 MiB file only with a bigger cap (R15)', async () => {
+      const big = 'x'.repeat(9 * 1024 * 1024);
+      fake.addFile(P, 'main', 'package-lock.json', big);
+      const sha = fake.headOf(P, 'main')!;
+      const err = await failure(client().fileText(String(P), 'package-lock.json', sha));
+      expect(err.kind).toBe('bad_answer');
+      const text = await client().fileText(String(P), 'package-lock.json', sha, {
+        maxBytes: 32 * 1024 * 1024,
+      });
+      expect(text).toBe(big);
+    });
+
+    it('encodes a file path with odd characters', async () => {
+      fake.addFile(P, 'main', 'dir/a b#c.json', 'odd');
+      expect(await client().fileText(String(P), 'dir/a b#c.json', 'main')).toBe('odd');
+      expect(fake.requests.at(-1)!.path).toBe(
+        `/projects/${P}/repository/files/dir%2Fa%20b%23c.json/raw`,
+      );
+    });
+  });
 });
 
 describe('gitlabRoute: a request as a fixed text for the logs', () => {
