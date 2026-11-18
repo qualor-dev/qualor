@@ -121,6 +121,9 @@ export interface FakeOpenedPull {
   merged?: boolean;
   /** GitHub's `mergeable` (`false`: a conflict, `null`: not computed yet); true when left out. */
   mergeable?: boolean | null;
+  /** The last head the fake knew of the head branch: what a read gives once the branch is deleted. */
+  headSha?: string;
+  baseSha?: string;
 }
 export interface FakeFile {
   filename: string;
@@ -1668,6 +1671,12 @@ export async function createFakeGitHub(
       else if (aheadBy === 0) status = 'behind';
       return send(res, 200, { status, ahead_by: aheadBy, behind_by: behindBy });
     }
+    /** A branch's head, or the last one seen while it was there (a deleted branch keeps its sha). */
+    const lastKnown = (o: FakeOpenedPull, field: 'headSha' | 'baseSha', branch: string) => {
+      const sha = git.heads.get(branch) ?? o[field] ?? newSha();
+      o[field] = sha;
+      return sha;
+    };
     const openedPullJson = (o: FakeOpenedPull) => ({
       ...githubShape('pull_request'),
       number: o.number,
@@ -1675,8 +1684,8 @@ export async function createFakeGitHub(
       body: o.body,
       state: o.state,
       html_url: `${webBase()}/${repo.owner}/${repo.name}/pull/${o.number}`,
-      head: { ref: o.head, sha: git.heads.get(o.head) ?? newSha(), label: o.head },
-      base: { ref: o.base, sha: git.heads.get(o.base) ?? newSha(), label: o.base },
+      head: { ref: o.head, sha: lastKnown(o, 'headSha', o.head), label: o.head },
+      base: { ref: o.base, sha: lastKnown(o, 'baseSha', o.base), label: o.base },
     });
     /** `GET /pulls/{n}`: the list's shape plus what only a single read has. */
     const openedPullDetail = (o: FakeOpenedPull) => {

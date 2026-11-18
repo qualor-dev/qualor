@@ -2180,6 +2180,91 @@ describe('GitHub REST client (github.md §4–§6)', () => {
       expect(pacer.waits).toHaveLength(6);
     });
 
+    it('pushAs makes a branch from the default head, honours sha, and never overwrites a commit', () => {
+      const sha = 'c'.repeat(40);
+      const made = fake.pushAs(R, 'feature/pushed', { 'package.json': '{"p":1}\n' }, { sha });
+      expect(made).toBe(sha);
+      expect(fake.headOf(R, 'feature/pushed')).toBe(sha);
+      expect(fake.fileAt(R, sha, 'package.json')).toBe('{"p":1}\n');
+      // The rest of the default head's files came along.
+      expect(fake.fileAt(R, sha, 'README.md')).toBe('hi\n');
+      expect(() => fake.pushAs(R, 'feature/pushed', { 'package.json': 'x' }, { sha })).toThrow(
+        /exists already/,
+      );
+      expect(fake.fileAt(R, sha, 'package.json')).toBe('{"p":1}\n');
+    });
+
+    it('pull request reads keep the last head of a branch that is deleted', async () => {
+      const client = await fixes();
+      await client.createBranch('qualor/fix/js/qf-gone', main0);
+      const { number } = await client.openPullRequest({
+        head: 'qualor/fix/js/qf-gone',
+        base: 'main',
+        title: 't',
+        body: '',
+      });
+      expect(await client.deleteBranch('qualor/fix/js/qf-gone')).toBe(true);
+      const first = (await client.pullRequestState(number)).headSha;
+      expect(first).toBe(main0);
+      expect((await client.pullRequestState(number)).headSha).toBe(first);
+    });
+
+    describe('the fake itself refuses what GitHub refuses (requests the client never sends)', () => {
+      const raw = async (method: string, route: string, body: unknown) => {
+        const token = [...fake.tokens.keys()].at(-1)!;
+        const res = await fetch(`${fake.url}/repos/acme/fixes${route}`, {
+          method,
+          headers: { authorization: `Bearer ${token}`, 'user-agent': 'test' },
+          body: JSON.stringify(body),
+        });
+        return res.status;
+      };
+      let blob: string;
+      let tree: string;
+      beforeAll(async () => {
+        const client = await fixes();
+        blob = await client.createBlob('z\n');
+        tree = await client.commitTreeSha(main0);
+      });
+
+      it('a tree entry with a bad path, mode or type is 422', async () => {
+        const entry = { path: 'a.txt', mode: '100644', type: 'blob', sha: blob };
+        expect(await raw('POST', '/git/trees', { base_tree: tree, tree: [entry] })).toBe(201);
+        for (const bad of [
+          { ...entry, path: '' },
+          { ...entry, path: '/a.txt' },
+          { ...entry, path: 'a/../b.txt' },
+          { ...entry, mode: '100666' },
+          { ...entry, type: 'tree' },
+          { ...entry, sha: 'e'.repeat(40) },
+        ]) {
+          expect(await raw('POST', '/git/trees', { base_tree: tree, tree: [bad] })).toBe(422);
+        }
+        expect(await raw('POST', '/git/trees', { base_tree: 'main', tree: [entry] })).toBe(422);
+      });
+
+      it('a workflow file in a tree needs workflows: write (403)', async () => {
+        const entry = { path: '.github/workflows/x.yml', mode: '100644', type: 'blob', sha: blob };
+        expect(await raw('POST', '/git/trees', { base_tree: tree, tree: [entry] })).toBe(403);
+      });
+
+      it('a commit with two parents, an unknown tree or no message is 422', async () => {
+        const ok = { message: 'm', tree, parents: [main0] };
+        expect(await raw('POST', '/git/commits', ok)).toBe(201);
+        expect(await raw('POST', '/git/commits', { ...ok, parents: [main0, main0] })).toBe(422);
+        expect(await raw('POST', '/git/commits', { ...ok, tree: 'e'.repeat(40) })).toBe(422);
+        expect(await raw('POST', '/git/commits', { ...ok, message: '' })).toBe(422);
+      });
+
+      it('a blob with another encoding, or invalid base64, is 422', async () => {
+        expect(await raw('POST', '/git/blobs', { content: 'hi', encoding: 'utf-8' })).toBe(201);
+        expect(await raw('POST', '/git/blobs', { content: 'aGk=', encoding: 'base64' })).toBe(201);
+        expect(await raw('POST', '/git/blobs', { content: 'hi', encoding: 'latin1' })).toBe(422);
+        expect(await raw('POST', '/git/blobs', { content: '***', encoding: 'base64' })).toBe(422);
+        expect(await raw('POST', '/git/blobs', { encoding: 'base64' })).toBe(422);
+      });
+    });
+
     it('names the ref, compare and branch routes without their values in the log', () => {
       expect(githubRoute('PATCH', `/repos/acme/fixes/git/refs/heads/${BRANCH}`)).toBe(
         'PATCH /repos/{owner}/{repo}/git/refs/heads/{branch}',
