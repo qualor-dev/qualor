@@ -198,7 +198,7 @@ interface References {
 
 /**
  * Fix round 3 NB3, fix round 4 R4-2: a v5 or v6 depPath reference
- * (`registry.example.com/foo/1.0.0_react@…`, `github.com/x/foo/<sha>`, `file:foo-1.0.0.tgz`) is
+ * (`registry.example/foo/1.0.0_react@…`, `github.com/x/foo/<sha>`, `file:foo-1.0.0.tgz`) is
  * the key of a `packages` entry, whatever the slot; an alias when that entry is another package,
  * an unknown alias (fail closed) when there is none. v9 keys hold the slot's name, so a v9
  * reference cannot point a slot elsewhere this way.

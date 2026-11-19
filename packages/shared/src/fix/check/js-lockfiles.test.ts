@@ -1785,12 +1785,12 @@ importers:
       foo: ^1.0.0
     dependencies:
       qf-a: ${qfA}
-      foo: registry.example.com/foo/1.0.0_react@18.2.0
+      foo: registry.example/foo/1.0.0_react@18.2.0
       react: 18.2.0
 
 packages:
 ${withQfA ? '\n  /qf-a/1.2.5:\n    resolution: {integrity: sha512-a}\n    dev: false\n' : ''}
-  registry.example.com/foo/1.0.0_react@18.2.0:
+  registry.example/foo/1.0.0_react@18.2.0:
     resolution: {integrity: sha512-f}
     name: foo
     version: 1.0.0
@@ -1805,19 +1805,19 @@ ${withQfA ? '\n  /qf-a/1.2.5:\n    resolution: {integrity: sha512-a}\n    dev: f
 
   it('reads an absolute depPath reference by its packages key', () => {
     expect(readPnpmLock(absolute('1.2.5', true)).filter((e) => e.slot !== undefined)).toEqual([]);
-    const moved = readPnpmLock(absolute('registry.example.com/foo/1.0.0_react@18.2.0', false));
+    const moved = readPnpmLock(absolute('registry.example/foo/1.0.0_react@18.2.0', false));
     expect(moved.find((e) => e.slot === 'qf-a')).toMatchObject({ name: 'foo', version: '1.0.0' });
   });
 
   it('refuses the package’s slot pointed at another package by its depPath', () => {
-    const next = absolute('registry.example.com/foo/1.0.0_react@18.2.0', false);
+    const next = absolute('registry.example/foo/1.0.0_react@18.2.0', false);
     expect(check('pnpm-lock.yaml', absolute('1.2.5', true), next)).toMatchObject({
       rule: 'source_kind',
     });
   });
 
   it('reads a path reference without a packages entry as an unknown alias (fail closed)', () => {
-    const missing = readPnpmLock(absolute('registry.example.com/evil/1.0.0', false));
+    const missing = readPnpmLock(absolute('registry.example/evil/1.0.0', false));
     expect(missing.find((e) => e.slot === 'qf-a')).toMatchObject({ kind: 'other' });
   });
 
