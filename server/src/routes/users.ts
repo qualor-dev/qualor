@@ -33,7 +33,7 @@ import {
 } from '../auth/account-tokens';
 import { hashPassword, newPasswordField } from '../auth/password';
 import { deleteUserSessions, type UserRow } from '../auth/sessions';
-import type { Executor } from '../db/client';
+import type { Executor, Tx } from '../db/client';
 import { PG_UNIQUE_VIOLATION, pgConstraint, pgErrorCode } from '../db/errors';
 import { LOCKS } from '../db/locks';
 import { first } from '../db/rows';
@@ -141,6 +141,158 @@ function assertDemoNameKept(demoUser: string | null, from: string, to: string): 
       'While the demo is on, the demo account keeps its username and no other user can take it',
     );
   }
+}
+
+type PatchUserBody = z.infer<typeof patchUserBody>;
+
+/**
+ * Re-reads the caller fresh, under the lock: their principal was resolved before the transaction
+ * started and may since have been demoted (or deactivated) by a concurrent request that got here
+ * first.
+ */
+async function assertCallerStillAdmin(tx: Tx, callerId: string): Promise<void> {
+  const [caller] = await tx
+    .select({ isInstanceAdmin: users.isInstanceAdmin, active: users.active })
+    .from(users)
+    .where(eq(users.id, callerId));
+  if (!caller?.isInstanceAdmin || !caller.active) {
+    throw forbidden('FORBIDDEN', 'Instance administrators only');
+  }
+}
+
+async function loadExistingUser(tx: Tx, id: string) {
+  const [existing] = await tx
+    .select({
+      username: users.username,
+      displayName: users.displayName,
+      email: users.email,
+      active: users.active,
+      isInstanceAdmin: users.isInstanceAdmin,
+      hasPassword: sql<boolean>`${users.passwordHash} IS NOT NULL`,
+    })
+    .from(users)
+    .where(eq(users.id, id));
+  if (!existing) throw notFound('User');
+  return existing;
+}
+type ExistingUser = Awaited<ReturnType<typeof loadExistingUser>>;
+
+/**
+ * The columns a PATCH sets. A username sent unchanged is no rename (letter case counts: it is the
+ * stored spelling). It still goes into the set: a PATCH of only that name would otherwise make an
+ * empty SET, which drizzle refuses (a 500); the UPDATE then sets the same value and the audit
+ * diff lists nothing.
+ */
+function buildUserChanges(
+  body: PatchUserBody,
+  passwordHash: string | undefined,
+  existing: ExistingUser,
+  demoUser: string | null,
+): Partial<typeof users.$inferInsert> {
+  const changes: Partial<typeof users.$inferInsert> = {};
+  if (body.username !== undefined) {
+    if (body.username !== existing.username) {
+      assertDemoNameKept(demoUser, existing.username, body.username);
+    }
+    changes.username = body.username;
+  }
+  if (body.displayName !== undefined) changes.displayName = body.displayName;
+  if (body.email !== undefined) changes.email = body.email;
+  if (body.isInstanceAdmin !== undefined) changes.isInstanceAdmin = body.isInstanceAdmin;
+  if (body.active !== undefined) changes.active = body.active;
+  if (passwordHash !== undefined) {
+    changes.passwordHash = passwordHash;
+    changes.passwordChangeRequired = true;
+  }
+  return changes;
+}
+
+/** The last active administrator, and the last usable break-glass one, must remain. */
+async function assertAdminsRemain(tx: Tx, id: string, body: PatchUserBody): Promise<void> {
+  const [admins] = await tx
+    .select({ n: count() })
+    .from(users)
+    .where(and(eq(users.isInstanceAdmin, true), eq(users.active, true)));
+  if ((admins?.n ?? 0) === 0) {
+    throw conflict('LAST_ADMIN', 'At least one active instance administrator must remain');
+  }
+  // sso-scim.md §10.3: nor the last usable break-glass admin while the stored policy limits
+  // password sign-in (whatever the licence or QUALOR_FORCE_PASSWORD_SIGN_IN say right now).
+  await assertBreakGlassKept(tx, {
+    userId: id,
+    active: body.active,
+    isInstanceAdmin: body.isInstanceAdmin,
+  });
+}
+
+/** Sessions, pending mail links, personal tokens and the password notice a PATCH voids or queues. */
+async function revokeCredentialsAfterUpdate(
+  tx: Tx,
+  config: RouteDeps['config'],
+  input: {
+    id: string;
+    body: PatchUserBody;
+    passwordHash: string | undefined;
+    existing: ExistingUser;
+    user: UserRow;
+  },
+): Promise<void> {
+  const { id, body, passwordHash, existing, user } = input;
+  if (body.active === false || passwordHash !== undefined) {
+    await deleteUserSessions(tx, id);
+  }
+  // Mail E2: a set password, a deactivation or a new address (letter case aside) voids every
+  // pending link (invitation, reset): those went to the address the account had before.
+  if (
+    body.active === false ||
+    passwordHash !== undefined ||
+    existing.email?.toLowerCase() !== user.email?.toLowerCase()
+  ) {
+    await deleteAccountTokens(tx, id);
+  }
+  if (passwordHash === undefined) return;
+  // A reset password must also invalidate any personal access tokens minted under the old
+  // one: otherwise a live token silently outlives the credential that was just rotated.
+  await tx
+    .update(apiTokens)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(eq(apiTokens.userId, id), eq(apiTokens.kind, 'personal'), isNull(apiTokens.revokedAt)),
+    );
+  // A7: an account that had a password hears that an administrator replaced it, at the
+  // address it had before this change (the new one only when it had none).
+  if (existing.hasPassword) {
+    await queuePasswordChangedNotice(tx, mailDeps(config), {
+      user: { ...user, email: existing.email ?? user.email },
+      variant: 'admin',
+      ip: null,
+    });
+  }
+}
+
+/**
+ * rbac-audit.md §8: only the fields whose value changed; a password only as a flag.
+ * rbac-audit.md §10.2.1: a deactivation or demotion alone is never blocked by a malformed audit
+ * anchor; the recorder decides from the changes.
+ */
+async function recordUserUpdate(
+  tx: Tx,
+  audit: RouteDeps['audit'],
+  actor: ReturnType<typeof actorOf>,
+  input: { existing: ExistingUser; user: UserRow; passwordHash: string | undefined },
+): Promise<void> {
+  const { existing, user, passwordHash } = input;
+  const fieldChanges = USER_CHANGE_FIELDS.filter((field) => existing[field] !== user[field]).map(
+    (field) => ({ field, from: existing[field], to: user[field] }),
+  );
+  if (fieldChanges.length === 0 && passwordHash === undefined) return;
+  await audit.recordOrSkipWhenAnchorMalformed(tx, actor, [
+    {
+      action: 'user.updated',
+      target: { type: 'user', id: user.id, label: user.username },
+      details: { changes: fieldChanges, passwordReset: passwordHash !== undefined },
+    },
+  ]);
 }
 
 /** A user with their SSO summary and invitation, for one answer. */
@@ -564,117 +716,24 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
       const updated = await deps.db.transaction(async (tx) => {
         // Serialises admin changes so two concurrent demotions cannot both pass the count check.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.instanceAdmins})`);
-        // Re-read the caller fresh, under the lock: their principal was resolved before this
-        // transaction started and may since have been demoted (or deactivated) by a concurrent
-        // request that got here first.
-        const [caller] = await tx
-          .select({ isInstanceAdmin: users.isInstanceAdmin, active: users.active })
-          .from(users)
-          .where(eq(users.id, principal.user.id));
-        if (!caller?.isInstanceAdmin || !caller.active) {
-          throw forbidden('FORBIDDEN', 'Instance administrators only');
-        }
-        const [existing] = await tx
-          .select({
-            username: users.username,
-            displayName: users.displayName,
-            email: users.email,
-            active: users.active,
-            isInstanceAdmin: users.isInstanceAdmin,
-            hasPassword: sql<boolean>`${users.passwordHash} IS NOT NULL`,
-          })
-          .from(users)
-          .where(eq(users.id, id));
-        if (!existing) throw notFound('User');
-        const changes: Partial<typeof users.$inferInsert> = {};
-        if (body.username !== undefined) {
-          // the name sent unchanged is no rename (letter case counts: it is the stored spelling).
-          // It still goes into `changes`: a PATCH of only that name would otherwise make an empty
-          // SET, which drizzle refuses (a 500); the UPDATE then sets the same value and the audit
-          // diff below lists nothing.
-          if (body.username !== existing.username) {
-            assertDemoNameKept(deps.config.demoUser, existing.username, body.username);
-          }
-          changes.username = body.username;
-        }
-        if (body.displayName !== undefined) changes.displayName = body.displayName;
-        if (body.email !== undefined) changes.email = body.email;
-        if (body.isInstanceAdmin !== undefined) changes.isInstanceAdmin = body.isInstanceAdmin;
-        if (body.active !== undefined) changes.active = body.active;
-        if (passwordHash !== undefined) {
-          changes.passwordHash = passwordHash;
-          changes.passwordChangeRequired = true;
-        }
+        await assertCallerStillAdmin(tx, principal.user.id);
+        const existing = await loadExistingUser(tx, id);
+        const changes = buildUserChanges(body, passwordHash, existing, deps.config.demoUser);
         let user: UserRow;
         try {
           user = first(await tx.update(users).set(changes).where(eq(users.id, id)).returning());
         } catch (err) {
           throw uniqueConflict(err) ?? err;
         }
-        const [admins] = await tx
-          .select({ n: count() })
-          .from(users)
-          .where(and(eq(users.isInstanceAdmin, true), eq(users.active, true)));
-        if ((admins?.n ?? 0) === 0) {
-          throw conflict('LAST_ADMIN', 'At least one active instance administrator must remain');
-        }
-        // sso-scim.md §10.3: nor the last usable break-glass admin while the stored policy limits
-        // password sign-in (whatever the licence or QUALOR_FORCE_PASSWORD_SIGN_IN say right now).
-        await assertBreakGlassKept(tx, {
-          userId: id,
-          active: body.active,
-          isInstanceAdmin: body.isInstanceAdmin,
+        await assertAdminsRemain(tx, id, body);
+        await revokeCredentialsAfterUpdate(tx, deps.config, {
+          id,
+          body,
+          passwordHash,
+          existing,
+          user,
         });
-        if (body.active === false || passwordHash !== undefined) {
-          await deleteUserSessions(tx, id);
-        }
-        // Mail E2: a set password, a deactivation or a new address (letter case aside) voids every
-        // pending link (invitation, reset): those went to the address the account had before.
-        if (
-          body.active === false ||
-          passwordHash !== undefined ||
-          existing.email?.toLowerCase() !== user.email?.toLowerCase()
-        ) {
-          await deleteAccountTokens(tx, id);
-        }
-        if (passwordHash !== undefined) {
-          // A reset password must also invalidate any personal access tokens minted under the old
-          // one: otherwise a live token silently outlives the credential that was just rotated.
-          await tx
-            .update(apiTokens)
-            .set({ revokedAt: new Date() })
-            .where(
-              and(
-                eq(apiTokens.userId, id),
-                eq(apiTokens.kind, 'personal'),
-                isNull(apiTokens.revokedAt),
-              ),
-            );
-          // A7: an account that had a password hears that an administrator replaced it, at the
-          // address it had before this change (the new one only when it had none).
-          if (existing.hasPassword) {
-            await queuePasswordChangedNotice(tx, mailDeps(deps.config), {
-              user: { ...user, email: existing.email ?? user.email },
-              variant: 'admin',
-              ip: null,
-            });
-          }
-        }
-        // rbac-audit.md §8: only the fields whose value changed; a password only as a flag.
-        const fieldChanges = USER_CHANGE_FIELDS.filter(
-          (field) => existing[field] !== user[field],
-        ).map((field) => ({ field, from: existing[field], to: user[field] }));
-        if (fieldChanges.length > 0 || passwordHash !== undefined) {
-          // rbac-audit.md §10.2.1: a deactivation or demotion alone is never blocked by a
-          // malformed audit anchor; the recorder decides from the changes.
-          await deps.audit.recordOrSkipWhenAnchorMalformed(tx, actorOf(request), [
-            {
-              action: 'user.updated',
-              target: { type: 'user', id: user.id, label: user.username },
-              details: { changes: fieldChanges, passwordReset: passwordHash !== undefined },
-            },
-          ]);
-        }
+        await recordUserUpdate(tx, deps.audit, actorOf(request), { existing, user, passwordHash });
         return user;
       });
       return singleUserDto(deps.db, updated);
