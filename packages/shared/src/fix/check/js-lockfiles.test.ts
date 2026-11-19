@@ -11,6 +11,14 @@ import { withDependents } from './lock-read';
 import { parseYaml } from './values';
 import type { FixCheckContext, FixFileChange, LockEntry } from './types';
 
+/**
+ * Budget of every performance guard below. Each guard exists to catch a quadratic or exponential
+ * blow-up, which on these inputs takes minutes, while the linear code takes well under 2 s. The
+ * budget is generous on purpose: a loaded CI machine (a full `pnpm test` runs many files at once)
+ * slows the linear code about 5×, and a tight limit then fails at random. Keep the titles in step.
+ */
+const PERF_BUDGET_MS = 15_000;
+
 /** The `(name, version, kind)`, alias slot and dependents of each entry, sorted. */
 const shape = (entries: LockEntry[]) =>
   entries
@@ -1072,11 +1080,11 @@ describe('fix round 1: YAML in linear time (I1)', () => {
     return pnpmV9(qfA, packages.join(''), snapshots.join(''));
   };
 
-  it('checks a pnpm-lock.yaml of 20 000 packages in well under 3 s', { timeout: 60_000 }, () => {
+  it('checks a pnpm-lock.yaml of 20 000 packages in well within 15 s', { timeout: 60_000 }, () => {
     const [base, next] = [big('1.2.5'), big('1.2.6')];
     const started = performance.now();
     expect(check('pnpm-lock.yaml', base, next)).toEqual({ ok: true });
-    expect(performance.now() - started).toBeLessThan(3000);
+    expect(performance.now() - started).toBeLessThan(PERF_BUDGET_MS);
   });
 
   it('still refuses a duplicate key, also one written once as a number', () => {
@@ -1523,7 +1531,7 @@ describe('fix round 2: the dependents graph in linear time (N1)', () => {
   };
 
   it(
-    'checks 20 000 distinct parents of 20 000 copies of x in under 3 s',
+    'checks 20 000 distinct parents of 20 000 copies of x within 15 s',
     { timeout: 60_000 },
     () => {
       const packages: Record<string, unknown> = { ...qfA };
@@ -1533,12 +1541,12 @@ describe('fix round 2: the dependents graph in linear time (N1)', () => {
       }
       const { result, ms } = timed(JSON.stringify({ lockfileVersion: 3, packages }));
       expect(result).toMatchObject({ rule: 'new_dependency' });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
   it(
-    'checks 80 000 nested copies of x, each depending on x, in under 3 s',
+    'checks 80 000 nested copies of x, each depending on x, within 15 s',
     { timeout: 60_000 },
     () => {
       const packages: Record<string, unknown> = { ...qfA };
@@ -1549,7 +1557,7 @@ describe('fix round 2: the dependents graph in linear time (N1)', () => {
       }
       const { result, ms } = timed(JSON.stringify({ lockfileVersion: 3, packages }));
       expect(result).toMatchObject({ rule: 'new_dependency' });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
@@ -1585,7 +1593,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
     [2000, 'source_kind'],
     [15_000, 'unparsable'],
   ] as const)(
-    'checks a Yarn classic block of %i aliases with as many dependencies in under 3 s: %s',
+    'checks a Yarn classic block of %i aliases with as many dependencies within 15 s: %s',
     { timeout: 120_000 },
     (size, rule) => {
       const lock = (n: number) => {
@@ -1604,7 +1612,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
       };
       const { result, ms } = timedCheck('yarn.lock', lock(0), lock(size));
       expect(result).toMatchObject({ rule });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
@@ -1612,7 +1620,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
     [2000, 'source_kind'],
     [5000, 'unparsable'],
   ] as const)(
-    'checks %i pnpm references to one package with as many dependencies in under 3 s: %s',
+    'checks %i pnpm references to one package with as many dependencies within 15 s: %s',
     { timeout: 120_000 },
     (size, rule) => {
       const lock = (n: number) => {
@@ -1633,7 +1641,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
       };
       const { result, ms } = timedCheck('pnpm-lock.yaml', lock(0), lock(size));
       expect(result).toMatchObject({ rule });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
@@ -1641,7 +1649,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
     [2000, 'source_kind'],
     [5000, 'unparsable'],
   ] as const)(
-    'checks a Berry key of %i aliases with as many dependencies in under 3 s: %s',
+    'checks a Berry key of %i aliases with as many dependencies within 15 s: %s',
     { timeout: 120_000 },
     (size, rule) => {
       const lock = (n: number) => {
@@ -1658,7 +1666,7 @@ describe('fix round 3: alias fan-out in linear time (NB1)', () => {
       };
       const { result, ms } = timedCheck('yarn.lock', lock(0), lock(size));
       expect(result).toMatchObject({ rule });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 });
@@ -1980,17 +1988,17 @@ describe('fix round 4: fan-out shapes are unparsable, real lockfiles are not (R4
     ['10 000 aliases of different packages', 10_000, (i: number) => `s${i}@npm:e${i}@^1.0.0`],
     ['5 000 different packages', 5000, (i: number) => `e${i}@^1.0.0`],
   ])(
-    'refuses a Yarn classic block of %s sharing as many dependencies, in under 3 s',
+    'refuses a Yarn classic block of %s sharing as many dependencies, within 15 s',
     { timeout: 120_000 },
     (_name, n, pattern) => {
       const { result, ms } = timedCheck('yarn.lock', classic(null), classic(header(n, pattern), n));
       expect(result).toEqual(unparsable);
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
   it(
-    'refuses a base whose alias copies share 6 000 × 6 000 dependency names, in under 3 s',
+    'refuses a base whose alias copies share 6 000 × 6 000 dependency names, within 15 s',
     { timeout: 120_000 },
     () => {
       const n = 6000;
@@ -2008,7 +2016,7 @@ describe('fix round 4: fan-out shapes are unparsable, real lockfiles are not (R4
       };
       const { result, ms } = timedCheck('yarn.lock', lock('1.2.5'), lock('1.2.6'));
       expect(result).toEqual(unparsable);
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
@@ -2040,20 +2048,16 @@ describe('fix round 4: fan-out shapes are unparsable, real lockfiles are not (R4
         }
       },
     ],
-  ])(
-    'still accepts the bump in a lockfile of %s, in under 3 s',
-    { timeout: 60_000 },
-    (_n, fill) => {
-      const lock = (a: string) => {
-        const packages: Record<string, unknown> = { 'node_modules/qf-a': reg('qf-a', a) };
-        fill(packages);
-        return JSON.stringify({ lockfileVersion: 3, packages });
-      };
-      const { result, ms } = timedCheck('package-lock.json', lock('1.2.5'), lock('1.2.6'));
-      expect(result).toEqual({ ok: true });
-      expect(ms).toBeLessThan(3000);
-    },
-  );
+  ])('still accepts the bump in a lockfile of %s, within 15 s', { timeout: 60_000 }, (_n, fill) => {
+    const lock = (a: string) => {
+      const packages: Record<string, unknown> = { 'node_modules/qf-a': reg('qf-a', a) };
+      fill(packages);
+      return JSON.stringify({ lockfileVersion: 3, packages });
+    };
+    const { result, ms } = timedCheck('package-lock.json', lock('1.2.5'), lock('1.2.6'));
+    expect(result).toEqual({ ok: true });
+    expect(ms).toBeLessThan(PERF_BUDGET_MS);
+  });
 });
 
 describe('fix round 4: pnpm file: references (R4-2)', () => {
@@ -2203,12 +2207,12 @@ describe('fix round 5: the union fan-out after the merge (R5-1)', () => {
     ['package-lock.json', npmUnion],
     ['yarn.lock', classicUnion],
   ])(
-    '%s: refuses 16 000 alias copies whose union fans out, in under 3 s',
+    '%s: refuses 16 000 alias copies whose union fans out, within 15 s',
     { timeout: 120_000 },
     (path, lock) => {
       const { result, ms } = timedCheck(path, lock(16_000, '1.2.5'), lock(16_000, '1.2.6'));
       expect(result).toEqual({ ok: false, rule: 'unparsable', path });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
@@ -2219,7 +2223,7 @@ describe('fix round 5: the union fan-out after the merge (R5-1)', () => {
       npmUnion(1000, '1.2.6'),
     );
     expect(result).toEqual({ ok: true });
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(PERF_BUDGET_MS);
   });
 });
 
@@ -2266,12 +2270,12 @@ describe('fix round 5: no YAML anchors, aliases or merge keys in a lockfile (R5-
     ['yarn.lock', 70_000, berryAliases],
     ['pnpm-lock.yaml', 300_000, pnpmAliases],
   ])(
-    '%s: refuses one map of %i names used 99 more times through aliases, in under 3 s',
+    '%s: refuses one map of %i names used 99 more times through aliases, within 15 s',
     { timeout: 120_000 },
     (path, m, lock) => {
       const { result, ms } = timedCheck(path, lock(m, 99, '1.2.5'), lock(m, 99, '1.2.6'));
       expect(result).toEqual({ ok: false, rule: 'unparsable', path });
-      expect(ms).toBeLessThan(3000);
+      expect(ms).toBeLessThan(PERF_BUDGET_MS);
     },
   );
 
