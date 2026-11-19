@@ -784,6 +784,29 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
     }
   });
 
+  it('refuses a draft without the IdP values even when enabled in the database (saml.incomplete)', async () => {
+    const draft = (
+      await createConnection(connectionDeps(ctx), SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: {},
+      })
+    ).id;
+    await ctx.db.update(ssoConnections).set({ enabled: true }).where(eq(ssoConnections.id, draft));
+    try {
+      const loaded = (await loadConnection(ctx.db, draft, ctx.config.secretKey))!;
+      const reply = { setCookie: () => reply } as never;
+      await expect(
+        startSaml(flowDeps(ctx), { protocol: 'https' } as never, reply, loaded, {
+          returnTo: '/',
+          link: null,
+        }),
+      ).rejects.toMatchObject({ code: 'unavailable', detail: 'saml.incomplete' });
+    } finally {
+      await ctx.db.delete(ssoConnections).where(eq(ssoConnections.id, draft));
+    }
+  });
+
   it('refuses a connection not in effect (unavailable, saml.not_in_effect), at the start and at the ACS', async () => {
     // A key without sso.multi (sso-scim.md §4.4): only the oldest enabled connection, `conn`,
     // is in effect, so `google` is not. A flow started before the licence changed fails at the ACS.
@@ -926,6 +949,27 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
     expect(withKey).toContain('use="encryption"');
     expect(withKey).toContain(certBody(TEST_SP.certPem).slice(0, 64));
     expect(withKey).not.toContain('PRIVATE KEY');
+  });
+
+  it("serves a draft's SP metadata, which the IdP may import before Qualor has its values", async () => {
+    const draft = (
+      await createConnection(connectionDeps(ctx), SYSTEM_ACTOR, {
+        name: 'Draft metadata',
+        protocol: 'saml',
+        saml: {},
+      })
+    ).id;
+    try {
+      const urls = ssoUrls(PUBLIC_URL, draft);
+      const xml = spMetadata(
+        (await loadConnection(ctx.db, draft, ctx.config.secretKey))!,
+        PUBLIC_URL,
+      );
+      expect(xml).toContain(`entityID="${urls.entityId}"`);
+      expect(xml).toContain(`Location="${urls.acsUrl}"`);
+    } finally {
+      await ctx.db.delete(ssoConnections).where(eq(ssoConnections.id, draft));
+    }
   });
 
   it('refuses a form body that is not urlencoded (415), and a body over 512 KiB (413)', async () => {

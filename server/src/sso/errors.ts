@@ -64,6 +64,7 @@ export const SSO_DETAIL_CODES = [
   'saml.inactive',
   'saml.disabled',
   'saml.not_in_effect',
+  'saml.incomplete',
   'saml.sp_key',
   'saml.request_unknown',
   'saml.issuer',

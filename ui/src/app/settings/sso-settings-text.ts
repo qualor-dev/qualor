@@ -27,6 +27,8 @@ export function testProblemText(code: string): string {
       return $localize`:@@sso.test.spKey:The stored service provider key cannot be read with this server's key. Give the key again.`;
     case 'config_invalid':
       return $localize`:@@sso.test.configInvalid:The stored configuration is not valid. Check the fields and save the connection again.`;
+    case 'incomplete':
+      return $localize`:@@sso.test.incomplete:The identity provider's entity id, SSO URL or signing certificate is missing. Press Read metadata, or enter them.`;
     case 'fetch.not_public':
       return $localize`:@@sso.test.notPublic:The host is not public. List it in QUALOR_SSO_INTERNAL_HOSTS if Qualor may call it.`;
     case 'fetch.refused_address':

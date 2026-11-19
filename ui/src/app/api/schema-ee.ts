@@ -739,8 +739,8 @@ export interface paths {
                                 clientSecretSet: boolean;
                             } | null;
                             saml: {
-                                idpEntityId: string;
-                                idpSsoUrl: string;
+                                idpEntityId: string | null;
+                                idpSsoUrl: string | null;
                                 idpCertificates: {
                                     pem: string;
                                     sha256: string;
@@ -827,9 +827,9 @@ export interface paths {
                             userinfo?: boolean;
                         };
                         saml?: {
-                            idpEntityId: string;
-                            idpSsoUrl: string;
-                            idpCertificates: string[];
+                            idpEntityId?: string | null;
+                            idpSsoUrl?: string | null;
+                            idpCertificates?: string[];
                             metadataUrl?: string | null;
                             /** @enum {string} */
                             nameIdFormat?: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" | "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" | "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified";
@@ -881,8 +881,8 @@ export interface paths {
                                 clientSecretSet: boolean;
                             } | null;
                             saml: {
-                                idpEntityId: string;
-                                idpSsoUrl: string;
+                                idpEntityId: string | null;
+                                idpSsoUrl: string | null;
                                 idpCertificates: {
                                     pem: string;
                                     sha256: string;
@@ -1011,8 +1011,8 @@ export interface paths {
                                 clientSecretSet: boolean;
                             } | null;
                             saml: {
-                                idpEntityId: string;
-                                idpSsoUrl: string;
+                                idpEntityId: string | null;
+                                idpSsoUrl: string | null;
                                 idpCertificates: {
                                     pem: string;
                                     sha256: string;
@@ -1186,8 +1186,8 @@ export interface paths {
                             userinfo?: boolean;
                         };
                         saml?: {
-                            idpEntityId?: string;
-                            idpSsoUrl?: string;
+                            idpEntityId?: string | null;
+                            idpSsoUrl?: string | null;
                             idpCertificates?: string[];
                             metadataUrl?: string | null;
                             /** @enum {string} */
@@ -1240,8 +1240,8 @@ export interface paths {
                                 clientSecretSet: boolean;
                             } | null;
                             saml: {
-                                idpEntityId: string;
-                                idpSsoUrl: string;
+                                idpEntityId: string | null;
+                                idpSsoUrl: string | null;
                                 idpCertificates: {
                                     pem: string;
                                     sha256: string;

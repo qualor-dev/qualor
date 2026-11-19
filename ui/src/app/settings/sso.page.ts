@@ -202,8 +202,9 @@ function draftOf(c: SsoConnection): Draft {
       : {}),
     ...(c.saml
       ? {
-          idpEntityId: c.saml.idpEntityId,
-          idpSsoUrl: c.saml.idpSsoUrl,
+          // A draft saved before the identity provider was set up has none of these (0.16 SSO).
+          idpEntityId: c.saml.idpEntityId ?? '',
+          idpSsoUrl: c.saml.idpSsoUrl ?? '',
           idpCertificates: c.saml.idpCertificates.map((x) => x.pem.trim()).join('\n'),
           metadataUrl: c.saml.metadataUrl ?? '',
           nameIdFormat: c.saml.nameIdFormat,
@@ -571,8 +572,10 @@ export class SsoPage {
 
   private samlBody(d: Draft) {
     return {
-      idpEntityId: d.idpEntityId.trim(),
-      idpSsoUrl: d.idpSsoUrl,
+      // Empty until the identity provider is set up: a draft (0.16 SSO). The SSO URL goes as typed,
+      // so the server can refuse spaces at its ends.
+      idpEntityId: orNull(d.idpEntityId),
+      idpSsoUrl: d.idpSsoUrl.trim() === '' ? null : d.idpSsoUrl,
       idpCertificates: pemBlocks(d.idpCertificates),
       metadataUrl: orNull(d.metadataUrl),
       nameIdFormat: d.nameIdFormat,

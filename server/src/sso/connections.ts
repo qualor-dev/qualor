@@ -29,6 +29,7 @@ import {
   OIDC_CONFIG,
   parseStoredConfig,
   SAML_CONFIG,
+  samlReady,
   SECRET_AAD,
   SP_KEY_AAD,
   type ConnectionConfig,
@@ -80,9 +81,10 @@ export interface SsoOidcInput {
 }
 
 export interface SsoSamlInput {
-  idpEntityId: string;
-  idpSsoUrl: string;
-  idpCertificates: string[];
+  /** The IdP's values may wait while the connection is disabled (0.16 SSO); enabling needs them. */
+  idpEntityId?: string | null;
+  idpSsoUrl?: string | null;
+  idpCertificates?: string[];
   metadataUrl?: string | null;
   nameIdFormat?: (typeof NAME_ID_FORMATS)[number];
   emailVerified?: boolean;
@@ -153,8 +155,9 @@ export interface SsoConnectionView {
     clientSecretSet: boolean;
   } | null;
   saml: {
-    idpEntityId: string;
-    idpSsoUrl: string;
+    /** Null, like an empty `idpCertificates`, in a draft not yet filled in (0.16 SSO). */
+    idpEntityId: string | null;
+    idpSsoUrl: string | null;
     idpCertificates: SsoCertificateView[];
     metadataUrl: string | null;
     nameIdFormat: (typeof NAME_ID_FORMATS)[number];
@@ -576,9 +579,31 @@ function checkSamlConfig(
   return { parsed: { protocol: 'saml', config }, secrets };
 }
 
-/** The host an audit event names (spec §15): the issuer's, or the SSO URL's. */
-function hostOf(parsed: ConnectionConfig): string {
-  return new URL(parsed.protocol === 'oidc' ? parsed.config.issuer : parsed.config.idpSsoUrl).host;
+/** The host an audit event names (spec §15): the issuer's, or the SSO URL's; null in a draft. */
+function hostOf(parsed: ConnectionConfig): string | null {
+  const url = parsed.protocol === 'oidc' ? parsed.config.issuer : parsed.config.idpSsoUrl;
+  return url === null ? null : new URL(url).host;
+}
+
+/** Each IdP value a SAML connection lacks, in the body's order (0.16 SSO). */
+const IDP_VALUES = ['idpEntityId', 'idpSsoUrl', 'idpCertificates'] as const;
+
+/**
+ * 0.16 SSO: an enabled SAML connection needs the IdP's entity id, SSO URL and a certificate; a
+ * draft without them stays disabled. 422 naming each missing one.
+ */
+function assertEnableable(parsed: ConnectionConfig): void {
+  if (parsed.protocol !== 'saml' || samlReady(parsed.config)) return;
+  const c = parsed.config;
+  const missing = IDP_VALUES.filter((field) =>
+    field === 'idpCertificates' ? c.idpCertificates.length === 0 : c[field] === null,
+  );
+  throw validationFailed(
+    missing.map((field) => ({
+      path: `body.saml.${field}`,
+      message: 'Required to enable the connection: read the metadata, or enter it',
+    })),
+  );
 }
 
 function requirePublicUrl(deps: ConnectionDeps): void {
@@ -752,6 +777,7 @@ export async function createConnection(
     body.protocol === 'oidc',
   );
   const enabled = body.enabled ?? false;
+  if (enabled) assertEnableable(parsed);
   if (enabled) requirePublicUrl(deps);
   const createdBy = actor.actor.type === 'system' ? null : actor.actor.userId;
   try {
@@ -871,6 +897,8 @@ export async function updateConnection(
         storedSpKey,
         issuerChanged || current.secretEnc === null,
       );
+      // A connection that is, or becomes, enabled keeps every IdP value (0.16 SSO).
+      if (body.enabled ?? current.enabled) assertEnableable(parsed);
       const changed = changedFields(base, parsed.config);
       if (body.name !== undefined && body.name !== current.name) changed.add('name');
       if (body.enabled !== undefined && body.enabled !== current.enabled) changed.add('enabled');
@@ -1032,6 +1060,7 @@ export const SSO_TEST_PROBLEM_CODES = [
   'certificates_expired',
   'sp_key',
   'config_invalid',
+  'incomplete',
   ...(Object.keys(FETCH_REFUSALS) as SsoFetchRefused['reason'][]).map(
     (reason): FetchProblemCode => `fetch.${reason}`,
   ),
@@ -1136,6 +1165,16 @@ function testSaml(connection: LoadedConnection, deps: ConnectionDeps): SsoTestRe
   for (const pemText of cfg.idpCertificates) {
     const r = certificateOrProblem(pemText);
     if (!('problem' in r)) certificates.push(r.info);
+  }
+  if (!samlReady(cfg)) {
+    return failedTest(
+      {
+        code: 'incomplete',
+        message:
+          "The identity provider's entity id, SSO URL or signing certificate is missing: press Read metadata, or enter them",
+      },
+      certificates,
+    );
   }
   const urlProblem = idpUrlProblem(cfg.idpSsoUrl, deps.config.ssoInternalHosts);
   if (urlProblem) {

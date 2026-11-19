@@ -15,7 +15,7 @@ import type { SignInClaims } from './accounts';
 import { bindingMatches, newBinding, setBindingCookie, SSO_COOKIE } from './binding';
 import { requiredClaimsMet } from './claims';
 import { completeSignIn, type FlowDeps } from './complete';
-import type { SamlConfig } from './connection-config';
+import { samlReady, type ReadySamlConfig, type SamlConfig } from './connection-config';
 import {
   certificateInfo,
   isConnectionInEffect,
@@ -131,13 +131,6 @@ const DATA_ENCRYPTION = new Set([
 ]);
 const KEY_TRANSPORT = `${XENC}rsa-oaep-mgf1p`;
 
-/** node-saml's cache where no request is saved (metadata). */
-const NO_CACHE: CacheProvider = {
-  saveAsync: () => Promise.resolve(null),
-  getAsync: () => Promise.resolve(null),
-  removeAsync: () => Promise.resolve(null),
-};
-
 /**
  * node-saml's cache while validating one response: the request row was taken already (SS3), so
  * it answers for exactly that request id, with the issue instant the row held.
@@ -158,6 +151,9 @@ export function samlFor(
 ): SAML {
   if (connection.parsed.protocol !== 'saml') throw new Error('not a SAML connection');
   const cfg = connection.parsed.config;
+  // The flows reach this through usable(), which refuses a draft first (saml.incomplete); the SP
+  // metadata does not use it. This only keeps node-saml from ever running a flow for one.
+  if (!samlReady(cfg)) throw new Error('a SAML connection without the IdP values');
   const urls = ssoUrls(publicUrl, connection.row.id);
   return new SAML({
     callbackUrl: urls.acsUrl,
@@ -186,13 +182,13 @@ export function samlFor(
 /**
  * The connection, if it may run a flow now: SAML with a public URL (else `saml.not_configured`),
  * `sso` active (`saml.inactive`), enabled (`saml.disabled`), in effect (`saml.not_in_effect`,
- * sso-scim.md §4.4), and an SP key that decrypts when one is stored (`saml.sp_key`); each
- * `unavailable`.
+ * sso-scim.md §4.4), with the IdP's values (`saml.incomplete`, a draft, 0.16 SSO), and an SP
+ * key that decrypts when one is stored (`saml.sp_key`); each `unavailable`.
  */
 async function usable(
   deps: FlowDeps,
   connection: LoadedConnection | null,
-): Promise<{ connection: LoadedConnection; cfg: SamlConfig; publicUrl: string }> {
+): Promise<{ connection: LoadedConnection; cfg: ReadySamlConfig; publicUrl: string }> {
   if (!connection || connection.parsed.protocol !== 'saml' || !deps.config.publicUrl) {
     throw new SsoFailure('unavailable', 'saml.not_configured');
   }
@@ -201,11 +197,13 @@ async function usable(
   if (!(await isConnectionInEffect(deps.db, deps.edition, connection.row.id))) {
     throw new SsoFailure('unavailable', 'saml.not_in_effect');
   }
+  const cfg = connection.parsed.config;
+  if (!samlReady(cfg)) throw new SsoFailure('unavailable', 'saml.incomplete');
   if (connection.row.spKeyEnc !== null && connection.spKey === null) {
     deps.log.error({ component: 'sso', connectionId: connection.row.id }, UNDECRYPTABLE_SP_KEY);
     throw new SsoFailure('unavailable', 'saml.sp_key');
   }
-  return { connection, cfg: connection.parsed.config, publicUrl: deps.config.publicUrl };
+  return { connection, cfg, publicUrl: deps.config.publicUrl };
 }
 
 /**
@@ -909,9 +907,22 @@ export async function finishSaml(
  */
 export function spMetadata(connection: LoadedConnection, publicUrl: string): string {
   if (connection.parsed.protocol !== 'saml') throw new Error('not a SAML connection');
-  const cert = connection.spKey ? connection.parsed.config.spCertificate : null;
-  const forMetadata: LoadedConnection = cert ? connection : { ...connection, spKey: null };
-  return samlFor(forMetadata, publicUrl, NO_CACHE).generateServiceProviderMetadata(cert, cert);
+  const cfg = connection.parsed.config;
+  const cert = connection.spKey ? cfg.spCertificate : null;
+  const urls = ssoUrls(publicUrl, connection.row.id);
+  // Only the SP's own values, so a draft without the IdP's has its metadata too (0.16 SSO): an
+  // IdP may import it before it gives its own. node-saml needs `idpCert`; the metadata never reads it.
+  const sp = new SAML({
+    callbackUrl: urls.acsUrl,
+    issuer: urls.entityId,
+    idpCert: [],
+    identifierFormat: cfg.nameIdFormat,
+    wantAssertionsSigned: true, // fixed (Global Constraints), as in samlFor
+    ...(cert && connection.spKey
+      ? { privateKey: connection.spKey, decryptionPvk: connection.spKey }
+      : {}),
+  });
+  return sp.generateServiceProviderMetadata(cert, cert);
 }
 
 /** A base64 certificate body as PEM, 64 characters a line. */

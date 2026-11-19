@@ -129,8 +129,8 @@ const own = (claims: Record<string, unknown> | null, name: string | null): unkno
  * spec §5 step 4, §8.3, §9.1: the sign-in's claims from the ID token's claims merged over
  * userinfo's (the ID token wins). Null without a storable `sub` of 1–255 characters. Each
  * configured claim counts only as a storable string (groups: an array of strings, or one string),
- * else it is absent. `email_verified` is the boolean `true` only (a string `"true"` is not), read
- * from the claims the email came from. More than MAX_GROUP_VALUES groups is refused, never cut
+ * else it is absent. `email_verified` (or Entra ID's `xms_edov`) is the boolean `true` only (a
+ * string `"true"` is not), read from the claims the email came from. More than MAX_GROUP_VALUES groups is refused, never cut
  * (`invalid_response`, `groups.too_many`).
  */
 export function claimsFrom(
@@ -150,11 +150,14 @@ export function claimsFrom(
   const merged: Record<string, unknown> = { ...(userinfo ?? {}), ...tokens };
   const read = (name: string | null): unknown => own(merged, name);
   // The email and its `email_verified` come from the same claims: the ID token when it names the
-  // email claim, else userinfo. One source's flag never vouches for the other's address.
+  // email claim, else userinfo. One source's flag never vouches for the other's address. Entra ID
+  // sends no `email_verified`: its optional claim `xms_edov` (email domain owner verified) says the
+  // tenant verified the email's domain, and counts the same (0.16 SSO).
   const emailName = cfg.claims.email;
   const emailSource = own(tokens, emailName) !== undefined ? tokens : userinfo;
   const email = text(own(emailSource, emailName));
-  const emailVerified = email !== null && emailSource?.email_verified === true;
+  const emailVerified =
+    email !== null && (emailSource?.email_verified === true || emailSource?.xms_edov === true);
 
   let groups: string[] = [];
   const rawGroups = read(cfg.claims.groups);

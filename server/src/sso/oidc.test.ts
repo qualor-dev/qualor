@@ -67,6 +67,34 @@ describe('claimsFrom (sso-scim.md §5 step 4, §8.3)', () => {
     ).toBe(false);
   });
 
+  // Entra ID sends no email_verified; its optional claim xms_edov ("email domain owner verified")
+  // says the tenant verified the email's domain (0.16 SSO, spec D1).
+  const entra = {
+    sub: 'entra-sub',
+    preferred_username: 'mia@contoso.example',
+    email: 'mia@contoso.example',
+  };
+
+  it('xms_edov true verifies the email (Entra ID)', () => {
+    expect(claimsFrom({ ...entra, xms_edov: true }, null, cfg())).toMatchObject({
+      email: 'mia@contoso.example',
+      emailVerified: true,
+    });
+  });
+
+  it('xms_edov is the boolean true only', () => {
+    expect(claimsFrom({ ...entra, xms_edov: 'true' }, null, cfg())?.emailVerified).toBe(false);
+    expect(claimsFrom({ ...entra, xms_edov: 1 }, null, cfg())?.emailVerified).toBe(false);
+    expect(claimsFrom({ ...entra, xms_edov: false }, null, cfg())?.emailVerified).toBe(false);
+    expect(claimsFrom(entra, null, cfg())?.emailVerified).toBe(false);
+  });
+
+  it("xms_edov from userinfo never vouches for the ID token's email", () => {
+    expect(claimsFrom(entra, { sub: 'entra-sub', xms_edov: true }, cfg())?.emailVerified).toBe(
+      false,
+    );
+  });
+
   it('reads email_verified from the claims the email came from', () => {
     const bare = { sub: 'alice-sub' };
     // The email and its flag from userinfo: verified.

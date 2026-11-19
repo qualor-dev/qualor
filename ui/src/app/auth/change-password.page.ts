@@ -23,6 +23,13 @@ export class ChangePasswordPage {
 
   /** Ruling R7: an admin created or reset this account, so the password must change first. */
   protected readonly forced = computed(() => this.session.user()?.passwordChangeRequired === true);
+  /**
+   * An account that signs in with single sign-on only has no password, and the change needs the
+   * current one (0.16 SSO): the page says so instead of offering a form that can only fail.
+   */
+  protected readonly noPassword = computed(
+    () => this.session.user()?.hasPassword === false && !this.forced(),
+  );
   /** For password managers: which account the new password belongs to (a hidden field). */
   protected readonly username = computed(() => this.session.user()?.username ?? '');
   protected readonly current = signal('');

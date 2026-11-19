@@ -164,7 +164,13 @@ export const MEMBER_PROJECT_PERMISSIONS = [
 export const VIEWER_PROJECT_PERMISSIONS = ['project.read'] as const;
 
 export function me(
-  overrides: { passwordChangeRequired?: boolean; admin?: boolean; demo?: boolean } = {},
+  overrides: {
+    passwordChangeRequired?: boolean;
+    admin?: boolean;
+    demo?: boolean;
+    /** false: an account that signs in with single sign-on only. */
+    hasPassword?: boolean;
+  } = {},
 ): Me {
   return {
     user: {
@@ -175,7 +181,7 @@ export function me(
       isInstanceAdmin: overrides.admin ?? false,
       active: true,
       passwordChangeRequired: overrides.passwordChangeRequired ?? false,
-      hasPassword: true,
+      hasPassword: overrides.hasPassword ?? true,
       sso: { identities: 0, scim: false },
       invitation: null,
       lastLoginAt: null,

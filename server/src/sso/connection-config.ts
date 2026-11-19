@@ -56,12 +56,17 @@ export const NAME_ID_FORMATS = [
 
 const pem = noNul(z.string().min(1).max(16_384));
 
-/** spec §4.3: the non-secret SAML fields (the SP key is `sp_key_enc`). Qualor's, not node-saml's. */
+/**
+ * spec §4.3: the non-secret SAML fields (the SP key is `sp_key_enc`). Qualor's, not node-saml's.
+ * The IdP's entity id, SSO URL and certificates may be missing while the connection is disabled
+ * (a draft, 0.16 SSO): its SP values exist only once it is saved, and Entra ID and Okta ask for
+ * them before they give their own. Enabling it, and every flow, needs them (`samlReady`).
+ */
 export const SAML_CONFIG = z.strictObject({
   ...common,
-  idpEntityId: noNul(z.string().min(1).max(1_024)),
-  idpSsoUrl: url,
-  idpCertificates: z.array(pem).min(1).max(3),
+  idpEntityId: noNul(z.string().min(1).max(1_024)).nullable().default(null),
+  idpSsoUrl: url.nullable().default(null),
+  idpCertificates: z.array(pem).max(3).default([]),
   metadataUrl: url.nullable().default(null),
   nameIdFormat: z.enum(NAME_ID_FORMATS).default(NAME_ID_FORMATS[0]),
   claims: z
@@ -77,6 +82,16 @@ export const SAML_CONFIG = z.strictObject({
   spCertificate: pem.nullable().default(null),
 });
 export type SamlConfig = z.infer<typeof SAML_CONFIG>;
+
+/** A SAML config with every IdP value: the only kind that may be enabled or run a flow. */
+export type ReadySamlConfig = SamlConfig & { idpEntityId: string; idpSsoUrl: string };
+
+/** Whether the IdP's entity id, SSO URL and at least one certificate are there (0.16 SSO). */
+export function samlReady(config: SamlConfig): config is ReadySamlConfig {
+  return (
+    config.idpEntityId !== null && config.idpSsoUrl !== null && config.idpCertificates.length > 0
+  );
+}
 
 export type ConnectionConfig =
   { protocol: 'oidc'; config: OidcConfig } | { protocol: 'saml'; config: SamlConfig };

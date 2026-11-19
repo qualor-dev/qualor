@@ -50,6 +50,23 @@ describe('ChangePasswordPage', () => {
     expect(server.requests).toEqual([]);
   });
 
+  it('tells an account without a password that it signs in with single sign-on, with no form', async () => {
+    TestBed.inject(SessionStore).set(me({ hasPassword: false }));
+    const { root } = await render();
+    expect(root.textContent).toContain(
+      'You sign in with single sign-on, so you have no password to change. An instance admin can set one in Settings → Users.',
+    );
+    expect(root.querySelector('form')).toBeNull();
+    expect(root.querySelector('#password-current')).toBeNull();
+  });
+
+  it('still asks for the change when an admin set the password (it exists, and is required)', async () => {
+    TestBed.inject(SessionStore).set(me({ passwordChangeRequired: true, hasPassword: true }));
+    const { root } = await render();
+    expect(root.querySelector('form')).not.toBeNull();
+    expect(root.textContent).not.toContain('You sign in with single sign-on');
+  });
+
   it('marks a wrong current password on its field', async () => {
     server.on('PUT', '/api/v0/auth/me/password', {
       status: 422,

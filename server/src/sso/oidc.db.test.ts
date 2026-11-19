@@ -100,6 +100,8 @@ describe('OIDC sign-in (sso-scim.md §5, §7)', () => {
     extra('dave');
     extra('greg', { groups: Array.from({ length: MAX_GROUP_VALUES + 1 }, (_, i) => `g${i}`) });
     extra('stringy', { email: 'stringy@acme.example', email_verified: 'true' });
+    // Entra ID: no email_verified, the optional claim xms_edov instead (0.16 SSO).
+    extra('entra', { email: 'entra@acme.example', email_verified: undefined, xms_edov: true });
     extra('verified', { email: 'verified@acme.example' });
     extra('hd', { hd: 'acme.example' });
     extra('linked');
@@ -247,6 +249,12 @@ describe('OIDC sign-in (sso-scim.md §5, §7)', () => {
     const again = await signIn('alice');
     expect(again.statusCode).toBe(303);
     expect((await auditRows(ctx)).at(-1)).toMatchObject({ action: 'auth.sign_in' });
+  });
+
+  it('stores an Entra ID email that xms_edov verifies, without email_verified', async () => {
+    const res = await signIn('entra');
+    expect(res.statusCode).toBe(303);
+    expect(await userNamed('entra')).toMatchObject({ email: 'entra@acme.example' });
   });
 
   it('works once: the same callback URL a second time is flow_expired', async () => {
