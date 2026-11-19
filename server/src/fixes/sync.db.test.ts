@@ -948,6 +948,26 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
       expect(keptWarnings(lines)).toHaveLength(1);
     });
 
+    it.each([
+      [400, 'a pre-receive hook refuses it'],
+      [405, 'the branch is protected or the HEAD branch'],
+    ])(
+      'FW4: a closed MR whose package is gone, its branch delete refused (%i: %s), ends fixed with the branch kept',
+      async (status) => {
+        const repo = await freshRepo();
+        const fixId = await openFix(repo);
+        const { mrNumber } = await row(fixId);
+        await goneFromMain(repo);
+        fake.setMergeRequest(repo.gitlabId, mrNumber!, { state: 'closed' });
+        fake.inject('DELETE', BRANCH_PATH, { status, body: { message: 'refused' } });
+        const { lines, logger } = capture();
+        expect(await pass({ logger })).toEqual({ ...ZERO, fixed: 1 });
+        expect(await row(fixId)).toMatchObject({ state: 'fixed', declinedTarget: null });
+        expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+        expect(keptWarnings(lines)).toHaveLength(1);
+      },
+    );
+
     it('FW4: a delete that fails for now (503) still keeps the fix open for the next pass', async () => {
       const repo = await freshRepo();
       const fixId = await openFix(repo);

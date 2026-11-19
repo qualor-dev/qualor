@@ -92,10 +92,12 @@ export type BranchDelete = 'deleted' | 'gone' | 'taken_over' | 'kept';
 /**
  * Ruling FW4: the statuses with which a provider refuses a branch delete for good (a ruleset that
  * restricts deletions, a protected branch): GitHub 422 (a missing ref is no refusal: the client
- * answers it as gone), GitLab 403 or 422. A retry would be refused again.
+ * answers it as gone). GitLab answers 400 when a pre-receive hook refuses, 403 when the user may
+ * not delete, 405 for a protected branch or the HEAD branch, and 422 for a rule. A retry would be
+ * refused again.
  */
 const REFUSED_DELETE: Readonly<Record<FixRepository['provider'], readonly number[]>> =
-  Object.freeze({ github: [422], gitlab: [403, 422] });
+  Object.freeze({ github: [422], gitlab: [400, 403, 405, 422] });
 
 /**
  * The branch is deleted when its head is `expectedHead`, re-read right before (B10); `remove`
