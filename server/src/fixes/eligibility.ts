@@ -12,7 +12,13 @@ import { branches, dependencyFixes } from '../db/schema';
 import { pairKey, pairPlaces, type VulnerabilityPair } from '../jira/presence';
 import type { VulnerabilitySeverity } from '../vulnerabilities/order';
 import { IS_NEW, scopedRows } from '../vulnerabilities/summary';
-import { fixDto, fixPackageName, type DependencyFix, type DependencyFixRow } from './rows';
+import {
+  fixColumns,
+  fixDto,
+  fixPackageName,
+  type DependencyFix,
+  type DependencyFixRow,
+} from './rows';
 
 /** R3: the Go standard library is fixed by the Go version, never by a module update. */
 export const GO_STDLIB = 'stdlib';
@@ -272,7 +278,7 @@ export async function fixFacets(
     [...byPair.values()].flatMap((entry) => [...entry.families].map((f) => fixName(f, entry))),
   );
   const fixes = await db
-    .select()
+    .select(fixColumns)
     .from(dependencyFixes)
     .where(
       and(

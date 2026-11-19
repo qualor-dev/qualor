@@ -6,7 +6,7 @@ import type { Principal, UserPrincipal } from '../auth/principal';
 import { dependencyFixes, memberships, projectMemberships, projects } from '../db/schema';
 import { notFound } from '../http/problem';
 import type { ProjectRow } from '../projects/access';
-import type { DependencyFixRow } from './rows';
+import { fixColumns, type DependencyFixRow } from './rows';
 
 /**
  * A dependency fix whose project grants the caller `permission` (rbac-audit.md §5), with the
@@ -21,7 +21,7 @@ export async function dependencyFixFor(
 ): Promise<{ fix: DependencyFixRow; project: ProjectRow }> {
   const [row] = await access.db
     .select({
-      fix: dependencyFixes,
+      fix: fixColumns,
       project: projects,
       organizationRole: memberships.role,
       projectRole: projectMemberships.role,
@@ -53,7 +53,7 @@ export async function dependencyFixForUpload(
   fixId: string,
 ): Promise<{ fix: DependencyFixRow; project: ProjectRow }> {
   const [row] = await access.db
-    .select({ fix: dependencyFixes, project: projects })
+    .select({ fix: fixColumns, project: projects })
     .from(dependencyFixes)
     .innerJoin(projects, eq(projects.id, dependencyFixes.projectId))
     .where(and(eq(dependencyFixes.id, fixId), eq(dependencyFixes.projectId, principal.projectId)));

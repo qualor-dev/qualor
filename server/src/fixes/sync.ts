@@ -20,7 +20,7 @@ import { closeFixChange, fence, openWithMrElse, type ClosedAs } from './commit';
 import { mainVulnerabilities, packageOnMain, type MainVulnerability } from './eligibility';
 import { FIX_QUEUE } from './jobs';
 import { openTrackingRepository, type FixRepository } from './repository';
-import type { DependencyFixRow } from './rows';
+import { fixColumns, type DependencyFixRow } from './rows';
 import type { FixJobDeps } from './run';
 
 /**
@@ -285,7 +285,7 @@ async function markRefresh(pass: Pass, row: DependencyFixRow): Promise<void> {
 /** The fix as it is stored now, when it is still open; null when it moved on. */
 async function openFixOf(db: Db, fixId: string): Promise<DependencyFixRow | null> {
   const [row] = await db
-    .select()
+    .select(fixColumns)
     .from(dependencyFixes)
     .where(and(eq(dependencyFixes.id, fixId), eq(dependencyFixes.state, 'open')));
   return row ?? null;

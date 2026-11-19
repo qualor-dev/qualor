@@ -21,7 +21,7 @@ import {
   requestFix,
   requireCancellable,
 } from '../fixes/requests';
-import { fixListItem, fixListItemSchema } from '../fixes/rows';
+import { fixColumns, fixListItem, fixListItemSchema } from '../fixes/rows';
 import { requireFixesUsable } from '../fixes/settings';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import { conflict, notFound, ProblemError } from '../http/problem';
@@ -137,7 +137,7 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
       const before = decodeCursor(request.query.cursor);
       const f = dependencyFixes;
       const rows = await deps.db
-        .select()
+        .select(fixColumns)
         .from(f)
         .where(
           and(

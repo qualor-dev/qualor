@@ -886,6 +886,69 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
     expect(queuedBehind).toBe(0);
   });
 
+  it('never loads the uploaded files of a committing fix outside its commit job (ruling FW3)', async () => {
+    const pkg = fresh();
+    await vulnerable(pkg);
+    // A committing fix holding 4 MiB of uploaded file text (up to 32 MiB in production).
+    const big = 'x'.repeat(4 * 1024 * 1024);
+    const committing = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: pkg,
+      state: 'committing',
+      prepared: {
+        baseSha: BASE,
+        files: [{ path: 'package-lock.json', content: big }],
+        lockfiles: [],
+        unfixable: [],
+        additions: [],
+      },
+    });
+    const statements: string[] = [];
+    const proto = pg.Client.prototype as unknown as { query: (...args: unknown[]) => unknown };
+    const original = proto.query;
+    const spy = vi.spyOn(proto, 'query').mockImplementation(function (
+      this: unknown,
+      ...args: unknown[]
+    ) {
+      const [first] = args;
+      if (typeof first === 'string') statements.push(first);
+      else if (typeof first === 'object' && first !== null && 'text' in first) {
+        statements.push(String(first.text));
+      }
+      return original.apply(this, args);
+    });
+    try {
+      const listed = await get<{ items: FixItem[] }>(`/projects/${projectId}/fixes?limit=100`);
+      expect(listed.items.find((i) => i.id === committing)).toMatchObject({ state: 'committing' });
+      expect(Object.keys(listed.items[0]!)).not.toContain('prepared');
+      type Item = { packageName: string; fix: Fix | null };
+      const page = await get<{ items: Item[] }>(
+        `/projects/${projectId}/vulnerabilities?pageSize=100&target=branch:${main}`,
+      );
+      expect(page.items.find((i) => i.packageName === pkg)?.fix).toMatchObject({
+        id: committing,
+        state: 'committing',
+      });
+      expect(answer(await retry(committing))).toEqual([409, 'FIX_NOT_RETRYABLE']);
+      expect(answer(await cancel(committing))).toEqual([409, 'FIX_BUSY']);
+      const upload = await h.ctx.app.inject({
+        method: 'PUT',
+        url: `/api/v0/fixes/${committing}/result`,
+        headers: bearer(project.token),
+        payload: { generation: 1, leaseToken: 'gone', released: true },
+      });
+      expect(answer(upload)).toEqual([409, 'FIX_LEASE_LOST']);
+    } finally {
+      spy.mockRestore();
+    }
+    const reads = statements.filter(
+      (s) => /^\s*select\b/i.test(s) && s.includes('dependency_fixes'),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.filter((s) => s.includes('"prepared"'))).toEqual([]);
+  });
+
   it('names a Python fix by its PEP 503 name, whichever spelling asks (ruling T8b)', async () => {
     await vulnerable('Django_Rest', {
       ecosystem: 'uv',

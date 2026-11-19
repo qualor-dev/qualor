@@ -28,7 +28,7 @@ import {
   type FixRepository,
   type FixRepositoryProblem,
 } from './repository';
-import type { DependencyFixRow } from './rows';
+import type { DependencyFixRow, DependencyFixRowWithFiles } from './rows';
 import type { FixJobDeps } from './run';
 
 /**
@@ -58,9 +58,14 @@ interface Loaded<Row extends DependencyFixRow = DependencyFixRow> {
 
 /**
  * The job's fix with its project when it is still at the job's generation in `state`; null when a
- * re-arm, a cancel or an end moved it on (ruling T8c: such a job drops quietly).
+ * re-arm, a cancel or an end moved it on (ruling T8c: such a job drops quietly). The one read of a
+ * fix with its accepted files (`prepared`; every other read leaves them out, ruling FW3).
  */
-async function fixOfJob(db: Db, job: FixJob, state: FixState): Promise<Loaded | null> {
+async function fixOfJob(
+  db: Db,
+  job: FixJob,
+  state: FixState,
+): Promise<Loaded<DependencyFixRowWithFiles> | null> {
   const [found] = await db
     .select({ row: dependencyFixes, project: projects })
     .from(dependencyFixes)

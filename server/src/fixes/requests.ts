@@ -11,7 +11,7 @@ import {
 import { conflict } from '../http/problem';
 import type { ProjectRow } from '../projects/access';
 import { enqueueFixJob } from './jobs';
-import { fixBranchName, fixPackageName, type DependencyFixRow } from './rows';
+import { fixBranchName, fixColumns, fixPackageName, type DependencyFixRow } from './rows';
 import { fixCounts } from './settings';
 
 /**
@@ -60,7 +60,7 @@ export async function lockProject(tx: Executor, projectId: string): Promise<Proj
 /** The fix row, locked `FOR UPDATE` for the rest of the transaction; null when it is gone. */
 export async function lockFix(tx: Executor, fixId: string): Promise<DependencyFixRow | null> {
   const [row] = await tx
-    .select()
+    .select(fixColumns)
     .from(dependencyFixes)
     .where(eq(dependencyFixes.id, fixId))
     .for('update');
@@ -78,7 +78,7 @@ export async function lockPackageFix(
   packageName: string,
 ): Promise<DependencyFixRow | null> {
   const [row] = await tx
-    .select()
+    .select(fixColumns)
     .from(dependencyFixes)
     .where(
       and(

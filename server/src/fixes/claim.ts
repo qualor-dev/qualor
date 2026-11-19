@@ -16,7 +16,7 @@ import { conflict, notFound } from '../http/problem';
 import type { ProjectRow } from '../projects/access';
 import { fixProblem, isGoStdlib, mainVulnerabilities, type MainVulnerability } from './eligibility';
 import { lockProject } from './requests';
-import type { DependencyFixRow } from './rows';
+import { fixColumns, type DependencyFixRow } from './rows';
 import { fixPreconditions, fixSettingsOf, type FixSettingsRow } from './settings';
 
 /**
@@ -72,7 +72,7 @@ function pickClaimable(
 ): Promise<DependencyFixRow[]> {
   const f = dependencyFixes;
   return tx
-    .select()
+    .select(fixColumns)
     .from(f)
     .where(
       and(

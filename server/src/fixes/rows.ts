@@ -1,9 +1,24 @@
 import { FIX_FAMILIES, normalizePythonName, type FixFamily } from '@qualor/shared/fix';
+import { getTableColumns } from 'drizzle-orm';
 import { z } from 'zod';
-import { FIX_STATES, type dependencyFixes } from '../db/schema';
+import { dependencyFixes, FIX_STATES } from '../db/schema';
 import { iso, timestamp } from '../http/schemas';
 
-export type DependencyFixRow = typeof dependencyFixes.$inferSelect;
+/** A `dependency_fixes` row with its accepted files (`prepared`): only the commit job reads one. */
+export type DependencyFixRowWithFiles = typeof dependencyFixes.$inferSelect;
+/** A `dependency_fixes` row as every read but the commit job's selects it: without `prepared`. */
+export type DependencyFixRow = Omit<DependencyFixRowWithFiles, 'prepared'>;
+
+/**
+ * Ruling FW3: every column of `dependency_fixes` but `prepared`, which holds up to 32 MiB of a
+ * `committing` fix's uploaded files. The lists, the facets, the access helpers, the claim and the
+ * pass select these; only the commit job (`fixOfJob`) reads the files.
+ */
+export const fixColumns = (() => {
+  const { prepared: _files, ...columns } = getTableColumns(dependencyFixes);
+  void _files;
+  return columns;
+})();
 
 /**
  * R12, spec §6.8: a package's fix as the vulnerability items and the Trivy issues of main embed
