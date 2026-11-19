@@ -303,6 +303,24 @@ export function versionProblems(entries: readonly SourceEntry[], pins: Pins): st
   return problems;
 }
 
+const MAVEN_CENTRAL = 'https://repo1.maven.org/maven2/';
+/** Other hosts of the same Maven Central files: its second name, and Google's mirror. */
+const MAVEN_CENTRAL_MIRRORS = [
+  'https://repo.maven.apache.org/maven2/',
+  'https://maven-central.storage-download.googleapis.com/maven2/',
+];
+
+/**
+ * The URLs to try for one archive, in turn. Maven Central's CDN answered 404 to CI runners for
+ * hours (2026-11-19), for both of its names, so a Maven Central file also names Google's mirror;
+ * any host's file is checked against the manifest's SHA-256 before it is kept.
+ */
+export function sourceUrls(url: string): string[] {
+  if (!url.startsWith(MAVEN_CENTRAL)) return [url];
+  const rest = url.slice(MAVEN_CENTRAL.length);
+  return [url, ...MAVEN_CENTRAL_MIRRORS.map((base) => `${base}${rest}`)];
+}
+
 /** curl for one archive: https only (redirects too), TLS 1.2+, bounded retries, no output on 4xx. */
 export function curlArgs(url: string, out: string): string[] {
   return [

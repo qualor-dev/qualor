@@ -21,6 +21,7 @@ import {
 import { REPO_ROOT, run } from './stack';
 import {
   curlArgs,
+  sourceUrls,
   indexPath,
   loadManifest,
   MANIFEST_PATH,
@@ -152,7 +153,7 @@ function curl(url: string, out: string): void {
   if (r.code !== 0) throw new Error(`download of ${url} failed: ${r.stderr.trim()}`);
 }
 
-/** Tries each URL in turn (the Debian archive, then snapshot.debian.org). */
+/** Tries each URL in turn (the Debian archive, then snapshot.debian.org; other Maven Central hosts). */
 function curlAny(urls: readonly string[], out: string): void {
   const errors: string[] = [];
   for (const url of urls) {
@@ -212,7 +213,7 @@ async function fetchImage(image: ImageName): Promise<void> {
   for (const e of entries) {
     const target = path.join(out, e.file);
     const state = await fetchVerified(target, e.sha256, (part) => {
-      if (e.fetch.type === 'https') curl(e.fetch.url, part);
+      if (e.fetch.type === 'https') curlAny(sourceUrls(e.fetch.url), part);
       else gitArchive(e, part);
     });
     bytes += statSync(target).size;

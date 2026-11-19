@@ -16,6 +16,7 @@ import {
   sideFiles,
   SOURCES_DOCKERFILE,
   sourcesIndex,
+  sourceUrls,
   temurinVersionOf,
   versionProblems,
   type SourceEntry,
@@ -384,6 +385,17 @@ describe('downloads, the index and the companion images', () => {
     expect(args).toContain('--fail');
     expect(args[args.indexOf('--retry') + 1]).toBe('3');
     expect(args.at(-1)).toBe('https://github.com/a/b/archive/v1.tar.gz');
+  });
+
+  it('tries the other hosts of Maven Central for a Maven Central URL, and only the URL otherwise', () => {
+    const path = 'net/sf/saxon/Saxon-HE/12.10/Saxon-HE-12.10-sources.jar';
+    expect(sourceUrls(`https://repo1.maven.org/maven2/${path}`)).toEqual([
+      `https://repo1.maven.org/maven2/${path}`,
+      `https://repo.maven.apache.org/maven2/${path}`,
+      `https://maven-central.storage-download.googleapis.com/maven2/${path}`,
+    ]);
+    const other = 'https://github.com/a/b/archive/v1.tar.gz';
+    expect(sourceUrls(other)).toEqual([other]);
   });
 
   it('keeps deploy/<image>/SOURCES.md generated from the manifests (pnpm deploy:sources --index)', () => {
