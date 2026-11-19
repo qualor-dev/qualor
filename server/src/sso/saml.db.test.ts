@@ -784,6 +784,29 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
     }
   });
 
+  it('refuses a draft without the IdP values even when enabled in the database (saml.incomplete)', async () => {
+    const draft = (
+      await createConnection(connectionDeps(ctx), SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: {},
+      })
+    ).id;
+    await ctx.db.update(ssoConnections).set({ enabled: true }).where(eq(ssoConnections.id, draft));
+    try {
+      const loaded = (await loadConnection(ctx.db, draft, ctx.config.secretKey))!;
+      const reply = { setCookie: () => reply } as never;
+      await expect(
+        startSaml(flowDeps(ctx), { protocol: 'https' } as never, reply, loaded, {
+          returnTo: '/',
+          link: null,
+        }),
+      ).rejects.toMatchObject({ code: 'unavailable', detail: 'saml.incomplete' });
+    } finally {
+      await ctx.db.delete(ssoConnections).where(eq(ssoConnections.id, draft));
+    }
+  });
+
   it('refuses a connection not in effect (unavailable, saml.not_in_effect), at the start and at the ACS', async () => {
     // A key without sso.multi (sso-scim.md §4.4): only the oldest enabled connection, `conn`,
     // is in effect, so `google` is not. A flow started before the licence changed fails at the ACS.

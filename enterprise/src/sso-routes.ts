@@ -86,9 +86,10 @@ const oidcInput = z.strictObject({
   userinfo: z.boolean().optional(),
 });
 const samlInput = z.strictObject({
-  idpEntityId: z.string().min(1).max(1_024),
-  idpSsoUrl: url,
-  idpCertificates: z.array(pem).min(1).max(3),
+  /** The IdP's three values may wait while the connection is disabled; enabling needs them. */
+  idpEntityId: z.string().min(1).max(1_024).nullable().optional(),
+  idpSsoUrl: url.nullable().optional(),
+  idpCertificates: z.array(pem).max(3).optional(),
   metadataUrl: url.nullable().optional(),
   nameIdFormat: z.enum(NAME_ID_FORMATS).optional(),
   emailVerified: z.boolean().optional(),
@@ -171,8 +172,9 @@ const connectionView = z.strictObject({
     .nullable(),
   saml: z
     .strictObject({
-      idpEntityId: z.string(),
-      idpSsoUrl: z.string(),
+      /** Null, like an empty `idpCertificates`, in a draft not yet filled in. */
+      idpEntityId: z.string().nullable(),
+      idpSsoUrl: z.string().nullable(),
       idpCertificates: z.array(certificateView),
       metadataUrl: z.string().nullable(),
       nameIdFormat: z.enum(NAME_ID_FORMATS),

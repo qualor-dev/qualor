@@ -15,7 +15,7 @@ import type { SignInClaims } from './accounts';
 import { bindingMatches, newBinding, setBindingCookie, SSO_COOKIE } from './binding';
 import { requiredClaimsMet } from './claims';
 import { completeSignIn, type FlowDeps } from './complete';
-import type { SamlConfig } from './connection-config';
+import { samlReady, type ReadySamlConfig, type SamlConfig } from './connection-config';
 import {
   certificateInfo,
   isConnectionInEffect,
@@ -158,6 +158,8 @@ export function samlFor(
 ): SAML {
   if (connection.parsed.protocol !== 'saml') throw new Error('not a SAML connection');
   const cfg = connection.parsed.config;
+  // usable() refuses a draft first (saml.incomplete); this only keeps node-saml from ever seeing one.
+  if (!samlReady(cfg)) throw new Error('a SAML connection without the IdP values');
   const urls = ssoUrls(publicUrl, connection.row.id);
   return new SAML({
     callbackUrl: urls.acsUrl,
@@ -186,13 +188,13 @@ export function samlFor(
 /**
  * The connection, if it may run a flow now: SAML with a public URL (else `saml.not_configured`),
  * `sso` active (`saml.inactive`), enabled (`saml.disabled`), in effect (`saml.not_in_effect`,
- * sso-scim.md §4.4), and an SP key that decrypts when one is stored (`saml.sp_key`); each
- * `unavailable`.
+ * sso-scim.md §4.4), with the IdP's values (`saml.incomplete`, a draft, 0.16 SSO), and an SP
+ * key that decrypts when one is stored (`saml.sp_key`); each `unavailable`.
  */
 async function usable(
   deps: FlowDeps,
   connection: LoadedConnection | null,
-): Promise<{ connection: LoadedConnection; cfg: SamlConfig; publicUrl: string }> {
+): Promise<{ connection: LoadedConnection; cfg: ReadySamlConfig; publicUrl: string }> {
   if (!connection || connection.parsed.protocol !== 'saml' || !deps.config.publicUrl) {
     throw new SsoFailure('unavailable', 'saml.not_configured');
   }
@@ -201,11 +203,13 @@ async function usable(
   if (!(await isConnectionInEffect(deps.db, deps.edition, connection.row.id))) {
     throw new SsoFailure('unavailable', 'saml.not_in_effect');
   }
+  const cfg = connection.parsed.config;
+  if (!samlReady(cfg)) throw new SsoFailure('unavailable', 'saml.incomplete');
   if (connection.row.spKeyEnc !== null && connection.spKey === null) {
     deps.log.error({ component: 'sso', connectionId: connection.row.id }, UNDECRYPTABLE_SP_KEY);
     throw new SsoFailure('unavailable', 'saml.sp_key');
   }
-  return { connection, cfg: connection.parsed.config, publicUrl: deps.config.publicUrl };
+  return { connection, cfg, publicUrl: deps.config.publicUrl };
 }
 
 /**

@@ -288,7 +288,8 @@ export const AUDIT_CATALOGUE = {
     details: z.strictObject({
       name: str,
       protocol: z.enum(['oidc', 'saml']),
-      host: z.string().max(255),
+      /** Null for a SAML draft saved without the IdP's SSO URL (0.16 SSO). */
+      host: z.string().max(255).nullable(),
     }),
   },
   'sso.connection_updated': {

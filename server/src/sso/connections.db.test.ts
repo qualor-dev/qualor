@@ -26,6 +26,7 @@ import {
   inEffectConnectionIds,
   listConnections,
   loadConnection,
+  testConnection,
   updateConnection,
   type ConnectionDeps,
 } from './connections';
@@ -524,6 +525,109 @@ describe('SSO connections (sso-scim.md §4, §13)', () => {
       ],
     ]);
     expect(JSON.stringify(events)).not.toMatch(/first-secret|second-secret/);
+  });
+
+  // 0.16 SSO (spec D2): the SP values exist once a connection is saved, and Entra ID and Okta ask
+  // for them before they give their own, so a SAML connection is saved first, filled in later.
+  describe('SAML drafts', () => {
+    const METADATA = 'https://idp.example/federationmetadata.xml?appid=a1';
+    const MISSING = [
+      { path: 'body.saml.idpEntityId' },
+      { path: 'body.saml.idpSsoUrl' },
+      { path: 'body.saml.idpCertificates' },
+    ];
+
+    it('saves a disabled SAML connection without the IdP values, with its SP values and no audited host', async () => {
+      const audited = {
+        ...deps,
+        audit: createAuditRecorder({ isActive: () => true, log: { error() {} } }),
+      };
+      const view = await createConnection(audited, SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: { metadataUrl: METADATA },
+      });
+      expect(view).toMatchObject({ enabled: false, configValid: true });
+      expect(view.saml).toMatchObject({
+        idpEntityId: null,
+        idpSsoUrl: null,
+        idpCertificates: [],
+        metadataUrl: METADATA,
+      });
+      expect(view.urls?.acsUrl).toBe(`https://q.example/api/v0/ee/sso/saml/${view.id}/acs`);
+      const [created] = await ctx.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.targetId, view.id));
+      expect(created).toMatchObject({
+        action: 'sso.connection_created',
+        details: { name: 'Draft', protocol: 'saml', host: null },
+      });
+      await deleteConnection(deps, SYSTEM_ACTOR, view.id);
+    });
+
+    it('refuses to enable one without the IdP values, on create and by a patch', async () => {
+      await expect(
+        createConnection(deps, SYSTEM_ACTOR, {
+          name: 'Draft on',
+          protocol: 'saml',
+          enabled: true,
+          saml: { metadataUrl: METADATA },
+        }),
+      ).rejects.toMatchObject({ status: 422, errors: MISSING });
+      const view = await createConnection(deps, SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: {},
+      });
+      await expect(
+        updateConnection(deps, SYSTEM_ACTOR, view.id, { enabled: true }),
+      ).rejects.toMatchObject({ status: 422, errors: MISSING });
+      await deleteConnection(deps, SYSTEM_ACTOR, view.id);
+    });
+
+    it('enables a draft once its IdP values are saved', async () => {
+      const view = await createConnection(deps, SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: { metadataUrl: METADATA },
+      });
+      await updateConnection(deps, SYSTEM_ACTOR, view.id, { saml: SAML });
+      await expect(
+        updateConnection(deps, SYSTEM_ACTOR, view.id, { enabled: true }),
+      ).resolves.toMatchObject({ enabled: true, saml: { idpEntityId: SAML.idpEntityId } });
+      await deleteConnection(deps, SYSTEM_ACTOR, view.id);
+    });
+
+    it('refuses a patch that removes an IdP value of an enabled connection', async () => {
+      const view = await createConnection(deps, SYSTEM_ACTOR, {
+        name: 'Live',
+        protocol: 'saml',
+        enabled: true,
+        saml: SAML,
+      });
+      await expect(
+        updateConnection(deps, SYSTEM_ACTOR, view.id, { saml: { idpCertificates: [] } }),
+      ).rejects.toMatchObject({ status: 422, errors: [{ path: 'body.saml.idpCertificates' }] });
+      await expect(
+        updateConnection(deps, SYSTEM_ACTOR, view.id, { saml: { idpSsoUrl: null } }),
+      ).rejects.toMatchObject({ status: 422, errors: [{ path: 'body.saml.idpSsoUrl' }] });
+      await deleteConnection(deps, SYSTEM_ACTOR, view.id);
+    });
+
+    it('Test reports a draft as incomplete', async () => {
+      const view = await createConnection(deps, SYSTEM_ACTOR, {
+        name: 'Draft',
+        protocol: 'saml',
+        saml: {},
+      });
+      await expect(testConnection(deps, view.id)).resolves.toMatchObject({
+        ok: false,
+        problem: { code: 'incomplete' },
+        certificates: [],
+      });
+      await deleteConnection(deps, SYSTEM_ACTOR, view.id);
+    });
   });
 });
 

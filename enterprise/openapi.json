@@ -1603,10 +1603,16 @@
                             "type": "object",
                             "properties": {
                               "idpEntityId": {
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "idpSsoUrl": {
-                                "type": "string"
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
                               },
                               "idpCertificates": {
                                 "type": "array",
@@ -1939,17 +1945,30 @@
                     "type": "object",
                     "properties": {
                       "idpEntityId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "idpSsoUrl": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 2048
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "idpCertificates": {
-                        "minItems": 1,
                         "maxItems": 3,
                         "type": "array",
                         "items": {
@@ -2002,11 +2021,6 @@
                         ]
                       }
                     },
-                    "required": [
-                      "idpEntityId",
-                      "idpSsoUrl",
-                      "idpCertificates"
-                    ],
                     "additionalProperties": false
                   }
                 },
@@ -2172,10 +2186,16 @@
                           "type": "object",
                           "properties": {
                             "idpEntityId": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpSsoUrl": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpCertificates": {
                               "type": "array",
@@ -2531,10 +2551,16 @@
                           "type": "object",
                           "properties": {
                             "idpEntityId": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpSsoUrl": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpCertificates": {
                               "type": "array",
@@ -2875,17 +2901,30 @@
                     "type": "object",
                     "properties": {
                       "idpEntityId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1024
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "idpSsoUrl": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 2048
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "idpCertificates": {
-                        "minItems": 1,
                         "maxItems": 3,
                         "type": "array",
                         "items": {
@@ -3111,10 +3150,16 @@
                           "type": "object",
                           "properties": {
                             "idpEntityId": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpSsoUrl": {
-                              "type": "string"
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             },
                             "idpCertificates": {
                               "type": "array",

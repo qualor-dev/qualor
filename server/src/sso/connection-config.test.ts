@@ -4,6 +4,7 @@ import {
   OIDC_CONFIG,
   parseStoredConfig,
   SAML_CONFIG,
+  samlReady,
   SECRET_AAD,
   SP_KEY_AAD,
 } from './connection-config';
@@ -68,6 +69,25 @@ describe('SSO connection config (sso-scim.md §4)', () => {
     expect(
       SAML_CONFIG.safeParse({ ...parsed, idpCertificates: ['A', 'B', 'C', 'D'] }).success,
     ).toBe(false);
+  });
+
+  it('reads a SAML draft: no IdP values until the connection is enabled (0.16 SSO)', () => {
+    const draft = SAML_CONFIG.parse({ metadataUrl: 'https://idp.example/metadata' });
+    expect(draft).toMatchObject({ idpEntityId: null, idpSsoUrl: null, idpCertificates: [] });
+    expect(samlReady(draft)).toBe(false);
+    expect(parseStoredConfig('saml', {})).toMatchObject({ protocol: 'saml' });
+  });
+
+  it('samlReady needs the entity id, the SSO URL and a certificate', () => {
+    const ready = SAML_CONFIG.parse({
+      idpEntityId: 'https://idp.example/saml',
+      idpSsoUrl: 'https://idp.example/saml/sso',
+      idpCertificates: ['A'],
+    });
+    expect(samlReady(ready)).toBe(true);
+    expect(samlReady({ ...ready, idpEntityId: null })).toBe(false);
+    expect(samlReady({ ...ready, idpSsoUrl: null })).toBe(false);
+    expect(samlReady({ ...ready, idpCertificates: [] })).toBe(false);
   });
 
   it('never throws on a stored row that does not parse', () => {
