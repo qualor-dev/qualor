@@ -300,6 +300,17 @@
         (changed)="issue.reload()"
       />
 
+      @if (fixTarget(); as fixFor) {
+        <q-fix-link
+          [fix]="i.fix"
+          [fixable]="i.fixable"
+          [canTriage]="canTriage()"
+          [projectId]="projectId()"
+          [target]="fixFor"
+          (changed)="issue.reload()"
+        />
+      }
+
       @if (canTriage()) {
         <section class="card issue-actions" aria-labelledby="actions-heading">
           <div>

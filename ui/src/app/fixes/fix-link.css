@@ -1,0 +1,92 @@
+/* A finding's fix MR (spec §6.9): the issue page's card, or a pill in a list row. The host
+   draws no box, so an empty view takes no gap of a column and the pill's parts join the row. */
+:host {
+  display: contents;
+}
+
+.fix-card {
+  display: grid;
+  gap: 10px;
+}
+.fix-card h3 {
+  margin: 0;
+}
+.fix-card .fix-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.fix-state:empty {
+  display: none;
+}
+.fix-card .fix-failure {
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.fix-card .alert {
+  margin: 0;
+}
+
+.fix-mr {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fix-mr:hover {
+  text-decoration: underline;
+}
+.fix-mr q-icon {
+  width: 12px;
+  height: 12px;
+}
+.fix-version {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.fix-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The pill: the MR and its version, or the state, and the row's actions on one line. */
+.fix-compact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.fix-compact .fix-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fix-compact .btn {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.fix-compact .btn-quiet {
+  min-height: 28px;
+  font-size: 12.5px;
+}
+/* A long reason (the package manager's words) is cut in the row; the title holds it whole. */
+.fix-compact .fix-failure {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fix-error {
+  color: var(--bad);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

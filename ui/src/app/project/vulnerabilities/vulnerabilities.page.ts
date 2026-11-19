@@ -17,6 +17,7 @@ import { Api, ok } from '../../api/api';
 import { problemMessage } from '../../api/errors';
 import type { RequestBody, ResponseBody } from '../../api/types';
 import { SessionStore } from '../../auth/session';
+import { FixProjectState } from '../../fixes/fix-project';
 import { closeModal, openAfterRender } from '../../shared/dialog';
 import { keepFocus, rowByKey } from '../../shared/focus';
 import { DateTimePipe } from '../../shared/date-time.pipe';
@@ -69,6 +70,8 @@ function one(params: Params, key: string): string {
   ],
   templateUrl: './vulnerabilities.page.html',
   styleUrl: './vulnerabilities.page.css',
+  // The project's fix MR settings are read afresh for each visit.
+  providers: [FixProjectState],
   host: {
     '(window:scroll)': 'closeMenus()',
     '(window:resize)': 'closeMenus()',
@@ -81,6 +84,7 @@ export class VulnerabilitiesPage {
   private readonly route = inject(ActivatedRoute);
   private readonly project = inject(CurrentProject);
   private readonly session = inject(SessionStore);
+  private readonly fixes = inject(FixProjectState);
   readonly projectId = input.required<string>();
 
   private readonly params = toSignal(this.route.queryParams, { initialValue: {} as Params });
@@ -149,6 +153,13 @@ export class VulnerabilitiesPage {
   protected readonly clean = computed(() =>
     this.targets().every((t) => Object.values(t.counts).every((n) => n === 0)),
   );
+  /** "3 of 5 fix MRs open": the fixes in flight against the project's limit, while they are on. */
+  protected readonly fixLine = computed(() => {
+    const state = this.fixes.of(this.projectId())();
+    if (state === null || !state.enabled) return null;
+    const open = Object.values(state.counts).reduce((sum, n) => sum + n, 0);
+    return { open, max: state.maxOpen };
+  });
   protected readonly isInstanceAdmin = computed(
     () => this.session.user()?.isInstanceAdmin === true,
   );

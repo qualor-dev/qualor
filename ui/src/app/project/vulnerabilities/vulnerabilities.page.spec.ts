@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import {
   FakeServer,
   FakeVulnerabilities,
+  fixSettings,
   problem,
   MEMBER_PROJECT_PERMISSIONS,
   me,
@@ -1293,5 +1294,81 @@ describe('VulnerabilitiesPage export menus', () => {
     expect(root.querySelector('q-export-menu')).toBeNull();
     // The export is the feature; Upload SBOM is a Community action of project.analyze.
     expect(text(root)).not.toMatch(/VEX|Export SBOM/);
+  });
+});
+
+describe('VulnerabilitiesPage fix MRs', () => {
+  async function renderFixes(
+    query: Record<string, string>,
+    settings = fixSettings({
+      settings: { enabled: true, maxOpen: 5 },
+      counts: { open: 2, requested: 1 },
+    }),
+  ): Promise<HTMLElement> {
+    const server = new FakeServer();
+    TestBed.configureTestingModule({
+      imports: [VulnerabilitiesPage],
+      providers: [
+        provideRouter([]),
+        provideFakeServer(server),
+        { provide: ActivatedRoute, useValue: { queryParams: of(query) } },
+      ],
+    });
+    TestBed.inject(SessionStore).set(me());
+    server.on('GET', `/api/v0/projects/${PROJECT}`, {
+      body: {
+        id: PROJECT,
+        organizationId: ORG_ID,
+        key: 'acme/x',
+        name: 'X',
+        permissions: [...MEMBER_PROJECT_PERMISSIONS],
+        vulnerabilities: { newIn: { main: false, branches: 0, versions: 0 } },
+      },
+    });
+    server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, { body: settings });
+    const fake = FakeVulnerabilities.install(server, PROJECT, { targets: TARGETS });
+    fake.cards = [
+      vulnerabilityCard({
+        fixable: true,
+        in: [
+          { kind: 'branch', id: MAIN, name: 'main' },
+          { kind: 'version', id: V21, name: '2.1.0' },
+        ],
+      }),
+    ];
+    TestBed.inject(CurrentProject).use(PROJECT);
+    const fixture = TestBed.createComponent(VulnerabilitiesPage);
+    fixture.componentRef.setInput('projectId', PROJECT);
+    await settle(fixture);
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  it('says how many fix MRs are in flight against the limit, under the header', async () => {
+    const root = await renderFixes({});
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs open');
+    const header = root.querySelector('.vuln-header');
+    expect(header?.compareDocumentPosition(root.querySelector('.vuln-fixes')!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('says nothing while fix MRs are off', async () => {
+    const root = await renderFixes({}, fixSettings({ counts: { open: 2 } }));
+    expect(root.querySelector('.vuln-fixes')).toBeNull();
+    expect(text(root)).not.toContain('fix MRs open');
+  });
+
+  it('shows the fix pill in By vulnerability', async () => {
+    const root = await renderFixes({ view: 'vulnerability' });
+    expect(button(root, 'Create fix MR')).toBeDefined();
+  });
+
+  it("shows the fix pill in the main branch's one-target view, not in another target's (R28)", async () => {
+    const main = await renderFixes({ target: `branch:${MAIN}` });
+    expect(button(main, 'Create fix MR')).toBeDefined();
+    TestBed.resetTestingModule();
+    const version = await renderFixes({ target: `version:${V21}` });
+    expect(version.querySelectorAll('.vuln-row')).toHaveLength(1);
+    expect(button(version, 'Create fix MR')).toBeUndefined();
   });
 });

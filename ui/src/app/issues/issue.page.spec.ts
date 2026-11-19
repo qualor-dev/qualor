@@ -1,7 +1,9 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
+  dependencyFix,
   FakeServer,
+  fixSettings,
   jiraLink,
   jiraProjectSettings,
   me,
@@ -1010,6 +1012,91 @@ describe('IssuePage', () => {
       expect(headings).not.toContain('Jira');
     });
   });
+
+  describe('the Fix card', () => {
+    const SETTINGS = '/api/v0/projects/p1/fixes/settings';
+    const CREATE = '/api/v0/projects/p1/fixes';
+    /** A Trivy issue of main: the vulnerability of a package, found in a lockfile. */
+    const trivy = (overrides: Partial<IssueDetail> = {}) =>
+      detail({
+        path: 'package-lock.json',
+        startLine: null,
+        jiraLinkable: true,
+        vulnerability: {
+          packageName: 'lodash',
+          vulnerabilityId: 'CVE-2026-0001',
+          writesDecision: true,
+          decision: null,
+        },
+        ...overrides,
+      });
+    const headings = (root: HTMLElement) =>
+      [...root.querySelectorAll('.issue-aside section.card h3')].map((h) => h.textContent?.trim());
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      server.on('GET', SETTINGS, { body: fixSettings({ settings: { enabled: true } }) });
+    });
+
+    it('shows the fix of a Trivy issue of main in a card after the Jira card', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: trivy({ jira: jiraLink(), fix: dependencyFix(), fixable: true }),
+      });
+      const { root } = await render();
+      expect(headings(root).slice(0, 3)).toEqual(['Details', 'Jira', 'Fix MR']);
+      expect(root.querySelector('.issue-aside a.fix-mr')?.textContent?.trim()).toBe('MR !12');
+    });
+
+    it('creates the fix MR of the package, its ecosystem read from the lockfile', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, { body: trivy({ fixable: true }) });
+      server.on('POST', CREATE, {
+        status: 202,
+        body: dependencyFix({ state: 'requested', mrNumber: null, mrUrl: null }),
+      });
+      const { fixture, root } = await render();
+      buttonIn(root, 'Create fix MR')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', CREATE).map((r) => r.body)).toEqual([
+        { ecosystem: 'npm', packageName: 'lodash' },
+      ]);
+      expect(root.querySelector('.issue-aside')?.textContent).toContain('Waiting for the fix job');
+    });
+
+    it('shows no Fix card for a code issue, or a Trivy issue with no fix and none to request', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail() });
+      const code = await render();
+      expect(headings(code.root)).not.toContain('Fix MR');
+      expect(buttonIn(code.root, 'Create fix MR')).toBeUndefined();
+      expect(server.requestsTo('GET', SETTINGS)).toHaveLength(0);
+    });
+
+    it('shows no Fix card for a Trivy issue that is not fixable', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, { body: trivy() });
+      const { root } = await render();
+      expect(headings(root)).not.toContain('Fix MR');
+    });
+
+    it('shows a fix whose lockfile has no automatic fix, but offers no new one', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: trivy({ path: 'Gemfile.lock', fixable: true }),
+      });
+      const { root } = await render();
+      expect(headings(root)).not.toContain('Fix MR');
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: trivy({ path: 'Gemfile.lock', fixable: true, fix: dependencyFix() }),
+      });
+      const shown = await render();
+      expect(headings(shown.root)).toContain('Fix MR');
+      expect(buttonIn(shown.root, 'Create fix MR')).toBeUndefined();
+    });
+
+    it('shows nothing while fix MRs are off for the project', async () => {
+      server.on('GET', SETTINGS, { body: fixSettings() });
+      server.on('GET', `/api/v0/issues/${ID}`, { body: trivy({ fixable: true }) });
+      const { root } = await render();
+      expect(headings(root)).not.toContain('Fix MR');
+    });
+  });
 });
 
 /** A Jira link waiting for the create job. */
@@ -1075,6 +1162,32 @@ describe('IssuePage while its Jira link is pending (R22)', () => {
     await advance(2_999);
     expect(reads()).toBe(1);
     await advance(1);
+    expect(reads()).toBe(2);
+    for (let i = 0; i < 45; i++) await advance(3_000);
+    expect(reads()).toBe(41);
+  });
+
+  it('reads the issue again while its fix waits for the job, every 3 s, 40 times at most', async () => {
+    server.on('GET', '/api/v0/projects/p1/fixes/settings', {
+      body: fixSettings({ settings: { enabled: true } }),
+    });
+    server.on('GET', `/api/v0/issues/${ID}`, {
+      body: detail({
+        path: 'package-lock.json',
+        vulnerability: {
+          packageName: 'lodash',
+          vulnerabilityId: 'CVE-2026-0001',
+          writesDecision: true,
+          decision: null,
+        },
+        fix: dependencyFix({ state: 'requested' }),
+        fixable: true,
+      }),
+    });
+    const root = await render();
+    expect(root.querySelector('.issue-aside')?.textContent).toContain('Waiting for the fix job');
+    expect(reads()).toBe(1);
+    await advance(3_000);
     expect(reads()).toBe(2);
     for (let i = 0; i < 45; i++) await advance(3_000);
     expect(reads()).toBe(41);

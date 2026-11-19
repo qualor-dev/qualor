@@ -15,6 +15,7 @@ import type {
   Me,
   ResponseBody,
 } from '../app/api/types';
+import type { FixShown } from '../app/fixes/fix-request';
 import type {
   DependencyAnswer,
   DependencyRow,
@@ -293,6 +294,24 @@ export function fixSettings(
     },
     counts: { requested: 0, preparing: 0, committing: 0, open: 0, ...given.counts },
     exploitedAvailable: given.exploitedAvailable ?? true,
+  };
+}
+
+/**
+ * The fix a vulnerability item or an issue embeds (`fix`): an open MR !12 on GitLab for 1.2.6, by
+ * default.
+ */
+export function dependencyFix(overrides: Partial<FixShown> = {}): FixShown {
+  return {
+    id: '0190a6c2-0000-7000-8000-0000000000f9',
+    state: 'open',
+    refresh: false,
+    targetVersion: '1.2.6',
+    mrNumber: 12,
+    mrUrl: 'https://gitlab.example.com/acme/payments/-/merge_requests/12',
+    failure: null,
+    updatedAt: '2026-11-18T10:00:00.000Z',
+    ...overrides,
   };
 }
 

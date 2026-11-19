@@ -1,0 +1,211 @@
+@if (visible()) {
+  @if (compact()) {
+    <span class="fix-compact"><ng-container *ngTemplateOutlet="body" /></span>
+  } @else {
+    <section class="card fix-card" [attr.aria-labelledby]="uid + '-heading'">
+      <h3 [id]="uid + '-heading'" #heading tabindex="-1" i18n="@@fix.link.heading">Fix MR</h3>
+      <ng-container *ngTemplateOutlet="body" />
+    </section>
+  }
+  @if (confirming()) {
+    <dialog
+      #dialog
+      class="dialog"
+      [attr.aria-labelledby]="uid + '-title'"
+      [attr.aria-describedby]="uid + '-text'"
+      (close)="confirming.set(false)"
+    >
+      <form novalidate (submit)="cancel($event)">
+        <div class="dialog-head">
+          <h2 [id]="uid + '-title'" i18n="@@fix.link.cancelTitle">Cancel the fix MR</h2>
+        </div>
+        <div class="dialog-body">
+          @if (shown()?.state === 'open') {
+            <p [id]="uid + '-text'" i18n="@@fix.link.cancelTextOpen">
+              Qualor closes the {{ word() }} for {{ target().packageName }} and deletes its branch.
+              You can ask for a new fix later.
+            </p>
+          } @else {
+            <p [id]="uid + '-text'" i18n="@@fix.link.cancelText">
+              Qualor stops the fix for {{ target().packageName }}. You can ask for it again later.
+            </p>
+          }
+        </div>
+        <div class="dialog-actions">
+          <button
+            type="button"
+            class="btn"
+            autofocus
+            (click)="closeCancel()"
+            i18n="@@fix.link.cancelKeep"
+          >
+            Keep it
+          </button>
+          <button
+            type="submit"
+            class="btn btn-danger-solid"
+            [disabled]="busy()"
+            i18n="@@fix.link.cancelConfirm"
+          >
+            Cancel the fix
+          </button>
+        </div>
+      </form>
+    </dialog>
+  }
+}
+
+<!-- The state, the error and the actions: the same in the card and in the pill. -->
+<ng-template #body>
+  <span class="fix-state" [attr.role]="compact() ? null : 'status'">
+    @if (shown(); as f) {
+      @switch (f.state) {
+        @case ('requested') {
+          <span class="badge badge-tag" i18n="@@fix.link.requested">Waiting for the fix job</span>
+        }
+        @case ('preparing') {
+          <span class="badge badge-tag" i18n="@@fix.link.preparing">Preparing</span>
+        }
+        @case ('committing') {
+          <span class="badge badge-tag" i18n="@@fix.link.preparing">Preparing</span>
+        }
+        @case ('open') {
+          @if (mrLabel(); as label) {
+            @if (url(); as href) {
+              <a class="fix-mr" [href]="href" target="_blank" rel="noopener noreferrer"
+                >{{ label }}<q-icon name="external"
+              /></a>
+            } @else {
+              <span class="fix-mr">{{ label }}</span>
+            }
+          }
+          @if (f.refresh) {
+            <span class="badge badge-tag" i18n="@@fix.link.updating">updating</span>
+          }
+        }
+        @case ('failed') {
+          <span
+            class="fix-failure"
+            [class.badge]="compact()"
+            [class.badge-failed]="compact()"
+            [attr.title]="compact() ? failure() : null"
+            >{{ failure() }}</span
+          >
+        }
+        @case ('no_fix') {
+          <span
+            class="fix-failure"
+            [class.badge]="compact()"
+            [class.badge-tag]="compact()"
+            [attr.title]="compact() ? failure() : null"
+            >{{ failure() }}</span
+          >
+        }
+        @case ('merged') {
+          <span class="badge badge-tag" i18n="@@fix.link.merged">Merged</span>
+        }
+        @case ('fixed') {
+          <span
+            class="badge badge-tag"
+            title="The vulnerability is no longer on the main branch."
+            i18n="@@fix.link.fixed"
+            i18n-title="@@fix.link.fixedTitle"
+            >Fixed</span
+          >
+        }
+        @case ('declined') {
+          <span
+            class="badge badge-tag"
+            title="Someone closed the MR without merging it."
+            i18n="@@fix.link.declined"
+            i18n-title="@@fix.link.declinedTitle"
+            >Declined</span
+          >
+        }
+        @case ('taken_over') {
+          <span
+            class="badge badge-tag"
+            title="Someone pushed to the fix branch. Qualor leaves it alone."
+            i18n="@@fix.link.takenOver"
+            i18n-title="@@fix.link.takenOverTitle"
+            >Taken over</span
+          >
+        }
+        @case ('cancelled') {
+          <span class="badge badge-tag" i18n="@@fix.link.cancelled">Cancelled</span>
+        }
+      }
+      @if (version(); as v) {
+        <span class="fix-version" i18n="@@fix.link.version">to {{ v }}</span>
+      }
+      @if (f.state === 'open' && failure(); as why) {
+        <span
+          class="fix-failure"
+          [class.badge]="compact()"
+          [class.badge-failed]="compact()"
+          [attr.title]="compact() ? why : null"
+          >{{ why }}</span
+        >
+      }
+    }
+  </span>
+  @if (error(); as message) {
+    @if (compact()) {
+      <span class="fix-error" role="alert">{{ message }}</span>
+    } @else {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+  }
+  @if (shown()) {
+    <span class="fix-actions">
+      @if (canRetry()) {
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-label]="labels().retry"
+          [disabled]="busy()"
+          (click)="retry()"
+          i18n="@@fix.link.retry"
+        >
+          Retry
+        </button>
+      } @else if (canCreateAgain()) {
+        <button
+          type="button"
+          class="btn"
+          [attr.aria-label]="labels().createAgain"
+          [disabled]="busy()"
+          (click)="retry()"
+          i18n="@@fix.link.createAgain"
+        >
+          Create again
+        </button>
+      }
+      @if (canCancel()) {
+        <button
+          type="button"
+          class="btn-quiet danger"
+          [attr.aria-label]="labels().cancel"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="openCancel()"
+          i18n="@@fix.link.cancel"
+        >
+          Cancel
+        </button>
+      }
+    </span>
+  } @else if (canCreate()) {
+    <span class="fix-actions">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-label]="labels().create"
+        [disabled]="busy()"
+        (click)="create()"
+        i18n="@@fix.link.create"
+      >
+        Create fix MR
+      </button>
+    </span>
+  }
+</ng-template>

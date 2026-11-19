@@ -20,6 +20,9 @@ import type { ResponseBody } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
+import { FixLinkView } from '../fixes/fix-link';
+import { FixProjectState } from '../fixes/fix-project';
+import { ecosystemOfLockfile, type FixTarget, fixPending } from '../fixes/fix-request';
 import { JiraLinkView } from '../jira/jira-link';
 import { JiraProjectState } from '../jira/jira-project';
 import { refreshWhilePending } from '../jira/refresh';
@@ -84,14 +87,17 @@ export function readSnippet(raw: unknown): Snippet | null {
  * - An id that is not a UUID is "not found" without asking the server.
  * - The aside's "Jira" card shows the issue's Jira link; while it is pending, the issue is read
  *   again every 3 s, at most 40 times (R22).
+ * - A Trivy issue of main also gets a "Fix MR" card after it: the fix MR of its package, read
+ *   again the same way while it waits, is prepared or is rebuilt.
  */
 @Component({
   selector: 'q-issue-page',
-  imports: [AiPanel, DateTimePipe, Icon, JiraLinkView, LabelPipe, RouterLink],
+  imports: [AiPanel, DateTimePipe, FixLinkView, Icon, JiraLinkView, LabelPipe, RouterLink],
   templateUrl: './issue.page.html',
   styleUrl: './issue.page.css',
-  // The project's Jira state is read afresh for each visit (a mapping may have been saved since).
-  providers: [JiraProjectState],
+  // The project's Jira and fix MR state is read afresh for each visit (settings may have been saved
+  // since).
+  providers: [JiraProjectState, FixProjectState],
 })
 export class IssuePage {
   private readonly api = inject(Api);
@@ -130,6 +136,19 @@ export class IssuePage {
   });
   /** The issue, or null while loading or after an error (`value()` throws in the error state). */
   protected readonly current = computed(() => (this.issue.hasValue() ? this.issue.value() : null));
+  /**
+   * The Fix card's package: a Trivy issue of main that has a fix or may get one. The issue carries
+   * no ecosystem; the lockfile it was found in names it (empty for a file with no automatic fix:
+   * the card then shows the fix but offers no new one).
+   */
+  protected readonly fixTarget = computed<FixTarget | null>(() => {
+    const i = this.current();
+    if (!i?.vulnerability || (i.fix === null && !i.fixable)) return null;
+    return {
+      ecosystem: ecosystemOfLockfile(i.path) ?? '',
+      packageName: i.vulnerability.packageName,
+    };
+  });
   protected readonly loadError = computed(() => {
     if (!this.validId()) return problemMessage(notFound());
     const error = this.issue.error();
@@ -259,7 +278,7 @@ export class IssuePage {
     });
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
     refreshWhilePending(
-      () => this.current()?.jira?.state === 'pending',
+      () => this.current()?.jira?.state === 'pending' || fixPending(this.current()?.fix),
       () => this.issue.reload(),
       inject(DestroyRef),
     );

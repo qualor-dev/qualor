@@ -83,6 +83,9 @@
         </button>
       }
     </div>
+    @if (fixLine(); as fixes) {
+      <p class="vuln-fixes" i18n="@@vuln.fixes">{{ fixes.open }} of {{ fixes.max }} fix MRs open</p>
+    }
     <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
       <a
         routerLink="."
@@ -132,6 +135,7 @@
         [severity]="severity()"
         [priority]="a.priority"
         [exploited]="exploited()"
+        [fixView]="viewedTarget()?.isMain === true"
         [page]="pageNumber()"
         (changed)="summary.reload()"
       />
@@ -142,6 +146,7 @@
         [severity]="severity()"
         [priority]="a.priority"
         [exploited]="exploited()"
+        [fixView]="true"
         [page]="pageNumber()"
         (changed)="summary.reload()"
       />
