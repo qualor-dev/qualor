@@ -6,6 +6,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- The release pin check (`tools/release/check-pins.sh`) installs dnspython 2.9.2 (was 2.9.0), which fixes
+  GHSA-vvf4-9x63-8xvv.
+
 ## [0.15.1] - 2026-11-13
 
 ### Changed
