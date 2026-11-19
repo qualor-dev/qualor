@@ -16,6 +16,11 @@ export interface FakeNpmRegistry {
   url: string;
   /** The path (and query) of every request, in order. */
   requests: string[];
+  /**
+   * The `authorization` header of every request, in the same order as `requests`; null for a request
+   * without one. A test reads where a registry token went (B9).
+   */
+  authorizations: (string | null)[];
   close(): Promise<void>;
 }
 
@@ -67,6 +72,7 @@ export async function createFakeNpmRegistry(
   packages: Record<string, FakeNpmVersion[]>,
 ): Promise<FakeNpmRegistry> {
   const requests: string[] = [];
+  const authorizations: (string | null)[] = [];
   const packed = new Map<string, Packed>();
   let url = '';
 
@@ -125,6 +131,7 @@ export async function createFakeNpmRegistry(
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     const raw = req.url ?? '/';
     requests.push(raw);
+    authorizations.push(req.headers.authorization ?? null);
     const pathname = decodeURIComponent(new URL(raw, 'http://registry.invalid').pathname);
     const bytes = tarball(pathname);
     if (bytes !== null) {
@@ -145,6 +152,7 @@ export async function createFakeNpmRegistry(
   return {
     url,
     requests,
+    authorizations,
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());

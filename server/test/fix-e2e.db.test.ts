@@ -160,7 +160,9 @@ describe.runIf(toolInstalled('npm'))(
     let url: string;
     let checkout: string;
     let localHead: string;
-    let cliOut: CliRun;
+    let cliOut: CliRun | undefined;
+    /** The `authorization` headers the registry saw while the CLI ran (npm's requests). */
+    let cliAuthorizations: (string | null)[] = [];
     let fixId: string;
     let main: string;
     // Read by the registry on each request: a version pushed later is published from then on.
@@ -278,7 +280,9 @@ describe.runIf(toolInstalled('npm'))(
         CI_DEFAULT_BRANCH: 'main',
         CI_COMMIT_SHA: localHead,
       };
+      const seen = registry.authorizations.length;
       cliOut = await runFixCli(checkout, ['--project-key', project.key], env);
+      cliAuthorizations = registry.authorizations.slice(seen);
       expect(cliOut.code, cliOut.stderr).toBe(0);
 
       await runFixJobs(db(), deps());
@@ -286,7 +290,10 @@ describe.runIf(toolInstalled('npm'))(
       const head = fake.headOf(GITLAB_ID, BRANCH)!;
       expect(head).not.toBe(localHead);
       expect(fake.fileAt(GITLAB_ID, head, 'package.json')).toContain('"qf-a": "^1.2.6"');
-      expect(fake.fileAt(GITLAB_ID, head, 'package-lock.json')).toContain('1.2.6');
+      const lock = JSON.parse(fake.fileAt(GITLAB_ID, head, 'package-lock.json') ?? '{}') as {
+        packages?: Record<string, { version?: string }>;
+      };
+      expect(lock.packages?.['node_modules/qf-a']?.version).toBe('1.2.6');
       const commits = fake.requests.filter(
         (r) => r.method === 'POST' && /\/repository\/commits$/.test(r.path),
       );
@@ -330,12 +337,18 @@ describe.runIf(toolInstalled('npm'))(
       expect(row?.state).toBe('fixed');
     });
 
-    it('leaks no token: not in the CLI output, not in the requests the fakes saw', () => {
+    it('sends the registry token only to the registry, as npm’s authorization header; the CLI output and GitLab see no token', () => {
+      if (cliOut === undefined) throw new Error('qualor fix did not run: see the first test');
+      // npm sent the job's registry token where it belongs (B9 keeps the job's own registry login).
+      expect(cliAuthorizations).toContain(`Bearer ${REGISTRY_TOKEN}`);
+      // The Qualor token never reached the registry, in a header or a path.
+      expect(cliAuthorizations.filter((a) => a?.includes(project.token) === true)).toEqual([]);
+      expect(registry.requests.join('\n')).not.toContain(project.token);
+      expect(registry.requests.join('\n')).not.toContain(REGISTRY_TOKEN);
       for (const secret of [project.token, REGISTRY_TOKEN]) {
         expect(cliOut.stderr).not.toContain(secret);
         expect(cliOut.stdout).not.toContain(secret);
         expect(JSON.stringify(fake.requests)).not.toContain(secret);
-        expect(registry.requests.join('\n')).not.toContain(secret);
       }
     });
   },
