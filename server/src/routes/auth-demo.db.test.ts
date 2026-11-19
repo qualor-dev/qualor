@@ -223,4 +223,33 @@ describe('the demo sign-in (QUALOR_DEMO_USER)', () => {
       expect(res.statusCode).toBe(201);
     });
   });
+
+  describe('with QUALOR_DEMO_USER in another letter case than the account', () => {
+    let ctx: TestContext;
+    beforeAll(async () => {
+      ctx = await createTestContext({ config: { demoUser: 'GUEST' } });
+    });
+    afterAll(async () => {
+      await ctx.close();
+    });
+
+    it('still treats the account as the demo: read-only, and /auth/me says demo', async () => {
+      const guest = await createUser(ctx, { username: 'guest' });
+      const org = await organizationId(ctx, 'default');
+      const session = await login(ctx, 'guest', guest.password);
+      const me = await ctx.app.inject({
+        method: 'GET',
+        url: '/api/v0/auth/me',
+        headers: session.headers,
+      });
+      expect(me.json()).toMatchObject({ demo: true });
+      const res = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/v0/projects',
+        headers: session.headers,
+        payload: { organizationId: org, key: 'demo-made', name: 'demo-made' },
+      });
+      expect([res.statusCode, res.json().code]).toEqual([403, 'DEMO_READ_ONLY']);
+    });
+  });
 });

@@ -13,8 +13,9 @@ import type { UserRow } from './sessions';
 /** A demo session never outlives a day, whatever QUALOR_SESSION_TTL_HOURS says. */
 export const DEMO_SESSION_MAX_HOURS = 24;
 
+/** Names compare ignoring letter case, as the database does (the username column is citext). */
 export function isDemoUser(demoUser: string | null, user: Pick<UserRow, 'username'>): boolean {
-  return demoUser !== null && user.username === demoUser;
+  return demoUser !== null && user.username.toLowerCase() === demoUser.toLowerCase();
 }
 
 /**

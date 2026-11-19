@@ -589,6 +589,9 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
         const changes: Partial<typeof users.$inferInsert> = {};
         if (body.username !== undefined) {
           // the name sent unchanged is no rename (letter case counts: it is the stored spelling).
+          // It still goes into `changes`: a PATCH of only that name would otherwise make an empty
+          // SET, which drizzle refuses (a 500); the UPDATE then sets the same value and the audit
+          // diff below lists nothing.
           if (body.username !== existing.username) {
             assertDemoNameKept(deps.config.demoUser, existing.username, body.username);
           }

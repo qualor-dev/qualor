@@ -56,6 +56,13 @@ async function usernameOf(ctx: TestContext, id: string): Promise<string | undefi
   return row?.username;
 }
 
+/** The user.updated events recorded for a user. */
+const updatedEvents = (ctx: TestContext, id: string) =>
+  ctx.db
+    .select()
+    .from(auditEvents)
+    .where(and(eq(auditEvents.action, 'user.updated'), eq(auditEvents.targetId, id)));
+
 describe('PATCH /users/{id} with username (0.16 issue #37)', () => {
   it('rename: the new name signs in and the old one does not, a session stays, one user.updated lists the change', async () => {
     await withServer({}, async (ctx, admin) => {
@@ -137,6 +144,7 @@ describe('PATCH /users/{id} with username (0.16 issue #37)', () => {
       // the demo account's name sent unchanged is no rename, alone or with a display name.
       const unchanged = await rename(ctx, admin.headers, guest.id, 'guest');
       expect([unchanged.statusCode, unchanged.json().username]).toEqual([200, 'guest']);
+      expect(await updatedEvents(ctx, guest.id)).toHaveLength(0);
       const same = await ctx.app.inject({
         method: 'PATCH',
         url: `/api/v0/users/${guest.id}`,
@@ -144,8 +152,24 @@ describe('PATCH /users/{id} with username (0.16 issue #37)', () => {
         payload: { username: 'guest', displayName: 'Guest' },
       });
       expect([same.statusCode, same.json().displayName]).toEqual([200, 'Guest']);
+      // only the display name is listed: the unchanged username is no change.
+      const [event] = await updatedEvents(ctx, guest.id);
+      expect(event?.details).toMatchObject({
+        changes: [{ field: 'displayName', to: 'Guest' }],
+      });
       const res = await rename(ctx, admin.headers, bob.id, 'carol');
       expect([res.statusCode, res.json().username]).toEqual([200, 'carol']);
+    });
+  });
+
+  it('demo user: the demo account cannot change letter case either (guest to Guest, 409 DEMO_USER)', async () => {
+    await withServer({ demoUser: 'guest' }, async (ctx, admin) => {
+      const guest = await createUser(ctx, { username: 'guest' });
+      expect(problem(await rename(ctx, admin.headers, guest.id, 'Guest'))).toEqual([
+        409,
+        'DEMO_USER',
+      ]);
+      expect(await usernameOf(ctx, guest.id)).toBe('guest');
     });
   });
 
