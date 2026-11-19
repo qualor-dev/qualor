@@ -951,6 +951,27 @@ describe('SAML sign-in (sso-scim.md §6, §7)', () => {
     expect(withKey).not.toContain('PRIVATE KEY');
   });
 
+  it("serves a draft's SP metadata, which the IdP may import before Qualor has its values", async () => {
+    const draft = (
+      await createConnection(connectionDeps(ctx), SYSTEM_ACTOR, {
+        name: 'Draft metadata',
+        protocol: 'saml',
+        saml: {},
+      })
+    ).id;
+    try {
+      const urls = ssoUrls(PUBLIC_URL, draft);
+      const xml = spMetadata(
+        (await loadConnection(ctx.db, draft, ctx.config.secretKey))!,
+        PUBLIC_URL,
+      );
+      expect(xml).toContain(`entityID="${urls.entityId}"`);
+      expect(xml).toContain(`Location="${urls.acsUrl}"`);
+    } finally {
+      await ctx.db.delete(ssoConnections).where(eq(ssoConnections.id, draft));
+    }
+  });
+
   it('refuses a form body that is not urlencoded (415), and a body over 512 KiB (413)', async () => {
     expect(
       (
