@@ -583,45 +583,9 @@ async function main(): Promise<void> {
   // rbac-audit.md §15: each scheduled plugin queue has its next run waiting (one across replicas).
   await ensurePluginSchedules(database.db, plugins, 'now');
   await app.listen({ host: config.host, port: config.port });
-  updates?.start();
-  // Never fatal: the worker's afterReap re-creates each run within 30 s (the vulndb worker's, the
-  // vulnerability database check's).
-  await scheduleAtBoot(logger, 'telemetry', 'telemetry could not be scheduled', async () => {
-    if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
-    else await cancelTelemetry(database.db);
-  });
-  await scheduleAtBoot(logger, 'licence', 'the licence expiry check could not be scheduled', () =>
-    scheduleLicenseAlertAtBoot(database.db),
-  );
-  await scheduleAtBoot(
-    logger,
-    'vulnerabilities',
-    'the vulnerability digest could not be scheduled',
-    () => scheduleVulnerabilityDigestAtBoot(database.db),
-  );
-  await scheduleAtBoot(
-    logger,
-    'vulndb',
-    'the vulnerability database check could not be scheduled',
-    () => scheduleVulndbAtBoot(database.db),
-  );
-  // A14: the first start after migration 0028 matches every package again (Trivy's vendor ids).
-  await scheduleAtBoot(
-    logger,
-    'vulnerabilities',
-    'the re-check after the upgrade could not be queued',
-    () => queueRematchIfCleared(database.db, logger),
-  );
-  await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
-    scheduleDigestAtBoot(database.db),
-  );
-  await scheduleAtBoot(logger, 'jira', 'the Jira passes could not be scheduled', () =>
-    ensureJiraSyncScheduled(database.db),
-  );
-  await scheduleAtBoot(logger, 'fixes', 'the fix passes could not be scheduled', () =>
-    ensureFixSyncScheduled(database.db),
-  );
-
+  // The stop handlers come right after listening, before the boot schedules its passes: a stop
+  // that arrives meanwhile (a pod restarted as soon as it started) still ends gracefully, exit 0,
+  // instead of Node's default death by signal.
   const shutdown = async (signal: string): Promise<void> => {
     if (stopping) return;
     stopping = true;
@@ -671,6 +635,44 @@ async function main(): Promise<void> {
       if (message === 'shutdown') void shutdown('ipc');
     });
   }
+  updates?.start();
+  // Never fatal: the worker's afterReap re-creates each run within 30 s (the vulndb worker's, the
+  // vulnerability database check's).
+  await scheduleAtBoot(logger, 'telemetry', 'telemetry could not be scheduled', async () => {
+    if (config.telemetry.enabled) await scheduleTelemetryAtBoot(database.db);
+    else await cancelTelemetry(database.db);
+  });
+  await scheduleAtBoot(logger, 'licence', 'the licence expiry check could not be scheduled', () =>
+    scheduleLicenseAlertAtBoot(database.db),
+  );
+  await scheduleAtBoot(
+    logger,
+    'vulnerabilities',
+    'the vulnerability digest could not be scheduled',
+    () => scheduleVulnerabilityDigestAtBoot(database.db),
+  );
+  await scheduleAtBoot(
+    logger,
+    'vulndb',
+    'the vulnerability database check could not be scheduled',
+    () => scheduleVulndbAtBoot(database.db),
+  );
+  // A14: the first start after migration 0028 matches every package again (Trivy's vendor ids).
+  await scheduleAtBoot(
+    logger,
+    'vulnerabilities',
+    'the re-check after the upgrade could not be queued',
+    () => queueRematchIfCleared(database.db, logger),
+  );
+  await scheduleAtBoot(logger, 'digest', 'the weekly digest could not be scheduled', () =>
+    scheduleDigestAtBoot(database.db),
+  );
+  await scheduleAtBoot(logger, 'jira', 'the Jira passes could not be scheduled', () =>
+    ensureJiraSyncScheduled(database.db),
+  );
+  await scheduleAtBoot(logger, 'fixes', 'the fix passes could not be scheduled', () =>
+    ensureFixSyncScheduled(database.db),
+  );
 }
 
 main().catch((err: unknown) => {

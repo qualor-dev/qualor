@@ -130,9 +130,43 @@ describe('server bundle boot (main.ts)', () => {
     const stoppedAt = Date.now();
     if (process.platform === 'win32') child.send('shutdown');
     else child.kill('SIGTERM');
-    expect(await exited(child)).toBe(0);
+    const code = await exited(child);
+    // The signal tells a death by signal (no handler yet) from a crash on the way out.
+    expect({ code, signal: child.signalCode }).toEqual({ code: 0, signal: null });
     expect(Date.now() - stoppedAt).toBeLessThan(5_000);
     expect(stderr).toBe('');
+  }, 60_000);
+
+  // A stop that comes as soon as the server listens, while the boot still schedules its passes
+  // (Kubernetes restarting a pod that just started): the same graceful exit, not death by signal.
+  it('shuts down cleanly when stopped right after it starts listening', async () => {
+    const early = spawn(process.execPath, [MAIN], {
+      env: {
+        PATH: process.env.PATH,
+        SYSTEMROOT: process.env.SYSTEMROOT,
+        DATABASE_URL: database.url,
+        QUALOR_TELEMETRY: 'false',
+        QUALOR_SECRET_KEY: 'smoke-test-secret-key-that-is-at-least-32-characters',
+        QUALOR_BOOTSTRAP_ADMIN_PASSWORD: ADMIN_PASSWORD,
+        HOST: '127.0.0.1',
+        PORT: '0',
+      },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    });
+    try {
+      await waitForLine(early, /Server listening at http:[/][/]127[.]0[.]0[.]1:[0-9]+/);
+      if (process.platform === 'win32') early.send('shutdown');
+      else early.kill('SIGTERM');
+      const code = await Promise.race([
+        exited(early),
+        new Promise<'still running'>((resolve) =>
+          setTimeout(() => resolve('still running'), 15_000),
+        ),
+      ]);
+      expect({ code, signal: early.signalCode }).toEqual({ code: 0, signal: null });
+    } finally {
+      if (early.exitCode === null && early.signalCode === null) early.kill('SIGKILL');
+    }
   }, 60_000);
 });
 

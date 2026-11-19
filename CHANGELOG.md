@@ -142,6 +142,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
   ([Microsoft Entra ID](docs/guide/sso-and-scim.md#microsoft-entra-id)).
 - The user menu no longer offers **Change password** to an account without a password (single
   sign-on only), and `/change-password` says why instead of showing a form.
+- A server stopped right after it started, such as a pod restarted at once, now shuts down
+  cleanly. Before, the stop could kill it before its workers and database were closed.
 
 ### Security
 
