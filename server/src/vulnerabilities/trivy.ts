@@ -236,6 +236,136 @@ const tooLarge = (size: number, cap: number): TrivyRun => ({
   message: `Trivy output is over the ${cap} byte cap (${size} bytes so far)`,
 });
 
+/** How one Trivy process ended. */
+type TrivyExit =
+  | { kind: 'exit'; code: number | null; stderr: string }
+  | { kind: 'spawn-error'; error: NodeJS.ErrnoException }
+  | { kind: 'timeout' }
+  | { kind: 'aborted' }
+  | { kind: 'too-large'; size: number };
+
+const trivyAborted = (): TrivyRun => ({
+  ok: false,
+  code: 'ABORTED',
+  message: 'Trivy was stopped: the server is stopping',
+});
+
+/** Spawns Trivy in `work` and waits for its end, its timeout, the abort or an output over the cap. */
+function runTrivyProcess(
+  program: string,
+  args: string[],
+  work: string,
+  output: string,
+  options: TrivyRunnerOptions,
+  signal: AbortSignal | undefined,
+): Promise<TrivyExit> {
+  const env: NodeJS.ProcessEnv = { HOME: work, TMPDIR: work };
+  if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
+  return new Promise<TrivyExit>((resolve) => {
+    let stderr = '';
+    let done = false;
+    let onAbort: (() => void) | undefined;
+    const timers: NodeJS.Timeout[] = [];
+    const finish = (r: Parameters<typeof resolve>[0]) => {
+      if (done) return;
+      done = true;
+      for (const t of timers) clearTimeout(t);
+      if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort);
+      resolve(r);
+    };
+    let child: ChildProcessByStdio<null, null, Readable>;
+    try {
+      child = spawn(program, args, {
+        env,
+        cwd: work,
+        stdio: ['ignore', 'ignore', 'pipe'],
+        detached: process.platform !== 'win32',
+        windowsHide: true,
+      });
+    } catch (e) {
+      // spawn throws synchronously for an argument it cannot pass (a NUL byte).
+      finish({ kind: 'spawn-error', error: e as NodeJS.ErrnoException });
+      return;
+    }
+    timers.push(
+      setTimeout(() => {
+        killTree(child.pid);
+        finish({ kind: 'timeout' });
+      }, options.timeoutMs),
+    );
+    // The cap is checked while Trivy runs: a runaway output is killed, not waited for.
+    const onOutputStat = (s: { size: number }): void => {
+      if (done || s.size <= options.maxOutputBytes) return;
+      killTree(child.pid);
+      finish({ kind: 'too-large', size: s.size });
+    };
+    const poll = setInterval(() => {
+      stat(output).then(onOutputStat, () => undefined);
+    }, OUTPUT_POLL_MS);
+    timers.push(poll);
+    if (signal !== undefined) {
+      onAbort = () => {
+        killTree(child.pid);
+        finish({ kind: 'aborted' });
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      // Aborted since the first look (while the work directory was made): no event will come.
+      if (signal.aborted) onAbort();
+    }
+    child.stderr.on('data', (c: Buffer) => {
+      if (stderr.length < 4000) stderr += c.toString('utf8');
+    });
+    child.on('error', (error: NodeJS.ErrnoException) => finish({ kind: 'spawn-error', error }));
+    child.on('close', (code) => finish({ kind: 'exit', code, stderr }));
+  });
+}
+
+/** The failure a process that did not end cleanly (exit code 0) stands for. */
+function exitFailure(exit: TrivyExit, options: TrivyRunnerOptions): TrivyRun {
+  if (exit.kind === 'aborted') return trivyAborted();
+  if (exit.kind === 'timeout') {
+    return { ok: false, code: 'TIMEOUT', message: `Trivy ran longer than ${options.timeoutMs} ms` };
+  }
+  if (exit.kind === 'too-large') return tooLarge(exit.size, options.maxOutputBytes);
+  if (exit.kind === 'spawn-error') {
+    if (exit.error.code === 'EACCES') {
+      return { ok: false, code: 'FAILED', message: 'Trivy is not executable' };
+    }
+    return {
+      ok: false,
+      code: exit.error.code === 'ENOENT' ? 'NOT_INSTALLED' : 'FAILED',
+      message: `cannot start Trivy: ${exit.error.message}`,
+    };
+  }
+  return {
+    ok: false,
+    code: 'FAILED',
+    message: `Trivy exited with ${String(exit.code)}: ${exit.stderr.trim().slice(0, 500)}`,
+    exitCode: exit.code,
+    stderr: exit.stderr,
+  };
+}
+
+/** The matches in the output file of a Trivy that exited with 0. */
+async function readTrivyOutput(output: string, maxBytes: number): Promise<TrivyRun> {
+  let size: number;
+  try {
+    size = (await stat(output)).size;
+  } catch {
+    return { ok: false, code: 'BAD_OUTPUT', message: 'Trivy wrote no output file' };
+  }
+  if (size > maxBytes) return tooLarge(size, maxBytes);
+  try {
+    return { ok: true, matches: parseTrivyOutput(await readFile(output, 'utf8')) };
+  } catch (e) {
+    return {
+      ok: false,
+      code: 'BAD_OUTPUT',
+      message: `unreadable Trivy output: ${(e as Error).message}`,
+    };
+  }
+}
+
 export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
   const [program, ...lead] = options.command;
   return {
@@ -243,12 +373,7 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
       if (program === undefined) {
         return { ok: false, code: 'NOT_INSTALLED', message: 'no Trivy command configured' };
       }
-      const aborted: TrivyRun = {
-        ok: false,
-        code: 'ABORTED',
-        message: 'Trivy was stopped: the server is stopping',
-      };
-      if (signal?.aborted === true) return aborted;
+      if (signal?.aborted === true) return trivyAborted();
       const work = path.join(options.workDir, `work-${randomBytes(6).toString('hex')}`);
       try {
         await mkdir(work, { recursive: true });
@@ -264,119 +389,9 @@ export function createTrivyRunner(options: TrivyRunnerOptions): TrivyRunner {
         const output = path.join(work, 'out.jsonl');
         await writeFile(input, sbomJson);
         const args = [...lead, ...trivySbomArgs(cacheDir, output, input)];
-        const env: NodeJS.ProcessEnv = { HOME: work, TMPDIR: work };
-        if (process.env.PATH !== undefined) env.PATH = process.env.PATH;
-        const exit = await new Promise<
-          | { kind: 'exit'; code: number | null; stderr: string }
-          | { kind: 'spawn-error'; error: NodeJS.ErrnoException }
-          | { kind: 'timeout' }
-          | { kind: 'aborted' }
-          | { kind: 'too-large'; size: number }
-        >((resolve) => {
-          let stderr = '';
-          let done = false;
-          let onAbort: (() => void) | undefined;
-          const timers: NodeJS.Timeout[] = [];
-          const finish = (r: Parameters<typeof resolve>[0]) => {
-            if (done) return;
-            done = true;
-            for (const t of timers) clearTimeout(t);
-            if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort);
-            resolve(r);
-          };
-          let child: ChildProcessByStdio<null, null, Readable>;
-          try {
-            child = spawn(program, args, {
-              env,
-              cwd: work,
-              stdio: ['ignore', 'ignore', 'pipe'],
-              detached: process.platform !== 'win32',
-              windowsHide: true,
-            });
-          } catch (e) {
-            // spawn throws synchronously for an argument it cannot pass (a NUL byte).
-            finish({ kind: 'spawn-error', error: e as NodeJS.ErrnoException });
-            return;
-          }
-          timers.push(
-            setTimeout(() => {
-              killTree(child.pid);
-              finish({ kind: 'timeout' });
-            }, options.timeoutMs),
-          );
-          // The cap is checked while Trivy runs: a runaway output is killed, not waited for.
-          const poll = setInterval(() => {
-            stat(output).then(
-              (s) => {
-                if (done || s.size <= options.maxOutputBytes) return;
-                killTree(child.pid);
-                finish({ kind: 'too-large', size: s.size });
-              },
-              () => undefined,
-            );
-          }, OUTPUT_POLL_MS);
-          timers.push(poll);
-          if (signal !== undefined) {
-            onAbort = () => {
-              killTree(child.pid);
-              finish({ kind: 'aborted' });
-            };
-            signal.addEventListener('abort', onAbort, { once: true });
-            // Aborted since the first look (while the work directory was made): no event will come.
-            if (signal.aborted) onAbort();
-          }
-          child.stderr.on('data', (c: Buffer) => {
-            if (stderr.length < 4000) stderr += c.toString('utf8');
-          });
-          child.on('error', (error: NodeJS.ErrnoException) =>
-            finish({ kind: 'spawn-error', error }),
-          );
-          child.on('close', (code) => finish({ kind: 'exit', code, stderr }));
-        });
-        if (exit.kind === 'aborted') return aborted;
-        if (exit.kind === 'timeout') {
-          return {
-            ok: false,
-            code: 'TIMEOUT',
-            message: `Trivy ran longer than ${options.timeoutMs} ms`,
-          };
-        }
-        if (exit.kind === 'too-large') return tooLarge(exit.size, options.maxOutputBytes);
-        if (exit.kind === 'spawn-error') {
-          if (exit.error.code === 'EACCES') {
-            return { ok: false, code: 'FAILED', message: 'Trivy is not executable' };
-          }
-          return {
-            ok: false,
-            code: exit.error.code === 'ENOENT' ? 'NOT_INSTALLED' : 'FAILED',
-            message: `cannot start Trivy: ${exit.error.message}`,
-          };
-        }
-        if (exit.code !== 0) {
-          return {
-            ok: false,
-            code: 'FAILED',
-            message: `Trivy exited with ${String(exit.code)}: ${exit.stderr.trim().slice(0, 500)}`,
-            exitCode: exit.code,
-            stderr: exit.stderr,
-          };
-        }
-        let size: number;
-        try {
-          size = (await stat(output)).size;
-        } catch {
-          return { ok: false, code: 'BAD_OUTPUT', message: 'Trivy wrote no output file' };
-        }
-        if (size > options.maxOutputBytes) return tooLarge(size, options.maxOutputBytes);
-        try {
-          return { ok: true, matches: parseTrivyOutput(await readFile(output, 'utf8')) };
-        } catch (e) {
-          return {
-            ok: false,
-            code: 'BAD_OUTPUT',
-            message: `unreadable Trivy output: ${(e as Error).message}`,
-          };
-        }
+        const exit = await runTrivyProcess(program, args, work, output, options, signal);
+        if (exit.kind !== 'exit' || exit.code !== 0) return exitFailure(exit, options);
+        return await readTrivyOutput(output, options.maxOutputBytes);
       } finally {
         // Retried: on Windows a killed Trivy holds its working directory for a moment.
         await rm(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(
