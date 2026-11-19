@@ -1386,7 +1386,7 @@
     "vuln.header.noDate": " Vulnerability data from an uploaded file ",
     "vuln.header.checked": " Vulnerability data from {$INTERPOLATION} · checked {$INTERPOLATION_1} ",
     "vuln.header": " Vulnerability data from {$INTERPOLATION} ",
-    "vuln.fixes": "{$INTERPOLATION} of {$INTERPOLATION_1} fix MRs in progress",
+    "vuln.fixes": " {$INTERPOLATION} of {$INTERPOLATION_1} fix MRs in progress ",
     "vuln.views": "View",
     "vuln.view.version": "By version",
     "vuln.view.vulnerability": "By vulnerability",
