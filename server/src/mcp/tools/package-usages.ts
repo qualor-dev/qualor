@@ -31,10 +31,11 @@ function usageLine(r: UsageRow): string {
   const main = r.target.main ? ' (main)' : '';
   const path = r.path === '' ? '' : `, ${r.path}`;
   // Null: not known now (R22: not checked, monitoring off, not tracked, or a stale check).
-  const vulnerabilities =
-    r.vulnerabilities === null
-      ? 'not checked'
-      : `${r.vulnerabilities} open ${r.vulnerabilities === 1 ? 'vulnerability' : 'vulnerabilities'}`;
+  let vulnerabilities = 'not checked';
+  if (r.vulnerabilities !== null) {
+    const noun = r.vulnerabilities === 1 ? 'vulnerability' : 'vulnerabilities';
+    vulnerabilities = `${r.vulnerabilities} open ${noun}`;
+  }
   return `${r.name}@${r.version} (${r.ecosystem}) in ${r.project.key}, ${r.target.kind} ${r.target.name}${main}${path}: ${vulnerabilities}`;
 }
 
