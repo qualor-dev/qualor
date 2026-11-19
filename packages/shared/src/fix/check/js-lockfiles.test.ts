@@ -1070,22 +1070,48 @@ describe('fix round 1: the lockfile keeps the base’s format (C4)', () => {
 });
 
 describe('fix round 1: YAML in linear time (I1)', () => {
-  const big = (qfA: string) => {
+  const big = (qfA: string, count: number) => {
     const packages: string[] = [];
     const snapshots: string[] = [];
-    for (let i = 0; i < 20_000; i++) {
-      packages.push(`\n  pkg-${i}@1.0.${i}:\n    resolution: {integrity: sha512-p${i}}\n`);
-      snapshots.push(`\n  pkg-${i}@1.0.${i}:\n    dependencies:\n      qf-a: ${qfA}\n`);
+    for (let i = 0; i < count; i++) {
+      packages.push(`
+  pkg-${i}@1.0.${i}:
+    resolution: {integrity: sha512-p${i}}
+`);
+      snapshots.push(`
+  pkg-${i}@1.0.${i}:
+    dependencies:
+      qf-a: ${qfA}
+`);
     }
     return pnpmV9(qfA, packages.join(''), snapshots.join(''));
   };
 
-  it('checks a pnpm-lock.yaml of 20 000 packages in well within 15 s', { timeout: 60_000 }, () => {
-    const [base, next] = [big('1.2.5'), big('1.2.6')];
-    const started = performance.now();
-    expect(check('pnpm-lock.yaml', base, next)).toEqual({ ok: true });
-    expect(performance.now() - started).toBeLessThan(PERF_BUDGET_MS);
-  });
+  /** The best of two runs of the check on `count` packages, in ms: a load spike hits one run. */
+  const bestOfTwo = (count: number) => {
+    const [base, next] = [big('1.2.5', count), big('1.2.6', count)];
+    let best = Infinity;
+    for (let run = 0; run < 2; run++) {
+      const started = performance.now();
+      expect(check('pnpm-lock.yaml', base, next)).toEqual({ ok: true });
+      best = Math.min(best, performance.now() - started);
+    }
+    return best;
+  };
+
+  // Growth, not a fixed time: linear code takes about 4 times as long for 4 times the packages,
+  // a quadratic one about 16 times. The ratio holds under machine load, a fixed time does not.
+  it(
+    'grows linearly: 4× the packages (20 000) takes under 8× the time',
+    { timeout: 60_000 },
+    () => {
+      const small = bestOfTwo(5000);
+      const large = bestOfTwo(20_000);
+      // The floor keeps timer noise on a tiny small run from inflating the ratio.
+      expect(large / Math.max(small, 50)).toBeLessThan(8);
+      expect(large).toBeLessThan(PERF_BUDGET_MS);
+    },
+  );
 
   it('still refuses a duplicate key, also one written once as a number', () => {
     const dup = pnpmV9('1.2.6') + '\n  qf-a@1.2.6: {}\n';
