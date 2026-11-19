@@ -38,6 +38,9 @@ export interface UpsertVersionResult {
   previous: VersionSource | null;
 }
 
+/** What a write returns: the version as written, or why the existing one refused it. */
+export type UpsertOutcome = UpsertVersionResult | 'stale' | 'kept' | 'taken';
+
 /**
  * Precedence between the sources of a version (spec §6.6): a tag scan is the release, an uploaded
  * SBOM is the user's explicit act, and a branch's `project.version` only a hint.
@@ -78,12 +81,43 @@ export async function upsertVersion(
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
-): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'>;
+): Promise<UpsertOutcome>;
 export async function upsertVersion(
   tx: Executor,
   input: UpsertVersionInput,
-): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'> {
+): Promise<UpsertOutcome> {
   return upsertOnce(tx, input, false);
+}
+
+/** Why the existing version refuses this write (a stronger source, or a newer analysis), if it does. */
+function refusalOf(
+  existing: { analyzedAt: Date; source: VersionSource } | undefined,
+  input: UpsertVersionInput,
+): 'stale' | 'kept' | 'taken' | undefined {
+  if (existing && RANK[existing.source] > RANK[input.source]) {
+    return input.source === 'sbom' ? 'taken' : 'kept';
+  }
+  if (
+    existing?.source === input.source &&
+    input.source !== 'sbom' &&
+    existing.analyzedAt.getTime() > input.analyzedAt.getTime()
+  ) {
+    return 'stale';
+  }
+  return undefined;
+}
+
+/** The columns that say where a version comes from: its source, tag and SBOM facts. */
+function ownerOf(input: UpsertVersionInput) {
+  const sbom = input.source === 'sbom' ? input.sbom : undefined;
+  return {
+    source: input.source,
+    tag: input.tag,
+    osFamily: sbom?.distribution?.family ?? null,
+    osVersion: sbom?.distribution?.version ?? null,
+    sbomFormat: sbom?.format ?? null,
+    sbomSubject: sbom?.subject ?? null,
+  };
 }
 
 /**
@@ -95,7 +129,7 @@ async function upsertOnce(
   tx: Executor,
   input: UpsertVersionInput,
   reread: boolean,
-): Promise<UpsertVersionResult | 'stale' | 'kept' | 'taken'> {
+): Promise<UpsertOutcome> {
   // Locked: the version judged here is the one the write below meets.
   const [existing] = await tx
     .select({ analyzedAt: projectVersions.analyzedAt, source: projectVersions.source })
@@ -104,27 +138,11 @@ async function upsertOnce(
       and(eq(projectVersions.projectId, input.projectId), eq(projectVersions.label, input.label)),
     )
     .for('no key update');
-  if (existing && RANK[existing.source] > RANK[input.source]) {
-    return input.source === 'sbom' ? 'taken' : 'kept';
-  }
+  const refusal = refusalOf(existing, input);
+  if (refusal !== undefined) return refusal;
   const takesOver = existing !== undefined && RANK[input.source] > RANK[existing.source];
-  if (
-    existing?.source === input.source &&
-    input.source !== 'sbom' &&
-    existing.analyzedAt.getTime() > input.analyzedAt.getTime()
-  ) {
-    return 'stale';
-  }
   const { inventory } = input;
-  const sbom = input.source === 'sbom' ? input.sbom : undefined;
-  const owner = {
-    source: input.source,
-    tag: input.tag,
-    osFamily: sbom?.distribution?.family ?? null,
-    osVersion: sbom?.distribution?.version ?? null,
-    sbomFormat: sbom?.format ?? null,
-    sbomSubject: sbom?.subject ?? null,
-  };
+  const owner = ownerOf(input);
   const snapshot = {
     analysisId: input.analysisId,
     analyzedAt: input.analyzedAt,
@@ -132,6 +150,7 @@ async function upsertOnce(
     // Even an empty inventory counts: the version was scanned and has no packages.
     ...(inventory && { hasInventory: true }),
   };
+  const excludedRank = rankOf(sql`excluded.source`);
   const [version] = await tx
     .insert(projectVersions)
     .values({ projectId: input.projectId, label: input.label, ...owner, ...snapshot })
@@ -148,9 +167,7 @@ async function upsertOnce(
       // Under the row's lock. The version judged above passes the precedence rule again. One
       // that a concurrent writer created and committed after the read is left as it is (though
       // locked now) and judged below, so that no rank, staleness or previous source is missed.
-      setWhere: existing
-        ? sql`${rankOf(projectVersions.source)} <= ${rankOf(sql`excluded.source`)}`
-        : sql`false`,
+      setWhere: existing ? sql`${rankOf(projectVersions.source)} <= ${excludedRank}` : sql`false`,
     })
     .returning();
   if (version === undefined) {
