@@ -52,7 +52,7 @@ Check out each release tag and scan it, as in [A local scan](./other-ci.md#a-loc
 for tag in v2.1.4 v2.2.3 v2.3.1; do
   git checkout --quiet "$tag"
   docker run --rm -v "$PWD":/src -w /src -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY \
-    qualor/scanner:0.15 scan --tag "$tag"
+    qualor/scanner:0.16 scan --tag "$tag"
 done
 ```
 

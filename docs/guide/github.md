@@ -28,8 +28,8 @@ In the repository or the organisation, open **Settings → Secrets and variables
 | Secret | `QUALOR_TOKEN` | the token |
 
 To run [without the Action](#without-the-action-your-own-image-or-a-mirror), also add the variable
-`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.15` or `qualor/scanner:0.15.1`. For C#, add
-`QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.15` instead.
+`QUALOR_SCANNER_IMAGE`, such as `qualor/scanner:0.16` or `qualor/scanner:0.16.0`. For C#, add
+`QUALOR_SCANNER_DOTNET_IMAGE` with `qualor/scanner-dotnet:0.16` instead.
 
 ## 2. The workflow
 
@@ -57,7 +57,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       # Install dependencies (JS/TS, Go) or build (Java) here, before the scan.
-      - uses: qualor-dev/scan-action@v0.15
+      - uses: qualor-dev/scan-action@v0.16
         with:
           server-url: ${{ vars.QUALOR_URL }}
           token: ${{ secrets.QUALOR_TOKEN }}
@@ -81,8 +81,8 @@ write into the checkout: an option that writes a file, such as `--output`, needs
 
 On a tag push, the scan records a [version](./releases.md) instead, and applies no quality gate.
 
-The Action's version follows Qualor's. `@v0.15.1` runs `qualor/scanner:0.15.1`, `@v0.15` follows the
-0.15 patch releases, and `@v0` follows the latest release. Use the version of your Qualor server, or
+The Action's version follows Qualor's. `@v0.16.0` runs `qualor/scanner:0.16.0`, `@v0.16` follows the
+0.16 patch releases, and `@v0` follows the latest release. Use the version of your Qualor server, or
 pin a full version to control every update.
 
 What the checkout settings do:
@@ -115,7 +115,7 @@ around it. The `mkdir` step lets the Action's user write the directory.
           key: qualor-trivy-db-${{ github.run_id }}
           restore-keys: qualor-trivy-db-
       - run: mkdir -p .qualor/trivy && chmod 0777 .qualor/trivy
-      - uses: qualor-dev/scan-action@v0.15
+      - uses: qualor-dev/scan-action@v0.16
         with:
           server-url: ${{ vars.QUALOR_URL }}
           token: ${{ secrets.QUALOR_TOKEN }}
@@ -137,7 +137,7 @@ Action: it runs `qualor dotnet begin`, your build and `qualor dotnet end` in the
 `qualor/scanner-dotnet` image.
 
 ```yaml
-- uses: qualor-dev/scan-action/dotnet@v0.15
+- uses: qualor-dev/scan-action/dotnet@v0.16
   with:
     server-url: ${{ vars.QUALOR_URL }}
     token: ${{ secrets.QUALOR_TOKEN }}
@@ -382,7 +382,7 @@ new file, `.github/workflows/qualor.yml`, and leaves your other workflows alone:
 
 - The workflow is the one from [The workflow](#2-the-workflow), with your Qualor address and the
   project's key written in. The Action is pinned to the server's minor version, such as
-  `qualor-dev/scan-action@v0.15`.
+  `qualor-dev/scan-action@v0.16`.
 - A C# repository gets the workflow of `integrations/github/qualor-dotnet.yml`, with the image tag
   and the project's key written in. The token is in the `qualor dotnet end` step only. Check its build command before you
   merge.

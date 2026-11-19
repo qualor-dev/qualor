@@ -6,14 +6,172 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-19
+
+### Added
+
+- Fix merge requests, in every edition: Qualor opens a merge request that bumps a vulnerable
+  dependency, and your package manager regenerates the lockfile. It opens one per package, for npm,
+  pnpm, Yarn, Go, Maven, uv and Poetry ([Fix merge requests](docs/guide/fix-merge-requests.md)).
+- **Create fix MR** on a row of the **Vulnerabilities** tab, or the **Fix MR** card of a Trivy
+  issue, requests a fix. **Request fix MRs for new vulnerabilities** requests them by itself; it is
+  off by default ([The automatic mode](docs/guide/fix-merge-requests.md#the-automatic-mode)).
+- **Allow fix MRs** on the connection and **Project → Settings → Fix MRs** start off. The token
+  needs GitLab's `api` scope and Developer role, or the GitHub App's `contents: write` and
+  `pull_requests: write` ([Turning it on](docs/guide/fix-merge-requests.md#turning-it-on)).
+- The fix job runs `qualor fix` in your CI, with your package managers and registry access. Add it
+  with the GitLab component's `fix: true`, with `qualor-dev/scan-action/fix@v0.16`, or with the
+  scanner image's `qualor` binary ([The fix job](docs/guide/fix-merge-requests.md#the-fix-job)).
+- The server never runs a package manager. It checks the manifests and lockfiles the fix job
+  uploads by content, then commits them and opens the merge request.
+- API: `/projects/{id}/fixes`, `/projects/{id}/fixes/settings` and `/fixes/{id}`; `fix` and
+  `fixable` on vulnerabilities and issues; `fixMrsAllowed` on SCM connections.
+- SBOM upload, in every edition: a CycloneDX (1.2 to 1.7) or SPDX (2.2, 2.3) JSON file becomes a
+  version whose packages the server checks. **Upload SBOM** sits on the **Vulnerabilities** and
+  **Dependencies** tabs; CI uses `qualor upload-sbom` ([SBOM upload](docs/guide/sbom-upload.md)).
+- An image SBOM's `deb`, `rpm` and `apk` packages are checked against the advisories of its
+  distribution. Those of RHEL 10 and CentOS 10 are stored but not checked
+  ([OS packages](docs/guide/sbom-upload.md#os-packages)).
+- A version label belongs to its highest source: a tag scan, then an SBOM, then a branch label. An
+  upload onto a tag-scan version answers 409 `VERSION_LABEL_TAKEN`
+  ([Precedence](docs/guide/sbom-upload.md#precedence)).
+- **Delete version** in a version's row menu on the **Vulnerabilities** tab deletes any version
+  (Project admin and above). Analyses and compliance reports stay
+  ([Delete a version](docs/guide/releases.md#delete-a-version)).
+- Business and Enterprise: **Export SBOM** on the **Dependencies** tab downloads the branch or
+  version shown, also while vulnerability monitoring is off
+  ([The Dependencies tab](docs/guide/dependency-licenses.md#the-dependencies-tab)).
+- Where used, in every edition: **Packages** in the top bar finds a package by name or purl in
+  every project, branch and version you can read, with its open vulnerabilities. The MCP tool is
+  `qualor_package_usages` ([Where used](docs/guide/dependency-vulnerabilities.md#where-used)).
+- API: `PUT /projects/sbom`, `DELETE /projects/{id}/versions/{versionId}` and
+  `GET /packages/usages`; a version's `source` can be `sbom`.
+- The guide's [Migrating from Dependency-Track](docs/guide/migrate-from-dependency-track.md) maps
+  Dependency-Track's projects, BOM uploads and component search to Qualor.
+- Jira, in every edition: **Create Jira issue** turns a code issue of the main branch or a
+  vulnerability into a Jira issue. Qualor shows its status, and comments on it when the problem is
+  gone or back. Jira Cloud, and Data Center or Server 9.0 or later ([Jira](docs/guide/jira.md)).
+- An Organization admin connects Jira in **Settings → Jira**, and a Project admin maps each project
+  in **Project → Settings → Jira** ([Map a project](docs/guide/jira.md#map-a-project)).
+- **Automatic creation** creates Jira issues for new vulnerabilities at or above a severity. It is
+  off by default. Business and Enterprise add **Exploited vulnerabilities (CISA KEV)**
+  ([The automatic rule](docs/guide/jira.md#the-automatic-rule)).
+- New setting `QUALOR_JIRA_INTERNAL_HOSTS` (Helm `config.jiraInternalHosts`): a Jira Data Center
+  on your network, or on plain `http`. Links back to Qualor need `QUALOR_PUBLIC_URL`
+  ([Connect Jira Data Center or Server](docs/guide/jira.md#connect-jira-data-center-or-server)).
+- API: `/organizations/{id}/jira`, `/projects/{id}/jira`, `/projects/{id}/jira/links` and
+  `/jira-links/{id}`; `jira` on issues and vulnerabilities; permission `org.jira.manage`.
+- Infrastructure as code, in every edition: Trivy's misconfiguration checks on Terraform,
+  CloudFormation, Kubernetes, Helm, Dockerfiles and ARM give security issues that count in the gate
+  ([Infrastructure as code](docs/guide/languages-and-analyzers.md#infrastructure-as-code-trivy)).
+- The `trivy-iac` pass runs offline, with trivy-checks 2.3.0 pinned in `qualor/scanner`. Outside
+  the image, `QUALOR_TRIVY_CHECKS_DIR` names the checks; without them, the scan warns
+  `IAC_CHECKS_EMBEDDED`.
+- Organisations can be deleted ([#37](https://github.com/qualor-dev/qualor/issues/37)): an
+  instance admin deletes one with all its projects in **Settings → Organizations**, typing its key
+  ([Delete an organisation](docs/guide/users-projects-tokens.md#delete-an-organisation)).
+- An instance admin can rename a user with **Edit** in **Settings → Users**. The user keeps their
+  password, roles, tokens and sessions, and single sign-on and SCIM keep working
+  ([Rename a user](docs/guide/users-projects-tokens.md#rename-a-user)).
+- API: `DELETE /organizations/{id}?confirm=<key>` (409 `LAST_ORGANIZATION` for the last one),
+  `deleting` on organisations, `username` in `PATCH /users/{id}`; audit `organization.deleted`.
+
+### Changed
+
+- The GitHub workflow templates and the CI setup for GitHub use `actions/checkout` and
+  `actions/cache` v5.1.0, on Node 24: a self-hosted runner needs 2.327.1 or later. GitHub
+  Enterprise Server stays on v4 ([GitHub](docs/guide/github.md#2-the-workflow)).
+- `qualor/scanner` is about 2.7 GB (was 4.1 GB) and `qualor/scanner-dotnet` about 4.4 GB (was
+  5.8 GB). Their own Trivy database keeps library sources only; a scan uses it only when it cannot
+  get one from the server ([Sources](docs/guide/vulnerability-database.md#sources-and-licences)).
+- Business and Enterprise: the day-one exploited email goes out once per project. Turning
+  monitoring or the feature off and on, or replacing the main branch, no longer sends it again
+  ([Vulnerability emails](docs/guide/email.md#vulnerability-emails)).
+- A branch whose scan found no dependencies counts as scanned. The projects list shows "No critical
+  or high" for such a main branch instead of "–", and packages added later alert as new.
+- **Settings → Vulnerability database** names the file of each upload button and the size limit
+  of a refused upload. Its footer credits CISA KEV and FIRST EPSS as their terms ask.
+- An uploaded Trivy database may carry pax headers, unless they set a size or a name. New limits
+  stop an archive that unpacks to more than 6 GiB or for more than 10 minutes, and an upload that
+  takes more than an hour ([States](docs/guide/vulnerability-database.md#states)).
+- On the **Vulnerabilities** tab, a row shows the KEV date, "Used in ransomware" and the EPSS
+  percentile as text, and the row menu works with the arrow keys. With the server's monitoring
+  switch off, the tab and the project's **Vulnerability monitoring** panel say so.
+- `PATCH /projects/{id}/versions/{versionId}` with the tracking a version already has writes no
+  audit entry and queues no re-check. A tag scan refused for its label emails the watchers.
+- Business and Enterprise: a SAML connection can be saved disabled without the identity provider's
+  values (`null` in the API), so its SP values can go into Entra ID or Okta first. **Test** says
+  `incomplete` until then ([SAML](docs/guide/sso-and-scim.md#add-a-saml-connection)).
+
+### Fixed
+
+- Dependency-Track and Trivy apply Qualor's CycloneDX VEX. It names each decision under every id
+  Trivy reports, GHSA and OSV ids included, and names its SBOM by a stable serial number
+  ([Which file a tool reads](docs/guide/dependency-vulnerabilities.md#which-file-a-tool-reads)).
+- The upgrade writes the project decisions that the 0.15 upgrade missed for Trivy issues on `main`
+  that were closed while False positive or Won't fix
+  ([Migrated decisions](docs/guide/dependency-vulnerabilities.md#migrated-decisions)).
+- The highest fixed version ("Fix x.y.z") follows version order on the **Vulnerabilities** tab and
+  in alerts, so 4.17 ranks above 4.9.
+- A crashed re-check holds up the next one for about 5 minutes, not 30. One bad `.trivyignore`
+  entry no longer drops the whole list from a re-check.
+- Business and Enterprise: a daily vulnerability digest delayed past midnight UTC no longer makes
+  the next day's digest drop its items.
+- A version keeps its dependency list when its analysis is deleted, so its SBOM and VEX export and
+  its compliance report still work.
+- A vulnerability decision on a project you cannot see answers 404, not 422. A refused or failed
+  decision costs nothing against the rate limit
+  ([The rate limit](docs/guide/dependency-vulnerabilities.md#the-rate-limit)).
+- The scanner's database cache inside the checkout stays out of every scan, so a lockfile planted
+  there never enters the dependency list.
+- `VULNERABILITY_DB_FETCH_FAILED` names the cause, such as `size mismatch`, `checksum mismatch` or
+  a slow unpack, not "unexpected response" ([Troubleshooting](docs/guide/troubleshooting.md)).
+- The server removes only its own copies in `QUALOR_VULNDB_DIR`. Before, a directory of yours named
+  like one could be removed. An upgraded server also removes the copy 0.15 left, about 1.6 GiB.
+- Enterprise: the compliance PDF of a version no longer lists its dependency findings twice. The
+  Compliance tab says when a project has more than its newest 100 versions
+  ([Compliance reports](docs/guide/compliance-reports.md#the-formats)).
+- With the embedded database, the server starts after a crash, such as an out-of-memory kill, that
+  left PostgreSQL's lock file behind. Before, the container restarted in a loop
+  ([Start](docs/guide/install-server.md#start)).
+- Before code goes to the AI provider, Qualor masks a URL password made only of digits and the
+  password of a URL with a very long user name. Before, both could reach the provider
+  ([What is sent, and where](docs/guide/ai-assistant.md#what-is-sent-and-where)).
+- Business and Enterprise: single sign-on with Microsoft Entra ID over OIDC stores people's emails,
+  with the optional claims `email` and `xms_edov` in the ID token
+  ([Microsoft Entra ID](docs/guide/sso-and-scim.md#microsoft-entra-id)).
+- The user menu no longer offers **Change password** to an account without a password (single
+  sign-on only), and `/change-password` says why instead of showing a form.
+
 ### Security
 
-- `qualor/scanner`: the `gosec` engine is built with go.opentelemetry.io/otel/trace 1.47.0 (was 1.45.0),
-  which fixes GHSA-q7gw-24fr-5p69.
+- A guest of the demo mode could change things when `QUALOR_DEMO_USER` was set in another letter
+  case than the account's name. The name now matches in any letter case.
+- `qualor/scanner`: the `gosec` engine is built with go.opentelemetry.io/otel/trace 1.47.0 (was
+  1.45.0), which fixes GHSA-q7gw-24fr-5p69.
 - `qualor/scanner`: the `gosec` engine is built with golang.org/x/crypto 0.59.0 (was 0.58.0), which
   fixes GO-2026-5932.
-- The release pin check (`tools/release/check-pins.sh`) installs dnspython 2.9.2 (was 2.9.0), which fixes
-  GHSA-vvf4-9x63-8xvv.
+- The release pin check (`tools/release/check-pins.sh`) installs dnspython 2.9.2 (was 2.9.0), which
+  fixes GHSA-vvf4-9x63-8xvv.
+
+### Known issues
+
+- Enterprise: with one Entra ID app for SAML and SCIM, SCIM answers 409 for people who signed in
+  before it, such as after a move from Business. Set up SCIM before people sign in; deactivate
+  leavers in **Settings → Users** ([SCIM](docs/guide/sso-and-scim.md#scim-with-entra-id-and-okta)).
+
+### Upgrade notes
+
+- Migrations 0027 to 0033 run at the server's first start. Migration 0031 builds two search indexes
+  for **Packages**: about 25 MB per million inventory rows, 3 seconds for 2.4 million
+  ([Upgrades](docs/guide/install-server.md#upgrades)).
+- After its first start, the server re-checks every tracked branch and version once, in the
+  background ([The re-check](docs/guide/vulnerability-database.md#the-re-check)).
+- The 0.16 scanner reports `trivy-iac` issues in repositories with infrastructure files. Those on
+  lines a change did not touch are not new code. `analyzers.trivy-iac.enabled: false` turns the
+  pass off. Outside the scanner image, it needs Trivy on `PATH`, or the scan is incomplete.
+- Move the server to 0.16 before you add `qualor upload-sbom` or the fix job to CI: both need a
+  0.16 server.
 
 ## [0.15.1] - 2026-11-13
 
