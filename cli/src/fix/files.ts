@@ -47,3 +47,18 @@ export const notRegular = (file: string): FixStop =>
 
 /** What is left of the fix's time, for a tool call's `timeoutMs` (0 when it is up). */
 export const timeLeft = (ws: FixWorkspace): number => Math.max(0, ws.deadline - Date.now());
+
+/** Ruling T14c: one order for paths, by UTF-16 code units (never the locale's). */
+export function byCodeUnit(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
+/** At most this many versions, modules or paths are named in a message. */
+export const SHOWN = 5;
+
+/** The first {@link SHOWN} items, comma-separated, with the count when there are more. */
+export function listed(items: readonly string[]): string {
+  const shown = items.slice(0, SHOWN).join(', ');
+  return items.length > SHOWN ? `${shown}, … (${items.length} in all)` : shown;
+}

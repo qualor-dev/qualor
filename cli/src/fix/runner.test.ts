@@ -19,6 +19,7 @@ const result = (r: Partial<ToolResult>): ToolResult => ({
   timedOut: false,
   stdout: '',
   stderr: '',
+  truncated: false,
   ...r,
 });
 
@@ -142,7 +143,7 @@ describe('createToolRunner', () => {
       log: spy().log,
     });
     const r = await run('node', ['-e', 'process.exit(0)'], { cwd: tmp(), timeoutMs: 0 });
-    expect(r).toEqual({ exitCode: null, timedOut: true, stdout: '', stderr: '' });
+    expect(r).toEqual({ exitCode: null, timedOut: true, stdout: '', stderr: '', truncated: false });
   });
 
   it('throws MissingToolError for a tool that is not on PATH', async () => {
@@ -171,6 +172,8 @@ describe('createToolRunner: output size (ruling T12j)', () => {
       outputLimitBytes: 1024 * 1024,
     });
     expect(whole.stdout).toHaveLength(200_003);
+    expect(tail.truncated).toBe(true);
+    expect(whole.truncated).toBe(false);
   });
 });
 

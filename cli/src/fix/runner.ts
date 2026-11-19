@@ -22,6 +22,11 @@ export interface ToolResult {
   stdout: string;
   /** The end of standard error, the job's known secrets replaced by `[redacted]`. */
   stderr: string;
+  /**
+   * Whether the tool wrote more to either stream than the call keeps (T15e), counted before the
+   * secrets are replaced: a stream cut at its start is not a whole output.
+   */
+  truncated: boolean;
 }
 
 /**
@@ -55,6 +60,11 @@ export class MissingToolError extends Error {
   }
 }
 
+/** A tool ran out of time where an adapter reads its output as it goes (T15g): `failure timeout`. */
+export class ToolTimeoutError extends Error {
+  override name = 'ToolTimeoutError';
+}
+
 /**
  * The job's runner (B9). Every call gets {@link fixToolEnv} of `env` and its own variables, so no
  * call can hand a tool the Qualor or CI job credentials. The tool is resolved like an analyzer
@@ -72,7 +82,9 @@ export function createToolRunner(o: {
   secrets?: readonly string[];
 }): ToolRunner {
   return async (tool, args, call) => {
-    if (call.timeoutMs <= 0) return { exitCode: null, timedOut: true, stdout: '', stderr: '' };
+    if (call.timeoutMs <= 0) {
+      return { exitCode: null, timedOut: true, stdout: '', stderr: '', truncated: false };
+    }
     const env = fixToolEnv({ ...o.env, ...call.env });
     const resolved = resolveTool(tool, { root: o.root, env });
     if (resolved === null) throw new MissingToolError(tool);
@@ -103,6 +115,7 @@ export function createToolRunner(o: {
       // Ruling T13e: pnpm and Berry print their errors on stdout, which an adapter may cut.
       stdout: replaceSecrets(r.stdout, known),
       stderr: replaceSecrets(stderr, known),
+      truncated: r.truncated === true,
     };
   };
 }

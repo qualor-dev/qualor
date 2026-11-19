@@ -485,7 +485,13 @@ const H1 = (c: string) => `h1:${c.repeat(43)}=`;
 const sumOf = (module: string, version: string, c = 'A') =>
   `${module} ${version} ${H1(c)}\n${module} ${version}/go.mod ${H1(c)}\n`;
 
-const ok = (): ToolResult => ({ exitCode: 0, timedOut: false, stdout: '', stderr: '' });
+const ok = (): ToolResult => ({
+  exitCode: 0,
+  timedOut: false,
+  truncated: false,
+  stdout: '',
+  stderr: '',
+});
 
 /** A go.mod text with the version of `module`'s require lines set to `version`. */
 function withRequire(text: string, module: string, version: string): string {
@@ -673,7 +679,13 @@ describe('the Go adapter with a fake go', () => {
       'go.mod': `module example.com/app\n\ngo 1.21\n\nrequire ${QF} v1.2.5\n`,
       'go.sum': sumOf(QF, 'v1.2.5'),
     });
-    const failed = (): ToolResult => ({ exitCode: 1, timedOut: false, stdout: '', stderr });
+    const failed = (): ToolResult => ({
+      exitCode: 1,
+      timedOut: false,
+      truncated: false,
+      stdout: '',
+      stderr,
+    });
 
     const r = await fix(dir, {}, claim(['v1.2.5'], '1.2.6'), { fake: fakeGo({ get: failed }) });
 

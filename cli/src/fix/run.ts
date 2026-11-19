@@ -31,7 +31,8 @@ import type {
   FixWorkspace,
   InstalledAt,
 } from './adapter';
-import { MissingToolError } from './runner';
+import { listed } from './files';
+import { MissingToolError, ToolTimeoutError } from './runner';
 import { changedPaths, committedForm, inScratch } from './workspace';
 
 /**
@@ -59,14 +60,6 @@ function fromStop(stop: FixStop): FixOutcome {
   return stop.kind === 'failure'
     ? failure(stop.code, stop.message)
     : noFix(stop.reason, stop.message);
-}
-
-/** At most this many versions or paths are named in a message. */
-const SHOWN = 5;
-
-function listed(items: readonly string[]): string {
-  const shown = items.slice(0, SHOWN).join(', ');
-  return items.length > SHOWN ? `${shown}, … (${items.length} in all)` : shown;
 }
 
 // ─── Upload rules checked before the upload ────────────────────────────────
@@ -331,6 +324,7 @@ function uploadProblem(
 /** A throw from an adapter or a tool: `missing_tool` for a tool that is gone (B7), else `package_manager`. */
 function stopped(fix: FixClaimItem, err: unknown): FixOutcome {
   if (err instanceof MissingToolError) return failure('missing_tool', err.message);
+  if (err instanceof ToolTimeoutError) return failure('timeout', err.message);
   const why = err instanceof Error ? err.message : String(err);
   return failure('package_manager', `The ${fix.family} fix of ${fix.packageName} stopped: ${why}`);
 }

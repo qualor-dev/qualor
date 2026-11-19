@@ -20,6 +20,7 @@ import type {
 import {
   absolute,
   basename,
+  byCodeUnit,
   dirOf,
   isRegularFile,
   isStop,
@@ -110,12 +111,6 @@ const verifyFailed = (message: string): FixStop => ({
 });
 
 // ─── Files ──────────────────────────────────────────────────────────────────
-
-/** Ruling T14c: one order for paths, by UTF-16 code units (never the locale's). */
-function byCodeUnit(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
-}
 
 /**
  * Ruling T14e: a `go.mod` in a folder Go leaves out of `./...` (`vendor`, `testdata`, or a name

@@ -222,6 +222,25 @@ describe('addManagedDependency', () => {
     );
   });
 
+  it('T15j: escapes a hostile version, so it stays one text node and the pom stays one pom', () => {
+    const text = ['<project>', '  <dependencies>', '  </dependencies>', '</project>', ''].join(
+      '\n',
+    );
+    const hostile = '1</version><x/>&';
+    const next = addManagedDependency(text, SPRING, hostile);
+    expect(next).toContain('<version>1&lt;/version&gt;&lt;x/&gt;&amp;</version>');
+    expect(next).not.toContain('<x/>');
+    const span = xmlTextSpan(next, [
+      'project',
+      'dependencyManagement',
+      'dependencies',
+      'dependency',
+      'version',
+    ]);
+    expect(span).not.toBeNull();
+    expect(next.slice(span?.start, span?.end)).toBe('1&lt;/version&gt;&lt;x/&gt;&amp;');
+  });
+
   it('throws for a text that is not a pom, or a name that is not groupId:artifactId', () => {
     expect(() => addManagedDependency('<settings/>', SPRING, '1')).toThrow();
     expect(() => addManagedDependency('<project>', SPRING, '1')).toThrow();

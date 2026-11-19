@@ -7,7 +7,6 @@ import {
   readPom,
   releaseLine,
   sameVersion,
-  scrubToolOutput,
   type FixClaimItem,
   type FixLockfile,
   type FixTarget,
@@ -25,16 +24,27 @@ import { addManagedDependency, replaceXmlText, xmlTextSpan } from './edit/xml';
 import {
   absolute,
   basename,
+  byCodeUnit,
   dirOf,
   isRegularFile,
   isStop,
+  listed,
   notRegular,
   readText,
   timeLeft,
   unsupported,
   writeText,
 } from './files';
-import { toolFailure, type ToolResult } from './runner';
+import {
+  errorText,
+  missingArtifacts,
+  packageNodes,
+  readTrees,
+  targetMissing,
+  treeStop,
+  type ModuleTree,
+} from './maven-tree';
+import { ToolTimeoutError, toolFailure, type ToolResult } from './runner';
 
 /**
  * The Maven family (spec §6.5, R6, R25, rulings F13, F16, F36, T4e). Maven has no lockfile: the
@@ -79,213 +89,52 @@ function coordinatesOf(packageName: string): Coordinates | null {
 
 const gaOf = (c: Coordinates) => `${c.groupId}:${c.artifactId}`;
 
-/** Ruling T14c: one order for paths, by UTF-16 code units (never the locale's). */
-function byCodeUnit(a: string, b: string): number {
-  if (a < b) return -1;
-  return a > b ? 1 : 0;
-}
-
 const verifyFailed = (message: string): FixStop => ({
   kind: 'failure',
   code: 'verify_failed',
   message,
 });
 
-/** At most this many modules or problems are named in a message. */
-const SHOWN = 5;
-
-const listed = (items: readonly string[]) =>
-  items.length > SHOWN
-    ? `${items.slice(0, SHOWN).join(', ')}, … (${items.length} in all)`
-    : items.join(', ');
-
 // ─── dependency:tree ────────────────────────────────────────────────────────
 
 /** Ruling F16, T12j: stdout is parsed, so this much of it is kept; a longer one is cut. */
 const TREE_OUTPUT_BYTES = 8 * 1024 * 1024;
-/** The runner's tail drops up to 3 bytes of a character cut at its start. */
-const CUT_SLACK_BYTES = 3;
-
-const INFO = '[INFO] ';
-/** `--- dependency:3.8.1:tree (default-cli) @ app ---` (Maven 3.9; 3.8 names maven-dependency-plugin). */
-const GOAL_HEADER = /^--- \S+:tree \([^)]*\) @ \S+ ---$/;
-/** A module's own line, the tree's root: `groupId:artifactId:packaging:version`. */
-const MODULE_LINE = /^[^\s:]+:[^\s:]+:[^\s:]+:\S+$/;
-/** `|  +- g:a:type:version:scope`: three characters per level above, then `+- ` or `\- `. */
-const NODE_LINE = /^((?:\| {2}| {3})*)[+\\]- (\S+)/;
-
-/** One node of a module's tree (depth 1: a direct dependency). */
-interface TreeNode {
-  ga: string;
-  version: string;
-  depth: number;
-}
-
-interface ModuleTree {
-  /** The module's `groupId:artifactId`. */
-  module: string;
-  nodes: TreeNode[];
-}
-
-/**
- * The tree output read line by line: after a goal header, Maven may log downloads and warnings
- * before the module's line; the tree's lines follow it without a break.
- */
-interface TreeReader {
-  modules: ModuleTree[];
-  goals: number;
-  state: 'idle' | 'module' | 'tree';
-  /** The first line that looks like a tree line but cannot be one. */
-  problem: string | null;
-}
-
-/** `g:a:type:version:scope` or `g:a:type:classifier:version:scope`. */
-function nodeOf(coords: string, depth: number): TreeNode | null {
-  const parts = coords.split(':');
-  if (parts.length < 5 || parts.length > 6 || parts.some((p) => p === '')) return null;
-  return { ga: `${parts[0]}:${parts[1]}`, version: parts.at(-2) ?? '', depth };
-}
-
-function readOther(r: TreeReader, body: string | null): void {
-  if (r.state === 'module' && body !== null && MODULE_LINE.test(body)) {
-    const [groupId, artifactId] = body.split(':');
-    r.modules.push({ module: `${groupId}:${artifactId}`, nodes: [] });
-    r.state = 'tree';
-  } else if (r.state === 'tree') {
-    r.state = 'idle';
-  }
-}
-
-function readNode(r: TreeReader, match: RegExpExecArray, body: string): void {
-  const node = nodeOf(match[2] ?? '', (match[1] ?? '').length / 3 + 1);
-  const module = r.modules.at(-1);
-  if (r.state !== 'tree' || module === undefined || node === null) {
-    r.problem ??= body;
-    return;
-  }
-  module.nodes.push(node);
-}
-
-function feed(r: TreeReader, line: string): void {
-  const body = line.startsWith(INFO) ? line.slice(INFO.length) : null;
-  if (body !== null && GOAL_HEADER.test(body)) {
-    r.goals += 1;
-    r.state = 'module';
-    return;
-  }
-  const node = body === null ? null : NODE_LINE.exec(body);
-  if (node === null || body === null) readOther(r, body);
-  else readNode(r, node, body);
-}
-
-const treeStop = (why: string): FixStop => ({
-  kind: 'failure',
-  code: 'package_manager',
-  message: `\`mvn dependency:tree\` printed ${why}`,
-});
-
-/** Each module's tree in the output; a stop when it shows no tree or a line it cannot be. */
-function readTrees(stdout: string): ModuleTree[] | FixStop {
-  const r: TreeReader = { modules: [], goals: 0, state: 'idle', problem: null };
-  for (const line of stdout.split('\n')) feed(r, line.endsWith('\r') ? line.slice(0, -1) : line);
-  if (r.problem !== null) {
-    // B9: the line is tool output, scrubbed like a failure's tail.
-    return treeStop(
-      `a tree line Qualor cannot read: ${scrubToolOutput(r.problem.slice(0, 200), [])}`,
-    );
-  }
-  if (r.goals === 0) {
-    return treeStop(
-      'no dependency tree; Qualor reads its [INFO] lines (does .mvn/maven.config pass -q?).',
-    );
-  }
-  return r.modules;
-}
-
-/** A node of the package and the node that brings it (`g:a`; null for a direct one). */
-interface PackageNode {
-  version: string;
-  depth: number;
-  parent: string | null;
-}
-
-function packageNodes(tree: ModuleTree, ga: string): PackageNode[] {
-  const found: PackageNode[] = [];
-  tree.nodes.forEach((node, i) => {
-    if (node.ga !== ga) return;
-    const above = tree.nodes.slice(0, i).findLast((n) => n.depth === node.depth - 1);
-    const parent = node.depth === 1 ? null : (above?.ga ?? null);
-    found.push({ version: node.version, depth: node.depth, parent });
-  });
-  return found;
-}
 
 const succeeded = (r: ToolResult) => r.exitCode === 0 && !r.timedOut;
 
-/** The `[ERROR]` lines up to the first empty one, which starts Maven's help text. */
-function leadingErrors(lines: readonly string[]): string[] {
-  const errors = lines.filter((l) => l.startsWith('[ERROR]'));
-  const help = errors.findIndex((l, i) => i > 0 && l.trim() === '[ERROR]');
-  return help < 0 ? errors : errors.slice(0, help);
+/** What a `dependency:tree` run showed: each module's tree, and the artifacts Maven found missing. */
+interface TreeRun {
+  trees: ModuleTree[];
+  missing: string[];
 }
 
-/** What a failure message quotes: Maven's errors (else its warnings) and stderr; else all stdout. */
-function errorText(r: ToolResult): string {
-  const lines = r.stdout.split(/\r?\n/);
-  const errors = leadingErrors(lines);
-  const own = errors.length > 0 ? errors : lines.filter((l) => l.startsWith('[WARNING]'));
-  const text = [...own, r.stderr.trim()].filter((t) => t !== '').join('\n');
-  return text === '' ? r.stdout : text;
+/** I1: what the base run reported missing, and what the edit moves along with the package. */
+interface MissingBase {
+  missing: ReadonlySet<string>;
+  /** How the other artifacts follow the package, for the message ("the shared property …"). */
+  via: string;
 }
+
+const noFixUnresolvable = (message: string): FixStop => ({
+  kind: 'no_fix',
+  reason: 'unresolvable',
+  message,
+});
 
 /**
- * How Maven names an artifact it cannot find: a POM missing during the tree's collection (a
- * warning; the tree still shows the version), or a failed resolution.
- */
-const MISSING: readonly { before: string; after: string }[] = [
-  { before: 'The POM for ', after: ' is missing' },
-  { before: 'Could not find artifact ', after: '' },
-  { before: 'Failure to find ', after: '' },
-];
-
-/** The artifacts (`g:a:type[:classifier]:version`) the output reports missing. */
-function missingArtifacts(output: string): string[] {
-  const found: string[] = [];
-  for (const { before, after } of MISSING) {
-    for (let at = output.indexOf(before); at >= 0; at = output.indexOf(before, at + 1)) {
-      const start = at + before.length;
-      let end = start;
-      while (end < output.length && output.charCodeAt(end) > 0x20) end += 1;
-      if (output.startsWith(after, end)) found.push(output.slice(start, end));
-    }
-  }
-  return found;
-}
-
-/** Ruling F36: Maven reports a target version of the package itself missing. */
-function targetMissing(output: string, ga: string, targets: readonly string[]): boolean {
-  return missingArtifacts(output).some((artifact) => {
-    const parts = artifact.split(':');
-    const version = parts.at(-1) ?? '';
-    return (
-      parts.length >= 4 &&
-      `${parts[0]}:${parts[1]}` === ga &&
-      targets.some((t) => sameVersion('maven', version, t))
-    );
-  });
-}
-
-/**
- * The trees of the reactor at `rootPom` (Ruling F16: stdout, 8 MiB kept; a cut one is never read):
- * a target Maven reports missing is `no_fix unresolvable` (F36), any other failure Maven's message
- * through `toolFailure` (B9).
+ * The trees of the reactor at `rootPom` (Ruling F16: stdout, 8 MiB kept; a run the runner flags as
+ * cut is never read, T15e). Missing artifacts end the run as `no_fix unresolvable`: a target of the
+ * package itself (F36) and, when `base` is given, any artifact the base run did not report missing
+ * (I1: a property the package shares moves its siblings to a version they may not have). Any
+ * other failure is Maven's message through `toolFailure` (B9, only on the failure path, T15f).
  */
 async function treesOf(
   ws: FixWorkspace,
   rootPom: string,
   c: Coordinates,
   targets: readonly string[],
-): Promise<ModuleTree[] | FixStop> {
+  base?: MissingBase,
+): Promise<TreeRun | FixStop> {
   const r = await ws.run(
     'mvn',
     ['-B', 'dependency:tree', `-Dincludes=${gaOf(c)}`, '-DoutputType=text'],
@@ -295,15 +144,24 @@ async function treesOf(
       outputLimitBytes: TREE_OUTPUT_BYTES,
     },
   );
-  const failure = toolFailure('mvn', { ...r, stderr: errorText(r) }, []);
-  if (!r.timedOut && targetMissing(`${r.stdout}\n${r.stderr}`, gaOf(c), targets)) {
-    return { kind: 'no_fix', reason: 'unresolvable', message: failure.message };
+  const failure = () => toolFailure('mvn', { ...r, stderr: errorText(r) }, []);
+  const output = `${r.stdout}
+${r.stderr}`;
+  const missing = r.timedOut ? [] : missingArtifacts(output);
+  if (!r.timedOut && targetMissing(output, gaOf(c), targets))
+    return noFixUnresolvable(failure().message);
+  const fresh = missing.filter((a) => base !== undefined && !base.missing.has(a));
+  if (base !== undefined && fresh.length > 0) {
+    return noFixUnresolvable(
+      `Maven cannot find ${listed(fresh)} after the fix: it moves with ${gaOf(c)} through ${base.via}, and is not published at the new version.`,
+    );
   }
-  if (!succeeded(r)) return { kind: 'failure', ...failure };
-  if (Buffer.byteLength(r.stdout, 'utf8') >= TREE_OUTPUT_BYTES - CUT_SLACK_BYTES) {
-    return treeStop('more than 8 MiB; Qualor does not read a cut dependency tree.');
+  if (!succeeded(r)) return { kind: 'failure', ...failure() };
+  if (r.truncated) {
+    return treeStop('more than the 8 MiB Qualor keeps; it does not read a cut dependency tree.');
   }
-  return readTrees(r.stdout);
+  const trees = readTrees(r.stdout);
+  return isStop(trees) ? trees : { trees, missing };
 }
 
 // ─── Poms ───────────────────────────────────────────────────────────────────
@@ -402,9 +260,8 @@ function parentPom(poms: ReadonlyMap<string, Pom>, pom: Pom): Pom | null {
   if (parent === null || parent.relativePath === '') return null;
   const relative = (parent.relativePath ?? '../pom.xml').replaceAll('\\', '/');
   const joined = path.posix.normalize(`${dirOf(pom.path)}${relative}`);
-  // `normalize` leaves at most one trailing slash.
-  const folder = joined.endsWith('/') ? joined : `${joined}/`;
-  const file = joined.endsWith('.xml') ? joined : `${folder}pom.xml`;
+  // T15d: a folder (`..`, `../`) names its pom.xml; `join` turns `./pom.xml` into `pom.xml`.
+  const file = joined.endsWith('.xml') ? joined : path.posix.join(joined, 'pom.xml');
   const found = poms.get(file);
   return found?.ga === parent.ga ? found : null;
 }
@@ -506,6 +363,8 @@ function placeOf(chain: readonly Pom[], ga: string, direct: boolean): Place {
 interface Use {
   module: string;
   version: string;
+  /** 1 for a direct dependency of the module. */
+  depth: number;
   parent: string | null;
   place: Place;
 }
@@ -523,6 +382,7 @@ function usesOf(
     return nodes.map((node) => ({
       module: tree.module,
       version: node.version,
+      depth: node.depth,
       parent: node.parent,
       place: isStop(pom)
         ? { pom: root, stop: pom }
@@ -536,24 +396,34 @@ function usesOf(
 interface Analysis {
   packageName: string;
   uses: Use[];
+  /** What the base runs reported missing (I1). */
+  missing: Set<string>;
 }
 
 /** What `installed` found, for `apply` on the same workspace. */
 const ANALYSES = new WeakMap<FixWorkspace, Analysis>();
 
+/** A tool timeout is a typed error, so `prepareFix` reports `timeout` (T15g). */
+const stopError = (stop: FixStop): Error =>
+  stop.kind === 'failure' && stop.code === 'timeout'
+    ? new ToolTimeoutError(stop.message)
+    : new Error(stop.message);
+
 /** The tree of each top pom and where each module's version is set; a tree that fails throws. */
 async function analyze(ws: FixWorkspace, packageName: string): Promise<Analysis> {
   const c = coordinatesOf(packageName);
   const uses: Use[] = [];
+  const missing = new Set<string>();
   if (c !== null) {
     const poms = readPoms(ws);
     for (const root of topPoms(poms)) {
-      const trees = await treesOf(ws, root, c, []);
-      if (isStop(trees)) throw new Error(trees.message);
-      uses.push(...usesOf(poms, root, trees, gaOf(c)));
+      const run = await treesOf(ws, root, c, []);
+      if (isStop(run)) throw stopError(run);
+      for (const a of run.missing) missing.add(a);
+      uses.push(...usesOf(poms, root, run.trees, gaOf(c)));
     }
   }
-  const analysis = { packageName, uses };
+  const analysis = { packageName, uses, missing };
   ANALYSES.set(ws, analysis);
   return analysis;
 }
@@ -771,7 +641,12 @@ function lockfileLines(groups: readonly SiteGroup[]): FixLockfile[] {
     const pins = groups.filter((g) => g.site.pom === pom && g.site.edit.kind === 'add');
     if (pins.length === 0)
       return { path: pom, relation: 'direct', mechanism: null, dependents: [] };
-    const parents = pins.flatMap((g) => g.uses.map((u) => u.parent));
+    const uses = pins.flatMap((g) => g.uses);
+    // T15c: a direct dependency that a parent or BOM outside the repository manages stays direct.
+    if (uses.every((u) => u.depth === 1)) {
+      return { path: pom, relation: 'direct', mechanism: 'dependencyManagement', dependents: [] };
+    }
+    const parents = uses.map((u) => u.parent);
     const dependents = [...new Set(parents.filter((p): p is string => p !== null))]
       .toSorted(byCodeUnit)
       .slice(0, FIX_MAX_DEPENDENTS);
@@ -820,6 +695,22 @@ function belowTargets(
   );
 }
 
+/**
+ * I1: what `installed` saw missing, and the properties the package's version comes from (the
+ * artifacts that share one move with it). None without that analysis: no artifact is then new.
+ */
+function missingBase(known: Analysis | undefined, packageName: string): MissingBase | undefined {
+  if (known?.packageName !== packageName) return undefined;
+  const names = new Set<string>();
+  for (const { place } of known.uses) {
+    if (isSite(place) && place.edit.kind === 'property') names.add(place.edit.name);
+  }
+  const shown = [...names].map((n) => '$' + '{' + n + '}').join(', ');
+  const via =
+    names.size === 0 ? 'the version Maven manages for it' : `the shared property ${shown}`;
+  return { missing: known.missing, via };
+}
+
 /** The tree again at each top pom: null when every module reached its target. */
 async function verifyStop(
   ws: FixWorkspace,
@@ -829,11 +720,12 @@ async function verifyStop(
   const c = coordinatesOf(fix.packageName);
   if (c === null) return verifyFailed(`${fix.packageName} is not a Maven groupId:artifactId.`);
   const targets = plan.targets.map((t) => t.target);
+  const base = missingBase(ANALYSES.get(ws), fix.packageName);
   const problems: string[] = [];
   for (const root of topPoms(readPoms(ws))) {
-    const trees = await treesOf(ws, root, c, targets);
-    if (isStop(trees)) return trees;
-    problems.push(...belowTargets(trees, gaOf(c), plan.targets));
+    const run = await treesOf(ws, root, c, targets, base);
+    if (isStop(run)) return run;
+    problems.push(...belowTargets(run.trees, gaOf(c), plan.targets));
   }
   if (problems.length === 0) return null;
   return verifyFailed(

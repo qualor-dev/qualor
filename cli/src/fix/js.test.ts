@@ -930,8 +930,14 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
   const fakeBerry: ToolRunner = (_tool, args) =>
     Promise.resolve(
       args[0] === '--version'
-        ? { exitCode: 0, timedOut: false, stdout: '4.18.1\n', stderr: '' }
-        : { exitCode: 1, timedOut: false, stdout: 'install stopped by the test', stderr: '' },
+        ? { exitCode: 0, timedOut: false, truncated: false, stdout: '4.18.1\n', stderr: '' }
+        : {
+            exitCode: 1,
+            timedOut: false,
+            truncated: false,
+            stdout: 'install stopped by the test',
+            stderr: '',
+          },
     );
 
   /** BERRY_LOCK with one more entry, `extra@<descriptor>` resolving to `resolution`. */
@@ -1220,7 +1226,13 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
       'package-lock.json': npmLock({ 'node_modules/qf-a': { version: '1.2.5' } }),
     });
     const failing: ToolRunner = () =>
-      Promise.resolve({ exitCode: 1, timedOut: false, stdout: '', stderr: 'npm error' });
+      Promise.resolve({
+        exitCode: 1,
+        timedOut: false,
+        truncated: false,
+        stdout: '',
+        stderr: 'npm error',
+      });
 
     const r = await fix(dir, managerEnv('http://127.0.0.1:9'), claim(['1.2.5'], '1.2.6'), failing);
 
@@ -1275,7 +1287,13 @@ describe('the JS adapter: what it refuses before any package manager runs', () =
       'yarn.lock': classicLock([['qf-a@^1.2.5', '1.2.5']]),
     });
     const berry: ToolRunner = () =>
-      Promise.resolve({ exitCode: 0, timedOut: false, stdout: '4.18.1\n', stderr: '' });
+      Promise.resolve({
+        exitCode: 0,
+        timedOut: false,
+        truncated: false,
+        stdout: '4.18.1\n',
+        stderr: '',
+      });
 
     const r = await fix(dir, managerEnv('http://127.0.0.1:9'), claim(['1.2.5'], '1.2.6'), berry);
 

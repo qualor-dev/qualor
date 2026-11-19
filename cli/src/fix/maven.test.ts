@@ -160,7 +160,13 @@ const transitiveTree = (version: string, suffix = '') =>
     },
   ]);
 
-const ok = (stdout: string): ToolResult => ({ exitCode: 0, timedOut: false, stdout, stderr: '' });
+const ok = (stdout: string): ToolResult => ({
+  exitCode: 0,
+  timedOut: false,
+  stdout,
+  stderr: '',
+  truncated: false,
+});
 
 // ─── Running a fix ──────────────────────────────────────────────────────────
 
@@ -224,7 +230,11 @@ function fakeMvn(answers: (string | ToolResult)[]): ToolRunner {
     }
     const r = typeof next === 'string' ? ok(next) : next;
     const limit = call.outputLimitBytes ?? 64 * 1024;
-    return Promise.resolve({ ...r, stdout: r.stdout.slice(Math.max(0, r.stdout.length - limit)) });
+    return Promise.resolve({
+      ...r,
+      stdout: r.stdout.slice(Math.max(0, r.stdout.length - limit)),
+      truncated: r.truncated || r.stdout.length > limit,
+    });
   };
 }
 
@@ -684,6 +694,7 @@ describe('the Maven adapter: modules and parents', () => {
 const failedRun = (errors: string[]): ToolResult => ({
   exitCode: 1,
   timedOut: false,
+  truncated: false,
   stdout: mavenOutput([{ coords: 'com.example:app:jar:1.0.0', pom: 'pom.xml', tree: [] }], {
     end: [
       `[INFO] ${RULE}`,
@@ -739,8 +750,8 @@ describe('the Maven adapter: verify and failures', () => {
       `Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree (default-cli) on project app: Could not resolve dependencies for project com.example:app:jar:1.0.0: The following artifacts could not be resolved: ${SPRING}:jar:5.2.21 (absent): Could not find artifact ${SPRING}:jar:5.2.21 in central (https://repo.maven.apache.org/maven2) -> [Help 1]`,
     ],
     [
-      'another artifact is not found: failure package_manager',
-      { failure: { code: 'package_manager' } },
+      'another artifact is not found at the new version (I1): no_fix unresolvable',
+      { noFix: { reason: 'unresolvable' } },
       'Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree (default-cli) on project app: Could not resolve dependencies for project com.example:app:jar:1.0.0: Could not find artifact org.springframework:spring-jcl:jar:5.2.21 in central (https://repo.maven.apache.org/maven2) -> [Help 1]',
     ],
   ])('F36: dependency:tree failing after the edit, %s', async (_what, expected, error) => {
@@ -750,7 +761,7 @@ describe('the Maven adapter: verify and failures', () => {
 
     expect(r.outcome).toMatchObject(expected);
     const message = JSON.stringify(r.outcome);
-    expect(message).toContain('Could not find artifact');
+    expect(message).toMatch(/Could not find artifact|Maven cannot find/);
     expect(message).not.toContain('re-run Maven with the -e switch');
   });
 
@@ -821,6 +832,189 @@ describe('the Maven adapter: verify and failures', () => {
     if ('failure' in r.outcome)
       expect(r.outcome.failure.message).toContain('Non-resolvable parent POM');
   });
+});
+
+// ─── Fix round 1 ────────────────────────────────────────────────────────────
+
+const DATABIND = 'com.fasterxml.jackson.core:jackson-databind';
+const jackson = (databind: string, between: string[] = []) =>
+  mavenOutput(
+    [
+      {
+        coords: 'com.example:app:jar:1.0.0',
+        pom: 'pom.xml',
+        tree: [`\\- ${DATABIND}:jar:${databind}:compile`],
+      },
+    ],
+    { between },
+  );
+const JACKSON_POM = pom(
+  dep(DATABIND, '${jackson.version}') +
+    dep('com.fasterxml.jackson.core:jackson-core', '${jackson.version}'),
+  '  <properties>\n    <jackson.version>2.13.4</jackson.version>\n  </properties>\n',
+);
+const JACKSON_CLAIM: FixClaimItem = {
+  ...claim(['2.13.4'], ['2.13.4.2']),
+  packageName: DATABIND,
+};
+const missingCore = (version: string) =>
+  `[WARNING] The POM for com.fasterxml.jackson.core:jackson-core:jar:${version} is missing, no dependency information available`;
+
+describe('fix round 1: I1, an artifact that shares the property and does not exist at the new version', () => {
+  it('jackson-databind and jackson-core share ${jackson.version}; the verify run misses jackson-core at the new version: no_fix unresolvable naming it and the property', async () => {
+    const dir = committed({ 'pom.xml': JACKSON_POM });
+
+    const r = await fix(dir, JACKSON_CLAIM, [
+      jackson('2.13.4'),
+      jackson('2.13.4.2', [missingCore('2.13.4.2')]),
+    ]);
+
+    expect(r.outcome).toMatchObject({ noFix: { reason: 'unresolvable' } });
+    if ('noFix' in r.outcome) {
+      expect(r.outcome.noFix.message).toContain('com.fasterxml.jackson.core:jackson-core');
+      expect(r.outcome.noFix.message).toContain('2.13.4.2');
+      expect(r.outcome.noFix.message).toContain('jackson.version');
+    }
+  });
+
+  it('a missing artifact the base run reports too is not new: the fix goes on', async () => {
+    const dir = committed({ 'pom.xml': JACKSON_POM });
+    const old =
+      '[WARNING] The POM for org.example:legacy:jar:1.0 is missing, no dependency information available';
+
+    const r = await fix(dir, JACKSON_CLAIM, [jackson('2.13.4', [old]), jackson('2.13.4.2', [old])]);
+
+    expect(uploaded(r).targetVersion).toBe('2.13.4.2');
+  });
+
+  it('a new missing artifact in a failed verify run is no_fix unresolvable too', async () => {
+    const dir = committed({ 'pom.xml': JACKSON_POM });
+    const error =
+      'Failed to execute goal org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree (default-cli) on project app: Could not resolve dependencies for project com.example:app:jar:1.0.0: Could not find artifact com.fasterxml.jackson.core:jackson-core:jar:2.13.4.2 in central (https://repo.maven.apache.org/maven2) -> [Help 1]';
+
+    const r = await fix(dir, JACKSON_CLAIM, [jackson('2.13.4'), failedRun([error])]);
+
+    expect(r.outcome).toMatchObject({ noFix: { reason: 'unresolvable' } });
+  });
+});
+
+describe('fix round 1: T15e, the runner’s truncated flag', () => {
+  it('output the runner flags as cut is never read, whatever its size', async () => {
+    const dir = committed({ 'pom.xml': pom(dep(SPRING, '5.2.20.RELEASE')) });
+
+    const r = await fix(dir, SPRING_520, [
+      { ...ok(directTree('5.2.20.RELEASE')), truncated: true },
+    ]);
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'package_manager' } });
+    if ('failure' in r.outcome) expect(r.outcome.failure.message).toContain('8 MiB');
+  });
+
+  it('output of nearly 8 MiB that was not cut is read', async () => {
+    const dir = committed({ 'pom.xml': pom(dep(SPRING, '5.2.20.RELEASE')) });
+    const base = directTree('5.2.20.RELEASE');
+    const padding = `[INFO] ${'x'.repeat(EIGHT_MIB - base.length - 10)}\n`;
+
+    const r = await fix(dir, SPRING_520, [padding + base, directTree('5.2.21')]);
+
+    expect(uploaded(r).targetVersion).toBe('5.2.21');
+  });
+});
+
+describe('fix round 1: T15g, a base tree that times out', () => {
+  it('is failure timeout, not package_manager', async () => {
+    const dir = committed({ 'pom.xml': pom(dep(SPRING, '5.2.20.RELEASE')) });
+    const hung: ToolResult = {
+      exitCode: null,
+      timedOut: true,
+      truncated: false,
+      stdout: '',
+      stderr: '',
+    };
+
+    const r = await fix(dir, SPRING_520, [hung]);
+
+    expect(r.outcome).toMatchObject({ failure: { code: 'timeout' } });
+  });
+});
+
+describe('fix round 1: T15c, a direct dependency managed from outside', () => {
+  it('has no <version> and an outside parent: the pin is a managed entry, reported as direct with its mechanism', async () => {
+    const outside = [
+      '  <parent>',
+      '    <groupId>org.springframework.boot</groupId>',
+      '    <artifactId>spring-boot-starter-parent</artifactId>',
+      '    <version>2.2.13.RELEASE</version>',
+      '  </parent>',
+      '',
+    ].join('\n');
+    const dir = committed({ 'pom.xml': pom(dep(SPRING, null), outside) });
+
+    const r = await fix(dir, SPRING_520, [directTree('5.2.20.RELEASE'), directTree('5.2.21')]);
+
+    const up = uploaded(r);
+    expect(up.lockfiles).toEqual([
+      { path: 'pom.xml', relation: 'direct', mechanism: 'dependencyManagement', dependents: [] },
+    ]);
+    expect(up.targets).toEqual([
+      { installed: '5.2.20.RELEASE', target: '5.2.21', lockfile: 'pom.xml' },
+    ]);
+    expect(textOf(r, 'pom.xml')).toContain('<dependencyManagement>');
+    expect(contentCheck(r, SPRING_520)).toEqual({ ok: true });
+  });
+
+  it('a multi-module add: the module declares it without a version, the root manages nothing: the entry and the target name the root pom', async () => {
+    const dir = committed(reactor('', dep(SPRING, null)));
+
+    const r = await fix(dir, SPRING_520, [reactorTree('5.2.20.RELEASE'), reactorTree('5.2.21')]);
+
+    const up = uploaded(r);
+    expect([...r.files.keys()]).toEqual(['pom.xml']);
+    expect(up.targets).toEqual([
+      { installed: '5.2.20.RELEASE', target: '5.2.21', lockfile: 'pom.xml' },
+    ]);
+    expect(up.lockfiles).toEqual([
+      {
+        path: 'pom.xml',
+        relation: 'transitive',
+        mechanism: 'dependencyManagement',
+        dependents: ['com.example:core'],
+      },
+    ]);
+    expect(contentCheck(r, SPRING_520)).toEqual({ ok: true });
+  });
+});
+
+describe('fix round 1: T15d, a relativePath that names the parent’s folder', () => {
+  it.each(['..', '../'])(
+    '<relativePath>%s</relativePath> keeps the in-repository parent',
+    async (rel) => {
+      const parent = PARENT.replace(
+        '  </parent>',
+        `    <relativePath>${rel}</relativePath>\n  </parent>`,
+      );
+      const managed = [
+        '  <dependencyManagement>',
+        '    <dependencies>',
+        managedEntry('      ', '5.2.20.RELEASE').trimEnd(),
+        '    </dependencies>',
+        '  </dependencyManagement>',
+        '',
+      ].join('\n');
+      const files = reactor(managed, dep(SPRING, null));
+      files['core/pom.xml'] = pom(dep(SPRING, null), parent, 'core');
+      const dir = committed(files);
+
+      const r = await fix(dir, SPRING_520, [reactorTree('5.2.20.RELEASE'), reactorTree('5.2.21')]);
+
+      expect([...r.files.keys()]).toEqual(['pom.xml']);
+      expect(changedLines(r.diffs.get('pom.xml'))).toEqual([
+        '-        <version>5.2.20.RELEASE</version>',
+        '+        <version>5.2.21</version>',
+      ]);
+      expect(uploaded(r).lockfiles).toEqual([DIRECT]);
+    },
+  );
 });
 
 // ─── R25 ────────────────────────────────────────────────────────────────────

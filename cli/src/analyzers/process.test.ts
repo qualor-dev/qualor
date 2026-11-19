@@ -128,6 +128,26 @@ describe('runProcess', () => {
     expect(r.stderr).toHaveLength(70_000);
   });
 
+  it('flags output cut at the limit (T15e), exactly: at the limit is not cut, one byte over is', async () => {
+    const at = await runProcess(
+      { ...node('process.stdout.write("x".repeat(1000))'), outputLimitBytes: 1000 },
+      silentLogger,
+    );
+    expect(at.truncated).toBe(false);
+    const over = await runProcess(
+      { ...node('process.stdout.write("x".repeat(1001))'), outputLimitBytes: 1000 },
+      silentLogger,
+    );
+    expect(over.truncated).toBe(true);
+    const errOver = await runProcess(
+      { ...node('process.stderr.write("x".repeat(70000))') },
+      silentLogger,
+    );
+    expect(errOver.truncated).toBe(true);
+    const small = await runProcess(node('process.stdout.write("x")'), silentLogger);
+    expect(small.truncated).toBe(false);
+  });
+
   it('reports a command that cannot be started', async () => {
     const r = await runProcess(
       {

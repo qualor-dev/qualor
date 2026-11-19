@@ -23,6 +23,8 @@ export interface ProcessResult {
   /** The end of each stream: the last 64 KiB unless `outputLimitBytes` says (config.md §6). */
   stdout: string;
   stderr: string;
+  /** Whether either stream was longer than its limit, so its text is only the end (T15e). */
+  truncated?: boolean;
   spawnError?: string;
   /** The underlying `NodeJS.ErrnoException.code`, e.g. `'ENOENT'` (fix-round-2 finding 5). */
   spawnErrorCode?: string;
@@ -34,11 +36,14 @@ const TAIL_BYTES = 64 * 1024;
 class Tail {
   private chunks: Buffer[] = [];
   private size = 0;
+  /** Every byte seen, to tell a stream that was cut from one that just fits. */
+  private total = 0;
   constructor(private readonly limit: number) {}
 
   add(chunk: Buffer): void {
     this.chunks.push(chunk);
     this.size += chunk.length;
+    this.total += chunk.length;
     if (this.size > this.limit * 2) this.trim();
   }
 
@@ -47,6 +52,10 @@ class Tail {
     const kept = all.subarray(Math.max(0, all.length - this.limit));
     this.chunks = [kept];
     this.size = kept.length;
+  }
+
+  get cut(): boolean {
+    return this.total > this.limit;
   }
 
   text(): string {
@@ -242,7 +251,15 @@ export function runProcess(spec: ProcessSpec, log: Logger): Promise<ProcessResul
       log.debug(`${spec.command} exited ${exitCode ?? 'null'} after ${Math.round(durationMs)} ms`);
       const err = stderr.text();
       if (err !== '') log.debug(err);
-      resolve({ exitCode, timedOut, durationMs, stdout: stdout.text(), stderr: err, ...extra });
+      resolve({
+        exitCode,
+        timedOut,
+        durationMs,
+        stdout: stdout.text(),
+        stderr: err,
+        truncated: stdout.cut || stderr.cut,
+        ...extra,
+      });
     };
     const timer = setTimeout(() => {
       timedOut = true;

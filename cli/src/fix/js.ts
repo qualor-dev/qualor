@@ -30,6 +30,7 @@ import { setYamlOverride } from './edit/yaml';
 import {
   absolute,
   basename,
+  byCodeUnit,
   dirOf,
   isRegularFile,
   isStop,
@@ -244,7 +245,7 @@ function projectAt(ws: FixWorkspace, tracked: ReadonlySet<string>, dir: string):
   const lockfiles = paths
     .map((p) => ({ path: p, manager: managerOf(p, readText(ws, p)) }))
     .toSorted(
-      (a, b) => MANAGER_ORDER[a.manager] - MANAGER_ORDER[b.manager] || a.path.localeCompare(b.path),
+      (a, b) => MANAGER_ORDER[a.manager] - MANAGER_ORDER[b.manager] || byCodeUnit(a.path, b.path),
     );
   return {
     dir,

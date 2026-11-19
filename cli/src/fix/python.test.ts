@@ -219,6 +219,7 @@ function fakeTools(answers: Answer[]): ToolRunner {
     return Promise.resolve({
       exitCode: 0,
       timedOut: false,
+      truncated: false,
       stdout: '',
       stderr: '',
       ...next.result,
