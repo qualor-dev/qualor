@@ -1,4 +1,16 @@
 /* Settings → Jira (0.16 §6.1): one connection form, the counts of what hangs on it below. */
+/* Cloud and Data Center side by side from 40rem, as the AI provider's kinds. */
+.choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 46rem;
+}
+@media (max-width: 40rem) {
+  .choices {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .jira-fix {
   display: block;
   margin-top: 4px;

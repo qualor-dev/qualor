@@ -84,9 +84,7 @@ test.describe.serial('Jira', () => {
   test('an organisation admin connects Jira Data Center and tests it', async ({ page }) => {
     await page.goto('/settings/jira');
     await expect(page).toHaveTitle('Jira · Qualor');
-    await page
-      .getByLabel('Jira', { exact: true })
-      .selectOption({ label: 'Jira Data Center or Server' });
+    await page.getByRole('radio', { name: /^Jira Data Center or Server/ }).check();
     await page.getByLabel('Address', { exact: true }).fill(JIRA_URL);
     await page.getByLabel('Personal access token').fill(JIRA_TOKEN);
     await page.getByRole('button', { name: 'Save', exact: true }).click();

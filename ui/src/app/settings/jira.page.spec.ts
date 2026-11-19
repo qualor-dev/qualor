@@ -48,10 +48,10 @@ function type(root: HTMLElement, selector: string, value: string): void {
   input.dispatchEvent(new Event('input'));
 }
 
-function choose(root: HTMLElement, selector: string, value: string): void {
-  const select = root.querySelector<HTMLSelectElement>(selector)!;
-  select.value = value;
-  select.dispatchEvent(new Event('change'));
+function pickDeployment(root: HTMLElement, value: 'cloud' | 'data_center'): void {
+  const radio = root.querySelector<HTMLInputElement>(`#jira-deployment-${value}`)!;
+  radio.checked = true;
+  radio.dispatchEvent(new Event('change'));
 }
 
 function button(root: ParentNode, text: string): HTMLButtonElement {
@@ -95,13 +95,13 @@ describe('JiraSettingsPage', () => {
   it('Cloud shows Email and the scoped-token API URL; Data Center hides both', async () => {
     setup(null);
     const { fixture, root } = await render();
-    choose(root, '#jira-deployment', 'cloud');
+    pickDeployment(root, 'cloud');
     await settle(fixture);
     expect(root.querySelector('#jira-email')).not.toBeNull();
     expect(root.querySelector('#jira-api-url')).not.toBeNull();
     expect(root.textContent).toContain('Scoped token? API URL');
     expect(root.querySelector('label[for="jira-token"]')?.textContent).toContain('API token');
-    choose(root, '#jira-deployment', 'data_center');
+    pickDeployment(root, 'data_center');
     await settle(fixture);
     expect(root.querySelector('#jira-email')).toBeNull();
     expect(root.querySelector('#jira-api-url')).toBeNull();
@@ -115,7 +115,7 @@ describe('JiraSettingsPage', () => {
     const server = setup(null);
     server.on('PUT', URL, { body: jiraConnection({ siteUrl: 'https://acme.atlassian.net' }) });
     const { fixture, root } = await render();
-    choose(root, '#jira-deployment', 'cloud');
+    pickDeployment(root, 'cloud');
     await settle(fixture);
     type(root, '#jira-site-url', 'https://acme.atlassian.net');
     type(root, '#jira-email', 'ada@example.com');

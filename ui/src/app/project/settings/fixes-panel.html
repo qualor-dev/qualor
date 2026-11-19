@@ -1,17 +1,25 @@
-<section class="card panel" id="fixes">
+<section class="card panel" id="fixes" aria-labelledby="fixes-heading">
   <div class="panel-head">
-    <h2 tabindex="-1" i18n="@@project.settings.fixes">Fix MRs</h2>
-  </div>
-  <div class="panel-body">
-    <div role="status">
-      @if (announcement(); as message) {
-        <p class="alert alert-success">{{ message }}</p>
-      }
+    <div class="sec-title">
+      <h2 id="fixes-heading" tabindex="-1" i18n="@@project.settings.fixes">Fix MRs</h2>
+      <p class="sec-purpose" i18n="@@fix.panel.intro">
+        Qualor can open a merge request that bumps a vulnerable dependency to a fixed version. On
+        GitHub, an MR is a pull request.
+      </p>
     </div>
-    @if (error(); as message) {
-      <p class="alert alert-error" role="alert">{{ message }}</p>
+  </div>
+
+  <div class="panel-notes" role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success panel-alert">{{ message }}</p>
     }
-    @if (loadError(); as message) {
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+  }
+
+  @if (loadError(); as message) {
+    <div class="panel-body">
       <p class="alert alert-error" role="alert">{{ message }}</p>
       <button
         type="button"
@@ -22,66 +30,67 @@
       >
         Try again
       </button>
-    } @else if (!loaded()) {
-      <p class="hint" i18n="@@fix.panel.loading">Loading…</p>
-    } @else {
-      <p class="hint" i18n="@@fix.panel.intro">
-        Qualor can open a merge request that bumps a vulnerable dependency to a fixed version. On
-        GitHub, an MR is a pull request.
-      </p>
-      @if (unmet(); as sentence) {
-        <p class="req">
-          <q-icon name="alert" />
-          <span>{{ sentence }}</span>
+    </div>
+  } @else if (loaded(); as l) {
+    <div class="setting-row" data-line="enabled">
+      <div class="setting-text">
+        <label for="fixes-enabled" i18n="@@fix.panel.enabled">Enabled</label>
+        <p aria-live="polite">
+          <span i18n="@@fix.panel.counts"
+            >{{ l.counts.open }} open, {{ inProgress() }} of {{ l.settings.maxOpen }} in
+            progress</span
+          >
         </p>
-      }
-      <div class="switch-row">
-        <input
-          id="fixes-enabled"
-          class="switch"
-          type="checkbox"
-          role="switch"
-          [checked]="enabled()"
-          [disabled]="!editable()"
-          (change)="setEnabled($event)"
-        />
-        <label for="fixes-enabled">
-          <span class="sw-name" i18n="@@fix.panel.enabled">Enabled</span>
-        </label>
       </div>
-      @if (waitingForJob()) {
-        <p class="req">
-          <q-icon name="alert" />
-          <span>
-            <a [href]="guide" target="_blank" rel="noopener noreferrer" i18n="@@fix.panel.waiting"
-              >Waiting for the fix job</a
-            >&ngsp;<span i18n="@@fix.panel.waitingHint"
-              >The job runs in your CI and asks Qualor for work. It has not asked yet.</span
-            >
-          </span>
-        </p>
-      } @else if (loaded()?.preconditions?.lastClaimAt; as at) {
-        <p class="hint">
-          <ng-container i18n="@@fix.panel.lastRan">The fix job last ran</ng-container>
-          {{ at | dateTime }}
-        </p>
-      }
-      <p class="hint" aria-live="polite">
-        <span i18n="@@fix.panel.counts"
-          >{{ loaded()?.counts?.open }} open, {{ inProgress() }} of
-          {{ loaded()?.settings?.maxOpen }} in progress</span
-        >
-      </p>
-    }
-  </div>
+      <div class="setting-field">
+        @if (unmet(); as sentence) {
+          <p class="req">
+            <q-icon name="alert" />
+            <span>{{ sentence }}</span>
+          </p>
+        }
+        <div class="switch-row">
+          <input
+            id="fixes-enabled"
+            class="switch"
+            type="checkbox"
+            role="switch"
+            [checked]="enabled()"
+            [disabled]="!editable()"
+            (change)="setEnabled($event)"
+          />
+        </div>
+        @if (waitingForJob()) {
+          <p class="req">
+            <q-icon name="alert" />
+            <span>
+              <a [href]="guide" target="_blank" rel="noopener noreferrer" i18n="@@fix.panel.waiting"
+                >Waiting for the fix job</a
+              >&ngsp;<span i18n="@@fix.panel.waitingHint"
+                >The job runs in your CI and asks Qualor for work. It has not asked yet.</span
+              >
+            </span>
+          </p>
+        } @else if (l.preconditions.lastClaimAt; as at) {
+          <p class="hint">
+            <ng-container i18n="@@fix.panel.lastRan">The fix job last ran</ng-container>
+            {{ at | dateTime }}
+          </p>
+        }
+      </div>
+    </div>
 
-  @if (loaded(); as l) {
-    <div class="vm-section" role="group" aria-labelledby="fixes-auto-heading">
-      <h3 id="fixes-auto-heading" i18n="@@fix.panel.auto">Automatic requests</h3>
-      <div class="field fix-field">
+    <div class="setting-row" data-line="auto">
+      <div class="setting-text">
         <label for="fixes-auto" i18n="@@fix.panel.autoLabel"
           >Request fix MRs for new vulnerabilities</label
         >
+        <p id="fixes-auto-hint" i18n="@@fix.panel.autoNote">
+          Counts vulnerabilities first found after you save. A package that already has a fix MR is
+          not requested again.
+        </p>
+      </div>
+      <div class="setting-field">
         <select
           id="fixes-auto"
           aria-describedby="fixes-auto-hint"
@@ -112,30 +121,31 @@
             Low and above
           </option>
         </select>
+        <div class="switch-row">
+          <input
+            id="fixes-exploited"
+            class="switch"
+            type="checkbox"
+            role="switch"
+            [checked]="exploited()"
+            [disabled]="!editable() || (!l.exploitedAvailable && !exploited())"
+            (change)="setExploited($event)"
+          />
+          <label for="fixes-exploited">
+            <span class="sw-name" i18n="@@fix.panel.exploited"
+              >Exploited vulnerabilities (CISA KEV)</span
+            >
+          </label>
+        </div>
       </div>
-      <div class="switch-row">
-        <input
-          id="fixes-exploited"
-          class="switch"
-          type="checkbox"
-          role="switch"
-          [checked]="exploited()"
-          [disabled]="!editable() || (!l.exploitedAvailable && !exploited())"
-          (change)="setExploited($event)"
-        />
-        <label for="fixes-exploited">
-          <span class="sw-name" i18n="@@fix.panel.exploited"
-            >Exploited vulnerabilities (CISA KEV)</span
-          >
-        </label>
-      </div>
-      <p id="fixes-auto-hint" class="hint" i18n="@@fix.panel.autoNote">
-        Counts vulnerabilities first found after you save. A package that already has a fix MR is
-        not requested again.
-      </p>
-      <div class="field fix-field">
+    </div>
+
+    <div class="setting-row" data-line="max">
+      <div class="setting-text">
         <label for="fixes-max" i18n="@@fix.panel.maxLabel">Fix MRs in progress at most</label>
-        <select id="fixes-max" [disabled]="!editable()" (change)="setMaxOpen($event)">
+      </div>
+      <div class="setting-field">
+        <select id="fixes-max" class="short" [disabled]="!editable()" (change)="setMaxOpen($event)">
           @for (n of maxOpenChoices; track n) {
             <option [value]="n" [selected]="n === maxOpen()">{{ n }}</option>
           }
@@ -143,22 +153,26 @@
       </div>
     </div>
 
-    <div class="vm-section" role="group" aria-labelledby="fixes-token-heading">
-      <h3 id="fixes-token-heading" i18n="@@fix.panel.token">What the connection's token needs</h3>
-      @if (needs() !== 'github') {
-        <p i18n="@@fix.panel.token.gitlab">
-          GitLab: the api scope, and the Developer role or higher on the project.
-        </p>
-      }
-      @if (needs() !== 'gitlab') {
-        <p i18n="@@fix.panel.token.github">
-          GitHub: the App's permissions contents: write and pull_requests: write.
-        </p>
-      }
+    <div class="setting-row" data-line="token">
+      <div class="setting-text">
+        <span class="setting-name" i18n="@@fix.panel.token">What the connection's token needs</span>
+      </div>
+      <div class="setting-field">
+        @if (needs() !== 'github') {
+          <p i18n="@@fix.panel.token.gitlab">
+            GitLab: the api scope, and the Developer role or higher on the project.
+          </p>
+        }
+        @if (needs() !== 'gitlab') {
+          <p i18n="@@fix.panel.token.github">
+            GitHub: the App's permissions contents: write and pull_requests: write.
+          </p>
+        }
+      </div>
     </div>
 
     @if (editable()) {
-      <div class="vm-actions">
+      <div class="setting-actions">
         <button
           type="button"
           class="btn"
@@ -171,5 +185,9 @@
         </button>
       </div>
     }
+  } @else {
+    <div class="panel-body">
+      <p class="hint" i18n="@@fix.panel.loading">Loading…</p>
+    </div>
   }
 </section>

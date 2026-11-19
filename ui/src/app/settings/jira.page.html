@@ -65,26 +65,47 @@
       </div>
       <div class="setting-row">
         <div class="setting-text">
-          <label for="jira-deployment" i18n="@@jira.deployment">Jira</label>
+          <span id="jira-deployment-name" class="setting-name" i18n="@@jira.deployment">Jira</span>
         </div>
         <div class="setting-field">
-          <select
-            id="jira-deployment"
-            [disabled]="!canManage()"
-            [value]="deployment()"
-            (change)="setDeployment($event)"
-          >
-            <option value="cloud" [selected]="deployment() === 'cloud'" i18n="@@jira.cloud">
-              Jira Cloud
-            </option>
-            <option
-              value="data_center"
-              [selected]="deployment() === 'data_center'"
-              i18n="@@jira.dataCenter"
-            >
-              Jira Data Center or Server
-            </option>
-          </select>
+          <div class="choices" role="radiogroup" aria-labelledby="jira-deployment-name">
+            <label class="choice-card" [class.checked]="deployment() === 'cloud'">
+              <input
+                id="jira-deployment-cloud"
+                type="radio"
+                name="jira-deployment"
+                value="cloud"
+                [checked]="deployment() === 'cloud'"
+                [disabled]="!canManage()"
+                (change)="setDeployment($event)"
+              />
+              <span class="choice-text"
+                ><span class="choice-title" i18n="@@jira.cloud">Jira Cloud</span>&ngsp;<span
+                  class="choice-hint"
+                  i18n="@@jira.cloudHint"
+                  >Your site at atlassian.net</span
+                ></span
+              >
+            </label>
+            <label class="choice-card" [class.checked]="deployment() === 'data_center'">
+              <input
+                id="jira-deployment-data_center"
+                type="radio"
+                name="jira-deployment"
+                value="data_center"
+                [checked]="deployment() === 'data_center'"
+                [disabled]="!canManage()"
+                (change)="setDeployment($event)"
+              />
+              <span class="choice-text"
+                ><span class="choice-title" i18n="@@jira.dataCenter"
+                  >Jira Data Center or Server</span
+                >&ngsp;<span class="choice-hint" i18n="@@jira.dataCenterHint"
+                  >Your own Jira, version 9.0 or later</span
+                ></span
+              >
+            </label>
+          </div>
         </div>
       </div>
       <div class="setting-row">
@@ -118,6 +139,10 @@
         <div class="setting-row">
           <div class="setting-text">
             <label for="jira-email" i18n="@@jira.email">Email</label>
+            <p i18n="@@jira.emailHint">
+              The email of the Atlassian account that owns the API token. Jira issues are created as
+              this account.
+            </p>
           </div>
           <div class="setting-field">
             <input
