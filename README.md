@@ -54,11 +54,11 @@ account needed.
 
 ## What you get
 
-| Part                                                      | What it does                                                                                                                        | Edition                                                                     |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Code quality and security](#code-quality-and-security)   | open-source analyzers and Qualor's own security rules, a quality gate on new code, coverage and duplication, merge request comments | Community                                                                   |
-| [AI code review](#ai-review)                              | reviews of merge requests on your own model, with suggested changes; an AI assistant and an MCP server                              | Community; automatic fix suggestions: Enterprise                            |
-| [Dependency vulnerabilities](#dependency-vulnerabilities) | main, chosen branches and releases re-checked against a fresh vulnerability database, with no new scan; triage with VEX reasons     | Community; exploited vulnerabilities, alerts, SBOM and VEX export: Business |
+| Part                                                      | What it does                                                                                                                                                                      | Edition                                                                     |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Code quality and security](#code-quality-and-security)   | open-source analyzers and Qualor's own security rules, a quality gate on new code, coverage and duplication, merge request comments                                               | Community                                                                   |
+| [AI code review](#ai-review)                              | reviews of merge requests on your own model, with suggested changes; an AI assistant and an MCP server                                                                            | Community; automatic fix suggestions: Enterprise                            |
+| [Dependency vulnerabilities](#dependency-vulnerabilities) | main, chosen branches and releases re-checked against a fresh vulnerability database, with no new scan; merge requests that bump a vulnerable dependency; triage with VEX reasons | Community; exploited vulnerabilities, alerts, SBOM and VEX export: Business |
 
 What each edition adds: [Editions](#editions).
 
