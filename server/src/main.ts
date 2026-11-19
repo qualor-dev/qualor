@@ -39,6 +39,7 @@ import { mailDeps } from './mail/outbox';
 import { notifyAnalysesFailed } from './notifications/analysis';
 import { notifyDeps } from './notifications/deps';
 import { reconcileStuckSetupRuns, repositorySetupHandlers } from './onboarding/setup-run';
+import { organizationDeleteHandlers } from './orgs/delete';
 import { bootEnterprise, type EnterpriseBoot } from './plugins/boot';
 import { ensurePluginSchedules, startPluginWorker } from './plugins/mount';
 import { startWorker, type JobHandlers } from './queue/worker';
@@ -356,6 +357,8 @@ async function main(): Promise<void> {
       // 6I-2: merge requests' review snapshots are unpacked here; the worker tries the queues in
       // this order, so a waiting analysis is taken first.
       ...reviewSnapshotHandlers({ db: database.db, logger, limits: config.reviewSnapshot }),
+      // 0.16 issue #37: `DELETE /organizations/:id` queues the delete of the organisation here.
+      ...organizationDeleteHandlers({ db: database.db, logger }),
       ...telemetryHandlersIfEnabled(config, database.db, edition, logger),
       // E1 spec: the daily licence expiry check (it queues email; the mail worker sends it).
       ...licenseAlertHandlers({ db: database.db, edition, config, logger }),

@@ -5,7 +5,7 @@ import type { Executor } from '../db/client';
 import { LOCKS } from '../db/locks';
 import { instanceSettings, organizations } from '../db/schema';
 import { ProblemError } from '../http/problem';
-import { instanceSetting } from '../settings';
+import { dropOrganizationEntry, instanceSetting } from '../settings';
 
 /** 6M §4: the `instance_settings` row of the organisation licence policies. */
 export const LICENSE_POLICY_SETTINGS_KEY = 'licensePolicy';
@@ -159,6 +159,20 @@ export async function writeLicensePolicy(
     .insert(instanceSettings)
     .values({ key: LICENSE_POLICY_SETTINGS_KEY, value })
     .onConflictDoUpdate({ target: instanceSettings.key, set: { value, updatedAt: sql`now()` } });
+}
+
+/**
+ * Removes the organisation's policy from the row, under the lock every write of the row takes,
+ * for the delete of the organisation (0.16 issue #37). The other organisations' entries, readable
+ * or not, and the row's other members stay as they are stored. A missing row or entry, or a row
+ * whose outer shape is broken, is left as it is. Call it inside a transaction.
+ */
+export async function dropOrganizationLicensePolicy(
+  tx: Executor,
+  organizationId: string,
+): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.licensePolicy})`);
+  await dropOrganizationEntry(tx, LICENSE_POLICY_SETTINGS_KEY, organizationId);
 }
 
 /** Code-unit order (not locale-dependent). */

@@ -5,10 +5,11 @@ import { z } from 'zod';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Executor } from '../db/client';
 import { uuidList } from '../db/bulk';
+import { LOCKS } from '../db/locks';
 import { instanceSettings, projects } from '../db/schema';
 import type { ModelTier } from '../review/model-tiers';
 import { defaultReview, MODEL_NAME_PATTERN, reviewSettingsSchema } from '../review/schema';
-import { instanceSetting } from '../settings';
+import { dropOrganizationEntry, instanceSetting } from '../settings';
 import { PROVIDER_APIS, PROVIDER_KINDS, type ProviderConfig } from './providers';
 
 export const LLM_SETTINGS_KEY = 'llm';
@@ -277,6 +278,21 @@ export async function writeLlmSettings(tx: Executor, value: StoredLlmSettings): 
     .insert(instanceSettings)
     .values({ key: LLM_SETTINGS_KEY, value })
     .onConflictDoUpdate({ target: instanceSettings.key, set: { value, updatedAt: sql`now()` } });
+}
+
+/**
+ * Removes the organisation's switches from the row, under the lock every write of the row takes
+ * (llm.md §3.2), for the delete of the organisation (0.16 issue #37). The row is changed as it is
+ * stored, never through the schema: one that does not parse is not overwritten with the defaults,
+ * and the other organisations' entries stay as they are. A missing row or entry is left as it is.
+ * Call it inside a transaction.
+ */
+export async function dropOrganizationLlmSettings(
+  tx: Executor,
+  organizationId: string,
+): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.llmSettings})`);
+  await dropOrganizationEntry(tx, LLM_SETTINGS_KEY, organizationId);
 }
 
 /** The stored key: `key: null` for a provider without one; `ok: false` when it no longer decrypts. */
