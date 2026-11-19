@@ -190,8 +190,7 @@ export async function hasInventory(
       .where(eq(projectVersions.id, target.versionId));
     return row?.hasInventory ?? false;
   }
-  const result = await db.execute<{ has: boolean }>(
-    sql`SELECT ${branchHasInventory(sql`${target.branchId}::uuid`)} AS has`,
-  );
+  const hasInventory = branchHasInventory(sql`${target.branchId}::uuid`);
+  const result = await db.execute<{ has: boolean }>(sql`SELECT ${hasInventory} AS has`);
   return result.rows[0]?.has === true;
 }

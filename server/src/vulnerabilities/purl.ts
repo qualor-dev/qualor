@@ -131,7 +131,8 @@ export function osMatchKey(
   if (type === 'apk') {
     return `${path}@${segment(version)}?distro=${segment(osVersion)}&${upstream}`;
   }
-  const distro = `distro=${segment(`${family}-${osVersion}`)}`;
+  const familyVersion = `${family}-${osVersion}`;
+  const distro = `distro=${segment(familyVersion)}`;
   if (type === 'deb') return `${path}@${segment(version)}?${distro}&${upstream}`;
   const { epoch, rest } = rpmEpoch(version);
   const qualifiers = [

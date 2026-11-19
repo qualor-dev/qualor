@@ -164,13 +164,15 @@ function packageConditions(search: UsageSearch, query: UsagesQuery): SQL {
 function inventoryRows(search: UsageSearch, query: UsagesQuery): SQL {
   const where = packageConditions(search, query);
   const family = search.kind === 'purl' ? search.family : null;
+  const noFamily = sql``;
+  const familyFilter = family === null ? noFamily : sql` AND v.os_family = ${family}`;
   const versions = sql`
     SELECT 'version'::text AS kind, v.id AS target_id, v.label AS target_name, false AS main,
            2 AS target_rank, v.project_id, v.source AS target_source,
            d.ecosystem, d.name, d.version, d.path, d.direct,
            v.os_family, v.os_version, d.source_name, d.source_version, d.arch, d.modularity_label
       FROM version_dependencies d JOIN project_versions v ON v.id = d.version_id
-     WHERE ${where}${family === null ? sql`` : sql` AND v.os_family = ${family}`}`;
+     WHERE ${where}${familyFilter}`;
   if (family !== null) return versions;
   return sql`
     SELECT 'branch'::text AS kind, b.id AS target_id, b.name AS target_name, b.is_main AS main,
@@ -322,10 +324,11 @@ export async function packageUsages(
 ): Promise<UsagesAnswer> {
   const search = usageSearchOf(query.q);
   if (search === null) throw validationFailed([{ path: 'query.q', message: NOT_A_PURL }]);
+  const allVisible = sql`true`;
   const matching = sql`
       FROM (${inventoryRows(search, query)}) u
       JOIN ${projects} ON ${projects.id} = u.project_id
-     WHERE ${visible ?? sql`true`}`;
+     WHERE ${visible ?? allVisible}`;
   const [page, counted] = await Promise.all([
     db.execute<UsageRecord>(sql`
       SELECT u.kind, u.target_id, u.target_name, u.main, u.target_source, u.project_id,

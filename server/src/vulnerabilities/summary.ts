@@ -334,10 +334,11 @@ export async function readTargetSummary(
 /** The branches of `ids` that have a dependency inventory, an empty one included. */
 async function branchesWithInventory(db: Executor, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
+  const hasInventory = branchHasInventory(sql`b.id`);
   const rows = await db.execute<{ id: string }>(sql`
     SELECT b.id FROM branches b
      WHERE b.id IN ${uuidList(ids)}
-       AND ${branchHasInventory(sql`b.id`)}`);
+       AND ${hasInventory}`);
   return new Set(rows.rows.map((r) => r.id));
 }
 
