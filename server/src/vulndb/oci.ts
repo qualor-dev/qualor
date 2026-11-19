@@ -264,6 +264,24 @@ async function exchange(
   return { kind: 'response', url, status: got.status, headers: got.headers, body: got.body };
 }
 
+/** The headers of one hop: `authorization` and `extra` only on the start URL's origin. */
+function hopHeaders(
+  url: URL,
+  start: URL,
+  authorization: string | null,
+  accept: string | null,
+  extra: Record<string, string>,
+): Record<string, string> {
+  const sameOrigin = url.origin === start.origin;
+  const headers: Record<string, string> = {
+    ...(sameOrigin ? extra : {}),
+    'user-agent': `Qualor/${VERSION}`,
+  };
+  if (accept !== null) headers.accept = accept;
+  if (authorization !== null && sameOrigin) headers.authorization = authorization;
+  return headers;
+}
+
 /**
  * A request to `start` and the redirects it answers with, by hand, at most {@link MAX_REDIRECTS}.
  * Every hop is checked again ({@link exchange}): a redirect to http is BLOCKED. `authorization`
@@ -282,14 +300,7 @@ async function follow(
 ): Promise<Got | OciProblem> {
   let url = start;
   for (let redirects = 0; ; redirects++) {
-    const headers: Record<string, string> = {
-      ...(url.origin === start.origin ? extra : {}),
-      'user-agent': `Qualor/${VERSION}`,
-    };
-    if (accept !== null) headers.accept = accept;
-    if (authorization !== null && url.origin === start.origin) {
-      headers.authorization = authorization;
-    }
+    const headers = hopHeaders(url, start, authorization, accept, extra);
     const got = await exchange(session, url, headers, mode, maxBytes);
     if (isOciProblem(got) || got.kind !== 'response' || !REDIRECT_STATUSES.has(got.status)) {
       return got;
@@ -331,9 +342,11 @@ function topLevelParts(value: string): string[] {
   const parts: string[] = [];
   let start = 0;
   let quoted = false;
+  let escaped = false;
   for (let i = 0; i < value.length; i++) {
     const c = value[i];
-    if (quoted && c === '\\') i++;
+    if (escaped) escaped = false;
+    else if (quoted && c === '\\') escaped = true;
     else if (c === '"') quoted = !quoted;
     else if (c === ',' && !quoted) {
       parts.push(value.slice(start, i));
