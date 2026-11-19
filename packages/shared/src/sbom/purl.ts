@@ -25,20 +25,22 @@ function decode(text: string): string | null {
   if (BAD_UTF16.test(text)) return null;
   if (!text.includes('%')) return text;
   const bytes: number[] = [];
-  for (let i = 0; i < text.length; i++) {
+  let i = 0;
+  while (i < text.length) {
     const c = text.charCodeAt(i);
     if (c === 0x25) {
       const hex = text.slice(i + 1, i + 3);
       if (!/^[0-9a-fA-F]{2}$/.test(hex)) return null;
       bytes.push(Number.parseInt(hex, 16));
-      i += 2;
+      i += 3;
     } else if (c < 0x80) {
       bytes.push(c);
+      i += 1;
     } else {
       // A non-ASCII character that is not escaped: keep its UTF-8 bytes.
       const cp = text.codePointAt(i) as number;
       bytes.push(...ENCODER.encode(String.fromCodePoint(cp)));
-      if (cp > 0xffff) i++;
+      i += cp > 0xffff ? 2 : 1;
     }
   }
   let out: string;
@@ -61,70 +63,92 @@ function parseSubpath(text: string): string | null | undefined {
   return segments.length > 0 ? segments.join('/') : null;
 }
 
-/** Parses a purl; null for anything that is not one. */
-export function parsePurl(text: string): Purl | null {
-  if (typeof text !== 'string' || !/^pkg:/i.test(text)) return null;
-  let rest = text.slice(4);
-
-  let subpath: string | null = null;
+/** The text before the `#`, and the subpath after it; null when the subpath is malformed. */
+function cutSubpath(rest: string): { rest: string; subpath: string | null } | null {
   const hash = rest.lastIndexOf('#');
-  if (hash >= 0) {
-    const parsed = parseSubpath(rest.slice(hash + 1));
-    if (parsed === undefined) return null;
-    subpath = parsed;
-    rest = rest.slice(0, hash);
-  }
+  if (hash < 0) return { rest, subpath: null };
+  const subpath = parseSubpath(rest.slice(hash + 1));
+  return subpath === undefined ? null : { rest: rest.slice(0, hash), subpath };
+}
 
+/** The `&`-separated qualifiers, keys lowercased, empty values left out; null when malformed. */
+function parseQualifiers(text: string): [string, string][] | null {
   const entries: [string, string][] = [];
+  const seen = new Set<string>();
+  for (const pair of text.split('&')) {
+    if (pair === '') continue;
+    const eq = pair.indexOf('=');
+    if (eq < 0) return null;
+    const key = pair.slice(0, eq).toLowerCase();
+    if (!QUALIFIER_KEY.test(key) || seen.has(key)) return null;
+    seen.add(key);
+    const value = decode(pair.slice(eq + 1));
+    if (value === null) return null;
+    if (value !== '') entries.push([key, value]);
+  }
+  return entries;
+}
+
+/** The text before the `?`, and the qualifiers after it; null when they are malformed. */
+function cutQualifiers(rest: string): { rest: string; entries: [string, string][] } | null {
   const question = rest.lastIndexOf('?');
-  if (question >= 0) {
-    const seen = new Set<string>();
-    for (const pair of rest.slice(question + 1).split('&')) {
-      if (pair === '') continue;
-      const eq = pair.indexOf('=');
-      if (eq < 0) return null;
-      const key = pair.slice(0, eq).toLowerCase();
-      if (!QUALIFIER_KEY.test(key) || seen.has(key)) return null;
-      seen.add(key);
-      const value = decode(pair.slice(eq + 1));
-      if (value === null) return null;
-      if (value !== '') entries.push([key, value]);
-    }
-    rest = rest.slice(0, question);
-  }
+  if (question < 0) return { rest, entries: [] };
+  const entries = parseQualifiers(rest.slice(question + 1));
+  return entries === null ? null : { rest: rest.slice(0, question), entries };
+}
 
-  let version: string | null = null;
-  // Only the last segment carries a version: an unencoded `@scope` of npm is no separator.
+/**
+ * The text before the `@`, and the version after it (null when empty); null when the version does
+ * not decode. Only the last segment carries a version: an unencoded `@scope` of npm is no
+ * separator.
+ */
+function cutVersion(rest: string): { rest: string; version: string | null } | null {
   const at = rest.lastIndexOf('@');
-  if (at > rest.lastIndexOf('/')) {
-    version = decode(rest.slice(at + 1));
-    if (version === null) return null;
-    if (version === '') version = null;
-    rest = rest.slice(0, at);
-  }
+  if (at <= rest.lastIndexOf('/')) return { rest, version: null };
+  const version = decode(rest.slice(at + 1));
+  if (version === null) return null;
+  return { rest: rest.slice(0, at), version: version === '' ? null : version };
+}
 
-  rest = rest.replace(/^\/+/, '');
-  const slash = rest.indexOf('/');
-  if (slash < 0) return null;
-  const type = rest.slice(0, slash);
-  if (!TYPE.test(type)) return null;
-
+/** The decoded non-empty `/` segments; null when one does not decode. */
+function decodeSegments(text: string): string[] | null {
   const parts: string[] = [];
-  for (const raw of rest.slice(slash + 1).split('/')) {
+  for (const raw of text.split('/')) {
     if (raw === '') continue;
     const d = decode(raw);
     if (d === null) return null;
     parts.push(d);
   }
+  return parts;
+}
+
+/** Parses a purl; null for anything that is not one. */
+export function parsePurl(text: string): Purl | null {
+  if (typeof text !== 'string' || !/^pkg:/i.test(text)) return null;
+  const subpath = cutSubpath(text.slice(4));
+  if (subpath === null) return null;
+  const qualifiers = cutQualifiers(subpath.rest);
+  if (qualifiers === null) return null;
+  const version = cutVersion(qualifiers.rest);
+  if (version === null) return null;
+
+  const rest = version.rest.replace(/^\/+/, '');
+  const slash = rest.indexOf('/');
+  if (slash < 0) return null;
+  const type = rest.slice(0, slash);
+  if (!TYPE.test(type)) return null;
+
+  const parts = decodeSegments(rest.slice(slash + 1));
+  if (parts === null) return null;
   const name = parts.pop();
   if (name === undefined) return null;
   return {
     type: type.toLowerCase(),
     namespace: parts.length > 0 ? parts.join('/') : null,
     name,
-    version,
-    qualifiers: Object.fromEntries(entries),
-    subpath,
+    version: version.version,
+    qualifiers: Object.fromEntries(qualifiers.entries),
+    subpath: subpath.subpath,
   };
 }
 
