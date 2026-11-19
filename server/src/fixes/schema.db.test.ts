@@ -103,39 +103,54 @@ describe('the fix tables (0.16 fix MRs spec §7, migration 0033_fix_mrs)', () =>
 
     it('a preparing row with its lease fields', async () => {
       const project = await makeProject();
-      await t.db.insert(dependencyFixes).values(
-        fix(project.id, {
-          state: 'preparing',
-          leaseTokenHash: 'a'.repeat(64),
-          leaseUntil: new Date(Date.now() + 60_000),
-        }),
-      );
+      const rows = await t.db
+        .insert(dependencyFixes)
+        .values(
+          fix(project.id, {
+            state: 'preparing',
+            leaseTokenHash: 'a'.repeat(64),
+            leaseUntil: new Date(Date.now() + 60_000),
+          }),
+        )
+        .returning({ id: dependencyFixes.id });
+      expect(rows).toHaveLength(1);
     });
 
     it('a committing row with prepared files and an open row with mr_number and head_sha', async () => {
       const project = await makeProject();
-      await t.db.insert(dependencyFixes).values(
-        fix(project.id, {
-          state: 'committing',
-          prepared: {
-            baseSha: 'a'.repeat(40),
-            files: [],
-            lockfiles: [],
-            unfixable: [],
-            additions: [],
-          },
-        }),
-      );
-      await t.db
+      const committing = await t.db
         .insert(dependencyFixes)
-        .values(fix(project.id, { state: 'open', mrNumber: 7, headSha: 'b'.repeat(40) }));
+        .values(
+          fix(project.id, {
+            state: 'committing',
+            prepared: {
+              baseSha: 'a'.repeat(40),
+              files: [],
+              lockfiles: [],
+              unfixable: [],
+              additions: [],
+            },
+          }),
+        )
+        .returning({ id: dependencyFixes.id });
+      const open = await t.db
+        .insert(dependencyFixes)
+        .values(fix(project.id, { state: 'open', mrNumber: 7, headSha: 'b'.repeat(40) }))
+        .returning({ id: dependencyFixes.id });
+      expect([...committing, ...open]).toHaveLength(2);
     });
 
     it('one package of each family in one project', async () => {
       const project = await makeProject();
+      const ids: string[] = [];
       for (const family of ['js', 'go', 'maven', 'python'] as const) {
-        await t.db.insert(dependencyFixes).values(fix(project.id, { family, packageName: 'same' }));
+        const [row] = await t.db
+          .insert(dependencyFixes)
+          .values(fix(project.id, { family, packageName: 'same' }))
+          .returning({ id: dependencyFixes.id });
+        ids.push(row!.id);
       }
+      expect(new Set(ids).size).toBe(4);
     });
   });
 

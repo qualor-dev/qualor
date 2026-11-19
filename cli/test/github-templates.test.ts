@@ -103,10 +103,9 @@ describe('integrations/github/qualor.yml', () => {
   });
 
   it("caches the scanner's vulnerability database around the scan, pinned by commit", () => {
-    expectDbCache(
-      job.steps,
-      job.steps.find((s) => s.run?.includes('qualor scan'))!,
-    );
+    const scan = job.steps.find((s) => s.run?.includes('qualor scan'));
+    expect(scan).toBeDefined();
+    expectDbCache(job.steps, scan!);
   });
 
   it('never prints the token, and puts no expression into a command', () => {

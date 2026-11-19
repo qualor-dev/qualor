@@ -438,6 +438,9 @@ describe.skipIf(!configured).each(connections)('live Jira: $name', (c) => {
     record('error', refused.body);
     summary.singleRefused = { status: refused.status };
     note(`a single refused create answers ${refused.status}`);
+    // Jira Cloud answers 400 (2026-11-19); any client error is a refusal the client must read.
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    expect(refused.status).toBeLessThan(500);
   });
 
   it('status read by id, with a deleted and a made-up id beside the real ones', async () => {
