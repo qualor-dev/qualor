@@ -623,4 +623,72 @@ describe('flood guard', () => {
     expect(refusal(`[${repeated},[${strings}],${values}]`).code).toBe('SBOM_INVALID');
     expect(parse).toHaveBeenCalledTimes(1);
   });
+
+  /** A backslash, written without an escape sequence. */
+  const BS = String.fromCharCode(0x5c);
+
+  it('ends the scan at an unterminated string or a backslash at the end of the text', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    for (const text of ['{"a', `{"a${BS}`, `["a${BS}"`, `{"a":"b${BS}`, '"']) {
+      expect(refusal(text).code, text).toBe('SBOM_INVALID');
+    }
+    expect(parse).toHaveBeenCalledTimes(5);
+  });
+
+  it('counts an unterminated last key, a trailing backslash included', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    expect(refusal(`{${keys(10_000)},"z`).code).toBe('SBOM_TOO_LARGE');
+    expect(refusal(`{${keys(10_000)},"z${BS}`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+    expect(refusal(`{${keys(9_999)},"z`).code).toBe('SBOM_INVALID');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('compares keys as written, escapes included', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // `k0` is `k0` once decoded, a distinct key as written.
+    expect(refusal(`{${keys(10_000)},"${BS}u006b0":1}`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('reads a key past an escaped quote and up to an escaped backslash', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // `"q\"<i>"` and `"q<i>\\"`: one string each, so one key each.
+    const written = (n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        i % 2 === 0 ? `"q${BS}"${i}":1` : `"q${i}${BS}${BS}":1`,
+      ).join(',');
+    expect(refusal(`{${written(10_001)}}`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+    expect(refusal(`{${written(10_000)}}`).code).toBe('SBOM_INVALID');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts a key after white space, and a value at the start of the text', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    const spaced = Array.from({ length: 10_001 }, (_, i) => `\t"k${i}" :\r\n1`).join(' ,\n');
+    expect(refusal(`{ ${spaced} }`).code).toBe('SBOM_TOO_LARGE');
+    // No bracket: the first value is the one at the start, then one after each comma.
+    expect(refusal(`  ${'1,'.repeat(6_000_000)}1`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+    // A value starts only there: `1 1` counts as one value, and JSON.parse refuses it.
+    expect(refusal(`[${'1 '.repeat(6_000_001)}]`).code).toBe('SBOM_INVALID');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('duplicates and direct', () => {
+  it('keeps direct when a later duplicate is not direct', () => {
+    const inv = inventory(
+      bom(
+        [lib('pkg:npm/a@1.0.0', { 'bom-ref': 'a1' }), lib('pkg:npm/a@1.0.0', { 'bom-ref': 'a2' })],
+        {
+          metadata: { component: { type: 'application', name: 'app', 'bom-ref': 'app' } },
+          dependencies: [{ ref: 'app', dependsOn: ['a1'] }],
+        },
+      ),
+    );
+    expect(inv.entries).toEqual([expect.objectContaining({ name: 'a', direct: true })]);
+    expect(inv.skipped.duplicate).toBe(1);
+  });
 });

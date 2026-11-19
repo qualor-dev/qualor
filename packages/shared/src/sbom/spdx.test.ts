@@ -378,3 +378,74 @@ describe('hostile input', () => {
     expect(readSpdx(sampleJson('syft-node.spdx-2.2.json'))).toMatchObject({ format: 'SPDX 2.2' });
   });
 });
+
+describe('readSpdx: shapes', () => {
+  const header = { spdxVersion: 'SPDX-2.3', SPDXID: 'SPDXRef-DOCUMENT' };
+
+  it('reads a document without packages or relationships', () => {
+    expect(readSpdx(header)).toEqual({
+      format: 'SPDX 2.3',
+      subject: null,
+      operatingSystems: [],
+      components: [],
+      skipped: { noPurl: 0, unsupportedType: 0 },
+      invalidPurls: [],
+      tooDeep: 0,
+    });
+  });
+
+  it('takes the first of two packages with one SPDXID as the subject, and skips both', () => {
+    const inv = invOf(
+      spdx(
+        [
+          spdxPkg('root', 'pkg:npm/root@1', { name: 'first' }),
+          spdxPkg('root', 'pkg:npm/root@2', { name: 'second' }),
+          spdxPkg('a', 'pkg:npm/a@1'),
+        ],
+        [spdxRel('DOCUMENT', 'DESCRIBES', 'root')],
+      ),
+    );
+    expect(inv.subject).toBe('first 1');
+    expect(inv.entries.map((e) => e.name)).toEqual(['a']);
+  });
+
+  it('has no subject for a package without a name, and still reads its graph', () => {
+    const inv = invOf(
+      spdx(
+        [{ SPDXID: 'SPDXRef-root' }, spdxPkg('a', 'pkg:npm/a@1'), spdxPkg('b', 'pkg:npm/b@1')],
+        [spdxRel('DOCUMENT', 'DESCRIBES', 'root'), spdxRel('root', 'DEPENDS_ON', 'a')],
+      ),
+    );
+    expect(inv.subject).toBeNull();
+    expect(inv.subjectVersion).toBeNull();
+    expect(inv.entries.map((e) => [e.name, e.direct])).toEqual([
+      ['a', true],
+      ['b', false],
+    ]);
+  });
+
+  it('skips an operating system without a name, and reads one without a version', () => {
+    const result = readSpdx(
+      spdx([
+        { SPDXID: 'SPDXRef-OperatingSystem-a', versionInfo: '12' },
+        { SPDXID: 'SPDXRef-x', name: '  ', primaryPackagePurpose: 'OPERATING_SYSTEM' },
+        { SPDXID: 'SPDXRef-OperatingSystem-b', name: ' debian ' },
+      ]),
+    );
+    expect(result).toMatchObject({
+      operatingSystems: [{ name: 'debian', version: '' }],
+      components: [],
+      skipped: { noPurl: 0, unsupportedType: 0 },
+    });
+  });
+
+  it('counts every purl that does not parse and names the first three', () => {
+    const result = readSpdx(
+      spdx(['pkg:', 'pkg:npm/', 'x', 'y'].map((purl, i) => spdxPkg(`p${i}`, purl))),
+    );
+    expect(result).toMatchObject({
+      invalidPurls: ['pkg:', 'pkg:npm/', 'x'],
+      skipped: { noPurl: 4, unsupportedType: 0 },
+    });
+  });
+});

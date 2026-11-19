@@ -479,3 +479,122 @@ describe('readCycloneDx', () => {
     expect(result).toMatchObject({ code: 'SBOM_INVALID', path: 'components.0.components.0.purl' });
   });
 });
+
+describe('readCycloneDx: shapes', () => {
+  const doc = (extra: Record<string, unknown>) => ({
+    bomFormat: 'CycloneDX',
+    specVersion: '1.6',
+    ...extra,
+  });
+
+  it('refuses a missing or non-string specVersion, naming the path', () => {
+    for (const specVersion of [undefined, 1.6]) {
+      expect(readCycloneDx({ bomFormat: 'CycloneDX', specVersion })).toEqual({
+        code: 'SBOM_INVALID',
+        message: 'The CycloneDX document has no specVersion.',
+        path: 'specVersion',
+      });
+    }
+  });
+
+  it('names a wrong-shaped metadata.component, in a component field or in its name', () => {
+    expect(readCycloneDx(doc({ metadata: { component: { purl: 5 } } }))).toMatchObject({
+      code: 'SBOM_INVALID',
+      path: 'metadata.component.purl',
+    });
+    expect(readCycloneDx(doc({ metadata: { component: { name: 5 } } }))).toMatchObject({
+      code: 'SBOM_INVALID',
+      path: 'metadata.component.name',
+    });
+  });
+
+  it('names a wrong-shaped operating-system component, nested or not', () => {
+    expect(
+      readCycloneDx(doc({ components: [{ type: 'operating-system', name: 5 }] })),
+    ).toMatchObject({ code: 'SBOM_INVALID', path: 'components.0.name' });
+    const nested = [
+      lib('pkg:npm/a@1', {
+        components: [{ type: 'operating-system', name: 'debian', version: 12 }],
+      }),
+    ];
+    expect(readCycloneDx(doc({ components: nested }))).toMatchObject({
+      code: 'SBOM_INVALID',
+      path: 'components.0.components.0.version',
+    });
+  });
+
+  it('reads a document without components', () => {
+    expect(readCycloneDx(doc({}))).toEqual({
+      format: 'CycloneDX 1.6',
+      subject: null,
+      operatingSystems: [],
+      components: [],
+      skipped: { noPurl: 0, unsupportedType: 0 },
+      invalidPurls: [],
+      tooDeep: 0,
+    });
+  });
+
+  it('skips an operating-system component without a name, and reads one without a version', () => {
+    const result = readCycloneDx(
+      doc({
+        components: [
+          { type: 'operating-system', version: '12' },
+          { type: 'operating-system', name: '  ', version: '12' },
+          { type: 'operating-system', name: ' alpine ' },
+        ],
+      }),
+    );
+    expect(result).toMatchObject({
+      operatingSystems: [{ name: 'alpine', version: '' }],
+      components: [],
+      skipped: { noPurl: 0, unsupportedType: 0 },
+    });
+  });
+
+  it('has no subject for a blank name, still skips its bom-ref, and reads its graph', () => {
+    const inv = inventory(
+      bom([lib('pkg:npm/root@1', { 'bom-ref': 'root' }), lib('pkg:npm/a@1', { 'bom-ref': 'a' })], {
+        metadata: { component: { type: 'application', 'bom-ref': 'root', group: ' ', name: ' ' } },
+        dependencies: [{ ref: 'root' }],
+      }),
+    );
+    expect(inv.subject).toBeNull();
+    expect(inv.entries.map((e) => [e.name, e.direct])).toEqual([['a', false]]);
+  });
+
+  it('reads the children of every component it skips', () => {
+    const child = (name: string) => ({ components: [lib(`pkg:npm/${name}@1`)] });
+    const inv = inventory(
+      bom(
+        [
+          lib('pkg:npm/root@1', { 'bom-ref': 'root', ...child('under-subject-ref') }),
+          { type: 'operating-system', name: 'debian', version: '12', ...child('under-os') },
+          { type: 'file', name: 'f', ...child('under-file') },
+          { type: 'library', name: 'n', ...child('under-no-purl') },
+          lib('not a purl', child('under-invalid-purl')),
+          lib('pkg:npm/app@2', child('under-subject-purl')),
+        ],
+        {
+          metadata: {
+            component: {
+              type: 'application',
+              'bom-ref': 'root',
+              name: 'app',
+              purl: 'pkg:npm/app@2',
+            },
+          },
+        },
+      ),
+    );
+    expect(inv.entries.map((e) => e.name)).toEqual([
+      'under-subject-ref',
+      'under-os',
+      'under-file',
+      'under-no-purl',
+      'under-invalid-purl',
+      'under-subject-purl',
+    ]);
+    expect(inv.skipped).toEqual({ noPurl: 2, unsupportedType: 1, duplicate: 0 });
+  });
+});

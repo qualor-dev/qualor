@@ -185,3 +185,71 @@ describe('refuses', () => {
     expect(parsePurl(text)).toBeNull();
   });
 });
+
+describe('decodes non-ASCII text next to escapes', () => {
+  it('keeps an unescaped character as its UTF-8 bytes, a surrogate pair as one', () => {
+    expect(parsePurl('pkg:npm/caf%C3%A9-é@1')?.name).toBe('café-é');
+    expect(parsePurl('pkg:npm/a%20😀b@1')?.name).toBe('a 😀b');
+    expect(parsePurl('pkg:npm/a@1?note=%3D😀é')?.qualifiers).toEqual({ note: '=😀é' });
+  });
+
+  it('refuses an escape cut short at the end of a component', () => {
+    expect(parsePurl('pkg:npm/a%2@1')).toBeNull();
+    expect(parsePurl('pkg:npm/a%@1')).toBeNull();
+    expect(parsePurl('pkg:npm/a@1%4')).toBeNull();
+    expect(parsePurl('pkg:npm/a@1?k=v%')).toBeNull();
+  });
+});
+
+describe('subpath', () => {
+  it('reads it, dropping empty segments', () => {
+    expect(parsePurl('pkg:golang/x/y@1#/a//b/')?.subpath).toBe('a/b');
+    expect(parsePurl('pkg:golang/x/y@1?k=v#a%20b')).toMatchObject({
+      qualifiers: { k: 'v' },
+      subpath: 'a b',
+    });
+    expect(parsePurl('pkg:golang/x/y@1#')?.subpath).toBeNull();
+    expect(parsePurl('pkg:golang/x/y@1#//')?.subpath).toBeNull();
+  });
+
+  it.each(['#..', '#a/./b', '#a%2Fb', '#a%ZZ'])('refuses %s', (subpath) => {
+    expect(parsePurl(`pkg:golang/x/y@1${subpath}`)).toBeNull();
+  });
+});
+
+describe('qualifiers', () => {
+  it('skips empty pairs and drops empty values', () => {
+    expect(parsePurl('pkg:npm/a@1?&arch=x&&os=&')?.qualifiers).toEqual({ arch: 'x' });
+  });
+
+  it.each(['?arch', '?1a=b', '?a=1&A=2', '?a=&a=1', '?a=1&a=', '?a=%ZZ'])('refuses %s', (q) => {
+    expect(parsePurl(`pkg:npm/a@1${q}`)).toBeNull();
+  });
+});
+
+describe('version, type and name', () => {
+  it('reads an empty version as none, and an @ before the last slash as no version', () => {
+    expect(parsePurl('pkg:npm/a@')).toMatchObject({ name: 'a', version: null });
+    expect(parsePurl('pkg:npm/@scope/a')).toMatchObject({
+      namespace: '@scope',
+      name: 'a',
+      version: null,
+    });
+  });
+
+  it('strips leading slashes and takes the scheme in any case', () => {
+    expect(parsePurl('pkg:///npm/a@1')).toMatchObject({ type: 'npm', name: 'a', version: '1' });
+    expect(parsePurl('PKG:NPM/a@1')).toMatchObject({ type: 'npm', name: 'a' });
+  });
+
+  it.each(['pkg:npm/a@1%ZZ', 'pkg:1npm/a@1', 'pkg:npm', 'pkg:npm//', 'pkg:npm/a%ZZ/b@1'])(
+    'refuses %s',
+    (text) => {
+      expect(parsePurl(text)).toBeNull();
+    },
+  );
+
+  it('refuses a value that is not a string', () => {
+    expect(parsePurl(5 as unknown as string)).toBeNull();
+  });
+});
