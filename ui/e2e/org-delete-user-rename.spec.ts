@@ -5,12 +5,19 @@ import { STORAGE_STATE } from './seed-data';
 /**
  * 0.16 issue #37: an instance admin deletes an organization (confirmed by its key, removed by a
  * queued job) and renames a user, on the community server. The spec makes its own organization and
- * user; `afterAll` removes what is left, so a repeated run starts clean (users cannot be deleted,
- * so the renamed one is deactivated).
+ * user; `afterAll` removes what is left (users cannot be
+ * deleted, so the renamed one is deactivated). `pnpm ui:e2e` starts from a fresh database, and the
+ * run suffix keeps a reused one from answering 409.
  */
-const ORG = { key: 'e2e-del', name: 'E2E Delete' };
-const PROJECT = { key: 'e2e-del/app', name: 'E2E Delete App' };
-const USER = { before: 'e2e-rename', after: 'e2e-renamed', password: 'e2e rename passphrase' };
+// Users cannot be deleted, and a database may be reused, so every name carries a run suffix.
+const RUN = Date.now().toString(36);
+const ORG = { key: `e2e-del-${RUN}`, name: `E2E Delete ${RUN}` };
+const PROJECT = { key: `e2e-del/app-${RUN}`, name: 'E2E Delete App' };
+const USER = {
+  before: `e2e-rename-${RUN}`,
+  after: `e2e-renamed-${RUN}`,
+  password: 'e2e rename passphrase',
+};
 
 async function csrf(request: APIRequestContext): Promise<Record<string, string>> {
   const me = (await (await request.get('/api/v0/auth/me')).json()) as { csrfToken: string };
@@ -98,7 +105,7 @@ test.describe.serial('delete an organization, rename a user', () => {
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByRole('status')).toHaveText(`${USER.after} is saved.`);
     await expect(page.getByRole('row', { name: new RegExp(USER.after) })).toBeVisible();
-    await expect(page.getByRole('row', { name: new RegExp(`${USER.before}(?!d)`) })).toHaveCount(0);
+    await expect(page.getByRole('row', { name: new RegExp(USER.before) })).toHaveCount(0);
 
     // The new name signs in with the same password; the old one no longer does.
     const fresh = await playwright.request.newContext({ baseURL });

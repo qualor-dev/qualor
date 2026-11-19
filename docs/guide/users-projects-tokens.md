@@ -19,7 +19,7 @@ An instance admin deletes an organisation in **Settings → Organizations** with
 (`DELETE /api/v0/organizations/<id>?confirm=<key>`). The dialog says how many projects go with it
 and asks for the organisation's key. A `confirm` that is not the key answers 422.
 
-The request answers 202 and a job does the deleting, so the row shows **Deleting…** for a moment and
+Deleting cannot be undone. The request answers 202 and a job does the deleting, so the row shows **Deleting…** for a moment and
 then disappears. Until then, Delete is off for it.
 
 | Answer | When |
@@ -37,7 +37,7 @@ then disappears. Until then, Delete is off for it.
 | its GitLab and GitHub connections, Jira connection, licence policy and AI settings | **merge requests and branches on the provider**, with their comments |
 | | users: they only lose their role in it |
 
-Deleting cannot be undone. If the job fails, the organisation stays whole and Delete works again.
+If the job fails, the organisation stays whole and Delete works again.
 
 ## Users and roles
 
@@ -97,8 +97,9 @@ with the new name from then on.
   the person as they were then. The rename itself is recorded as `user.updated`, with the old and
   new name.
 - **Single sign-on and SCIM keep working.** Linked accounts and SCIM records belong to the account,
-  not to its name. For a SCIM user, the identity provider may overwrite the new name at its next
-  sync.
+  not to its name, and a SCIM sync never changes the username: it stays as renamed. For a SCIM
+  user, the identity provider keeps setting the display name and email at each sync, so a display
+  name changed in Qualor can be overwritten.
 - **The demo account.** While `QUALOR_DEMO_USER` is set, the demo user cannot be renamed, and no
   one can be renamed to its name: both answer 409 `DEMO_USER`. Change the setting first.
 

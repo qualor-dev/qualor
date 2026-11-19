@@ -131,9 +131,10 @@ in `.*` (for example `issue.*`).
   (`oauth.grant_revoked`, with who ended it, or that a refresh token or authorization code was
   reused), and the MCP settings changed (`oauth.settings_changed`).
 - **Organisations and their members:** an organisation created or deleted (`organization.deleted`,
-  with its key, its name and how many projects it had; the entries about it stay); a member added, its role changed,
-  or removed; the same three for a role on a single project. Changes made by single sign-on's group
-  sync are recorded the same way, by `system`, with `managedBy` naming the connection.
+  with its key, its name and how many projects it had; the entries about it stay); a member added,
+  its role changed, or removed; the same three for a role on a single project. Changes made by
+  single sign-on's group sync are recorded the same way, by `system`, with `managedBy` naming the
+  connection.
 - **Projects:** created, changed or deleted; a quality profile assigned to it; a branch deleted; the
   vulnerability-monitoring settings changed; a version's tracking changed
   (`project_version.updated`); an SBOM uploaded (`project_version.sbom_uploaded`); a version
