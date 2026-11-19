@@ -160,7 +160,8 @@ interface Frame {
   path: readonly (string | number)[];
 }
 
-export function readCycloneDx(doc: Record<string, unknown>): SbomDocument | SbomRefusal {
+/** The document's specVersion when it is one this reader takes; else the refusal. */
+function specVersionOf(doc: Record<string, unknown>): string | SbomRefusal {
   const specVersion = doc.specVersion;
   if (typeof specVersion !== 'string') {
     return {
@@ -175,117 +176,178 @@ export function readCycloneDx(doc: Record<string, unknown>): SbomDocument | Sbom
       message: `CycloneDX ${cutText(cleanText(specVersion), 32)} is not read. Export the SBOM as CycloneDX JSON 1.2 to 1.7.`,
     };
   }
-  const bom = bomSchema.safeParse(doc);
-  if (!bom.success) return invalid(bom.error, []);
+  return specVersion;
+}
 
-  let subject: SbomDocument['subject'] = null;
-  let subjectRef: string | undefined;
-  let subjectPurl: string | undefined;
-  const metadataComponent = bom.data.metadata?.component;
-  if (metadataComponent !== undefined) {
-    const where = ['metadata', 'component'];
-    const parsed = componentSchema.safeParse(metadataComponent);
-    if (!parsed.success) return invalid(parsed.error, where);
-    const names = named(metadataComponent, where);
-    if ('code' in names) return names;
-    subjectRef = parsed.data['bom-ref'];
-    subjectPurl = parsed.data.purl?.trim();
-    const name = [names.group, names.name]
-      .map((part) => cleanText(part ?? '').trim())
-      .filter((part) => part !== '')
-      .join('/');
-    const version = cleanText(names.version ?? '').trim();
-    if (name !== '') subject = { name, version: version === '' ? null : version };
-  }
+/** What `metadata.component` says: the subject, and the bom-ref and purl that name it. */
+interface Subject {
+  subject: SbomDocument['subject'];
+  ref: string | undefined;
+  purl: string | undefined;
+}
 
-  // The subject's direct dependencies, when the graph names the subject.
+function subjectOf(metadataComponent: unknown): Subject | SbomRefusal {
+  if (metadataComponent === undefined) return { subject: null, ref: undefined, purl: undefined };
+  const where = ['metadata', 'component'];
+  const parsed = componentSchema.safeParse(metadataComponent);
+  if (!parsed.success) return invalid(parsed.error, where);
+  const names = named(metadataComponent, where);
+  if ('code' in names) return names;
+  const name = [names.group, names.name]
+    .map((part) => cleanText(part ?? '').trim())
+    .filter((part) => part !== '')
+    .join('/');
+  const version = cleanText(names.version ?? '').trim();
+  return {
+    subject: name === '' ? null : { name, version: version === '' ? null : version },
+    ref: parsed.data['bom-ref'],
+    purl: parsed.data.purl?.trim(),
+  };
+}
+
+/** The subject's direct dependencies, when the graph names the subject; else null. */
+function directOf(
+  dependencies: z.infer<typeof bomSchema>['dependencies'],
+  subjectRef: string | undefined,
+): Set<string> | null {
   let direct: Set<string> | null = null;
-  for (const dependency of bom.data.dependencies ?? []) {
+  for (const dependency of dependencies ?? []) {
     if (subjectRef === undefined || dependency.ref !== subjectRef) continue;
     direct ??= new Set();
     for (const ref of dependency.dependsOn ?? []) direct.add(ref);
   }
+  return direct;
+}
 
-  const components: SbomComponent[] = [];
-  const operatingSystems: SbomDocument['operatingSystems'] = [];
-  const invalidPurls: string[] = [];
-  let noPurl = 0;
-  let unsupportedType = 0;
-  let tooDeep = 0;
+/**
+ * The walk over `components`, depth first: each component is checked when it is reached, its
+ * children are queued (or counted, at {@link SBOM_MAX_DEPTH}), and it is read by its kind.
+ */
+class ComponentWalk {
+  readonly components: SbomComponent[] = [];
+  readonly operatingSystems: SbomDocument['operatingSystems'] = [];
+  readonly invalidPurls: string[] = [];
+  noPurl = 0;
+  unsupportedType = 0;
+  tooDeep = 0;
+  private readonly stack: Frame[] = [];
+  private readonly subject: Subject;
+  private readonly direct: Set<string> | null;
 
-  const stack: Frame[] = [];
-  if (bom.data.components !== undefined) {
-    stack.push({ items: bom.data.components, index: 0, depth: 1, path: ['components'] });
+  constructor(subject: Subject, direct: Set<string> | null) {
+    this.subject = subject;
+    this.direct = direct;
   }
-  for (let frame = stack.at(-1); frame !== undefined; frame = stack.at(-1)) {
-    if (frame.index >= frame.items.length) {
-      stack.pop();
-      continue;
-    }
-    const index = frame.index++;
-    const item = frame.items[index];
-    const parsed = componentSchema.safeParse(item);
-    if (!parsed.success) return invalid(parsed.error, [...frame.path, index]);
-    const c = parsed.data;
 
-    if (c.components !== undefined && c.components.length > 0) {
-      if (frame.depth >= SBOM_MAX_DEPTH) {
-        tooDeep += countComponents(c.components);
-      } else {
-        stack.push({
-          items: c.components,
-          index: 0,
-          depth: frame.depth + 1,
-          path: [...frame.path, index, 'components'],
-        });
+  /** Walks the top-level components; the refusal of the first one with the wrong shape. */
+  run(items: readonly unknown[] | undefined): SbomRefusal | null {
+    if (items !== undefined) this.stack.push({ items, index: 0, depth: 1, path: ['components'] });
+    for (let frame = this.stack.at(-1); frame !== undefined; frame = this.stack.at(-1)) {
+      if (frame.index >= frame.items.length) {
+        this.stack.pop();
+        continue;
       }
+      const index = frame.index++;
+      const item = frame.items[index];
+      const parsed = componentSchema.safeParse(item);
+      if (!parsed.success) return invalid(parsed.error, [...frame.path, index]);
+      this.queueChildren(frame, index, parsed.data);
+      const refusal = this.read(item, parsed.data, frame, index);
+      if (refusal !== null) return refusal;
     }
+    return null;
+  }
 
-    if (subjectRef !== undefined && c['bom-ref'] === subjectRef) continue;
-    if (c.type === 'operating-system') {
-      const names = named(item, [...frame.path, index]);
-      if ('code' in names) return names;
-      const name = cleanText(names.name ?? '').trim();
-      if (name !== '') {
-        operatingSystems.push({ name, version: cleanText(names.version ?? '').trim() });
-      }
-      continue;
+  /** Queues the children of the component at `index`, or counts them below the depth limit. */
+  private queueChildren(frame: Frame, index: number, c: Component): void {
+    if (c.components === undefined || c.components.length === 0) return;
+    if (frame.depth >= SBOM_MAX_DEPTH) {
+      this.tooDeep += countComponents(c.components);
+    } else {
+      this.stack.push({
+        items: c.components,
+        index: 0,
+        depth: frame.depth + 1,
+        path: [...frame.path, index, 'components'],
+      });
     }
+  }
+
+  /**
+   * Reads one component by its kind: the subject is left out, an operating system names the
+   * distribution, a type that describes no package is counted, anything else is a package.
+   */
+  private read(item: unknown, c: Component, frame: Frame, index: number): SbomRefusal | null {
+    if (this.subject.ref !== undefined && c['bom-ref'] === this.subject.ref) return null;
+    if (c.type === 'operating-system')
+      return this.readOperatingSystem(item, [...frame.path, index]);
     if (c.type !== undefined && UNSUPPORTED_TYPES.has(c.type)) {
-      unsupportedType++;
-      continue;
+      this.unsupportedType++;
+      return null;
     }
+    this.readPackage(c);
+    return null;
+  }
+
+  /** An operating system, read when it has a name; `where` names its JSON path. */
+  private readOperatingSystem(
+    item: unknown,
+    where: readonly (string | number)[],
+  ): SbomRefusal | null {
+    const names = named(item, where);
+    if ('code' in names) return names;
+    const name = cleanText(names.name ?? '').trim();
+    if (name !== '') {
+      this.operatingSystems.push({ name, version: cleanText(names.version ?? '').trim() });
+    }
+    return null;
+  }
+
+  /** A package: counted without purl when it has none or one that does not parse. */
+  private readPackage(c: Component): void {
     const text = c.purl?.trim() ?? '';
     if (text === '') {
-      noPurl++;
-      continue;
+      this.noPurl++;
+      return;
     }
     const purl = parsePurl(text);
     if (purl === null) {
-      noPurl++;
-      if (invalidPurls.length < NAMED_INVALID_PURLS)
-        invalidPurls.push(cutText(cleanText(text), 200));
-      continue;
+      this.noPurl++;
+      if (this.invalidPurls.length < NAMED_INVALID_PURLS)
+        this.invalidPurls.push(cutText(cleanText(text), 200));
+      return;
     }
-    if (subjectPurl !== undefined && text === subjectPurl) continue;
+    if (this.subject.purl !== undefined && text === this.subject.purl) return;
     const properties = propertiesOf(c);
     const ref = c['bom-ref'];
-    components.push({
+    this.components.push({
       purl,
       path: pathOf(c, properties),
       licenses: licensesOf(c),
-      direct: direct === null ? null : ref !== undefined && direct.has(ref),
+      direct: this.direct === null ? null : ref !== undefined && this.direct.has(ref),
       source: trivySource(properties),
     });
   }
+}
 
+export function readCycloneDx(doc: Record<string, unknown>): SbomDocument | SbomRefusal {
+  const specVersion = specVersionOf(doc);
+  if (typeof specVersion !== 'string') return specVersion;
+  const bom = bomSchema.safeParse(doc);
+  if (!bom.success) return invalid(bom.error, []);
+  const subject = subjectOf(bom.data.metadata?.component);
+  if ('code' in subject) return subject;
+
+  const walk = new ComponentWalk(subject, directOf(bom.data.dependencies, subject.ref));
+  const refusal = walk.run(bom.data.components);
+  if (refusal !== null) return refusal;
   return {
     format: `CycloneDX ${specVersion}`,
-    subject,
-    operatingSystems,
-    components,
-    skipped: { noPurl, unsupportedType },
-    invalidPurls,
-    tooDeep,
+    subject: subject.subject,
+    operatingSystems: walk.operatingSystems,
+    components: walk.components,
+    skipped: { noPurl: walk.noPurl, unsupportedType: walk.unsupportedType },
+    invalidPurls: walk.invalidPurls,
+    tooDeep: walk.tooDeep,
   };
 }
