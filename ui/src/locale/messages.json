@@ -70,6 +70,8 @@
     "auth.invite.submit": " Set my password ",
     "auth.invite.signIn": "Go to sign-in",
     "password.title": "Change your password",
+    "password.ssoOnly": " You sign in with single sign-on, so you have no password to change. An instance admin can set one in Settings → Users. ",
+    "password.back": " Back ",
     "password.forced": " An administrator set your password. Choose your own before you continue. ",
     "password.current": "Current password",
     "password.new": "New password",

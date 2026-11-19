@@ -178,6 +178,16 @@ describe('Shell', () => {
     expect(root.querySelector('a[href="/change-password"]')).toBeNull();
   });
 
+  it('offers no password change to an account without a password (single sign-on only)', async () => {
+    TestBed.inject(SessionStore).set(me({ hasPassword: false }));
+    const fixture = TestBed.createComponent(Shell);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('a[href="/change-password"]')).toBeNull();
+    // Signing out stays.
+    expect(root.querySelector('#user-menu')?.textContent).toContain('Sign out');
+  });
+
   it('signs out through the API with the CSRF token and opens the login page', async () => {
     server.on('POST', '/api/v0/auth/logout', { status: 204 });
     const fixture = TestBed.createComponent(Shell);

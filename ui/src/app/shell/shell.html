@@ -48,7 +48,8 @@
           <strong>{{ user.displayName || user.username }}</strong>
           <span class="muted">{{ user.username }}</span>
         </p>
-        @if (!session.demo()) {
+        <!-- No change for the demo, nor for an account without a password (single sign-on only). -->
+        @if (!session.demo() && user.hasPassword) {
           <a routerLink="/change-password" (click)="closeMenu(menu)"
             ><q-icon name="key" /><ng-container i18n="@@shell.changePassword"
               >Change password</ng-container
