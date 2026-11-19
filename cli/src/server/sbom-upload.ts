@@ -65,7 +65,8 @@ function problemText(res: HttpResponse): string {
     .filter((t): t is string => t !== undefined)
     .map(clean)
     .filter((t) => t !== '');
-  return `${res.status}${code}${parts.length === 0 ? '' : `: ${parts.join(': ')}`}`;
+  const detail = parts.length === 0 ? '' : `: ${parts.join(': ')}`;
+  return `${res.status}${code}${detail}`;
 }
 
 /** config.md §7: 401/403 exit 5, any other refusal exits 4. */

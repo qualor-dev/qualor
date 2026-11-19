@@ -41,6 +41,13 @@ async function gzipTo(src: string, dest: string): Promise<number> {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** The last line: whether the server watches the uploaded version for vulnerabilities. */
+function monitoringLine(m: SbomUploadAnswer['monitoring']): string {
+  if (!m.enabled) return '  vulnerability monitoring is off';
+  if (m.recheckQueued) return '  a vulnerability re-check is queued';
+  return '  vulnerability monitoring is on; no re-check was needed';
+}
+
 /** What the server stored. Text that comes from the uploaded file is cleaned of control characters. */
 function render(status: 200 | 201, a: SbomUploadAnswer): string {
   const lines = [
@@ -58,13 +65,7 @@ function render(status: 200 | 201, a: SbomUploadAnswer): string {
   ].filter((s): s is string => s !== false);
   if (skipped.length > 0) lines.push(`  skipped: ${skipped.join(', ')}`);
   for (const w of a.warnings) lines.push(`  warning ${clean(w.code)}: ${clean(w.message)}`);
-  lines.push(
-    !a.monitoring.enabled
-      ? '  vulnerability monitoring is off'
-      : a.monitoring.recheckQueued
-        ? '  a vulnerability re-check is queued'
-        : '  vulnerability monitoring is on; no re-check was needed',
-  );
+  lines.push(monitoringLine(a.monitoring));
   return `${lines.join('\n')}\n`;
 }
 
