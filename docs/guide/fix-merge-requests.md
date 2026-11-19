@@ -19,7 +19,7 @@ runs a package manager: it commits those files to a branch of its own and opens 
 | fix every vulnerability of that package that a version fixes, in every lockfile of its ecosystem | bump a direct parent to fix a transitive package: it pins the transitive package |
 | choose the smallest safe version, and call out a major jump | group several packages in one merge request |
 | keep the merge request current, and close it when the vulnerability is gone | touch a branch a person pushed to |
-| stop at the cap of open merge requests | add reviewers, labels or assignees, or trigger a pipeline |
+| stop at the cap of fix MRs in progress | add reviewers, labels or assignees, or trigger a pipeline |
 | fix vulnerabilities seen on the main branch | fix vulnerabilities seen only on other branches or on versions |
 
 Supported: npm, pnpm, Yarn (classic and Berry), Go modules, Maven, uv and Poetry
@@ -38,7 +38,8 @@ Qualor.
 | 6. Keep vulnerability monitoring on | Project admin | the project's settings ([Dependency vulnerabilities](./dependency-vulnerabilities.md)) |
 
 The panel names the first step that is missing. Until the fix job has asked for work once, it shows
-"Waiting for the fix job"; afterwards it shows when the job last ran.
+"Waiting for the fix job"; afterwards it shows when the job last ran. It counts the project's fix
+MRs: "2 open, 3 of 5 in progress", where in progress is requested, preparing, committing and open.
 
 The connection's token needs:
 
@@ -55,10 +56,10 @@ and [CI setup](./github.md#set-up-ci-with-a-pull-request) cover them. If the fir
 
 | Setting | Meaning |
 |---|---|
-| **Enabled** | off by default. Off stops new requests and claims. Open merge requests stay open |
+| **Enabled** | off by default. Off stops new requests, claims and uploads. Open merge requests stay open: Qualor still records when they are merged, declined, taken over or no longer needed, but does not rebuild them. Their rows keep **Cancel** |
 | **Request fix MRs for new vulnerabilities** | the [automatic mode](#the-automatic-mode): **Off**, **Critical**, **High and above**, **Medium and above**, **Low and above** |
 | **Exploited vulnerabilities (CISA KEV)** | adds exploited vulnerabilities to the automatic mode. It needs Business or Enterprise, as in [Jira](./jira.md#the-automatic-rule) |
-| **Open MRs at most** | 1 to 20, 5 by default |
+| **Fix MRs in progress at most** | 1 to 20, 5 by default. It counts requested, preparing, committing and open fixes |
 
 ### Asking for a fix
 
@@ -77,7 +78,7 @@ The row then shows the state:
 | Failed, no fix | the reason | **Retry**, and the [troubleshooting table](#troubleshooting) |
 | Merged, Fixed, Declined, Taken over, Cancelled | what happened | **Create again** |
 
-The tab's header says "3 of 5 fix MRs open". A package that has no version fixing it, or that
+The tab's header says "3 of 5 fix MRs in progress". A package that has no version fixing it, or that
 Qualor cannot fix, shows no **Create fix MR**; the API answers `NOT_FIXABLE` or
 `FIX_ECOSYSTEM_UNSUPPORTED`.
 
@@ -93,7 +94,7 @@ The automatic mode requests fixes for new vulnerabilities, without a click.
 | Rule | Behaviour |
 |---|---|
 | What counts | vulnerabilities on the main branch **first found after you save**, at or above the threshold, as [the Jira rule](./jira.md#the-automatic-rule) counts them. Saving never requests the backlog |
-| Pace | oldest first, never beyond **Open MRs at most** |
+| Pace | oldest first, never beyond **Fix MRs in progress at most** |
 | A package | requested when it has no fix yet, or its last fix is merged or fixed and a vulnerability it did not handle is new |
 | Never again | a package whose fix failed, has no fix, was cancelled, declined or taken over waits for a person |
 | Needs | vulnerability monitoring on for the project |
@@ -214,10 +215,21 @@ the job's own, such as `NPM_TOKEN`, not `CI_JOB_TOKEN`.
 
 `qualor fix` runs the package-manager and build configuration as committed on the main branch:
 `.pnpmfile.cjs`, Yarn's `yarnPath` and plugins, `.mvn/` and Maven extensions. That is code your own
-build already runs. Dependency install scripts never run. Package-manager output in a failure is
-scrubbed of tokens and passwords, and cut to 2 KiB.
+build already runs. The tool environment drops Qualor's and CI's credentials
+([Registry credentials](#registry-credentials)).
 
-Use a fix job without deploy credentials, and run it on the main branch only.
+Code of the dependencies themselves, by manager:
+
+| Manager | Dependency code during a fix |
+|---|---|
+| npm, pnpm, Yarn classic | none: install scripts are off (`--ignore-scripts`) |
+| Yarn Berry | none: scripts are off and git is blocked. An https tarball that a registry package depends on is fetched, never built |
+| Go, Maven | none: they run no dependency code. Maven runs your project's own build configuration |
+| uv | none: `--no-build`. A fix whose lock needs a source build fails as `package_manager` |
+| Poetry | Poetry may build a dependency's source distribution to read its metadata, which runs that package's build code |
+
+Package-manager output in a failure is scrubbed of tokens and passwords, and cut to 2 KiB. Use a fix
+job without deploy credentials, and run it on the main branch only.
 
 ## Ecosystems and how each is fixed
 
@@ -286,7 +298,8 @@ and Maven's own rules for Maven.
 
 ## The merge request's life
 
-The title is `Bump <package> from <installed> to <target>`. The body lists the vulnerabilities
+The title is `Bump <package> from <installed> to <target>`. On GitLab the package and the versions
+are code, so a scope such as `@all` mentions no one. The body lists the vulnerabilities
 fixed, those that have no fix, how each lockfile is fixed, a major-jump warning, and a link to the
 project's Vulnerabilities tab when the server has `QUALOR_PUBLIC_URL`. Every 15 minutes Qualor reads
 its merge requests:
@@ -295,23 +308,27 @@ its merge requests:
 |---|---|
 | The merge request is current | nothing |
 | It has a conflict, or a vulnerability now needs a higher version | the next fix job rebuilds it from the current main, and Qualor force-updates its branch. The card shows **updating**. If the rebuild fails, the merge request stays open with the reason, and **Retry** asks again |
-| The vulnerability is gone from main | Qualor comments "Qualor no longer finds a vulnerable `<package>` on `<main>`", closes the merge request and deletes the branch: **Fixed** |
+| The vulnerability is gone from main | Qualor comments "Qualor no longer finds a vulnerable `<package>` on `<main>`", closes the merge request and deletes the branch: **Fixed**. A branch your rules keep from deletion stays |
 | You merge it | **Merged** |
 | Someone closes it without merging | **Declined**. Qualor never proposes that version again; **Create again** can propose a higher one |
+| Someone deletes it (GitLab) | **Declined**, as a close. **Fixed** when the vulnerability is gone |
 | Someone pushes to its branch | **Taken over**. Qualor never touches that branch or merge request again |
 | You ask again after a takeover | a new branch `qualor/fix/<family>/<package>-2`, then `-3`, and so on |
 
 While vulnerability monitoring is off, Qualor neither closes nor requests merge requests. When fix
-MRs are switched off for the project, open merge requests are still kept current.
+MRs are switched off for the project, Qualor still tracks its open merge requests: it records them
+merged, declined, taken over or fixed, but no longer rebuilds them. An upload in flight is refused,
+so no new merge request appears.
 
 ### Limits
 
 | Limit | Value |
 |---|---|
-| Open fix MRs per project | 1 to 20, 5 by default. The count includes requested, preparing and open fixes |
+| Fix MRs in progress per project | 1 to 20, 5 by default. The count includes requested, preparing, committing and open fixes |
 | A claim | one fix at a time, at most `--max` (1 to 10) per job run |
-| A fix job's time | `--timeout`, 2 minutes to 6 hours, 30 by default. Fixes not yet claimed are left for the next run |
-| One fix | 10 minutes. A claimed fix's lease is 30 minutes, then it goes back to requested |
+| A fix job's time | `--timeout`, 2 minutes to 6 hours, 30 by default. Fixes not yet claimed are left for the next run. A fix ready with less than a minute left is handed back |
+| One fix | 10 minutes. A claimed fix's lease is 30 minutes, then it goes back to requested, or, with a merge request, to open with a rebuild |
+| An upload's answer | the job waits up to 10 minutes for the server, never past `--timeout` |
 | One upload | 50 files and 32 MiB, each UTF-8 text |
 | A failure message | the last 2 KiB |
 
@@ -324,13 +341,13 @@ names the file or the tool where a message is short.
 
 | Code | Shown as | Cause and next step |
 |---|---|---|
-| `manifest_unsupported` | Qualor cannot edit this project's dependency files automatically | a layout the editor refuses: [What is not supported](#what-is-not-supported). Fix the dependency by hand |
-| `missing_tool` | The fix job's image does not have the package manager this fix needs | install the manager the job log names in the fix image, or fix the dependency by hand |
+| `manifest_unsupported` | Qualor cannot edit this project's dependency files automatically, then the job's message (which file, which layout) | a layout the editor refuses: [What is not supported](#what-is-not-supported). Fix the dependency by hand |
+| `missing_tool` | The fix job's image does not have the package manager this fix needs, then the job's message | install the manager the message names in the fix image, or fix the dependency by hand |
 | `package_manager` | the manager's own output | the manager failed: an unreachable registry, a login that used a dropped variable ([Registry credentials](#registry-credentials)), a lockfile out of sync, an untidy Go module. Fix it in the repository, then **Retry** |
-| `verify_failed` | The package manager's result still holds a vulnerable version | a constraint or an override of yours keeps the old version, or the manager changed no file. Fix it by hand |
+| `verify_failed` | The package manager's result still holds a vulnerable version, then the job's message | a constraint or an override of yours keeps the old version, or the manager changed no file. Fix it by hand |
 | `unplanned_change` | the rule the result broke | the result changed more than planned, or gained a credential (`secret_in_file`). The [rules](#upload-rules) say which |
 | `secret_in_file` (in the `unplanned_change` message) | the result would put a credential into a file or lockfile | remove the credential from the file or the lockfile, and keep tokens in CI variables. Then **Retry** |
-| `timeout` | The fix job ran out of time | a manager took more than 10 minutes. Warm its cache or use a mirror, then **Retry** |
+| `timeout` | The fix job ran out of time, then the job's message | a manager took more than 10 minutes. Warm its cache or use a mirror, then **Retry** |
 | `upload_refused` | the server's rule | the server refused the files: the [rules](#upload-rules) |
 | `scm_permission` | The connection's token may not write to the repository | check the [permissions](#turning-it-on) |
 | `scm_refused` | The repository refused the change, for example because of a protected branch | allow `qualor/fix/*` branches, or the connection's account, in the branch rules |
@@ -372,6 +389,7 @@ fails the fix as `upload_refused`, with the rule and the file. Nothing is writte
 | `bad_spec` | the new requirement is not a plain version or version range | the dependency is a tag, a URL or a reference: fix by hand |
 | `new_source` | a lockfile entry comes from a host the lockfile did not use | the job's registry differs from the one in the lockfile: use the same registry or mirror |
 | `source_kind` | a new lockfile entry comes from a git, file, link, path or tarball source | a dependency of the fixed version comes from there: fix by hand |
+| `source_kind` (GitHub Packages) | GitHub Packages' npm tarball URLs (`…/download/…`) lack the registry layout `<name>/-/<name>-<version>.tgz`, so they count as tarballs | proxy GitHub Packages through a registry or mirror with that layout, or fix by hand |
 | `missing_integrity` | a new lockfile entry has no integrity hash | the registry or mirror sends no hash: use one that does |
 | `below_target` | the package still resolves below its fixed version | a constraint holds it back: fix by hand |
 | `go_directive` | `go.mod` changes a directive other than `require` | the fixed version needs a newer Go: raise the `go` line by hand |

@@ -189,7 +189,7 @@ vulnerability is gone from the tracked branches and versions, and again if it re
 With fix merge requests on for the project ([Fix merge requests](./fix-merge-requests.md)), a row of
 the main branch shows **Create fix MR** next to **Change status**, and a **Fix** pill once a fix is
 requested: **Waiting for the fix job**, **Preparing**, then the merge request with its target
-version. The header line of the tab counts them: "3 of 5 fix MRs open". A Trivy issue of the main
+version. The header line of the tab counts them: "3 of 5 fix MRs in progress". A Trivy issue of the main
 branch has the same **Fix MR** card.
 
 Qualor opens one merge request per package, that bumps it to the smallest version that fixes its
