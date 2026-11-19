@@ -33,8 +33,9 @@ connection shows **Values for the identity provider** to copy, **Check the conne
 **Test** (and **Read metadata** for SAML), and its **Group mappings**. **Edit** opens it again;
 **Delete the connection** removes it.
 
-The Keycloak steps below are tested automatically, against Keycloak 26.7.4. The Entra ID, Okta and
-Google Workspace steps are not yet tested with real accounts.
+The Keycloak steps below are tested automatically, against Keycloak 26.7.4. The Entra ID SAML steps
+are tested with a real Entra ID tenant. The Entra ID OIDC, Okta and Google Workspace steps are not
+yet tested with real accounts.
 
 ## Add an OIDC connection
 
@@ -105,7 +106,8 @@ SCIM fills them in.
 5. Groups: **Token configuration → Add groups claim**; the claim is `groups`. Entra sends each
    group's **object id**, not its name, so map the object ids in Qualor. A person in very many
    groups gets no groups claim at all (Entra points to Microsoft Graph instead), so prefer
-   **Groups assigned to the application**.
+   **Groups assigned to the application**. That needs Entra ID P1 or P2: Entra ID Free cannot assign
+   groups to an application, so choose **Security groups** there.
 
 ### Okta
 
@@ -228,6 +230,10 @@ accounts are named after the NameID (`G-<uuid>`).
 4. Metadata URL: the **App Federation Metadata Url**, which ends in `?appid=…`. Press **Read
    metadata** only after you saved **Basic SAML Configuration**: Entra issues a new signing
    certificate then, and a certificate copied before it does not sign the responses.
+5. **Users and groups**: assign the people who may sign in. Entra ID Free assigns people one by
+   one; assigning a group needs Entra ID P1 or P2. Tick **This identity provider verifies the
+   email attribute** in Qualor to store their emails: Entra fills the attribute from each user's
+   directory email.
 
 ### Okta (SAML)
 
@@ -525,7 +531,14 @@ the other `qlr_` tokens, so a leaked one is reported as a secret.
   `userName`, **Authentication Mode** HTTP Header, and the token as the Bearer value. Enable
   Create, Update and Deactivate Users, and push groups with **Push Groups**.
 
-The Entra ID and Okta SCIM steps are not yet tested with real accounts.
+The Entra ID steps are tested with a real Entra ID tenant, from provisioning to the deactivation of
+a disabled account. The Okta SCIM steps are not yet tested with real accounts.
+
+**People who signed in before SCIM.** SCIM has no record of them, so Entra's create is refused
+with 409 `uniqueness`: their email belongs to an existing Qualor account. Entra reports it as
+`SystemForCrossDomainIdentityManagementServiceIncompatibleFiltering`. Before you provision them,
+tick **Link to an existing account with the same verified email** on the connection that holds the
+SCIM token. The create then links the existing account. The account needs its email for this.
 
 **What Qualor keeps** of a user: `userName` (unique on the connection), `externalId`, the name
 parts, `displayName`, the email and `active`. The email is the primary one, else the first work
