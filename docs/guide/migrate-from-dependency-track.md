@@ -27,6 +27,7 @@ CycloneDX only.
 Differences that matter:
 
 - A Qualor project holds many versions. Dependency-Track keeps one project per name and version.
+- Qualor can open a merge request that bumps a vulnerable dependency, which Dependency-Track does not do ([Fix merge requests](./fix-merge-requests.md)).
 - A decision covers a package and a vulnerability id for the whole project, not for one version
   ([One decision, a wide scope](./dependency-vulnerabilities.md#one-decision-a-wide-scope)).
 - The server checks packages against its own copy of the Trivy database, and re-checks tracked

@@ -96,6 +96,29 @@ headers, so run `qualor scan` in the job that built the project, with the `qualo
 release page and your clang-tidy on `PATH`. See
 [C and C++](./languages-and-analyzers.md#c-and-c-cppcheck-clang-tidy).
 
+## Fix merge requests
+
+The job that runs [`qualor fix`](./cli.md#qualor-fix) opens merge requests that bump vulnerable
+dependencies ([Fix merge requests](./fix-merge-requests.md)). It differs from the scan job:
+
+- It runs in the main branch's checkout, with the branch checked out by name. A detached HEAD or a
+  tag exits 2.
+- It runs in an image that has your package managers and is glibc-based (Debian, Ubuntu, RHEL; not
+  Alpine). The scanner image has only npm and Go.
+- It needs the `qualor` binary from the release page, or copied out of the scanner image.
+- It runs on a daily schedule, so a request is served within a day.
+
+```sh
+id=$(docker create qualor/scanner:0.16)
+docker cp "$id:/usr/local/bin/qualor" ./qualor-bin
+docker rm "$id"
+./qualor-bin fix --project-key acme/payments-api      # QUALOR_URL and QUALOR_TOKEN in the environment
+```
+
+The package managers see the job's environment, without Qualor's and the CI's own credentials
+([Registry credentials](./fix-merge-requests.md#registry-credentials)). Use a job without deploy
+credentials.
+
 ## A local scan
 
 ```sh

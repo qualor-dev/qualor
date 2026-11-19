@@ -184,6 +184,19 @@ a severity, and for exploited ones with Business or Enterprise
 ([The automatic rule](./jira.md#the-automatic-rule)). Qualor comments on the Jira issue when the
 vulnerability is gone from the tracked branches and versions, and again if it returns.
 
+## Fix merge requests
+
+With fix merge requests on for the project ([Fix merge requests](./fix-merge-requests.md)), a row of
+the main branch shows **Create fix MR** next to **Change status**, and a **Fix** pill once a fix is
+requested: **Waiting for the fix job**, **Preparing**, then the merge request with its target
+version. The header line of the tab counts them: "3 of 5 fix MRs open". A Trivy issue of the main
+branch has the same **Fix MR** card.
+
+Qualor opens one merge request per package, that bumps it to the smallest version that fixes its
+vulnerabilities. It closes the merge request when the vulnerability is gone, and leaves one alone
+that a person pushed to or closed. A project admin can also request fixes for new vulnerabilities
+at or above a severity ([The automatic mode](./fix-merge-requests.md#the-automatic-mode)).
+
 ## Statuses and reasons
 
 Triage sets a **status** for a vulnerability in a package:
@@ -444,6 +457,7 @@ A refused or failed decision costs nothing.
 | `GET /api/v0/projects/:id/vulnerabilities/targets` | read access to the project | the tracked targets with their counts and `new`, the untracked versions, the data date and the last check |
 | `GET /api/v0/projects/:id/vulnerabilities` | read access | the vulnerabilities, one per package and id. Query: `target` (`branch:<id>` or `version:<id>`, tracked or not; a merge request is not a target (404)), `status` (`all`, `open`, `false_positive`, `wont_fix`), `severity`, `exploited=true` (needs `vuln.priority`, else 403), `page`, `pageSize` (50 by default, at most 100). Empty while monitoring is off |
 | `POST /api/v0/projects/:id/jira/links` | `issue.triage` | Jira issues for up to 100 vulnerabilities, or up to 500 issues ([Jira](./jira.md)) |
+| `POST /api/v0/projects/:id/fixes` | `issue.triage` | a fix merge request for a package of the main branch ([Fix merge requests](./fix-merge-requests.md#asking-for-a-fix)) |
 | `PUT /api/v0/projects/:id/vulnerability-decisions` | `issue.triage` | the decision and `appliedIssues`, the number of issues it changed |
 | `GET /api/v0/packages/usages` | the `read` scope; not a project token | where a package is used ([Where used](#where-used)). Query: `q` (required), `ecosystem`, `version`, `page` (at most 100), `pageSize` (50 by default, at most 100). Each row has `project`, `target`, `ecosystem`, `name`, `version`, `path`, `direct`, `distribution` and `vulnerabilities` (null where the page says "not checked"); the answer has `total` and `totalCapped` |
 

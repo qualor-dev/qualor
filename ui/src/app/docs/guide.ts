@@ -19,6 +19,7 @@ const PAGES: Readonly<Record<string, () => Promise<{ default: string }>>> = {
   // The guide's page about the enterprise edition (Markdown text), not the enterprise/ package.
   // eslint-disable-next-line no-restricted-syntax
   enterprise: () => import('../../../../docs/guide/enterprise.md'),
+  'fix-merge-requests': () => import('../../../../docs/guide/fix-merge-requests.md'),
   github: () => import('../../../../docs/guide/github.md'),
   gitlab: () => import('../../../../docs/guide/gitlab.md'),
   'install-server': () => import('../../../../docs/guide/install-server.md'),

@@ -30,7 +30,8 @@ Not imported, and reported instead:
 - new-code definitions.
 
 SonarQube's Jira integration has its counterpart in Qualor: [Jira](./jira.md) creates a Jira issue
-from a code issue, shows its Jira status, and is in every edition.
+from a code issue, shows its Jira status, and is in every edition. For vulnerable dependencies,
+[Fix merge requests](./fix-merge-requests.md) opens a merge request that bumps them.
 
 ### How rules map
 

@@ -228,6 +228,13 @@ needs two more:
 | Metadata | Read-only | reading a person's role in the repository, for replies and commands |
 | Pull requests | Read and write | reading and writing the pull request's comments |
 
+[Fix pull requests](./fix-merge-requests.md) need the permissions **Contents: Read and write** and
+**Pull requests: Read and write**, which are in the table. An **org admin** also turns on **Allow fix
+MRs** for the connection in **Settings → GitHub**. It is off, also for connections that existed
+before. Qualor then commits to branches named `qualor/fix/…` and opens pull requests. Nothing changes
+on your main branch until you merge one. The workflow that runs the fix is
+[its own](./fix-merge-requests.md#github).
+
 Subscribe to these events:
 
 | Event | What Qualor does |

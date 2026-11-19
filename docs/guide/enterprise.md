@@ -32,6 +32,7 @@ the audit log for your organisation.
 | Feature | Feature key | Community | Business | Enterprise |
 |---|---|---|---|---|
 | [Dependency vulnerabilities](./dependency-vulnerabilities.md): the **Vulnerabilities** tab, re-checks of tracked branches and versions without a scan, and triage with reasons | none | yes | yes | yes |
+| [Fix merge requests](./fix-merge-requests.md): a merge request or pull request that bumps a vulnerable dependency, with its lockfile regenerated. The option to request them for exploited vulnerabilities needs `vuln.priority` | none | yes | yes | yes |
 | [SBOM upload](./sbom-upload.md): CycloneDX and SPDX files become tracked versions, with OS packages of images | none | yes | yes | yes |
 | [Packages](./dependency-vulnerabilities.md#where-used): where a package is used, in every project you can read | none | yes | yes | yes |
 | [Dependency licences](./dependency-licenses.md): every project's dependencies and their licences, on the **Dependencies** tab | none | yes | yes | yes |

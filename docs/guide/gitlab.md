@@ -66,6 +66,9 @@ Scanning reports, in the security widget and the security tab, on GitLab Ultimat
 | `allow-failure` | `false` | let the pipeline pass when the gate fails, for a soft rollout |
 | `dotnet` | `false` | C#: run `qualor dotnet begin`, the build, then `qualor dotnet end`. Set `image` to `qualor/scanner-dotnet` too |
 | `build-command` | `dotnet build --no-incremental` | the build that runs between `begin` and `end` when `dotnet` is true |
+| `fix` | `false` | add the jobs that open [fix merge requests](./fix-merge-requests.md#gitlab) |
+| `fix-image` | the scanner image | the image the fix job runs in: your package manager, glibc-based |
+| `fix-args` | empty | extra `qualor fix` arguments, for example `--max 3` |
 
 Pin the component and the image to the same release. Where every pipeline must run exactly the same
 analyzers, use a full version (`@0.15.1`, `image-tag: '0.15.1'`).
@@ -188,6 +191,12 @@ About the token:
 - Never use a person's own token. Every comment would carry their name, and Qualor would take that
   person's replies for its own notes and not answer them
   ([Replies](./ai-review.md#replies-and-commands)).
+
+**Fix merge requests.** [Fix merge requests](./fix-merge-requests.md) need the scope **`api`** and the
+role **Developer** or higher, which this token already has. An **org admin** turns on **Allow fix MRs**
+for the connection in **Settings → GitLab**. It is off, also for connections that existed before.
+Qualor then commits to branches named `qualor/fix/…` and opens merge requests. Nothing changes on
+your main branch until you merge one.
 
 **Self-managed GitLab on an internal network.** The server calls only hosts that resolve to public
 addresses, unless the operator allows the host:

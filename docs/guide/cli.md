@@ -76,6 +76,35 @@ is busy (503 `UPLOADS_BUSY`).
 | 4 | the server refused the upload (the CLI prints its code, title and detail, such as `VERSION_LABEL_TAKEN`), is unreachable, or stayed busy |
 | 5 | 401 or 403: the token is wrong, or lacks the permission |
 
+## `qualor fix`
+
+```text
+qualor fix [--project-key KEY] [--max N] [--timeout 30m] [--config PATH] [--token-file PATH]
+           [--server-url URL] [--ca-file PATH]
+```
+
+It prepares the [fix merge requests](./fix-merge-requests.md) that people or the automatic mode
+requested. It claims fixes from the server, runs your package managers in a scratch copy of the
+checkout, and uploads the changed manifests and lockfiles. It never changes the checkout. Run it in
+the main branch's checkout, in a glibc image that has your package managers
+([The fix job](./fix-merge-requests.md#the-fix-job)). The server, token and project key come from
+the same flags, environment and `qualor.yml` as `qualor scan`, and the token is a project analysis
+token.
+
+| Option | Meaning |
+|---|---|
+| `--max N` | prepare at most N fixes, from 1 to 10. Default 10 |
+| `--timeout DURATION` | the job's time, such as `45m` or `2h`: from 2 minutes to 6 hours. Default 30 minutes. With less than a minute left, it claims no more |
+
+An upload waits for the server's `Retry-After` and retries three times.
+
+| Code | When |
+|---|---|
+| 0 | the run ended, also when a fix failed (its reason shows in Qualor), and when the project cannot take fixes now: the CLI logs why (fix merge requests off, no repository, monitoring off) |
+| 2 | a flag is wrong, there is no server, token or project key, HEAD is not the main branch's checkout (a detached HEAD, a tag pipeline, a commit other than the job's), or the system is musl |
+| 4 | the server is unreachable or answered an error |
+| 5 | 401 or 403: the token is wrong, revoked, of another project, or not a project token |
+
 ## `qualor dotnet begin | end | abort`
 
 The C# route ([Languages and analyzers](./languages-and-analyzers.md#c)):
