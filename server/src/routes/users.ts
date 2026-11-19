@@ -275,24 +275,23 @@ async function revokeCredentialsAfterUpdate(
  * rbac-audit.md §10.2.1: a deactivation or demotion alone is never blocked by a malformed audit
  * anchor; the recorder decides from the changes.
  */
-async function recordUserUpdate(
-  tx: Tx,
-  audit: RouteDeps['audit'],
-  actor: ReturnType<typeof actorOf>,
-  input: { existing: ExistingUser; user: UserRow; passwordHash: string | undefined },
-): Promise<void> {
+function userUpdatedEvents(input: {
+  existing: ExistingUser;
+  user: UserRow;
+  passwordHash: string | undefined;
+}): AuditEventInput[] {
   const { existing, user, passwordHash } = input;
   const fieldChanges = USER_CHANGE_FIELDS.filter((field) => existing[field] !== user[field]).map(
     (field) => ({ field, from: existing[field], to: user[field] }),
   );
-  if (fieldChanges.length === 0 && passwordHash === undefined) return;
-  await audit.recordOrSkipWhenAnchorMalformed(tx, actor, [
+  if (fieldChanges.length === 0 && passwordHash === undefined) return [];
+  return [
     {
       action: 'user.updated',
       target: { type: 'user', id: user.id, label: user.username },
       details: { changes: fieldChanges, passwordReset: passwordHash !== undefined },
     },
-  ]);
+  ];
 }
 
 /** A user with their SSO summary and invitation, for one answer. */
@@ -733,7 +732,10 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
           existing,
           user,
         });
-        await recordUserUpdate(tx, deps.audit, actorOf(request), { existing, user, passwordHash });
+        const events = userUpdatedEvents({ existing, user, passwordHash });
+        if (events.length > 0) {
+          await deps.audit.recordOrSkipWhenAnchorMalformed(tx, actorOf(request), events);
+        }
         return user;
       });
       return singleUserDto(deps.db, updated);
