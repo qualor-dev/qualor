@@ -91,13 +91,38 @@ const NO_FIXED_VERSION = 'No vulnerability of the package on the main branch has
 const GO_STDLIB_TEXT = "Go's standard library is fixed by the Go version, not by a module update";
 
 /**
+ * Ruling FW16: an open fix with an MR whose package has no open main row left: its MR is the
+ * pass's to close, so the claim only clears its `refresh` (fenced on its state and generation),
+ * which ends the "updating" pill and the page's polling. Nothing else changes.
+ *
+ * "Is the package still on main" is decided in two places that differ by design: here (R31,
+ * `mainVulnerabilities`: open, not ignored rows only, the rows a fix would handle) and in the
+ * pass (`packageOnMain`, ruling T11a: any row, an ignored or triaged one included, so an MR is
+ * closed only once main really has no such package). A package whose rows are all ignored is gone
+ * here and present there: its MR stays open, no longer refreshed (sync.ts `judgeOnMain`).
+ */
+async function stopRefresh(tx: Executor, row: DependencyFixRow): Promise<void> {
+  await tx
+    .update(dependencyFixes)
+    .set({ refresh: false, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(dependencyFixes.id, row.id),
+        eq(dependencyFixes.state, 'open'),
+        eq(dependencyFixes.generation, row.generation),
+      ),
+    );
+}
+
+/**
  * R31: a claimable fix with nothing left to fix is not handed out. Its main rows gone: `fixed`
- * without an MR, left for the pass with one. No fixed version: `no_fix` `no_fixed_version`, or
- * (R8, with an MR) `open` with that failure shown and `refresh` off.
+ * without an MR, left for the pass with one, its `refresh` cleared ({@link stopRefresh}). No fixed
+ * version: `no_fix` `no_fixed_version`, or (R8, with an MR) `open` with that failure shown and
+ * `refresh` off.
  */
 async function nothingLeft(tx: Executor, row: DependencyFixRow, gone: boolean): Promise<void> {
   const withMr = hasOpenMr(row);
-  if (gone && withMr) return;
+  if (gone && withMr) return stopRefresh(tx, row);
   const message = isGoStdlib(row.family, row.packageName) ? GO_STDLIB_TEXT : NO_FIXED_VERSION;
   const failure = gone ? null : { code: 'no_fixed_version', message };
   let state: DependencyFixRow['state'] = 'no_fix';

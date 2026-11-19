@@ -471,6 +471,11 @@ async function closeGone(pass: Pass, project: ProjectRow, row: DependencyFixRow)
  * the Jira presence rule (ruling T11a: an ignored or triaged row keeps it present) →
  * {@link closeGone}. Otherwise a higher version needed by a vulnerability that needs a fix (B5:
  * effective-open, not ignored; a Python package by its PEP 503 name, T8b) → `refresh`.
+ *
+ * The claim decides "still on main" differently, by design (claim.ts `stopRefresh`, R31: open,
+ * not ignored rows only): a package whose rows are all ignored or triaged is present here, so its
+ * MR stays open, and gone there, so the claim clears its `refresh` instead of handing it out
+ * (ruling FW16).
  */
 async function judgeOnMain(pass: Pass, project: ProjectRow, fixId: string): Promise<void> {
   const { db } = pass.deps;

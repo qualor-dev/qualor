@@ -433,12 +433,48 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
       state: 'no_fix',
       failure: { code: 'no_fixed_version' },
     });
-    expect(await row(goneWithMr)).toMatchObject({ state: 'open', refresh: true, failure: null });
+    // Ruling FW16: its refresh is cleared, so it is not looked at again on every claim.
+    expect(await row(goneWithMr)).toMatchObject({ state: 'open', refresh: false, failure: null });
     expect(await row(unfixableWithMr)).toMatchObject({
       state: 'open',
       refresh: false,
       failure: { code: 'no_fixed_version' },
     });
+  });
+
+  it('FW16: an open fix to refresh whose main rows are all ignored keeps its MR, and its refresh is cleared', async () => {
+    const pkg = fresh();
+    await vulnerable(pkg);
+    // T11a keeps an ignored row present for the pass; R31 at the claim finds nothing to fix.
+    await db()
+      .update(targetVulnerabilities)
+      .set({ ignored: true })
+      .where(
+        and(
+          eq(targetVulnerabilities.projectId, projectId),
+          eq(targetVulnerabilities.packageName, pkg),
+        ),
+      );
+    const fixId = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: pkg,
+      state: 'open',
+      refresh: true,
+    });
+    const before = await row(fixId);
+    expect((await claimed({ max: 10 })).items).toEqual([]);
+    expect(await row(fixId)).toMatchObject({
+      state: 'open',
+      refresh: false,
+      failure: null,
+      generation: before.generation,
+      mrNumber: before.mrNumber,
+    });
+    // Not claimable any more: the next claim does not touch it.
+    const cleared = await row(fixId);
+    expect((await claimed({ max: 10 })).items).toEqual([]);
+    expect((await row(fixId)).updatedAt).toEqual(cleared.updatedAt);
   });
 
   it('two claims at once (Review Focus 4): one fix is handed out once, no claim takes more than max', async () => {
