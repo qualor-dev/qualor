@@ -136,7 +136,7 @@ async function fixed(
       base: readFileSync(path.join(dir, f.path), 'utf8'),
       next: Buffer.from(f.content, 'base64').toString('utf8'),
     }));
-    expect(outcome.files.map((f) => f.path)).toEqual(['pyproject.toml', lockfile]);
+    expect(outcome.files.map((f) => f.path)).toEqual(['pyproject.toml', lockfile].toSorted());
     return { outcome, files };
   } finally {
     await scratch.close();
