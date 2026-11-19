@@ -28,6 +28,7 @@ import {
   type SbomEntry,
   type SbomInventory,
   type SbomRefusal,
+  type SbomSkipped,
   type SbomWarning,
 } from './types';
 
@@ -68,38 +69,97 @@ function refuse(code: SbomRefusal['code'], message: string): { refusal: SbomRefu
  * unique keys must be refused before it.
  */
 function jsonFlood(text: string): 'containers' | 'values' | 'keys' | null {
-  let containers = 0;
+  const nesting = new JsonNesting();
   let values = 0;
   let expecting = true;
   let previous = 0;
-  /** The open containers, innermost last: true for an object. */
-  const open: boolean[] = [];
-  const keys = new Set<string>();
-  for (let i = 0; i < text.length; i++) {
+  let i = 0;
+  while (i < text.length) {
     const c = text.charCodeAt(i);
-    if (c === 0x20 || c === 0x0a || c === 0x0d || c === 0x09) continue;
-    if (expecting && c !== 0x7d && c !== 0x5d && ++values > SBOM_MAX_JSON_VALUES) return 'values';
-    expecting = c === 0x7b || c === 0x5b || c === 0x2c || c === 0x3a;
+    if (isJsonSpace(c)) {
+      i++;
+      continue;
+    }
+    if (expecting && !isJsonClose(c) && ++values > SBOM_MAX_JSON_VALUES) return 'values';
+    expecting = isJsonOpen(c) || c === 0x2c || c === 0x3a;
     if (c === 0x22) {
       const start = i + 1;
-      for (i = start; i < text.length; i++) {
-        const s = text.charCodeAt(i);
-        if (s === 0x5c) i++;
-        else if (s === 0x22) break;
-      }
-      if ((previous === 0x7b || previous === 0x2c) && open.at(-1) === true) {
-        keys.add(text.slice(start, i));
-        if (keys.size > SBOM_MAX_JSON_KEYS) return 'keys';
-      }
-    } else if (c === 0x7b || c === 0x5b) {
-      if (++containers > SBOM_MAX_JSON_CONTAINERS) return 'containers';
-      open.push(c === 0x7b);
-    } else if (c === 0x7d || c === 0x5d) {
-      open.pop();
+      i = stringEnd(text, start);
+      if (nesting.string(previous, text, start, i)) return 'keys';
+    } else if (nesting.other(c)) {
+      return 'containers';
     }
     previous = c;
+    i++;
   }
   return null;
+}
+
+/**
+ * The containers and the keys {@link jsonFlood} counts, one method per token kind: each returns
+ * true once its bound is passed.
+ */
+class JsonNesting {
+  private containers = 0;
+  /** The open containers, innermost last: true for an object. */
+  private readonly open: boolean[] = [];
+  private readonly keys = new Set<string>();
+
+  /**
+   * A token that is not a string: `{` (an object) or `[` opens a container, `}` or `]` closes
+   * one. True past {@link SBOM_MAX_JSON_CONTAINERS} containers.
+   */
+  other(c: number): boolean {
+    if (isJsonOpen(c)) {
+      if (++this.containers > SBOM_MAX_JSON_CONTAINERS) return true;
+      this.open.push(c === 0x7b);
+    } else if (isJsonClose(c)) {
+      this.open.pop();
+    }
+    return false;
+  }
+
+  /**
+   * A string, `text` from `start` to `end`, right after the token that starts with `previous`: a
+   * key when that is `{` or `,` inside an object. True past {@link SBOM_MAX_JSON_KEYS} keys.
+   */
+  string(previous: number, text: string, start: number, end: number): boolean {
+    if ((previous === 0x7b || previous === 0x2c) && this.open.at(-1) === true) {
+      this.keys.add(text.slice(start, end));
+      return this.keys.size > SBOM_MAX_JSON_KEYS;
+    }
+    return false;
+  }
+}
+
+/** JSON white space: a space, a line feed, a carriage return or a tab. */
+function isJsonSpace(c: number): boolean {
+  return c === 0x20 || c === 0x0a || c === 0x0d || c === 0x09;
+}
+
+/** `{` or `[`. */
+function isJsonOpen(c: number): boolean {
+  return c === 0x7b || c === 0x5b;
+}
+
+/** `}` or `]`. */
+function isJsonClose(c: number): boolean {
+  return c === 0x7d || c === 0x5d;
+}
+
+/**
+ * The index of the quote that ends a string whose text starts at `start`: each backslash skips
+ * the character after it. An unterminated string ends at the end of the text, or one past it when
+ * its last backslash has nothing after it to escape.
+ */
+function stringEnd(text: string, start: number): number {
+  let i = start;
+  while (i < text.length) {
+    const c = text.charCodeAt(i);
+    if (c === 0x22) return i;
+    i += c === 0x5c ? 2 : 1;
+  }
+  return i;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -330,22 +390,67 @@ function uncheckedWhy(distribution: SbomDistribution | null): string | null {
   return null;
 }
 
-function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
-  let noPurl = doc.skipped.noPurl;
-  let unsupportedType = doc.skipped.unsupportedType;
-  let duplicate = 0;
-  const entries = new Map<string, SbomEntry>();
-  const distributions = new Distributions();
+/** Adds the OS components' distributions; the refusal once they name more than one. */
+function addOperatingSystems(
+  doc: SbomDocument,
+  distributions: Distributions,
+): { refusal: SbomRefusal } | null {
   for (const os of doc.operatingSystems) {
     distributions.add(os.name, os.version || null, true);
     const multiple = distributions.refusal();
     if (multiple !== null) return multiple;
   }
+  return null;
+}
 
+/** Merges a duplicate's licences and `direct` into the entry listed first. */
+function mergeDuplicate(seen: SbomEntry, c: SbomComponent): void {
+  seen.licenses = mergeLicenses(seen.licenses, c.licenses);
+  if (c.direct === true || (c.direct === false && seen.direct === null)) seen.direct = c.direct;
+}
+
+/** A component's entry: the source, the arch and the modularity label only for an OS package. */
+function newEntry(
+  c: SbomComponent,
+  ecosystem: string,
+  name: string,
+  version: string,
+  os: boolean,
+): SbomEntry {
+  return {
+    ecosystem,
+    name,
+    version,
+    path: c.path,
+    licenses: c.licenses,
+    direct: c.direct,
+    source: os ? sourceOf(c, name, version) : null,
+    // A duplicate keeps the first entry's: of `glibc.i686` and `glibc.x86_64` (multilib, same
+    // name and version), the one listed first.
+    arch: os ? archOf(c.purl) : null,
+    modularityLabel: os ? modularityLabelOf(c.purl) : null,
+  };
+}
+
+/**
+ * The components' entries, without duplicates, and the counts of what was skipped. Refused at a
+ * second distribution, or past `maxPackages` entries.
+ */
+function collectEntries(
+  doc: SbomDocument,
+  distributions: Distributions,
+  maxPackages: number,
+): { entries: SbomEntry[]; skipped: SbomSkipped } | { refusal: SbomRefusal } {
+  const skipped: SbomSkipped = {
+    noPurl: doc.skipped.noPurl,
+    unsupportedType: doc.skipped.unsupportedType,
+    duplicate: 0,
+  };
+  const entries = new Map<string, SbomEntry>();
   for (const c of doc.components) {
     const ecosystem = c.purl.type;
     if (!ECOSYSTEM.test(ecosystem)) {
-      unsupportedType++;
+      skipped.unsupportedType++;
       continue;
     }
     const name = inventoryName(c.purl);
@@ -355,7 +460,7 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
       name.length > SBOM_BOUNDS.name ||
       version.length > SBOM_BOUNDS.version
     ) {
-      noPurl++;
+      skipped.noPurl++;
       continue;
     }
     const os = isOsPackageType(ecosystem);
@@ -367,9 +472,8 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
     const key = `${c.path}\0${ecosystem}\0${name}\0${version}`;
     const seen = entries.get(key);
     if (seen !== undefined) {
-      duplicate++;
-      seen.licenses = mergeLicenses(seen.licenses, c.licenses);
-      if (c.direct === true || (c.direct === false && seen.direct === null)) seen.direct = c.direct;
+      skipped.duplicate++;
+      mergeDuplicate(seen, c);
       continue;
     }
     if (entries.size >= maxPackages) {
@@ -378,33 +482,28 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
         `The SBOM holds more than ${maxPackages} packages after removing duplicates.`,
       );
     }
-    entries.set(key, {
-      ecosystem,
-      name,
-      version,
-      path: c.path,
-      licenses: c.licenses,
-      direct: c.direct,
-      source: os ? sourceOf(c, name, version) : null,
-      // A duplicate keeps the first entry's: of `glibc.i686` and `glibc.x86_64` (multilib, same
-      // name and version), the one listed first.
-      arch: os ? archOf(c.purl) : null,
-      modularityLabel: os ? modularityLabelOf(c.purl) : null,
-    });
+    entries.set(key, newEntry(c, ecosystem, name, version, os));
   }
+  return { entries: [...entries.values()], skipped };
+}
 
-  // At most one distribution is left: the loops above refuse at the second.
+/** The distribution left, when it has a version, cut to the database's bounds. */
+function distributionOf(distributions: Distributions): SbomDistribution | null {
+  // At most one distribution is left: addOperatingSystems and collectEntries refuse at the second.
   const only = distributions.found[0];
-  const distribution: SbomDistribution | null =
-    only === undefined || only.version === null
-      ? null
-      : {
-          family: cutText(only.family, OS_FIELD_CHARS),
-          version: cutText(only.version, OS_FIELD_CHARS),
-        };
+  if (only === undefined || only.version === null) return null;
+  return {
+    family: cutText(only.family, OS_FIELD_CHARS),
+    version: cutText(only.version, OS_FIELD_CHARS),
+  };
+}
 
-  const list = [...entries.values()];
-  const osPackages = list.filter((e) => isOsPackageType(e.ecosystem)).length;
+/** The warnings: invalid purls, components nested too deep, OS packages that are not checked. */
+function warningsOf(
+  doc: SbomDocument,
+  osPackages: number,
+  distribution: SbomDistribution | null,
+): SbomWarning[] {
   const warnings: SbomWarning[] = [];
   if (doc.invalidPurls.length > 0) {
     warnings.push({
@@ -425,25 +524,35 @@ function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
       message: `${osPackages} operating-system packages are stored but not checked for vulnerabilities: ${why}.`,
     });
   }
+  return warnings;
+}
 
+/** The subject as one line, `<name> <version>`, cut to its bound. */
+function subjectLine(name: string, version: string | null): string {
+  return cutText(version === null ? name : `${name} ${version}`, SBOM_BOUNDS.subject);
+}
+
+function toInventory(doc: SbomDocument, maxPackages: number): ParseSbomResult {
+  const distributions = new Distributions();
+  const multiple = addOperatingSystems(doc, distributions);
+  if (multiple !== null) return multiple;
+  const collected = collectEntries(doc, distributions, maxPackages);
+  if ('refusal' in collected) return collected;
+
+  const distribution = distributionOf(distributions);
+  const list = collected.entries;
+  const osPackages = list.filter((e) => isOsPackageType(e.ecosystem)).length;
   const subjectVersion = doc.subject?.version ?? null;
-  const subject =
-    doc.subject === null
-      ? null
-      : cutText(
-          subjectVersion === null ? doc.subject.name : `${doc.subject.name} ${subjectVersion}`,
-          SBOM_BOUNDS.subject,
-        );
   return {
     inventory: {
       format: doc.format,
-      subject,
+      subject: doc.subject === null ? null : subjectLine(doc.subject.name, subjectVersion),
       subjectVersion: subjectVersion === null ? null : cutText(subjectVersion, SBOM_BOUNDS.version),
       distribution,
       entries: list,
       osPackages,
-      skipped: { noPurl, unsupportedType, duplicate },
-      warnings,
+      skipped: collected.skipped,
+      warnings: warningsOf(doc, osPackages, distribution),
     },
   };
 }
