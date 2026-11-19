@@ -472,8 +472,41 @@ describe('UsersPage: edit a user (0.16 issue #37)', () => {
       user('u3', 'scim', { hasPassword: false, sso: { identities: 1, scim: true } }),
     ]);
     await edit(root, fixture, 'u3');
-    expect(root.querySelector('#edit-dialog')?.textContent).toContain(
-      'The identity provider may overwrite changes to this account.',
+    const dialog = root.querySelector('#edit-dialog')?.textContent;
+    expect(dialog).toContain(
+      'The identity provider keeps setting the display name and email at each sync; the username stays as you set it.',
     );
+    expect(dialog).not.toContain('may overwrite');
+  });
+
+  it('puts a 422 on the username field next to it, and keeps the dialog open', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/users/u1', {
+      status: 422,
+      body: problem(422, 'VALIDATION_FAILED', [{ path: 'body.username', message: 'Invalid' }]),
+    });
+    const { fixture, root } = await open(server, [user('u1', 'bob')]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-username', 'alice');
+    await save(root, fixture);
+    expect(root.querySelector('#edit-username-error')?.textContent).toContain('1 to 64 letters');
+    expect(root.querySelector('#edit-dialog .alert-error')).toBeNull();
+    expect(root.querySelector<HTMLDialogElement>('#edit-dialog')!.open).toBe(true);
+  });
+
+  it('shows a failed session reload after your own rename on the page, not in the closed dialog', async () => {
+    const server = setup();
+    server.on('PATCH', `/api/v0/users/${ME_ID}`, {
+      body: user(ME_ID, 'alicia', { isInstanceAdmin: true }),
+    });
+    server.on('GET', '/api/v0/auth/me', { status: 500, body: problem(500, 'INTERNAL') });
+    const { fixture, root } = await open(server, [user(ME_ID, 'alice', { isInstanceAdmin: true })]);
+    await edit(root, fixture, ME_ID);
+    type(root, '#edit-username', 'alicia');
+    await save(root, fixture);
+    expect(row(root, ME_ID).textContent).toContain('alicia');
+    expect(root.querySelector('#edit-dialog .alert-error')).toBeNull();
+    expect(root.querySelector('.alert-error')).not.toBeNull();
+    expect(root.querySelector<HTMLDialogElement>('#edit-dialog')!.open).toBe(false);
   });
 });

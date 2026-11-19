@@ -3307,6 +3307,7 @@
     "users.isAdmin": "Instance admin",
     "users.create": " Create user ",
     "users.editTitleOf": "Edit {$INTERPOLATION}",
+    "users.scimEditNote": " The identity provider keeps setting the display name and email at each sync; the username stays as you set it. ",
     "users.editSave": " Save ",
     "users.resetTitleOf": " Reset the password of {$INTERPOLATION} ",
     "users.resetDialogHint": " They choose a new password at the next sign-in. Resetting ends their sessions and revokes their personal tokens. ",

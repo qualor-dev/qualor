@@ -424,8 +424,9 @@
           <p class="alert alert-error" role="alert">{{ message }}</p>
         }
         @if (editTarget()?.sso?.scim) {
-          <p class="hint" i18n="@@users.scimNote">
-            The identity provider may overwrite changes to this account.
+          <p class="hint" i18n="@@users.scimEditNote">
+            The identity provider keeps setting the display name and email at each sync; the
+            username stays as you set it.
           </p>
         }
         <div class="field">

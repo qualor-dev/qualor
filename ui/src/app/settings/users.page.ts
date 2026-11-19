@@ -483,7 +483,14 @@ export class UsersPage {
         this.announcement.set($localize`:@@users.edited:${updated.username}:username: is saved.`);
         this.closeEdit();
         // The header shows your own name from the session, which still holds the old one.
-        if (user.id === this.selfId()) await this.auth.refresh();
+        if (user.id === this.selfId()) {
+          try {
+            await this.auth.refresh();
+          } catch (err) {
+            // The edit is saved and its dialog closed: the page says the session was not read.
+            this.error.set(problemMessage(err));
+          }
+        }
       },
       (err) => this.editFailed(err),
     );
