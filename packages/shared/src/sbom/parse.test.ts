@@ -675,6 +675,13 @@ describe('flood guard', () => {
     expect(refusal(`[${'1 '.repeat(6_000_001)}]`).code).toBe('SBOM_INVALID');
     expect(parse).toHaveBeenCalledTimes(1);
   });
+
+  it('counts the keys after an array closed inside an object', () => {
+    const parse = vi.spyOn(JSON, 'parse');
+    // `a` and 10 000 more: 10 001 keys, as without the array.
+    expect(refusal(`{"a":[],${keys(10_000)}}`).code).toBe('SBOM_TOO_LARGE');
+    expect(parse).not.toHaveBeenCalled();
+  });
 });
 
 describe('duplicates and direct', () => {
