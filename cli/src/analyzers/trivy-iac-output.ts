@@ -46,6 +46,7 @@ export const trivyIacReportSchema = z.looseObject({
   Results: z.array(z.unknown()).nullish(),
 });
 
+type Target = z.infer<typeof result>;
 type Misconfiguration = z.infer<typeof misconfiguration>;
 type CodeLine = z.infer<typeof codeLine>;
 
@@ -80,11 +81,7 @@ function helmRegion(
   for (const line of causeLines) {
     const content = line.Content?.trim() ?? '';
     if (line.IsCause !== true || content === '' || line.Number === undefined) continue;
-    let best = -1;
-    for (let i = 0; i < trimmed.length; i++) {
-      if (trimmed[i] !== content) continue;
-      if (best === -1 || Math.abs(i + 1 - (start - 1)) < Math.abs(best + 1 - (start - 1))) best = i;
-    }
+    const best = nearestLine(trimmed, content, start);
     if (best === -1) continue;
     const offset = best + 1 - line.Number;
     const mappedStart = start + offset;
@@ -95,6 +92,19 @@ function helmRegion(
     };
   }
   return null;
+}
+
+/**
+ * The 0-based index of the trimmed template line equal to `content` that is nearest to the
+ * rendered start (the lower one on a tie); -1 when no line is.
+ */
+function nearestLine(trimmed: readonly string[], content: string, start: number): number {
+  let best = -1;
+  for (let i = 0; i < trimmed.length; i++) {
+    if (trimmed[i] !== content) continue;
+    if (best === -1 || Math.abs(i + 1 - (start - 1)) < Math.abs(best + 1 - (start - 1))) best = i;
+  }
+  return best;
 }
 
 /** The 1-based number of the last line with text, or 0 when there is none or no lines. */
@@ -130,6 +140,77 @@ function ruleOf(m: Misconfiguration): SarifRule {
   };
 }
 
+/** The targets Qualor takes, in order: config files outside a packaged chart. */
+function* configTargets(raw: readonly unknown[] | null | undefined): Generator<Target> {
+  for (const rawTarget of raw ?? []) {
+    const parsed = result.safeParse(rawTarget);
+    if (!parsed.success) continue;
+    const target = parsed.data;
+    if (target.Class === 'config' && !PACKAGED_CHART.test(target.Target)) yield target;
+  }
+}
+
+/** A target's failed checks, in order, without the `KCV-` Kubernetes cluster checks. */
+function* failedChecks(target: Target): Generator<Misconfiguration> {
+  for (const rawEntry of target.Misconfigurations ?? []) {
+    const parsed = misconfiguration.safeParse(rawEntry);
+    if (!parsed.success) continue;
+    const m = parsed.data;
+    if (m.Status === 'FAIL' && !m.ID.startsWith('KCV-')) yield m;
+  }
+}
+
+/**
+ * Where a failed check of `target` sits: its region, if any, and the note a message gets when a
+ * Helm line is not mapped. `start` and `end` are Trivy's lines, 0 when it gave none.
+ */
+function placeOf(
+  target: Target,
+  start: number,
+  end: number,
+  causeLines: readonly CodeLine[] | null | undefined,
+  read: ReadLines,
+): { region: Region | null; note: string } {
+  if (start <= 0 && target.Type === 'dockerfile') {
+    // Absence checks (no USER, no HEALTHCHECK) have no line: they sit on the last non-empty
+    // line, which a base-image bump on line 1 does not move.
+    const last = lastNonEmptyLine(read(target.Target));
+    return { region: last > 0 ? { startLine: last, endLine: last } : null, note: '' };
+  }
+  if (start <= 0) return { region: null, note: '' };
+  const last = end >= start ? end : start;
+  if (target.Type !== 'helm') return { region: { startLine: start, endLine: last }, note: '' };
+  const region = helmRegion(start, last, causeLines ?? [], read(target.Target));
+  return { region, note: region === null ? NOT_MAPPED : '' };
+}
+
+/** The SARIF result of a failed check, on `region` when there is one. */
+function resultOf(
+  target: Target,
+  m: Misconfiguration,
+  region: Region | null,
+  note: string,
+): SarifResult {
+  const message = (m.Message?.trim() ? m.Message : (m.Title ?? m.ID)) + note;
+  return {
+    ruleId: m.ID,
+    message: { text: message },
+    locations: [
+      {
+        physicalLocation: {
+          artifactLocation: { uri: target.Target },
+          ...(region !== null && { region }),
+        },
+      },
+    ],
+    properties: {
+      trivySeverity: severityOf(m.Severity),
+      ...(target.Type !== undefined && { iacType: target.Type }),
+      ...(m.CauseMetadata?.Resource ? { iacResource: m.CauseMetadata.Resource } : {}),
+    },
+  };
+}
+
 /**
  * Trivy's misconfiguration JSON as a SARIF 2.1.0 log: one result per failed check, `ruleId` the
  * check id (`AWS-0086`, `KSV-0001`), with the config type and the resource in `properties`, which
@@ -145,58 +226,16 @@ export function trivyIacJsonToSarif(output: unknown, readLines: ReadLines): Sari
   const rules = new Map<string, SarifRule>();
   const results: SarifResult[] = [];
   const seen = new Set<string>();
-  for (const rawTarget of report.Results ?? []) {
-    const parsedTarget = result.safeParse(rawTarget);
-    if (!parsedTarget.success) continue;
-    const target = parsedTarget.data;
-    if (target.Class !== 'config' || PACKAGED_CHART.test(target.Target)) continue;
-    for (const rawEntry of target.Misconfigurations ?? []) {
-      const parsedEntry = misconfiguration.safeParse(rawEntry);
-      if (!parsedEntry.success) continue;
-      const m = parsedEntry.data;
-      if (m.Status !== 'FAIL' || m.ID.startsWith('KCV-')) continue;
-      const meta = m.CauseMetadata;
-      const start = meta?.StartLine ?? 0;
-      const end = meta?.EndLine ?? 0;
+  for (const target of configTargets(report.Results)) {
+    for (const m of failedChecks(target)) {
+      const start = m.CauseMetadata?.StartLine ?? 0;
+      const end = m.CauseMetadata?.EndLine ?? 0;
       const key = JSON.stringify([target.Target, m.ID, start, end, m.Message]);
       if (seen.has(key)) continue;
       seen.add(key);
       if (!rules.has(m.ID)) rules.set(m.ID, ruleOf(m));
-
-      let region: Region | null = null;
-      let note = '';
-      if (start <= 0 && target.Type === 'dockerfile') {
-        // Absence checks (no USER, no HEALTHCHECK) have no line: they sit on the last non-empty
-        // line, which a base-image bump on line 1 does not move.
-        const last = lastNonEmptyLine(read(target.Target));
-        if (last > 0) region = { startLine: last, endLine: last };
-      } else if (start > 0) {
-        const last = end >= start ? end : start;
-        if (target.Type === 'helm') {
-          region = helmRegion(start, last, meta?.Code?.Lines ?? [], read(target.Target));
-          if (region === null) note = NOT_MAPPED;
-        } else {
-          region = { startLine: start, endLine: last };
-        }
-      }
-      const message = (m.Message?.trim() ? m.Message : (m.Title ?? m.ID)) + note;
-      results.push({
-        ruleId: m.ID,
-        message: { text: message },
-        locations: [
-          {
-            physicalLocation: {
-              artifactLocation: { uri: target.Target },
-              ...(region !== null && { region }),
-            },
-          },
-        ],
-        properties: {
-          trivySeverity: severityOf(m.Severity),
-          ...(target.Type !== undefined && { iacType: target.Type }),
-          ...(meta?.Resource ? { iacResource: meta.Resource } : {}),
-        },
-      });
+      const { region, note } = placeOf(target, start, end, m.CauseMetadata?.Code?.Lines, read);
+      results.push(resultOf(target, m, region, note));
     }
   }
   return {
