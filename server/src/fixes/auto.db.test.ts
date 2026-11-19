@@ -17,8 +17,8 @@ import {
   users,
   vulnerabilityKev,
   vulnerabilityTargetChecks,
-  type FixAutoSeverity,
   type FixState,
+  type JiraAutoSeverity,
 } from '../db/schema';
 import { communityLimits } from '../limits';
 import { createScmRuntime } from '../scm/runtime';
@@ -126,7 +126,7 @@ describe('the automatic fix mode (0.16 fix MRs §6.3, §11.5, B4, R9)', () => {
     (await seedPackages(1, { firstSeenAt: () => row.firstSeenAt, severity: row.severity }))[0]!;
   /** The rule as stored, written directly with a `since` in the past. */
   const rule = (set: {
-    minSeverity?: FixAutoSeverity | null;
+    minSeverity?: JiraAutoSeverity | null;
     exploited?: boolean;
     maxOpen?: number;
     enabled?: boolean;

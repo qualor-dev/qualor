@@ -82,7 +82,6 @@ export type FixState = (typeof FIX_STATES)[number];
 /** The states that count against a project's cap on fix MRs (R9) and answer a duplicate request. */
 export const ACTIVE_FIX_STATES = ['requested', 'preparing', 'committing', 'open'] as const;
 export type FixOrigin = 'manual' | 'auto';
-export type FixAutoSeverity = JiraAutoSeverity;
 /** Why a fix failed or has no fix: a code and its fixed text. */
 export interface FixFailure {
   code: string;
@@ -1515,7 +1514,7 @@ export const projectFixSettings = pgTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     enabled: boolean('enabled').notNull().default(false),
     /** The automatic rule: off while this is NULL and `auto_exploited` is false. */
-    autoMinSeverity: text('auto_min_severity').$type<FixAutoSeverity>(),
+    autoMinSeverity: text('auto_min_severity').$type<JiraAutoSeverity>(),
     autoExploited: boolean('auto_exploited').notNull().default(false),
     autoSince: at('auto_since'),
     maxOpen: smallint('max_open').notNull().default(5),

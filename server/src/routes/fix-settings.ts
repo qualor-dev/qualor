@@ -7,7 +7,7 @@ import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
 import type { Executor } from '../db/client';
 import { first } from '../db/rows';
-import { projectFixSettings, projects, type FixAutoSeverity } from '../db/schema';
+import { projectFixSettings, projects, type JiraAutoSeverity } from '../db/schema';
 import { syncFixesNow } from '../fixes/jobs';
 import { fixCounts, fixPreconditions, fixSettingsOf, type FixSettingsRow } from '../fixes/settings';
 import { idParams } from '../http/schemas';
@@ -79,7 +79,7 @@ function changedFields(
 
 /** spec §6.3: the rule's `since`, now whenever the rule changes, else kept; null while it is off. */
 function autoSinceOf(
-  rule: { minSeverity: FixAutoSeverity | null; exploited: boolean },
+  rule: { minSeverity: JiraAutoSeverity | null; exploited: boolean },
   before: FixSettingsRow | null,
 ): SQL | Date | null {
   if (rule.minSeverity === null && !rule.exploited) return null;
