@@ -21,25 +21,38 @@ const V_PREFIX = /^[vV](?=\d)/;
 /** ASCII runs only (`\d` and `[A-Za-z]`), so a token's first code unit tells a number apart. */
 const TOKEN = /[0-9]+|[A-Za-z]+/g;
 
+/** 0 for equal strings, else -1 or 1 by their code units. */
+function compareStrings(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 /** Digit strings as numbers of any length: no leading zeros, then the length, then the digits. */
 function compareDigits(a: string, b: string): number {
   const x = a.replace(/^0+/, '');
   const y = b.replace(/^0+/, '');
   if (x.length !== y.length) return x.length < y.length ? -1 : 1;
-  return x === y ? 0 : x < y ? -1 : 1;
+  return compareStrings(x, y);
 }
 
 const isNumber = (token: string): boolean => token.charCodeAt(0) <= 57;
 
+/** At least one side has run out of tokens: the end sorts before a digit run, after a letter run. */
+function compareWithEnd(a: string | undefined, b: string | undefined): number {
+  if (a === undefined) {
+    if (b === undefined) return 0;
+    return isNumber(b) ? -1 : 1;
+  }
+  return isNumber(a) ? 1 : -1;
+}
+
 function compareTokens(a: string | undefined, b: string | undefined): number {
-  if (a === undefined) return b === undefined ? 0 : isNumber(b) ? -1 : 1;
-  if (b === undefined) return isNumber(a) ? 1 : -1;
+  if (a === undefined || b === undefined) return compareWithEnd(a, b);
   const aNumber = isNumber(a);
   if (aNumber !== isNumber(b)) return aNumber ? 1 : -1;
   if (aNumber) return compareDigits(a, b);
   const x = a.toLowerCase();
-  const y = b.toLowerCase();
-  return x === y ? 0 : x < y ? -1 : 1;
+  return compareStrings(x, b.toLowerCase());
 }
 
 function split(version: string): { epoch: string; tokens: string[] } {
