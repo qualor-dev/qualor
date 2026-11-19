@@ -1329,6 +1329,7 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        username?: string;
                         displayName?: string | null;
                         email?: string | null;
                         isInstanceAdmin?: boolean;
@@ -1395,7 +1396,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description LAST_ADMIN (the last active instance administrator cannot be deactivated or demoted); LAST_BREAK_GLASS_ADMIN (while password sign-in is limited to break-glass administrators, the last usable one cannot be deactivated or demoted); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                /** @description LAST_ADMIN (the last active instance administrator cannot be deactivated or demoted); LAST_BREAK_GLASS_ADMIN (while password sign-in is limited to break-glass administrators, the last usable one cannot be deactivated or demoted); USERNAME_TAKEN; EMAIL_TAKEN; DEMO_USER (while QUALOR_DEMO_USER is set, the demo account keeps its username and no user takes it, ignoring case); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
                 409: {
                     headers: {
                         [name: string]: unknown;

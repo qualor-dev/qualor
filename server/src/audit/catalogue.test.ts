@@ -198,7 +198,7 @@ describe('the audit catalogue (rbac-audit.md §8)', () => {
 
   it('accepts the spec fields of each change list', () => {
     const one = (field: string) => ({ changes: [{ field, from: 'a', to: 'b' }] });
-    for (const field of ['displayName', 'email', 'active', 'isInstanceAdmin'])
+    for (const field of ['username', 'displayName', 'email', 'active', 'isInstanceAdmin'])
       expect(
         AUDIT_CATALOGUE['user.updated'].details.safeParse({ ...one(field), passwordReset: false })
           .success,

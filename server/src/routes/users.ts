@@ -81,6 +81,8 @@ const createUserBody = z.strictObject({
 });
 const patchUserBody = z
   .strictObject({
+    /** 0.16 issue #37: a new username; another user's name, ignoring case, is USERNAME_TAKEN. */
+    username: z.string().regex(USERNAME_PATTERN).optional(),
     displayName: text(255).nullable().optional(),
     email: z.email().max(320).nullable().optional(),
     isInstanceAdmin: z.boolean().optional(),
@@ -123,6 +125,22 @@ function uniqueConflict(err: unknown) {
   return pgConstraint(err) === 'users_email_unique'
     ? conflict('EMAIL_TAKEN', 'That email address is already in use')
     : conflict('USERNAME_TAKEN', 'That username is already taken');
+}
+
+/**
+ * 0.16 issue #37 (Claude): while QUALOR_DEMO_USER is set, a rename from or to the demo name,
+ * ignoring case, is refused. Demo mode finds its account by name, so either rename would move
+ * the read-only guard to another user.
+ */
+function assertDemoNameKept(demoUser: string | null, from: string, to: string): void {
+  if (demoUser === null) return;
+  const demo = demoUser.toLowerCase();
+  if (from.toLowerCase() === demo || to.toLowerCase() === demo) {
+    throw conflict(
+      'DEMO_USER',
+      'While the demo is on, the demo account keeps its username and no other user can take it',
+    );
+  }
 }
 
 /** A user with their SSO summary and invitation, for one answer. */
@@ -523,7 +541,7 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
         openapi: {
           problems: [409],
           problemDescriptions: {
-            409: 'LAST_ADMIN (the last active instance administrator cannot be deactivated or demoted); LAST_BREAK_GLASS_ADMIN (while password sign-in is limited to break-glass administrators, the last usable one cannot be deactivated or demoted)',
+            409: 'LAST_ADMIN (the last active instance administrator cannot be deactivated or demoted); LAST_BREAK_GLASS_ADMIN (while password sign-in is limited to break-glass administrators, the last usable one cannot be deactivated or demoted); USERNAME_TAKEN; EMAIL_TAKEN; DEMO_USER (while QUALOR_DEMO_USER is set, the demo account keeps its username and no user takes it, ignoring case)',
           },
         },
       },
@@ -558,6 +576,7 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
         }
         const [existing] = await tx
           .select({
+            username: users.username,
             displayName: users.displayName,
             email: users.email,
             active: users.active,
@@ -568,6 +587,13 @@ export const userRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app
           .where(eq(users.id, id));
         if (!existing) throw notFound('User');
         const changes: Partial<typeof users.$inferInsert> = {};
+        if (body.username !== undefined) {
+          // the name sent unchanged is no rename (letter case counts: it is the stored spelling).
+          if (body.username !== existing.username) {
+            assertDemoNameKept(deps.config.demoUser, existing.username, body.username);
+          }
+          changes.username = body.username;
+        }
         if (body.displayName !== undefined) changes.displayName = body.displayName;
         if (body.email !== undefined) changes.email = body.email;
         if (body.isInstanceAdmin !== undefined) changes.isInstanceAdmin = body.isInstanceAdmin;

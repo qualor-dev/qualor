@@ -79,7 +79,13 @@ function changesOf<const F extends readonly [string, ...string[]]>(fields: F, ma
   return z.array(z.strictObject({ field: z.enum(fields), from: json, to: json })).max(max);
 }
 /** spec §8: the fields of each `changes` list. */
-export const USER_CHANGE_FIELDS = ['displayName', 'email', 'active', 'isInstanceAdmin'] as const;
+export const USER_CHANGE_FIELDS = [
+  'username',
+  'displayName',
+  'email',
+  'active',
+  'isInstanceAdmin',
+] as const;
 export const PROJECT_CHANGE_FIELDS = [
   'name',
   'mainBranchName',
