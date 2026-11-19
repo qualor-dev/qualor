@@ -104,8 +104,8 @@ dependencies ([Fix merge requests](./fix-merge-requests.md)). It differs from th
 - It runs in the main branch's checkout, with the branch checked out by name. A detached HEAD or a
   tag exits 2.
 - It runs in an image that has your package managers and is glibc-based (Debian, Ubuntu, RHEL; not
-  Alpine). The scanner image has only npm and Go.
-- It needs the `qualor` binary from the release page, or copied out of the scanner image.
+  Alpine). The scanner image has npm, Yarn classic and Go.
+- It needs the `qualor` binary, copied out of the scanner image.
 - It runs on a daily schedule, so a request is served within a day.
 
 ```sh

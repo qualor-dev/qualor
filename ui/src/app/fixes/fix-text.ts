@@ -50,7 +50,7 @@ export function noFixText(reason: string): string {
     case 'declined':
       return $localize`:@@fix.noFix.declined:The proposed version was declined. Qualor does not propose it again.`;
     case 'several_lines':
-      return $localize`:@@fix.noFix.severalLines:Yarn classic cannot pin several release lines of this package at once.`;
+      return $localize`:@@fix.noFix.severalLines:The package is on several release lines that cannot all be moved to a fixed version in one change.`;
     case 'not_installed':
       return $localize`:@@fix.noFix.notInstalled:The vulnerable version is no longer installed.`;
     case 'unresolvable':

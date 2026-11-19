@@ -134,7 +134,7 @@ download. `qualor-fix` runs on pipelines and schedules of the default branch, an
 failing the pipeline. Add a daily pipeline schedule under **Build → Pipeline schedules**, on the
 default branch.
 
-The scanner image has npm and Go. For pnpm, Yarn, Maven, uv or Poetry, name an image that has them.
+The scanner image has npm, Yarn classic and Go. For pnpm, Yarn Berry, Maven, uv or Poetry, name an image that has them.
 
 ### GitHub
 
@@ -175,7 +175,7 @@ the `qualor` binary out of the scanner image, so the runner needs Docker, and a 
 ### Other CI
 
 Run `qualor fix` in a job of the main branch, in an image with your package manager. Take the binary
-from the release page, or from the scanner image:
+from the scanner image:
 
 ```sh
 id=$(docker create qualor/scanner:0.16)
@@ -329,6 +329,7 @@ names the file or the tool where a message is short.
 | `package_manager` | the manager's own output | the manager failed: an unreachable registry, a login that used a dropped variable ([Registry credentials](#registry-credentials)), a lockfile out of sync, an untidy Go module. Fix it in the repository, then **Retry** |
 | `verify_failed` | The package manager's result still holds a vulnerable version | a constraint or an override of yours keeps the old version, or the manager changed no file. Fix it by hand |
 | `unplanned_change` | the rule the result broke | the result changed more than planned, or gained a credential (`secret_in_file`). The [rules](#upload-rules) say which |
+| `secret_in_file` (in the `unplanned_change` message) | the result would put a credential into a file or lockfile | remove the credential from the file or the lockfile, and keep tokens in CI variables. Then **Retry** |
 | `timeout` | The fix job ran out of time | a manager took more than 10 minutes. Warm its cache or use a mirror, then **Retry** |
 | `upload_refused` | the server's rule | the server refused the files: the [rules](#upload-rules) |
 | `scm_permission` | The connection's token may not write to the repository | check the [permissions](#turning-it-on) |
@@ -343,7 +344,7 @@ names the file or the tool where a message is short.
 |---|---|---|
 | `no_fixed_version` | No released version of this package fixes the vulnerabilities yet | wait for a release, or replace the package |
 | `declined` | The proposed version was declined. Qualor does not propose it again | a person closed the merge request. Fix by hand, or wait for a higher fixed version and **Create again** |
-| `several_lines` | Yarn classic cannot pin several release lines of this package at once | the package is installed on several lines and one pin cannot serve them: move the dependents to one line, or fix by hand |
+| `several_lines` | The package is on several release lines that cannot all be moved to a fixed version in one change | the manager cannot pin each line separately (Yarn classic, a Maven property shared by modules, a transitive package in uv or Poetry): move the dependents to one line, or fix by hand |
 | `not_installed` | The vulnerable version is no longer installed | the dependency changed since Qualor last read it. The next analysis of the main branch updates the list |
 | `unresolvable` | The package manager found no way to install the fixed version | the dependents do not allow it, or the registry lacks it. The message holds the manager's output |
 

@@ -293,7 +293,7 @@
     "fix.failure.unknown": "The fix failed.",
     "fix.noFix.noFixedVersion": "No released version of this package fixes the vulnerabilities yet.",
     "fix.noFix.declined": "The proposed version was declined. Qualor does not propose it again.",
-    "fix.noFix.severalLines": "Yarn classic cannot pin several release lines of this package at once.",
+    "fix.noFix.severalLines": "The package is on several release lines that cannot all be moved to a fixed version in one change.",
     "fix.noFix.notInstalled": "The vulnerable version is no longer installed.",
     "fix.noFix.unresolvable": "The package manager found no way to install the fixed version.",
     "fix.noFix.unknown": "There is no automatic fix for this package.",
