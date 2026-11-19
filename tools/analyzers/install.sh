@@ -119,7 +119,10 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$PREFIX/bin" "$PREFIX/lib"
 
 fetch() { # url sha256 file
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused -o "$TMP/$3" "$1"
+  # --retry-all-errors: release downloads have answered a passing 404 in CI (2026-11-19); a pinned
+  # file that is really gone still fails, after the retries, and names its URL.
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused --retry-all-errors -o "$TMP/$3" "$1" \
+    || { echo "download failed: $1" >&2; exit 1; }
   echo "$2  $TMP/$3" | sha256sum -c - >/dev/null || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
