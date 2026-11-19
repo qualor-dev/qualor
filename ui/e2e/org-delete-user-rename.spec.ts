@@ -4,12 +4,13 @@ import { STORAGE_STATE } from './seed-data';
 
 /**
  * 0.16 issue #37: an instance admin deletes an organization (confirmed by its key, removed by a
- * queued job) and renames a user, on the community server. The spec makes its own organization and
- * user; `afterAll` removes what is left (users cannot be
- * deleted, so the renamed one is deactivated). `pnpm ui:e2e` starts from a fresh database, and the
- * run suffix keeps a reused one from answering 409.
+ * queued job) and renames a user, on the community server. The spec makes its own organization
+ * and user, and `afterAll` removes what is left (users cannot be deleted, so the renamed one is
+ * deactivated).
+ *
+ * `pnpm ui:e2e` starts from a fresh database (`server/scripts/e2e/serve.ts`). A database may
+ * still be reused, so every name carries a run suffix and a second run never answers 409.
  */
-// Users cannot be deleted, and a database may be reused, so every name carries a run suffix.
 const RUN = Date.now().toString(36);
 const ORG = { key: `e2e-del-${RUN}`, name: `E2E Delete ${RUN}` };
 const PROJECT = { key: `e2e-del/app-${RUN}`, name: 'E2E Delete App' };
