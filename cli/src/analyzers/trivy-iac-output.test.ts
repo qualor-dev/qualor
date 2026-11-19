@@ -460,3 +460,104 @@ describe('trivyIacJsonToSarif: tolerates', () => {
     expect(() => trivyIacJsonToSarif(null, none)).toThrow();
   });
 });
+
+describe('trivyIacJsonToSarif: messages and helm edge cases', () => {
+  const one = (entry: Record<string, unknown>, type = 'terraform', lines: string[] | null = null) =>
+    resultsOf(
+      trivyIacJsonToSarif(
+        {
+          Results: [
+            {
+              Target: 'a.yaml',
+              Class: 'config',
+              Type: type,
+              Misconfigurations: [{ ID: 'KSV-0001', Status: 'FAIL', ...entry }],
+            },
+          ],
+        },
+        () => lines,
+      ),
+    )[0];
+
+  it('falls back to the title for a blank message, and to the id without a title', () => {
+    expect(one({ Message: '  ', Title: 'T' })?.message?.text).toBe('T');
+    expect(one({ Title: 'T' })?.message?.text).toBe('T');
+    expect(one({ Message: '' })?.message?.text).toBe('KSV-0001');
+    expect(one({ Message: ' m ' })?.message?.text).toBe(' m ');
+  });
+
+  it('has no region and a note for a helm entry without code lines', () => {
+    for (const Code of [undefined, null, {}, { Lines: null }]) {
+      const r = one({ Message: 'm', CauseMetadata: { StartLine: 2, EndLine: 3, Code } }, 'helm', [
+        'a',
+        'b',
+        'c',
+      ]);
+      expect(regionOf(r)).toBeUndefined();
+      expect(r?.message?.text).toBe(`m${NOT_MAPPED}`);
+    }
+  });
+
+  it('skips cause lines that are not causes, are blank or have no number', () => {
+    const r = one(
+      {
+        CauseMetadata: {
+          StartLine: 4,
+          EndLine: 4,
+          Code: {
+            Lines: [
+              { Number: 4, Content: 'b', IsCause: false },
+              { Number: 4, Content: '   ', IsCause: true },
+              { Number: 4, IsCause: true },
+              { Content: 'b', IsCause: true },
+              { Number: 4, Content: 'c', IsCause: true },
+            ],
+          },
+        },
+      },
+      'helm',
+      ['a', 'b', 'c', 'd'],
+    );
+    // `c` is template line 3, rendered on line 4: the offset is -1.
+    expect(regionOf(r)).toEqual({ startLine: 3, endLine: 3 });
+  });
+
+  it('tries the next cause line when one maps outside the template', () => {
+    const r = one(
+      {
+        CauseMetadata: {
+          StartLine: 2,
+          EndLine: 2,
+          Code: {
+            Lines: [
+              // `a` is template line 1 and rendered line 9: the start would map to line -6.
+              { Number: 9, Content: 'a', IsCause: true },
+              // `b` is template line 2 and rendered line 1: the start maps to line 3.
+              { Number: 1, Content: 'b', IsCause: true },
+            ],
+          },
+        },
+      },
+      'helm',
+      ['a', 'b', 'c'],
+    );
+    expect(regionOf(r)).toEqual({ startLine: 3, endLine: 3 });
+  });
+
+  it('maps past the end of the template to no region', () => {
+    const r = one(
+      {
+        Message: 'm',
+        CauseMetadata: {
+          StartLine: 5,
+          EndLine: 5,
+          Code: { Lines: [{ Number: 1, Content: 'c', IsCause: true }] },
+        },
+      },
+      'helm',
+      ['a', 'b', 'c'],
+    );
+    expect(regionOf(r)).toBeUndefined();
+    expect(r?.message?.text).toBe(`m${NOT_MAPPED}`);
+  });
+});
