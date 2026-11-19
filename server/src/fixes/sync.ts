@@ -16,7 +16,7 @@ import { monitoringOn } from '../vulnerabilities/targets';
 import { runFixAuto } from './auto';
 import { goneComment } from './body';
 import { claimVulnerabilities } from './claim';
-import { closeFixChange, fence, openWithMrElse, type ClosedAs } from './commit';
+import { closeFixChange, fence, openWithMrElse, readOwnChange, type ClosedAs } from './commit';
 import { mainVulnerabilities, packageOnMain, type MainVulnerability } from './eligibility';
 import { FIX_QUEUE } from './jobs';
 import { openTrackingRepository, type BranchDelete, type FixRepository } from './repository';
@@ -366,14 +366,15 @@ async function endClosed(pass: Pass, tracking: Tracking, row: DependencyFixRow):
  * spec §6.7 step 2, §11.2: what became of the fix's MR. Merged → `merged`; closed → `declined`,
  * or `fixed` when the package is gone ({@link endClosed}); a branch head that is not Qualor's last
  * commit → `taken_over` (a branch a person deleted is not theirs, as for the commit job); a
- * conflict → `refresh`.
+ * conflict → `refresh`. Ruling FW14: an MR the provider no longer has (deleted) ends as a closed
+ * one does.
  */
 async function trackChange(pass: Pass, tracking: Tracking, row: DependencyFixRow): Promise<void> {
   if (row.mrNumber === null) return;
   const { repo } = tracking;
-  const change = await repo.readChange(row.mrNumber);
+  const change = await readOwnChange(repo, row.mrNumber);
+  if (change === 'deleted' || change.state === 'closed') return endClosed(pass, tracking, row);
   if (change.state === 'merged') return endFix(pass, row, 'merged');
-  if (change.state === 'closed') return endClosed(pass, tracking, row);
   const head = await repo.branchHead(row.branch);
   if (head !== null && head !== row.headSha) return endFix(pass, row, 'taken_over');
   if (change.conflict) await markRefresh(pass, row);

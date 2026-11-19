@@ -17,9 +17,10 @@ import { BUSY_DEFER_SECONDS } from '../scm/decorate';
 import { ScmError } from '../scm/provider';
 import { decorationRetryDelaySeconds, MAX_DECORATION_ATTEMPTS } from '../scm/queue';
 import { retryable } from '../scm/runtime';
+import { monitoringOn } from '../vulnerabilities/targets';
 import { cancelComment, fixBody, fixTitle, type FixBodyVulnerability } from './body';
 import { claimVulnerabilities } from './claim';
-import { mainVulnerabilities } from './eligibility';
+import { mainVulnerabilities, packageOnMain } from './eligibility';
 import { enqueueFixJob, type FixJobPayload } from './jobs';
 import {
   FIX_REPOSITORY_PROBLEM_TEXT,
@@ -252,17 +253,48 @@ async function bodyOf(
 // ─── The commit ──────────────────────────────────────────────────────────────
 
 /**
+ * Ruling FW14: the fix's own MR (`mr_number`), or `deleted` when the provider no longer has it (a
+ * GitLab owner can delete an MR): its read answers not found while main's head can still be read.
+ * A repository the token can no longer see answers not found for both: that error is thrown, as
+ * before, so no fix ends on it.
+ */
+export async function readOwnChange(
+  repo: FixRepository,
+  mrNumber: number,
+): Promise<ChangeRequest | 'deleted'> {
+  try {
+    return await repo.readChange(mrNumber);
+  } catch (err) {
+    if (!(err instanceof ScmError) || err.kind !== 'not_found') throw err;
+    if ((await repo.branchHead(repo.mainBranch)) === null) throw err;
+    return 'deleted';
+  }
+}
+
+/**
+ * Ruling FW14: the commit of a fix whose MR was deleted ends as a closed MR's would: `fixed` once
+ * main no longer has the package (judged only while monitoring is on, as the pass does), else
+ * `declined` with its target kept. Nothing is written to the branch.
+ */
+async function endDeleted(db: Db, row: CommittingFix): Promise<FixState> {
+  const gone = (await monitoringOn(db, row.projectId)) && !(await packageOnMain(db, row));
+  if (gone) return settle(db, row, { state: 'fixed' });
+  return settle(db, row, { state: 'declined', declinedTarget: row.targetVersion });
+}
+
+/**
  * Ruling F8: the fix's MR before any branch write: its own (`mr_number`), else the open one from
  * its branch (a crash after the MR was opened, or a re-armed fix whose MR is still open, T8c).
  * Ruling T10a: one found by its branch is the fix's only when its head is Qualor's last commit
  * (the stored `head_sha`, read before the write): an MR someone else opened from a branch of that
- * name is never written and its state never ends the fix; a new MR is opened instead.
+ * name is never written and its state never ends the fix; a new MR is opened instead. Ruling
+ * FW14: an own MR the provider no longer has is `deleted`.
  */
 async function currentChange(
   repo: FixRepository,
   row: DependencyFixRow,
-): Promise<ChangeRequest | null> {
-  if (row.mrNumber !== null) return repo.readChange(row.mrNumber);
+): Promise<ChangeRequest | 'deleted' | null> {
+  if (row.mrNumber !== null) return readOwnChange(repo, row.mrNumber);
   const found = await repo.findChange(row.branch);
   const ours = found !== null && found.headSha !== null && found.headSha === row.headSha;
   return ours ? found : null;
@@ -316,6 +348,7 @@ async function writeFix(
 ): Promise<FixState> {
   const { row } = loaded;
   const change = await currentChange(repo, row);
+  if (change === 'deleted') return endDeleted(deps.db, row);
   if (change !== null && row.mrNumber === null) await storeChange(deps.db, row, change);
   const before = await endBeforeWrite(deps.db, repo, row, change);
   if ('ended' in before) return before.ended;

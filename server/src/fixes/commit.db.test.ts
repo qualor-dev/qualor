@@ -15,7 +15,13 @@ import {
 import { createIngestHarness, type IngestHarness, type IngestProject } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
 import { mappedProject, PUBLIC_URL, scmTestConfig, silentLogger } from '../../test/scm';
-import { dependencyFixes, jobs, projects, scmConnections } from '../db/schema';
+import {
+  dependencyFixes,
+  jobs,
+  projects,
+  scmConnections,
+  targetVulnerabilities,
+} from '../db/schema';
 import { communityLimits } from '../limits';
 import { MAX_DECORATIONS_PER_ORGANIZATION, createScmRuntime } from '../scm/runtime';
 import { cancelComment } from './body';
@@ -740,5 +746,35 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
       });
       expect(await queuedJob(fixId)).toEqual([]);
     });
+  });
+
+  it('FW14: an MR deleted on GitLab ends the refresh declined, or fixed once main is clean, with no branch write', async () => {
+    for (const gone of [false, true]) {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const first = await row(fixId);
+      await refreshed(repo, fixId);
+      if (gone) {
+        await db()
+          .delete(targetVulnerabilities)
+          .where(eq(targetVulnerabilities.projectId, repo.project.id));
+      }
+      // An owner deleted the MR: every read of it answers 404, while main can still be read.
+      const deleted = { status: 404, body: { message: '404 Not found' } };
+      const mrPath = new RegExp(`^/projects/${repo.gitlabId}/merge_requests/${first.mrNumber}$`);
+      fake.inject('GET', mrPath, deleted, deleted, deleted);
+      fake.clearRequests();
+      await runFixJobs();
+
+      expect(writes()).toEqual([]);
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBe(first.headSha);
+      expect(await row(fixId)).toMatchObject({
+        state: gone ? 'fixed' : 'declined',
+        prepared: null,
+        failure: null,
+        declinedTarget: gone ? null : '1.2.6',
+      });
+      expect(await queuedJob(fixId)).toEqual([]);
+    }
   });
 });

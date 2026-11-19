@@ -828,7 +828,7 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     it("T11d: a project's request budget ends its part; another project of the organisation goes on", async () => {
       const spent = await freshRepo();
       const first = await openFix(spent);
-      // A second open fix of the same project, whose MR does not exist (a 404 skips it).
+      // A second open fix of the same project, whose MR read the spent budget never reaches.
       const second = await seedFix(db(), {
         projectId: spent.project.id,
         family: 'js',
@@ -873,8 +873,8 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     it('T11d: with more open fixes than FIX_READS_PER_PASS, a pass reads 200 MRs', async () => {
       expect(FIX_READS_PER_PASS).toBe(200);
       const repo = await freshRepo();
-      // 201 open fixes whose MRs do not exist (each read a 404, skipped); monitoring off, so only
-      // the MR step sends requests.
+      // 201 open fixes whose MRs were deleted: each read a 404 and a read of main, which ends the
+      // fix declined (ruling FW14); monitoring off, so only the MR step sends requests.
       await db()
         .insert(dependencyFixes)
         .values(
@@ -893,9 +893,9 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
       await monitoring(repo.project.id, false);
       try {
         fake.clearRequests();
-        expect(await pass()).toEqual(ZERO);
+        expect(await pass()).toEqual({ ...ZERO, declined: FIX_READS_PER_PASS });
         expect(mrReads()).toHaveLength(FIX_READS_PER_PASS);
-        expect(fake.requests).toHaveLength(FIX_READS_PER_PASS);
+        expect(fake.requests).toHaveLength(2 * FIX_READS_PER_PASS);
       } finally {
         await monitoring(repo.project.id, true);
       }
@@ -958,6 +958,48 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
       expect(await pass()).toEqual({ ...ZERO, stop: 'transient' });
       expect((await row(fixId)).state).toBe('open');
       expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+    });
+
+    /** An owner deleted the fix's MR on GitLab: every read of it answers 404. */
+    const deletedMr = (repo: Repo, mrNumber: number) => {
+      const gone = { status: 404, body: { message: '404 Not found' } };
+      const path = new RegExp(`^/projects/${repo.gitlabId}/merge_requests/${mrNumber}$`);
+      fake.inject('GET', path, gone, gone, gone);
+    };
+
+    it('FW14: a deleted MR ends the fix declined while main has the package, its target kept', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber, headSha } = await row(fixId);
+      deletedMr(repo, mrNumber!);
+      expect(await pass()).toEqual({ ...ZERO, declined: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'declined', declinedTarget: '1.2.6' });
+      expect(writes()).toEqual([]);
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBe(headSha);
+    });
+
+    it('FW14: a deleted MR whose package is gone from main ends fixed, its branch deleted', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      deletedMr(repo, mrNumber!);
+      expect(await pass()).toEqual({ ...ZERO, fixed: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'fixed', declinedTarget: null });
+      expect(fake.headOf(repo.gitlabId, BRANCH)).toBeNull();
+    });
+
+    it('FW14: a 404 while main cannot be read either (a token that lost the project) ends nothing', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      deletedMr(repo, mrNumber!);
+      fake.inject('GET', new RegExp(`^/projects/${repo.gitlabId}/repository/branches/main$`), {
+        status: 404,
+        body: { message: '404 Project Not Found' },
+      });
+      expect(await pass()).toEqual(ZERO);
+      expect(await row(fixId)).toMatchObject({ state: 'open', declinedTarget: null });
     });
   });
 });
