@@ -130,8 +130,16 @@ SCIM fills them in.
 
 ## Add a SAML connection
 
-Qualor uses SAML 2.0 Web SSO: requests by HTTP-Redirect, responses by HTTP-POST. Copy these values
-into the IdP, from **Values for the identity provider**:
+Qualor uses SAML 2.0 Web SSO: requests by HTTP-Redirect, responses by HTTP-POST. Each side needs
+the other's values, so set it up in this order:
+
+1. Choose **Add a SAML connection**, enter a **Name**, and **Save**. Leave the identity provider's
+   fields empty: a disabled connection may be saved without them.
+2. Copy Qualor's values into the IdP, from **Values for the identity provider** (below).
+3. Finish the app in the IdP. Give Qualor its **Metadata URL**, press **Read metadata**, and press
+   **Save these values**. Without a metadata URL, enter the IdP's fields by hand.
+4. Tick **Enabled: show it on the sign-in page** and **Save**. Enabling needs the IdP's entity id,
+   its SSO URL and a certificate.
 
 | Qualor's label | IdP asks for | Value |
 |---|---|---|
@@ -139,12 +147,10 @@ into the IdP, from **Values for the identity provider**:
 | **Entity id (SP)** | SP entity id (identifier, audience URI) | `https://qualor.example.com/api/v0/ee/sso/saml/<connection id>/metadata` |
 | **SP metadata URL** | SP metadata, for IdPs that import it | the same URL: it serves Qualor's metadata XML |
 
-Then give Qualor the IdP's side in **New SAML connection**, from its metadata URL or by hand. For
-the metadata URL, save the connection first, then press **Read metadata**. Qualor reads it once,
-never on a schedule, and shows **What the metadata would change**: the entity id, the SSO URL and
-the **Signing certificates** with their **SHA-256** fingerprints. Nothing is saved until you press
-**Save these values** (or **Discard**). The metadata document itself is not signed, so check the
-fingerprints with the IdP first.
+**Read metadata** reads the metadata URL once, never on a schedule, and shows **What the metadata
+would change**: the entity id, the SSO URL and the **Signing certificates** with their **SHA-256**
+fingerprints. Nothing is saved until you press **Save these values** (or **Discard**). The metadata
+document itself is not signed, so check the fingerprints with the IdP first.
 
 | Field | What to enter |
 |---|---|
@@ -219,7 +225,9 @@ accounts are named after the NameID (`G-<uuid>`).
    `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name`, display name
    `http://schemas.microsoft.com/identity/claims/displayname`, groups (after **Add a group claim**)
    `http://schemas.microsoft.com/ws/2008/06/identity/claims/groups`. Groups arrive as object ids.
-4. Metadata URL: the **App Federation Metadata Url**, which ends in `?appid=…`.
+4. Metadata URL: the **App Federation Metadata Url**, which ends in `?appid=…`. Press **Read
+   metadata** only after you saved **Basic SAML Configuration**: Entra issues a new signing
+   certificate then, and a certificate copied before it does not sign the responses.
 
 ### Okta (SAML)
 

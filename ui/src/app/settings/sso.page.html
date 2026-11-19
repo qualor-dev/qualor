@@ -418,6 +418,10 @@
           </div>
         } @else {
           @let keyKept = c?.saml?.spKeySet && !changeSpKey();
+          <p class="muted" id="sso-idp-draft-hint" i18n="@@sso.idpDraftHint">
+            Leave these empty until the identity provider is set up: save, copy the values above
+            into it, then press Read metadata.
+          </p>
           <div class="setting-row">
             <div class="setting-text">
               <label for="sso-metadata-url" i18n="@@sso.metadataUrl">Metadata URL (optional)</label>

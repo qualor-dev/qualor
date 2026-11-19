@@ -508,6 +508,61 @@ describe('SsoPage (sso-scim.md §4, §9, §18)', () => {
     expect(result).toContain('https://idp.example.com/jwks');
   });
 
+  // 0.16 SSO: the SP values exist once a connection is saved, and Entra ID and Okta ask for them
+  // first, so a SAML connection is saved before the identity provider's values are known.
+  it('saves a new SAML connection without the identity provider values, with a hint', async () => {
+    const server = setup({ connections: [] });
+    const draft = saml({
+      saml: { ...saml().saml!, idpEntityId: null, idpSsoUrl: null, idpCertificates: [] },
+    });
+    server.on('POST', CONNECTIONS, { status: 201, body: draft });
+    server.on('GET', CONNECTIONS, () => ({
+      body: server.requestsTo('POST', CONNECTIONS).length > 0 ? [draft] : [],
+    }));
+    const { fixture, root } = await render();
+    await click(fixture, button(root, 'Add a SAML connection'));
+    expect(root.textContent).toContain(
+      'Leave these empty until the identity provider is set up: save, copy the values above into it, then press Read metadata.',
+    );
+    type(root, '#sso-name', 'Corp SAML');
+    type(root, '#sso-metadata-url', 'https://idp.corp.example/saml/metadata');
+    root.querySelector('form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+    const bodies = server.requestsTo('POST', CONNECTIONS).map((r) => r.body as { saml: unknown });
+    expect(bodies.map((b) => b.saml)).toEqual([
+      expect.objectContaining({
+        idpEntityId: null,
+        idpSsoUrl: null,
+        idpCertificates: [],
+        metadataUrl: 'https://idp.corp.example/saml/metadata',
+      }),
+    ]);
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('Corp SAML saved.');
+    // The saved draft shows empty fields, never "null".
+    expect(root.querySelector<HTMLInputElement>('#sso-idp-entity-id')?.value).toBe('');
+    expect(root.querySelector<HTMLInputElement>('#sso-idp-sso-url')?.value).toBe('');
+  });
+
+  it("Test says which values a SAML draft still lacks, in the app's words", async () => {
+    const server = setup();
+    server.on('POST', `${CONNECTIONS}/${SAML_ID}/test`, {
+      body: {
+        ok: false,
+        problem: { code: 'incomplete', message: 'server words' },
+        endpoints: null,
+        certificates: [],
+      },
+    });
+    const { fixture, root } = await render();
+    await openRow(fixture, root, SAML_ID);
+    await click(fixture, button(root, 'Test'));
+    const result = root.querySelector('#sso-test')!.textContent ?? '';
+    expect(result).toContain(
+      "The identity provider's entity id, SSO URL or signing certificate is missing. Press Read metadata, or enter them.",
+    );
+    expect(result).not.toContain('server words');
+  });
+
   it("Test shows a fixed text for the problem, never the server's message", async () => {
     const server = setup();
     server.on('POST', `${CONNECTIONS}/${OIDC_ID}/test`, {
