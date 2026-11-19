@@ -45,7 +45,8 @@ const CLI_KILL_MS = 150_000;
 
 const GITLAB_ID = 7001;
 const BRANCH = 'qualor/fix/js/qf-a';
-const TITLE = 'Bump qf-a from 1.2.5 to 1.2.6';
+/** Ruling FW2: a GitLab MR title holds the package name in a code span (no mention). */
+const TITLE = 'Bump ` qf-a ` from 1.2.5 to 1.2.6';
 const CVE = 'CVE-2026-9701';
 
 // Assembled at run time, so the repository's own Gitleaks pass finds no fake secret here.

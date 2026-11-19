@@ -24,7 +24,10 @@ import type { FixJobDeps } from './run';
 
 const CVE = 'CVE-2026-9301';
 const BRANCH = 'qualor/fix/js/qf-a';
+/** The commit message: plain (R30). */
 const TITLE = 'Bump qf-a from 1.2.5 to 1.2.6';
+/** Ruling FW2: GitLab reads mentions in titles, so the MR title holds the name in a code span. */
+const GITLAB_TITLE = 'Bump ` qf-a ` from 1.2.5 to 1.2.6';
 
 /** A GitLab project of the fake, mapped to a Qualor project with fix MRs on and qf-a vulnerable. */
 interface Repo {
@@ -167,7 +170,7 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
     const [mr, ...others] = fake.mergeRequestsOf(repo.gitlabId);
     expect(others).toEqual([]);
     expect(mr).toMatchObject({
-      title: TITLE,
+      title: GITLAB_TITLE,
       state: 'opened',
       sourceBranch: BRANCH,
       targetBranch: 'main',
@@ -601,7 +604,11 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
         title: 'Their title',
         description: 'their description',
       });
-      expect(own).toMatchObject({ iid: opened.mrNumber, sourceBranch: BRANCH, title: TITLE });
+      expect(own).toMatchObject({
+        iid: opened.mrNumber,
+        sourceBranch: BRANCH,
+        title: GITLAB_TITLE,
+      });
 
       // F8: whatever becomes of the fork's MR, the fix keeps its own.
       for (const state of ['merged', 'closed'] as const) {

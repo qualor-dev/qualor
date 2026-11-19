@@ -195,9 +195,12 @@ async function storeChange(db: Db, row: CommittingFix, change: ChangeRequest): P
 
 // ─── The MR text ─────────────────────────────────────────────────────────────
 
-/** R30: the title of the upload's greatest target, also the commit message. */
-const titleOf = (row: DependencyFixRow): string =>
-  fixTitle(row.packageName, row.installedVersion ?? '', row.targetVersion ?? '');
+/**
+ * R30: the title of the upload's greatest target: the commit message without `provider`, the MR
+ * title with it (ruling FW2: GitLab's holds the package name in a code span).
+ */
+const titleOf = (row: DependencyFixRow, provider?: FixRepository['provider']): string =>
+  fixTitle(row.packageName, row.installedVersion ?? '', row.targetVersion ?? '', provider);
 
 /** The targets that leave their installed version's release line, each pair once. */
 function majorJumps(family: FixFamily, targets: readonly FixTargetValue[]): FixTargetValue[] {
@@ -311,17 +314,17 @@ async function writeFix(
   if (change !== null && row.mrNumber === null) await storeChange(deps.db, row, change);
   const before = await endBeforeWrite(deps.db, repo, row, change);
   if ('ended' in before) return before.ended;
-  const title = titleOf(row);
   const written = await repo.commit({
     branch: row.branch,
     baseSha: row.prepared.baseSha,
     files: row.prepared.files,
-    message: title,
+    message: titleOf(row),
     expectedHead: before.head,
   });
   if ('takenOver' in written) return settle(deps.db, row, { state: 'taken_over' });
   await storeHead(deps.db, row, written.sha);
   const body = await bodyOf(deps, loaded, repo.provider);
+  const title = titleOf(row, repo.provider);
   const open = await writeChange(repo, row, change, { title, body });
   return settle(deps.db, row, { state: 'open', mrNumber: open.number, mrUrl: open.url });
 }

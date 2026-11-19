@@ -93,15 +93,30 @@ function expectInert(body: string): void {
 }
 
 describe('fixTitle and the comments (R29, R30)', () => {
-  it('names the package, the installed version and the target', () => {
+  it('names the package, the installed version and the target: plain for a commit and on GitHub', () => {
     expect(fixTitle('qf-a', '1.2.5', '1.2.6')).toBe('Bump qf-a from 1.2.5 to 1.2.6');
     expect(fixTitle('@scope/x', 'v1.0.0', 'v1.0.1')).toBe('Bump @scope/x from v1.0.0 to v1.0.1');
+    expect(fixTitle('@scope/x', 'v1.0.0', 'v1.0.1', 'github')).toBe(
+      'Bump @scope/x from v1.0.0 to v1.0.1',
+    );
+  });
+
+  it('puts the package in a code span on GitLab, which reads mentions in titles (ruling FW2)', () => {
+    expect(fixTitle('@all/x', '1.2.5', '1.2.6', 'gitlab')).toBe(
+      'Bump ` @all/x ` from 1.2.5 to 1.2.6',
+    );
+    // A backtick in the name gets a longer fence, as codeSpan writes it.
+    expect(fixTitle('a`b', '1', '2', 'gitlab')).toBe('Bump `` a`b `` from 1 to 2');
   });
 
   it('keeps a title on one line, within 255 characters', () => {
-    const title = fixTitle(`a\nb${'c'.repeat(400)}`, '1\r\n2', '3\u2028/merge');
-    expect(title).not.toMatch(/[\n\r\u2028]/);
-    expect([...title].length).toBeLessThanOrEqual(255);
+    for (const provider of [undefined, 'github', 'gitlab'] as const) {
+      const title = fixTitle(`a\nb${'c'.repeat(400)}`, '1\r\n2', '3\u2028/merge', provider);
+      expect(title).not.toMatch(/[\n\r\u2028]/);
+      expect([...title].length).toBeLessThanOrEqual(255);
+      const fenced = fixTitle('`'.repeat(150), '1'.repeat(80), '2'.repeat(80), provider);
+      expect([...fenced].length).toBeLessThanOrEqual(255);
+    }
   });
 
   it('says MR on GitLab and PR on GitHub in the cancel comment', () => {
