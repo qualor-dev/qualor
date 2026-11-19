@@ -37,11 +37,16 @@ export const FIX_RESULT_RETRY_MS = 10_000;
 /** Ruling T9b: the longest `Retry-After` honoured. */
 export const FIX_RESULT_MAX_RETRY_MS = 60_000;
 /**
- * The longest the result request may go without progress: the server reads the base files from the
- * SCM (up to 120 s) and checks them in a worker (up to 30 s) before it answers, after the uploads
- * ahead of it.
+ * Ruling FW13: the longest the result request may go without progress. Before it answers, the
+ * server reads the base files from the SCM (up to 120 s), waits for up to eight checks ahead of
+ * this one (30 s each, rulings T9a, T3k) and runs its own (30 s): 390 s at worst. The fix job
+ * bounds it further by the time its `--timeout` leaves.
  */
-export const FIX_RESULT_TIMEOUT_MS = 300_000;
+export const FIX_RESULT_TIMEOUT_MS = 600_000;
+
+/** How long a result request may go without progress: the server timeout, at least 10 minutes. */
+export const resultTimeoutMs = (ep: ServerEndpoint): number =>
+  Math.max(ep.timeoutMs, FIX_RESULT_TIMEOUT_MS);
 
 /** A JSON value as a streamed request body. */
 function jsonBody(value: unknown): NonNullable<RequestOptions['body']> {
@@ -169,16 +174,18 @@ function resultAnswer(res: HttpResponse, retries: number): FixSendAnswer | null 
  * (rulings T12f, FW15); a 422 is
  * `refused` with the rule and file. A 503 (`SCM_UNAVAILABLE`,
  * `FIX_CHECK_BUSY`) is retried 3 times, after its `Retry-After` (at most 60 s) or 10 s (R16, T9b);
- * every other answer is a CliError as for the claim.
+ * every other answer is a CliError as for the claim. Each request waits `timeoutMs` without
+ * progress at most: by default {@link FIX_RESULT_TIMEOUT_MS}, or the server timeout when longer.
  */
 export async function sendFixResult(
   ep: ServerEndpoint,
   fixId: string,
   body: FixResultBody,
-  o: { wait?: (ms: number) => Promise<unknown>; log?: Logger },
+  o: { wait?: (ms: number) => Promise<unknown>; log?: Logger; timeoutMs?: number },
 ): Promise<FixSendAnswer> {
   const wait = o.wait ?? ((ms: number) => sleep(ms));
-  const endpoint = { ...ep, timeoutMs: Math.max(ep.timeoutMs, FIX_RESULT_TIMEOUT_MS) };
+  const timeoutMs = o.timeoutMs ?? resultTimeoutMs(ep);
+  const endpoint = { ...ep, timeoutMs };
   const payload = jsonBody(body);
   for (let retries = 0; ; retries++) {
     const res = await request(endpoint, {

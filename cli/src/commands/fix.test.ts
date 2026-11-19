@@ -943,6 +943,28 @@ describe('qualor fix: time (§6.5 limits, R4)', () => {
     expect(server.results).toHaveLength(1);
   });
 
+  it('starts no upload that cannot finish before --timeout ends: the claim goes back (ruling FW13)', async () => {
+    const { dir } = repo();
+    // The job's clock jumps 75 s at the claim: the fix is prepared, but 45 s of the 120 s are left.
+    let skipped = 0;
+    const now = () => Date.now() + skipped;
+    const server = await qualor({
+      claims: [
+        (res) => {
+          skipped = 75_000;
+          claimOf(item(1))(res);
+        },
+      ],
+    });
+    const r = await run(dir, server, { flags: { timeoutSeconds: 120 }, deps: { now } });
+    expect(r.code).toBe(EXIT.OK);
+    expect(server.results.map((x) => x.body)).toEqual([
+      { generation: 1, leaseToken: 'lease-1', released: true },
+    ]);
+    expect(r.log).toMatch(/--timeout/);
+    expect(worktrees(dir)).toHaveLength(1);
+  });
+
   it('claims nothing with less than 60 s of --timeout left (ruling T12g)', async () => {
     const { dir } = repo();
     const server = await qualor({ claims: [claimOf(item(1))] });

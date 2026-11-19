@@ -3,7 +3,7 @@ import type { FixClaimAnswer, FixResultBody } from '@qualor/shared/fix';
 import { describe, expect, it } from 'vitest';
 import { json, problem, useTestServers } from '../../test/http';
 import { CliError, EXIT } from '../errors';
-import { claimFix, sendFixResult } from './fix-client';
+import { claimFix, FIX_RESULT_TIMEOUT_MS, sendFixResult } from './fix-client';
 import type { ServerEndpoint } from './http';
 
 const serve = useTestServers();
@@ -213,6 +213,20 @@ describe('sendFixResult (R6, R16, rulings T9b and T9d)', () => {
       },
     });
     expect(capped).toEqual([60_000]);
+  });
+
+  it('waits up to 10 minutes for the server by default: its reads, eight checks ahead and its own (ruling FW13)', () => {
+    const serverBoundMs = 120_000 + 8 * 30_000 + 30_000;
+    expect(FIX_RESULT_TIMEOUT_MS).toBe(600_000);
+    expect(FIX_RESULT_TIMEOUT_MS).toBeGreaterThan(serverBoundMs);
+  });
+
+  it('gives up after the wait it is given, a server that never answers included (ruling FW13)', async () => {
+    const { url } = await serve(() => undefined);
+    const started = Date.now();
+    const sent = sendFixResult(endpoint(url), FIX_ID, FAILURE, { timeoutMs: 300 });
+    expect(await exitOf(sent)).toBe(EXIT.SERVER);
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 
   it('maps the other refusals: 401/403 exit 5, a missing fix or any other error exit 4', async () => {

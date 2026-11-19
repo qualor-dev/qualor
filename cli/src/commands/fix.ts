@@ -31,7 +31,7 @@ import { openScratch } from '../fix/workspace';
 import { createGit, gitText, type Git } from '../git/git';
 import type { CliIO } from '../io';
 import type { Logger } from '../log';
-import { claimFix, sendFixResult, type FixSendAnswer } from '../server/fix-client';
+import { claimFix, resultTimeoutMs, sendFixResult, type FixSendAnswer } from '../server/fix-client';
 import { serverEndpoint } from '../server/endpoint';
 import { clean, type ServerEndpoint } from '../server/http';
 
@@ -62,6 +62,11 @@ export interface FixDeps {
 
 /** R4, ruling T12g: no claim with less of the job's `--timeout` left than this. */
 const MIN_CLAIM_MS = 60_000;
+/**
+ * Ruling FW13: no upload of files with less of the job's `--timeout` left than this; the claim is
+ * handed back instead, as when the fix itself runs out of the job's time.
+ */
+const MIN_UPLOAD_MS = MIN_CLAIM_MS;
 /** How long a fix that ran out of time may take to stop before its scratch copy goes. */
 const STOP_GRACE_MS = 5000;
 /** A timer may fire this much before its time; a deadline this close counts as reached. */
@@ -439,10 +444,37 @@ function checkedBody(body: FixResultBody): FixResultBody {
  * the claim's reasons).
  */
 async function send(job: FixJob, item: FixClaimItem, outcome: Outcome): Promise<boolean> {
-  const body = checkedBody(bodyOf(job, item, outcome));
-  const answer = await sendFixResult(job.endpoint, item.id, body, { wait: job.wait, log: job.log });
+  const upload = withinTime(job, item, outcome);
+  const body = checkedBody(bodyOf(job, item, upload.outcome));
+  const answer = await sendFixResult(job.endpoint, item.id, body, {
+    wait: job.wait,
+    log: job.log,
+    ...(upload.timeoutMs !== undefined && { timeoutMs: upload.timeoutMs }),
+  });
   report(job, item, body, answer);
   return !(typeof answer === 'object' && 'stopped' in answer);
+}
+
+/**
+ * Ruling FW13: an upload of files keeps within the job's `--timeout`, as a fix's own work does: its
+ * wait for the server is the result route's (`resultTimeoutMs`, ten minutes) but never past the
+ * job's end, and with less than {@link MIN_UPLOAD_MS} left it is not started: the claim is handed
+ * back. A failure, a no-fix or a release is small and always sent, with the route's own wait.
+ */
+function withinTime(
+  job: FixJob,
+  item: FixClaimItem,
+  outcome: Outcome,
+): { outcome: Outcome; timeoutMs?: number } {
+  if (outcome === RELEASED || !('files' in outcome)) return { outcome };
+  const left = timeLeft(job);
+  if (left < MIN_UPLOAD_MS) {
+    job.log.info(
+      `${clean(item.family)} ${clean(item.packageName)}: less than a minute of the job's --timeout is left; handing the fix back instead of uploading it`,
+    );
+    return { outcome: RELEASED };
+  }
+  return { outcome, timeoutMs: Math.min(resultTimeoutMs(job.endpoint), left) };
 }
 
 /** One claimed fix, prepared and sent; one the job cannot even start on is handed back. */
