@@ -19,7 +19,7 @@ import { claimVulnerabilities } from './claim';
 import { closeFixChange, fence, openWithMrElse, type ClosedAs } from './commit';
 import { mainVulnerabilities, packageOnMain, type MainVulnerability } from './eligibility';
 import { FIX_QUEUE } from './jobs';
-import { openTrackingRepository, type FixRepository } from './repository';
+import { openTrackingRepository, type BranchDelete, type FixRepository } from './repository';
 import { fixColumns, type DependencyFixRow } from './rows';
 import type { FixJobDeps } from './run';
 
@@ -333,18 +333,32 @@ async function isGone(pass: Pass, row: DependencyFixRow): Promise<boolean> {
 }
 
 /**
+ * Ruling FW4: the provider refused the branch delete for good (a ruleset, a protected branch); the
+ * fix ends anyway with its branch kept, and the project's part of the pass goes on. One warning.
+ */
+function noteBranchKept(pass: Pass, row: DependencyFixRow): void {
+  pass.deps.logger?.warn(
+    { organizationId: pass.organizationId, projectId: row.projectId, fixId: row.id },
+    'fix sync pass: the repository refused the branch delete; the fix ended with its branch kept',
+  );
+}
+
+/**
  * Finding I1: an MR closed without a merge. While main still has the package, a person declined
  * it: `declined`, its target kept. Once the package is gone (Qualor's gone-close cut short before
  * the branch delete, or a person's close that no longer matters): `fixed`, with the branch
  * deleted through the B10 path (`deleteBranch` re-reads the head; a person's head keeps the
  * branch, `taken_over`). Nothing is deleted while the connection does not allow fix MRs (R18).
+ * A delete the provider refuses for good keeps the branch and still ends the fix `fixed`, with one
+ * warning (ruling FW4), as the read-only case does.
  */
 async function endClosed(pass: Pass, tracking: Tracking, row: DependencyFixRow): Promise<void> {
   if (!(await isGone(pass, row))) return endFix(pass, row, 'declined');
-  let deleted: 'deleted' | 'gone' | 'taken_over' = 'gone';
+  let deleted: BranchDelete = 'gone';
   if (tracking.writable && row.headSha !== null) {
     deleted = await tracking.repo.deleteBranch(row.branch, row.headSha);
   }
+  if (deleted === 'kept') noteBranchKept(pass, row);
   return endFix(pass, row, deleted === 'taken_over' ? 'taken_over' : 'fixed');
 }
 
@@ -434,7 +448,8 @@ const GONE_END: Readonly<Record<ClosedAs, PassEnd>> = Object.freeze({
  * spec §6.7 step 3, B10: main no longer has a vulnerable package: the MR is closed with the gone
  * comment and the branch deleted through the close path of a cancel (`closeFixChange`: each after
  * a head re-read; a person's head keeps both, `taken_over`), then `fixed`. Nothing is written
- * while the connection does not allow fix MRs (R18).
+ * while the connection does not allow fix MRs (R18). A branch delete the provider refuses for
+ * good keeps the branch and still ends the fix (ruling FW4).
  */
 async function closeGone(pass: Pass, project: ProjectRow, row: DependencyFixRow): Promise<void> {
   const tracking = await trackingOf(pass, project);
@@ -445,7 +460,9 @@ async function closeGone(pass: Pass, project: ProjectRow, row: DependencyFixRow)
   const closed = await scmCall(pass, { projectId: project.id, fixId: row.id }, () =>
     closeFixChange(repo, row, mrNumber, comment),
   );
-  if (closed !== null) await endFix(pass, row, GONE_END[closed]);
+  if (closed === null) return;
+  if (closed.branchKept) noteBranchKept(pass, row);
+  await endFix(pass, row, GONE_END[closed.as]);
 }
 
 /**

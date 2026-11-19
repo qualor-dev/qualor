@@ -7,6 +7,7 @@ import type { GitHubClient, GitHubPullState } from '../scm/github/client';
 import { githubClientFor } from '../scm/github/connections';
 import { parseRepoRef } from '../scm/github/url';
 import type { GitLabClient, GitLabMergeRequestState } from '../scm/gitlab/client';
+import { ScmError } from '../scm/provider';
 import type { ScmRuntime } from '../scm/runtime';
 
 /**
@@ -61,9 +62,11 @@ export interface FixRepository {
   commit(input: FixCommitInput): Promise<{ sha: string } | { takenOver: true }>;
   /**
    * Deletes the branch when its head is still `expectedHead` (re-read right before, B10):
-   * `deleted`, `gone` when there is no such branch, `taken_over` (kept) when a person moved it.
+   * `deleted`, `gone` when there is no such branch, `taken_over` (kept) when a person moved it,
+   * `kept` when the provider refuses the delete for good (ruling FW4: a ruleset or a protected
+   * branch; GitHub 422, GitLab 403 or 422). Any other failure is thrown.
    */
-  deleteBranch(name: string, expectedHead: string): Promise<'deleted' | 'gone' | 'taken_over'>;
+  deleteBranch(name: string, expectedHead: string): Promise<BranchDelete>;
   /**
    * The open MR from `branch` of this repository into the main branch, or null: a closed or
    * merged one is not found, nor a fork's from a branch of the same name (ruling T10a).
@@ -83,19 +86,38 @@ type FixWrites = Pick<
   'commit' | 'findChange' | 'readChange' | 'openChange' | 'updateChange' | 'closeChange'
 >;
 
+/** How a branch delete ended ({@link FixRepository.deleteBranch}). */
+export type BranchDelete = 'deleted' | 'gone' | 'taken_over' | 'kept';
+
+/**
+ * Ruling FW4: the statuses with which a provider refuses a branch delete for good (a ruleset that
+ * restricts deletions, a protected branch): GitHub 422 (a missing ref is no refusal: the client
+ * answers it as gone), GitLab 403 or 422. A retry would be refused again.
+ */
+const REFUSED_DELETE: Readonly<Record<FixRepository['provider'], readonly number[]>> =
+  Object.freeze({ github: [422], gitlab: [403, 422] });
+
 /**
  * The branch is deleted when its head is `expectedHead`, re-read right before (B10); `remove`
- * answers false when the branch went in between.
+ * answers false when the branch went in between. A delete the provider refuses for good is `kept`
+ * (ruling FW4), not thrown.
  */
 async function deleteIfHead(
+  provider: FixRepository['provider'],
   branchHead: () => Promise<string | null>,
   expectedHead: string,
   remove: () => Promise<boolean>,
-): Promise<'deleted' | 'gone' | 'taken_over'> {
+): Promise<BranchDelete> {
   const head = await branchHead();
   if (head === null) return 'gone';
   if (head !== expectedHead) return 'taken_over';
-  return (await remove()) ? 'deleted' : 'gone';
+  try {
+    return (await remove()) ? 'deleted' : 'gone';
+  } catch (err) {
+    const status = err instanceof ScmError ? err.status : null;
+    if (status !== null && REFUSED_DELETE[provider].includes(status)) return 'kept';
+    throw err;
+  }
 }
 
 /** A GitLab MR as a fix reads it; `locked` (a merge in progress) is still open. */
@@ -257,6 +279,7 @@ function gitlabRepository(
     fileAt: (path, sha) => client.fileText(ref, path, sha, { maxBytes: FIX_BASE_MAX_BYTES }),
     deleteBranch: (name, expectedHead) =>
       deleteIfHead(
+        'gitlab',
         () => branchHead(name),
         expectedHead,
         () => client.deleteBranch(ref, name),
@@ -290,6 +313,7 @@ async function githubRepository(
     fileAt: (path, sha) => client.rawFileText(path, sha, FIX_BASE_MAX_BYTES),
     deleteBranch: (name, expectedHead) =>
       deleteIfHead(
+        'github',
         () => branchHead(name),
         expectedHead,
         () => client.deleteBranch(name),

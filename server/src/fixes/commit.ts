@@ -485,20 +485,22 @@ const CLOSED_AS: Readonly<Record<ChangeRequest['state'], ClosedAs>> = Object.fre
  * vulnerability gone from main (the sync pass). The head is read first; a person's head leaves
  * the MR and the branch alone (`taken_over`). Otherwise an open MR gets `comment` and is closed,
  * then the branch is deleted when its head is still Qualor's commit (re-read right before the
- * delete; a person's push in between keeps the branch: `taken_over`).
+ * delete; a person's push in between keeps the branch: `taken_over`). A delete the provider refuses
+ * for good keeps the branch (`branchKept`, ruling FW4) and ends the close as if it were deleted.
  */
 export async function closeFixChange(
   repo: FixRepository,
   row: DependencyFixRow,
   mrNumber: number,
   comment: string,
-): Promise<ClosedAs> {
+): Promise<{ as: ClosedAs; branchKept: boolean }> {
   const head = await repo.branchHead(row.branch);
-  if (head !== null && head !== row.headSha) return 'taken_over';
+  if (head !== null && head !== row.headSha) return { as: 'taken_over', branchKept: false };
   const change = await repo.readChange(mrNumber);
   if (change.state === 'open') await repo.closeChange(mrNumber, comment);
   const deleted = head === null ? 'gone' : await repo.deleteBranch(row.branch, head);
-  return deleted === 'taken_over' ? 'taken_over' : CLOSED_AS[change.state];
+  const as = deleted === 'taken_over' ? 'taken_over' : CLOSED_AS[change.state];
+  return { as, branchKept: deleted === 'kept' };
 }
 
 /**
@@ -515,7 +517,20 @@ export async function runFixClose(deps: FixJobDeps, job: FixJob): Promise<void> 
   await untilMovedOn(deps, payload, () =>
     withSlot(deps, loaded.project, payload, () =>
       againstRepository(deps, loaded, payload, {
-        work: (repo) => closeFixChange(repo, loaded.row, mrNumber, cancelComment(repo.provider)),
+        work: async (repo) => {
+          const closed = await closeFixChange(
+            repo,
+            loaded.row,
+            mrNumber,
+            cancelComment(repo.provider),
+          );
+          if (closed.branchKept) {
+            deps.logger?.warn(
+              { fixId: job.fixId, kind: payload.kind },
+              'fix close job: the repository refused the branch delete; the branch is kept',
+            );
+          }
+        },
         fail: (failure) => noteCloseFailure(deps.db, loaded.row, failure),
       }),
     ),

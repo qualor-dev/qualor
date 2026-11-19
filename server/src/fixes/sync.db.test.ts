@@ -901,4 +901,63 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
       }
     });
   });
+
+  describe('final fix wave', () => {
+    /** The warnings that say a fix ended with its branch kept. */
+    const keptWarnings = (lines: [string, ...unknown[]][]) =>
+      lines.filter(
+        ([level, , message]) => level === 'warn' && /branch.*kept/i.test(String(message)),
+      );
+
+    it('FW4: a gone close whose branch delete GitLab refuses (403) ends fixed, keeps the branch, warns once; the pass goes on', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      // The same project's automatic mode, and another project's merged MR, run in the same pass.
+      await autoRuleWithNewPackage(repo);
+      const other = await freshRepo();
+      const merged = await openFix(other);
+      fake.setMergeRequest(other.gitlabId, (await row(merged)).mrNumber!, { state: 'merged' });
+      fake.inject('DELETE', BRANCH_PATH, { status: 403, body: { message: '403 Forbidden' } });
+      const { lines, logger } = capture();
+      expect(await pass({ logger })).toEqual({ ...ZERO, fixed: 1, merged: 1, requested: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'fixed', declinedTarget: null });
+      expect(mrOf(repo, mrNumber!).state).toBe('closed');
+      expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+      expect((await row(merged)).state).toBe('merged');
+      expect(await autoRows(repo)).toHaveLength(1);
+      expect(keptWarnings(lines)).toHaveLength(1);
+      // The next pass reads nothing of it.
+      fake.clearRequests();
+      expect((await pass()).fixed).toBe(0);
+      expect(writes()).toEqual([]);
+    });
+
+    it('FW4: a closed MR whose package is gone, its branch delete refused (422), ends fixed with the branch kept', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      fake.setMergeRequest(repo.gitlabId, mrNumber!, { state: 'closed' });
+      fake.inject('DELETE', BRANCH_PATH, { status: 422, body: { message: 'protected branch' } });
+      const { lines, logger } = capture();
+      expect(await pass({ logger })).toEqual({ ...ZERO, fixed: 1 });
+      expect(await row(fixId)).toMatchObject({ state: 'fixed', declinedTarget: null });
+      expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+      expect(keptWarnings(lines)).toHaveLength(1);
+    });
+
+    it('FW4: a delete that fails for now (503) still keeps the fix open for the next pass', async () => {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber } = await row(fixId);
+      await goneFromMain(repo);
+      fake.setMergeRequest(repo.gitlabId, mrNumber!, { state: 'closed' });
+      fake.inject('DELETE', BRANCH_PATH, { status: 503 });
+      expect(await pass()).toEqual({ ...ZERO, stop: 'transient' });
+      expect((await row(fixId)).state).toBe('open');
+      expect(fake.headOf(repo.gitlabId, BRANCH)).not.toBeNull();
+    });
+  });
 });
