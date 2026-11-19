@@ -632,6 +632,26 @@ describe('redactText: more token shapes and positions', () => {
     }
   });
 
+  it('redacts a URL password holding an @ and then a /, through the last @ (ruling FW17b)', () => {
+    expect(redactText('mysql://app:Hun@pa/ss@db/x')).toEqual({
+      text: `mysql://app:${REDACTED}@db/x`,
+      count: 1,
+    });
+  });
+
+  it('stays fast on a long line of glued URLs (ruling FW17b)', () => {
+    for (const line of [
+      `${'a'.repeat(30)}://u:p`.repeat(1_800),
+      'a://uuuuuuuuuuuuuuuuuuuuuu'.repeat(2_400),
+      `x://u:${'p/'.repeat(20)}`.repeat(1_400),
+    ]) {
+      expect(line.length).toBeLessThanOrEqual(REDACT_MAX_CHARS);
+      const started = performance.now();
+      redactText(line);
+      expect(performance.now() - started).toBeLessThan(2_000);
+    }
+  });
+
   it('redacts a URL password holding a / or an @', () => {
     expect(redactText('mysql://app:Hun/ter2Secret@db/x').text).toBe(`mysql://app:${REDACTED}@db/x`);
     expect(redactText(`mysql://app:Hun@${PASS}@db/x`).text).toBe(`mysql://app:${REDACTED}@db/x`);

@@ -144,16 +144,14 @@ export const URL_SCHEME_SOURCE = String.raw`[a-z][a-z0-9+.-]{0,30}:(?:\/\/|\\\/\
 export const URL_AUTHORITY_END = String.raw`\s/\\?#"'` + '`<>';
 
 /**
- * Ruling FW17: a URL password that holds a `/`, `\`, `?` or `#` before its `@`, which the URL
- * parser reads as a port and a path: a secret, unless what comes before that character is a port
- * (at most five digits) or holds an `@` (then the authority's own userinfo is the password, which
- * `url-password` already redacted). One with none of them is the authority's userinfo too.
+ * Rulings FW17, FW17b: whether the text between a URL's `:` and its last `@` is a password, not a
+ * port and a path. It is a port only when a `/`, `\`, `?` or `#` follows at most five digits
+ * (`host:8080/a/@scope`); everything else is a password, a numeric one before the `@`
+ * (`user:12345@host`) included. Fail closed.
  */
-function pastAuthority(secret: string): boolean {
+function notPort(secret: string): boolean {
   const end = secret.search(/[/\\?#]/);
-  if (end < 0) return true;
-  const authority = secret.slice(0, end);
-  return !authority.includes('@') && !/^\d{0,5}$/.test(authority);
+  return end < 0 || !/^\d{1,5}$/.test(secret.slice(0, end));
 }
 
 export const SECRET_PATTERNS: readonly SecretPattern[] = [
@@ -196,28 +194,28 @@ export const SECRET_PATTERNS: readonly SecretPattern[] = [
   /** A DER private key (or certificate) in base64 without its PEM lines. */
   { id: 'private-key-der', pattern: /\bMII[A-Za-z0-9+/]{60,4096}={0,2}/g },
   {
-    // Ruling FW17: the authority rule of `scrubUrlUserinfo` (fix/scrub.ts). The authority ends at
-    // `/`, `\`, `?`, `#` (and white space, a quote, `<>`); its userinfo runs to its last `@`, the
-    // password from the userinfo's first `:`. So `user:12345@host` has a password, a long user
-    // name too, and `host:8080/…@scope` or `[::1]:8080/@x` has none (a port and a path).
+    // Fail closed: the password runs to the last `@` of the URL (it may hold `/` or `@`, as in
+    // `app:Hun@pa/ss@db`); only a port (`host:8080/…@scope`) stops it ({@link notPort}, rulings
+    // FW17, FW17b). An IPv6 host (`[::1]:8080/@x`) never starts a user name here.
     id: 'url-password',
     pattern: new RegExp(
-      `(${URL_SCHEME_SOURCE}[^${URL_AUTHORITY_END}:]{0,4096}:)([^${URL_AUTHORITY_END}]{1,4096})(@|…$)`,
+      `(${URL_SCHEME_SOURCE}[^\\s:/@"'\`\\[]{0,256}:)([^\\s"'\`]{1,1024})(@|…$)`,
       'gi',
     ),
     group: 2,
+    accept: (s) => notPort(s),
   },
   {
-    // Fail closed: a password the URL parser would not see, for it holds a `/` (`app:Hun/ter2@db`,
-    // a URL with no valid port), runs to the URL's last `@` ({@link pastAuthority}). An IPv6 host
-    // (`[`) never starts a user name here.
-    id: 'url-password-past-authority',
+    // Ruling FW17: the authority rule of `scrubUrlUserinfo` (fix/scrub.ts), for a long user name
+    // (over the 256 characters above). The authority ends at `/`, `\`, `?`, `#` (and white space,
+    // a quote, `<>`), so a match never scans past its own URL's authority; its userinfo runs to its
+    // last `@`, the password from the userinfo's first `:`.
+    id: 'url-authority-password',
     pattern: new RegExp(
-      `(${URL_SCHEME_SOURCE}[^\\s:/@"'\`\\[]{0,4096}:)([^\\s"'\`]{1,4096})(@|…$)`,
+      `(${URL_SCHEME_SOURCE}[^${URL_AUTHORITY_END}:]{0,1024}:)([^${URL_AUTHORITY_END}]{1,1024})(@|…$)`,
       'gi',
     ),
     group: 2,
-    accept: (s) => pastAuthority(s),
   },
   {
     // The closing quote is optional: a value cut by the CLI's truncation, or continued on the next
