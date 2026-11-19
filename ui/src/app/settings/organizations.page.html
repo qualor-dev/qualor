@@ -56,12 +56,16 @@
               </td>
               <td class="actions-col">
                 <div class="row-actions">
+                  @if (o.deleting) {
+                    <span class="badge badge-tag" i18n="@@orgs.deleting">Deleting…</span>
+                  }
                   @if (o.id === org.currentId()) {
                     <span class="badge badge-tag" i18n="@@orgs.current">Current</span>
                   } @else {
                     <button
                       type="button"
                       class="btn-quiet"
+                      [disabled]="o.deleting"
                       [attr.aria-label]="switchLabel(o)"
                       (click)="switchTo(o)"
                       i18n="@@orgs.switch"
@@ -69,6 +73,16 @@
                       Switch to
                     </button>
                   }
+                  <button
+                    type="button"
+                    class="btn-quiet"
+                    [disabled]="o.deleting"
+                    [attr.aria-label]="deleteLabel(o)"
+                    (click)="openDelete(o)"
+                    i18n="@@orgs.delete"
+                  >
+                    Delete
+                  </button>
                 </div>
               </td>
             </tr>
@@ -76,6 +90,9 @@
         </tbody>
       </table>
     </div>
+    @if (org.orgs().length === 0 && !org.organizations.isLoading() && !loadError()) {
+      <p class="panel-body muted" i18n="@@orgs.none">There is no organization to show.</p>
+    }
     @if (org.orgs().length > 0) {
       <p class="panel-foot muted">
         <span i18n="@@orgs.count">{org.orgs().length, plural,
@@ -147,6 +164,58 @@
           i18n="@@orgs.createSubmit"
         >
           Create organization
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog
+    #deleteDialog
+    id="delete-dialog"
+    class="dialog"
+    aria-labelledby="delete-org-title"
+    aria-describedby="delete-org-text"
+  >
+    <form novalidate (submit)="confirmDelete($event)">
+      <div class="dialog-head">
+        <h2 id="delete-org-title" i18n="@@orgs.deleteTitle">Delete the organization</h2>
+      </div>
+      <div class="dialog-body">
+        @if (deleteError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        <p id="delete-org-text">
+          <ng-container i18n="@@orgs.deleteGoes"
+            >This deletes <strong>{{ deleteTarget()?.name }}</strong> and
+            {{ deleteProjects() }} with their analyses, issues, quality gates, quality profiles,
+            members, connections and settings. This cannot be undone.</ng-container
+          >
+        </p>
+        <div class="field">
+          <label for="delete-org-key" i18n="@@orgs.deleteTypeKey"
+            >Type the organization key <code>{{ deleteTarget()?.key }}</code> to confirm</label
+          >
+          <input
+            id="delete-org-key"
+            autofocus
+            autocomplete="off"
+            spellcheck="false"
+            [value]="typed()"
+            (input)="setTyped($event)"
+          />
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeDelete()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-danger-solid"
+          [attr.aria-disabled]="matches() && !busy() ? null : true"
+          i18n="@@orgs.deleteConfirm"
+        >
+          Delete organization
         </button>
       </div>
     </form>

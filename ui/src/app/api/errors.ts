@@ -151,6 +151,10 @@ export function problemMessage(err: unknown): string {
       return $localize`:@@error.orgKeyTaken:An organization with this key already exists.`;
     case 'USERNAME_TAKEN':
       return $localize`:@@error.usernameTaken:This username is already taken.`;
+    case 'LAST_ORGANIZATION':
+      return $localize`:@@error.lastOrganization:The last organization cannot be deleted.`;
+    case 'ORGANIZATION_DELETING':
+      return $localize`:@@error.organizationDeleting:A delete of this organization is already running.`;
     case 'EMAIL_TAKEN':
       return $localize`:@@error.emailTaken:This email address is already in use.`;
     case 'LAST_ADMIN':
