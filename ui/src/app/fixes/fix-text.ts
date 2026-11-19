@@ -6,8 +6,10 @@ export type FixPreconditions = FixSettingsAnswer['preconditions'];
 /**
  * Why a fix failed, in the UI's own words. The messages of `package_manager`, `upload_refused` and
  * `unplanned_change` are the server's (the package manager's output, the rule an upload broke, the
- * change that was not planned): they are shown as they are, and only ever as text. Every other
- * code has a sentence here.
+ * change that was not planned): they are shown as they are, and only ever as text. Ruling FW12:
+ * `manifest_unsupported`, `missing_tool`, `verify_failed` and `timeout` have a sentence here, then
+ * the fix job's own message (which file or layout, which tool), as text. The SCM codes have only
+ * their sentence.
  */
 export function fixFailureText(failure: { code: string; message: string }): string {
   switch (failure.code) {
@@ -16,13 +18,25 @@ export function fixFailureText(failure: { code: string; message: string }): stri
     case 'unplanned_change':
       return failure.message === '' ? failedText() : failure.message;
     case 'manifest_unsupported':
-      return $localize`:@@fix.failure.manifestUnsupported:Qualor cannot edit this project's dependency files automatically.`;
+      return withMessage(
+        $localize`:@@fix.failure.manifestUnsupported:Qualor cannot edit this project's dependency files automatically.`,
+        failure.message,
+      );
     case 'missing_tool':
-      return $localize`:@@fix.failure.missingTool:The fix job's image does not have the package manager this fix needs.`;
+      return withMessage(
+        $localize`:@@fix.failure.missingTool:The fix job's image does not have the package manager this fix needs.`,
+        failure.message,
+      );
     case 'verify_failed':
-      return $localize`:@@fix.failure.verifyFailed:The package manager's result still holds a vulnerable version.`;
+      return withMessage(
+        $localize`:@@fix.failure.verifyFailed:The package manager's result still holds a vulnerable version.`,
+        failure.message,
+      );
     case 'timeout':
-      return $localize`:@@fix.failure.timeout:The fix job ran out of time.`;
+      return withMessage(
+        $localize`:@@fix.failure.timeout:The fix job ran out of time.`,
+        failure.message,
+      );
     case 'scm_permission':
       return $localize`:@@fix.failure.scmPermission:The connection's token may not write to the repository. Check its permissions.`;
     case 'scm_refused':
@@ -40,6 +54,37 @@ export function fixFailureText(failure: { code: string; message: string }): stri
 
 function failedText(): string {
   return $localize`:@@fix.failure.unknown:The fix failed.`;
+}
+
+/** The UI's sentence, then the fix job's own message when it sent one. */
+function withMessage(sentence: string, message: string): string {
+  const own = message.trim();
+  return own === '' ? sentence : `${sentence} ${own}`;
+}
+
+/** The reasons of a `no_fix` fix (spec §6.4); an open MR whose refresh found no fix keeps one (R8). */
+const NO_FIX_REASONS = new Set([
+  'no_fixed_version',
+  'declined',
+  'several_lines',
+  'not_installed',
+  'unresolvable',
+]);
+
+/**
+ * Ruling FW12: why a fix failed or has no fix, by its `failure`: a no-fix reason in
+ * {@link noFixText}'s words whatever the state (an open MR whose refresh found no fix carries
+ * one), any other code in {@link fixFailureText}'s.
+ */
+export function fixReasonText(state: string, failure: { code: string; message: string }): string {
+  return state === 'no_fix' || isNoFixReason(failure.code)
+    ? noFixText(failure.code)
+    : fixFailureText(failure);
+}
+
+/** Whether `code` is a reason for no fix rather than a failure. */
+export function isNoFixReason(code: string): boolean {
+  return NO_FIX_REASONS.has(code);
 }
 
 /** Why no fix MR exists for a package, by the reason of a `no_fix` fix. */
@@ -70,7 +115,7 @@ export function fixPreconditionText(p: FixPreconditions): string | null {
     return $localize`:@@fix.precondition.notBound:The project is not mapped to a repository.`;
   }
   if (!p.fixMrsAllowed) {
-    return $localize`:@@fix.precondition.notAllowed:An organisation admin must allow fix MRs on the connection.`;
+    return $localize`:@@fix.precondition.notAllowed:An organization admin must allow fix MRs on the connection.`;
   }
   if (!p.monitoringOn) {
     return $localize`:@@fix.precondition.monitoringOff:Vulnerability monitoring is off for this project.`;

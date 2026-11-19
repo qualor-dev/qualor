@@ -197,8 +197,8 @@
   <span
     class="fix-failure"
     [class.badge]="compact()"
-    [class.badge-failed]="compact() && kind !== 'no_fix'"
-    [class.badge-tag]="compact() && kind === 'no_fix'"
+    [class.badge-failed]="compact() && !noFixReason()"
+    [class.badge-tag]="compact() && noFixReason()"
     [attr.title]="compact() ? failure() : null"
     >{{ failure() }}</span
   >

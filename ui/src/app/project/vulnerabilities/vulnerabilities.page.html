@@ -84,7 +84,9 @@
       }
     </div>
     @if (fixLine(); as fixes) {
-      <p class="vuln-fixes" i18n="@@vuln.fixes">{{ fixes.open }} of {{ fixes.max }} fix MRs open</p>
+      <p class="vuln-fixes" i18n="@@vuln.fixes">
+        {{ fixes.inProgress }} of {{ fixes.max }} fix MRs in progress
+      </p>
     }
     <nav class="view-tabs" aria-label="View" i18n-aria-label="@@vuln.views">
       <a

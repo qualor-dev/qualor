@@ -67,15 +67,10 @@
         </p>
       }
       <p class="hint" aria-live="polite">
-        <span i18n="@@fix.panel.open"
-          >{{ loaded()?.counts?.open }} of {{ loaded()?.settings?.maxOpen }} fix MRs open</span
+        <span i18n="@@fix.panel.counts"
+          >{{ loaded()?.counts?.open }} open, {{ inProgress() }} of
+          {{ loaded()?.settings?.maxOpen }} in progress</span
         >
-        @if (onTheWay() > 0) {
-          <ng-container>
-            ·
-            <span i18n="@@fix.panel.onTheWay">{{ onTheWay() }} more on the way</span>
-          </ng-container>
-        }
       </p>
     }
   </div>
@@ -139,7 +134,7 @@
         not requested again.
       </p>
       <div class="field fix-field">
-        <label for="fixes-max" i18n="@@fix.panel.maxLabel">Open MRs at most</label>
+        <label for="fixes-max" i18n="@@fix.panel.maxLabel">Fix MRs in progress at most</label>
         <select id="fixes-max" [disabled]="!editable()" (change)="setMaxOpen($event)">
           @for (n of maxOpenChoices; track n) {
             <option [value]="n" [selected]="n === maxOpen()">{{ n }}</option>

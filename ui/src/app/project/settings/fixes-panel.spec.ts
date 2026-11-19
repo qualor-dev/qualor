@@ -97,7 +97,9 @@ describe('ProjectFixesPanel', () => {
     expect(max).toHaveLength(20);
     expect(max[0]).toBe('1');
     expect(max[19]).toBe('20');
-    expect(root.querySelector('label[for="fixes-max"]')?.textContent).toContain('Open MRs at most');
+    expect(root.querySelector('label[for="fixes-max"]')?.textContent).toContain(
+      'Fix MRs in progress at most',
+    );
     expect(field<HTMLSelectElement>(root, '#fixes-max').value).toBe('5');
   });
 
@@ -183,11 +185,11 @@ describe('ProjectFixesPanel', () => {
       );
     });
 
-    it('says an organisation admin must allow fix MRs on the connection', async () => {
+    it('says an organization admin must allow fix MRs on the connection (ruling T17a)', async () => {
       setup(fixSettings({ preconditions: { fixMrsAllowed: false } }));
       const root = await render();
       expect(root.querySelector('.req')?.textContent).toContain(
-        'An organisation admin must allow fix MRs on the connection.',
+        'An organization admin must allow fix MRs on the connection.',
       );
     });
 
@@ -227,7 +229,7 @@ describe('ProjectFixesPanel', () => {
     });
   });
 
-  it('shows how many fix MRs are open of the cap, and what is on its way', async () => {
+  it('shows how many fix MRs are open, and how many of the cap are in progress (ruling FW10)', async () => {
     setup(
       fixSettings({
         settings: { enabled: true, maxOpen: 5 },
@@ -236,8 +238,8 @@ describe('ProjectFixesPanel', () => {
       }),
     );
     const text = (await render()).textContent ?? '';
-    expect(text).toContain('3 of 5 fix MRs open');
-    expect(text).toContain('2 more on the way');
+    expect(text).toContain('3 open, 5 of 5 in progress');
+    expect(text).not.toContain('on the way');
   });
 
   it('always prints the permissions the connection token needs, for its provider', async () => {

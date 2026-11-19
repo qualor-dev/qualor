@@ -153,12 +153,15 @@ export class VulnerabilitiesPage {
   protected readonly clean = computed(() =>
     this.targets().every((t) => Object.values(t.counts).every((n) => n === 0)),
   );
-  /** "3 of 5 fix MRs open": the fixes in flight against the project's limit, while they are on. */
+  /**
+   * Ruling FW10: "3 of 5 fix MRs in progress": the fixes in flight (requested, preparing,
+   * committing, open; what the cap counts, R9) against the project's limit, while they are on.
+   */
   protected readonly fixLine = computed(() => {
     const state = this.fixes.of(this.projectId())();
     if (state === null || !state.enabled) return null;
-    const open = Object.values(state.counts).reduce((sum, n) => sum + n, 0);
-    return { open, max: state.maxOpen };
+    const inProgress = Object.values(state.counts).reduce((sum, n) => sum + n, 0);
+    return { inProgress, max: state.maxOpen };
   });
   protected readonly isInstanceAdmin = computed(
     () => this.session.user()?.isInstanceAdmin === true,

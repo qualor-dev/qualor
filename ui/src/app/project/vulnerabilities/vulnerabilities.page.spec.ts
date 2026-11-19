@@ -1349,7 +1349,7 @@ describe('VulnerabilitiesPage fix MRs', () => {
 
   it('says how many fix MRs are in flight against the limit, under the header', async () => {
     const root = await renderFixes({});
-    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs open');
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs in progress');
     const header = root.querySelector('.vuln-header');
     expect(header?.compareDocumentPosition(root.querySelector('.vuln-fixes')!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -1370,18 +1370,18 @@ describe('VulnerabilitiesPage fix MRs', () => {
         return { status: 202, body: dependencyFix({ state: 'requested', mrNumber: null }) };
       });
     });
-    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs open');
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs in progress');
     button(root, 'Create fix MR')?.click();
     await settle();
     await settle();
     TestBed.inject(ApplicationRef).tick();
-    expect(text(root.querySelector('.vuln-fixes'))).toBe('4 of 5 fix MRs open');
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('4 of 5 fix MRs in progress');
   });
 
   it('says nothing while fix MRs are off', async () => {
     const root = await renderFixes({}, fixSettings({ counts: { open: 2 } }));
     expect(root.querySelector('.vuln-fixes')).toBeNull();
-    expect(text(root)).not.toContain('fix MRs open');
+    expect(text(root)).not.toContain('fix MRs in progress');
   });
 
   it('shows the fix pill in By vulnerability', async () => {

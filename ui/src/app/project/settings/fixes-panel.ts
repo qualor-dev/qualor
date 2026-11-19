@@ -72,10 +72,13 @@ export class ProjectFixesPanel {
     const l = this.loaded();
     return l !== null && l.settings.enabled && l.preconditions.lastClaimAt === null;
   });
-  /** Fix MRs requested, claimed or being written: they count against the cap with the open ones. */
-  protected readonly onTheWay = computed(() => {
+  /**
+   * Ruling FW10: the fix MRs in progress, as the cap counts them (R9) and the Vulnerabilities header
+   * says them: requested, preparing, being written and open.
+   */
+  protected readonly inProgress = computed(() => {
     const c = this.loaded()?.counts;
-    return c ? c.requested + c.preparing + c.committing : 0;
+    return c ? c.requested + c.preparing + c.committing + c.open : 0;
   });
   /** The permissions the connection's token needs, for the project's provider (both when unknown). */
   protected readonly needs = computed(() => this.loaded()?.preconditions.provider ?? null);

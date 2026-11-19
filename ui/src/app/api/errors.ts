@@ -64,7 +64,7 @@ function fixProblemMessage(code: string | null): string | null {
     case 'SCM_NOT_BOUND':
       return $localize`:@@fix.error.notBound:This project is not mapped to a repository yet.`;
     case 'FIX_MRS_NOT_ALLOWED':
-      return $localize`:@@fix.error.notAllowed:An organisation admin must allow fix MRs on the repository connection, under Settings → GitLab or GitHub.`;
+      return $localize`:@@fix.error.notAllowed:An organization admin must allow fix MRs on the repository connection, under Settings → GitLab or GitHub.`;
     case 'MONITORING_OFF':
       return $localize`:@@fix.error.monitoringOff:Vulnerability monitoring is off for this project. Fix MRs need it.`;
     case 'FIX_LIMIT_REACHED':

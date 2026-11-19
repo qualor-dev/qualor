@@ -27,7 +27,7 @@ import {
   fixRequestError,
   retryFix,
 } from './fix-request';
-import { fixFailureText, noFixText } from './fix-text';
+import { fixReasonText, isNoFixReason } from './fix-text';
 
 /** Numbers the views of a page, for the ids of their dialogs. */
 let views = 0;
@@ -53,6 +53,9 @@ const ENDED = new Set<FixShown['state']>([
 const VERSION_SHOWN = new Set<FixShown['state']>(['open', 'merged', 'fixed']);
 /** A cancel is possible: not while the server writes the branch (`committing`, 409 FIX_BUSY). */
 const CANCELABLE = new Set<FixShown['state']>(['requested', 'preparing', 'open']);
+/** The states of a fix in flight (they count against the cap, R9). */
+const ACTIVE = new Set<FixShown['state']>(['requested', 'preparing', 'committing', 'open']);
+const isActive = (fix: FixShown | null): boolean => fix !== null && ACTIVE.has(fix.state);
 
 /**
  * `q-fix-link`: a vulnerable package's fix MR (spec §6.9), the same in the issue page's "Fix MR"
@@ -66,8 +69,10 @@ const CANCELABLE = new Set<FixShown['state']>(['requested', 'preparing', 'open']
  *   `taken_over`, `cancelled`) say so, with Create again for a `fixable` package. Declined means
  *   a person closed the MR, fixed that the vulnerability left main (T11a).
  * - Cancel on a fix in flight asks first.
- * Without fix MRs switched on and usable for the project it shows nothing at all. An action's
- * answer shows at once, and `changed` tells the page to read the finding again.
+ * Without fix MRs switched on and usable for the project it shows nothing, but (ruling FW11) a fix
+ * in flight of a project whose fix MRs are switched off: R18 still tracks its MR, so it shows with
+ * Cancel as its only action. An action's answer shows at once, and `changed` tells the page to
+ * read the finding again.
  */
 @Component({
   selector: 'q-fix-link',
@@ -97,13 +102,22 @@ export class FixLinkView {
   /** The fix shown: the page's, or the answer of an action here until the page reads it again. */
   protected readonly shown = linkedSignal<FixShown | null>(() => this.fix());
   private readonly state = computed(() => this.fixes.of(this.projectId())());
+  /** Fix MRs are on and usable for the project: every action is offered. */
+  private readonly usable = computed(() => this.state()?.usable === true);
+  /**
+   * Ruling FW11: the project switched its fix MRs off while this fix is in flight (the page's, or
+   * the one shown here): it is still shown, with Cancel only.
+   */
+  private readonly inFlightWhileOff = computed(
+    () => this.state()?.enabled === false && (isActive(this.fix()) || isActive(this.shown())),
+  );
   protected readonly canCreate = computed(
-    () => this.canTriage() && this.fixable() && this.target().ecosystem !== '',
+    () => this.usable() && this.canTriage() && this.fixable() && this.target().ecosystem !== '',
   );
   protected readonly visible = computed(
     () =>
-      this.state()?.usable === true &&
-      (this.shown() !== null || this.canCreate() || this.error() !== null),
+      this.inFlightWhileOff() ||
+      (this.usable() && (this.shown() !== null || this.canCreate() || this.error() !== null)),
   );
   /** "MR" on GitLab, "PR" on GitHub. */
   protected readonly word = computed(() => (this.state()?.provider === 'github' ? 'PR' : 'MR'));
@@ -128,23 +142,33 @@ export class FixLinkView {
     const fix = this.shown();
     return fix !== null && VERSION_SHOWN.has(fix.state) ? fix.targetVersion : null;
   });
-  /** Why it failed or has no fix; an open MR carries the failure of its last rebuild. */
+  /**
+   * Why it failed or has no fix; an open MR carries the failure of its last rebuild, which may be
+   * a no-fix reason (ruling FW12: read as one).
+   */
   protected readonly failure = computed(() => {
     const fix = this.shown();
     const failure = fix?.failure;
     if (!fix || !failure) return null;
-    return fix.state === 'no_fix' ? noFixText(failure.code) : fixFailureText(failure);
+    return fixReasonText(fix.state, failure);
+  });
+  /** The reason is a no-fix one: shown as a tag, not as a failure. */
+  protected readonly noFixReason = computed(() => {
+    const fix = this.shown();
+    return fix?.state === 'no_fix' || isNoFixReason(fix?.failure?.code ?? '');
   });
   protected readonly canRetry = computed(() => {
     const fix = this.shown();
-    if (fix === null || !this.canTriage()) return false;
+    if (fix === null || !this.canTriage() || !this.usable()) return false;
     return (
       fix.state === 'failed' || fix.state === 'no_fix' || (fix.state === 'open' && !!fix.failure)
     );
   });
   protected readonly canCreateAgain = computed(() => {
     const fix = this.shown();
-    return fix !== null && this.canTriage() && this.fixable() && ENDED.has(fix.state);
+    return (
+      fix !== null && this.usable() && this.canTriage() && this.fixable() && ENDED.has(fix.state)
+    );
   });
   protected readonly canCancel = computed(() => {
     const fix = this.shown();

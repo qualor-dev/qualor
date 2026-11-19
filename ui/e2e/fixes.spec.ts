@@ -86,7 +86,7 @@ test('the project switches fix MRs on and waits for the fix job', async ({ page,
   await panel.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(panel.getByRole('status')).toHaveText(/Saved/);
   await expect(panel.getByText('Waiting for the fix job', { exact: true })).toBeVisible();
-  await expect(panel.getByText('0 of 5 fix MRs open')).toBeVisible();
+  await expect(panel.getByText('0 open, 0 of 5 in progress')).toBeVisible();
   await expectAccessible(page);
 });
 
@@ -104,7 +104,7 @@ test('a fix is requested from the main branch and cancelled', async ({ page }) =
 
   await lodash.getByRole('button', { name: 'Create fix MR for lodash' }).click();
   await expect(lodash.getByText('Waiting for the fix job', { exact: true })).toBeVisible();
-  await expect(page.locator('.vuln-fixes')).toHaveText('1 of 5 fix MRs open');
+  await expect(page.locator('.vuln-fixes')).toHaveText('1 of 5 fix MRs in progress');
   await expectAccessible(page);
 
   await lodash.getByRole('button', { name: 'Cancel the fix MR for lodash' }).click();
@@ -113,6 +113,6 @@ test('a fix is requested from the main branch and cancelled', async ({ page }) =
   await expect(
     lodash.getByRole('button', { name: 'Create again: the fix MR for lodash' }),
   ).toBeVisible();
-  await expect(page.locator('.vuln-fixes')).toHaveText('0 of 5 fix MRs open');
+  await expect(page.locator('.vuln-fixes')).toHaveText('0 of 5 fix MRs in progress');
   await expectAccessible(page);
 });

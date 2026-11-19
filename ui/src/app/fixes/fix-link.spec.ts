@@ -64,11 +64,44 @@ describe('FixLinkView', () => {
   }
 
   describe('when fix MRs are not usable', () => {
-    it('shows nothing while fix MRs are off', async () => {
+    it('shows nothing while fix MRs are off, for an ended fix or none', async () => {
       setup(fixSettings());
-      const { root } = await render({ fix: dependencyFix() });
-      expect(root.children).toHaveLength(0);
-      expect(text(root)).toBe('');
+      for (const fix of [null, dependencyFix({ state: 'merged' })]) {
+        const { root } = await render({ fix });
+        expect(root.children).toHaveLength(0);
+        expect(text(root)).toBe('');
+      }
+    });
+
+    it('shows a fix in flight while fix MRs are off for the project, with Cancel only (ruling FW11)', async () => {
+      setup(fixSettings());
+      for (const fix of [
+        dependencyFix({ state: 'requested', mrNumber: null, mrUrl: null }),
+        dependencyFix({ state: 'preparing', mrNumber: null, mrUrl: null }),
+        dependencyFix({ refresh: true }),
+        dependencyFix({ failure: { code: 'scm_unavailable', message: '' } }),
+      ]) {
+        const { root } = await render({ fix });
+        expect(text(root), fix.state).not.toBe('');
+        expect(button(root, 'Cancel'), fix.state).toBeDefined();
+        expect(button(root, 'Retry'), fix.state).toBeUndefined();
+        expect(button(root, 'Create again'), fix.state).toBeUndefined();
+      }
+      const { root } = await render({ fix: dependencyFix({ state: 'committing' }) });
+      expect(text(root)).toContain('Preparing');
+      expect(button(root, 'Cancel')).toBeUndefined();
+    });
+
+    it('cancels a fix in flight while fix MRs are off for the project (ruling FW11)', async () => {
+      setup(fixSettings());
+      server.on('DELETE', CANCEL, { status: 204 });
+      const { fixture, root, changed } = await render({ fix: dependencyFix() });
+      button(root, 'Cancel')?.click();
+      await settle(fixture);
+      button(root.querySelector<HTMLDialogElement>('dialog')!, 'Cancel the fix')?.click();
+      await settle(fixture);
+      expect(server.requestsTo('DELETE', CANCEL)).toHaveLength(1);
+      expect(changed).toHaveBeenCalledOnce();
     });
 
     it.each([
@@ -210,6 +243,34 @@ describe('FixLinkView', () => {
       expect(text(root.querySelector('.fix-failure'))).toBe('npm ERR! <b>not found</b>');
       expect(root.querySelector('b')).toBeNull();
       expect(button(root, 'Retry')).toBeDefined();
+    });
+
+    it('reads a no-fix reason on an open MR as that reason, not as a failure (ruling FW12)', async () => {
+      setup();
+      const { root } = await render({
+        fix: dependencyFix({ failure: { code: 'no_fixed_version', message: 'x' } }),
+      });
+      expect(text(root.querySelector('.fix-failure'))).toBe(
+        'No released version of this package fixes the vulnerabilities yet.',
+      );
+      expect(text(root)).not.toContain('The fix failed.');
+      expect(text(root.querySelector('a.fix-mr'))).toBe('MR !12');
+    });
+
+    it('shows the CLI message after the sentence of a failed manifest edit, as text (ruling FW12)', async () => {
+      setup();
+      const { root } = await render({
+        fix: dependencyFix({
+          state: 'failed',
+          mrNumber: null,
+          mrUrl: null,
+          failure: { code: 'manifest_unsupported', message: 'package.json uses <b>catalog:</b>' },
+        }),
+      });
+      expect(text(root.querySelector('.fix-failure'))).toBe(
+        "Qualor cannot edit this project's dependency files automatically. package.json uses <b>catalog:</b>",
+      );
+      expect(root.querySelector('b')).toBeNull();
     });
 
     it('says why there is no fix, with Retry', async () => {
