@@ -47,6 +47,7 @@ import {
 } from './repository';
 import { lockFix, lockProject } from './requests';
 import type { DependencyFixRow } from './rows';
+import { requireFixesEnabled } from './settings';
 
 /**
  * The fix job's result (0.16 fix MRs §6.7, B1, R6–R8, R16): a failure, a no-fix, a released
@@ -690,6 +691,9 @@ function logGiveUp(options: AcceptOptions, fix: DependencyFixRow, why: FixCheckG
  * `FIX_LEASE_LOST`), then takes the body's form: a failure (`failed`, its message scrubbed again,
  * B9, of the request's own token too, T9j), a no-fix (`no_fix`), a released claim (`requested`, or
  * `open` with `refresh`), or the files of a prepared fix ({@link acceptUpload}, `committing`).
+ * Ruling FW15 (R18 amended): files uploaded after the project switched fix MRs off are 409
+ * `FIXES_DISABLED` before anything is read or changed, so no MR appears after the switch; the fix
+ * stays `preparing` until its lease runs out (R8). A failure, a no-fix or a release is still taken.
  * Throws the problems; answers the state.
  */
 export async function acceptFixResult(
@@ -707,5 +711,6 @@ export async function acceptFixResult(
     const { reason, message } = body.noFix;
     return { state: await endFix(attempt, 'no_fix', { code: reason, message }) };
   }
+  await requireFixesEnabled(deps.db, project);
   return { state: await acceptUpload(deps, attempt, project, body, options) };
 }

@@ -86,6 +86,18 @@ export async function fixCounts(
   return counts;
 }
 
+/** The project's settings when its fix MRs are switched on, else 409 `FIXES_DISABLED`. */
+export async function requireFixesEnabled(
+  db: Executor,
+  project: ProjectRow,
+): Promise<FixSettingsRow> {
+  const settings = await fixSettingsOf(db, project.id);
+  if (settings === null || !settings.enabled) {
+    throw conflict('FIXES_DISABLED', 'Fix merge requests are switched off for this project');
+  }
+  return settings;
+}
+
 /**
  * The project's settings when fixes may be requested, claimed or run automatically, else a 409 for
  * the first precondition that fails: `FIXES_DISABLED`, `SCM_NOT_BOUND`, `FIX_MRS_NOT_ALLOWED`,
@@ -95,10 +107,7 @@ export async function requireFixesUsable(
   db: Executor,
   project: ProjectRow,
 ): Promise<FixSettingsRow> {
-  const settings = await fixSettingsOf(db, project.id);
-  if (settings === null || !settings.enabled) {
-    throw conflict('FIXES_DISABLED', 'Fix merge requests are switched off for this project');
-  }
+  const settings = await requireFixesEnabled(db, project);
   const pre = await fixPreconditions(db, project);
   if (!pre.scmBound) {
     throw conflict('SCM_NOT_BOUND', 'The project is not mapped to a repository');

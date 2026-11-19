@@ -41951,7 +41951,7 @@
             }
           },
           "409": {
-            "description": "FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (both leave the fix `preparing`)",
+            "description": "FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; FIXES_DISABLED: files uploaded after the project switched fix merge requests off; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (these three leave the fix `preparing` until its lease runs out)",
             "content": {
               "application/problem+json": {
                 "schema": {

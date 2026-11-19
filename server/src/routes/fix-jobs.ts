@@ -100,7 +100,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
           problems: [404, 409, 413, 422, 503],
           problemDescriptions: {
             404: "NOT_FOUND: no fix of the token's project has this id",
-            409: 'FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (both leave the fix `preparing`)',
+            409: 'FIX_LEASE_LOST: the job no longer holds the fix (the lease expired or was released, or the fix was cancelled or claimed again), nothing changed; FIXES_DISABLED: files uploaded after the project switched fix merge requests off; SCM_NOT_BOUND: the project is no longer mapped to a repository; FIX_MRS_NOT_ALLOWED: the connection no longer allows fix merge requests (these three leave the fix `preparing` until its lease runs out)',
             413: `BODY_TOO_LARGE: a body over ${FIX_RESULT_BODY_LIMIT} bytes`,
             422: 'UPLOAD_REFUSED: the files break a rule, the fix is now failed (upload_refused); the title is the rule’s fixed text, `reason` the rule, `detail` the file; VALIDATION_FAILED',
             503: 'SCM_UNAVAILABLE: the repository could not be read now (down, a timeout, a rate limit) to check the upload; FIX_CHECK_BUSY: an upload of this organisation is being checked, or eight wait already; both leave the fix `preparing` with its lease, try again after Retry-After',

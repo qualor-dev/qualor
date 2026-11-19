@@ -994,6 +994,22 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
     expect(fake.requests).toEqual([]);
   });
 
+  it('FW15: files uploaded after the project switched fix MRs off are 409 FIXES_DISABLED; the fix stays preparing', async () => {
+    const item = await claimQfA();
+    await db()
+      .update(projectFixSettings)
+      .set({ enabled: false })
+      .where(eq(projectFixSettings.projectId, projectId));
+    expect(problem(await result(item.id, upload(item)))).toEqual([409, 'FIXES_DISABLED', null]);
+    expect(await row(item.id)).toMatchObject({ state: 'preparing', prepared: null });
+    expect(await fixJobs()).toEqual([]);
+    expect(fake.requests).toEqual([]);
+    // The claim can still be handed back, and the lease runs out as any other (R8).
+    const released = { generation: item.generation, leaseToken: item.leaseToken, released: true };
+    expect((await result(item.id, released)).statusCode).toBe(202);
+    expect((await row(item.id)).state).toBe('requested');
+  });
+
   it('a tiny time cap refuses the upload as unparsable on its largest file (ruling T3k)', async () => {
     const item = await claimQfA();
     const fix = await row(item.id);
@@ -1071,12 +1087,15 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
         leaseTokenHash: sha256(lease),
       });
     const body = { ...upload(item), generation: 1, leaseToken: lease };
+    // Both projects have fix MRs on (ruling FW15 refuses an upload of a switched-off one first).
+    await enableFixes(h, big.id);
     const sibling = await preparing(big.id);
     const busy = await result(sibling, body, bearer(big.token));
     expect(problem(busy)).toEqual([503, 'FIX_CHECK_BUSY', null]);
     expect((await row(sibling)).state).toBe('preparing');
     // A project of another organisation gets past the gate (and is refused on its own merits).
     const foreign = await otherOrganizationProject();
+    await enableFixes(h, foreign.id);
     const theirs = await preparing(foreign.id);
     const admitted = await result(theirs, body, bearer(foreign.token));
     expect(problem(admitted)).toEqual([422, 'UPLOAD_REFUSED', 'not_vulnerable']);
