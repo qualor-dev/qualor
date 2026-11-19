@@ -15,12 +15,12 @@ organisation's Organization admin, and the organisation switcher in the header l
 
 ### Delete an organisation
 
-An instance admin deletes an organisation in **Settings → Organizations** with **Delete** on its row
-(`DELETE /api/v0/organizations/<id>?confirm=<key>`). The dialog says how many projects go with it
-and asks for the organisation's key. A `confirm` that is not the key answers 422.
+An instance admin deletes an organisation in **Settings → Organizations** with **Delete** on its
+row (`DELETE /api/v0/organizations/<id>?confirm=<key>`). The dialog says how many projects go with
+it and asks for the organisation's key. A `confirm` that is not the key answers 422.
 
-Deleting cannot be undone. The request answers 202 and a job does the deleting, so the row shows **Deleting…** for a moment and
-then disappears. Until then, Delete is off for it.
+Deleting cannot be undone. The request answers 202 and a job does the deleting, so the row shows
+**Deleting…** for a moment and then disappears. Until then, Delete is off for it.
 
 | Answer | When |
 |---|---|
@@ -33,7 +33,7 @@ then disappears. Until then, Delete is off for it.
 | Deleted with the organisation | Stays |
 |---|---|
 | its projects, with their analyses, issues, branches, merge requests, dependencies, SBOMs and tokens | the **audit log**, which records `organization.deleted` with the key, the name and the number of projects |
-| its quality gates, quality profiles, webhooks, members and project roles | issues already created **in Jira**: Qualor only forgets the links |
+| its quality gates, quality profiles, webhooks, members and project roles, compliance reports and AI usage history | issues already created **in Jira**: Qualor only forgets the links |
 | its GitLab and GitHub connections, Jira connection, licence policy and AI settings | **merge requests and branches on the provider**, with their comments |
 | | users: they only lose their role in it |
 

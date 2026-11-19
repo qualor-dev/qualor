@@ -2863,7 +2863,7 @@
     "orgs.keyHint": "Lowercase letters, digits and hyphens. The CLI and the audit log name the organization by it. Neither the name nor the key can be changed later.",
     "orgs.createSubmit": " Create organization ",
     "orgs.deleteTitle": "Delete the organization",
-    "orgs.deleteGoes": "This deletes {$START_TAG_STRONG}{$INTERPOLATION}{$CLOSE_TAG_STRONG} and {$INTERPOLATION_1} with their analyses, issues, quality gates, quality profiles, members, connections and settings. This cannot be undone.",
+    "orgs.deleteGoes": "This deletes {$START_TAG_STRONG}{$INTERPOLATION}{$CLOSE_TAG_STRONG} and {$INTERPOLATION_1} with their analyses, issues, quality gates, quality profiles, members, connections, settings, compliance reports and AI usage history. This cannot be undone.",
     "orgs.deleteTypeKey": "Type the organization key {$START_TAG_CODE}{$INTERPOLATION}{$CLOSE_TAG_CODE} to confirm",
     "orgs.deleteConfirm": " Delete organization ",
     "orgs.deleteProjectsUnknown": "its projects",

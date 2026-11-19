@@ -12,6 +12,7 @@ import {
 import type { Organization } from '../api/types';
 import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
+import { Shell } from '../shell/shell';
 import { OrganizationsPage } from './organizations.page';
 
 const ACME = '0190a6c2-0000-7000-8000-0000000000ac';
@@ -278,6 +279,7 @@ describe('OrganizationsPage: delete an organization (0.16, issue #37)', () => {
     const dialog = await openDelete(root, fixture);
     expect(dialog.textContent).toContain('Acme');
     expect(dialog.textContent).toContain('2 projects');
+    expect(dialog.textContent).toContain('compliance reports and AI usage history');
     const submitButton = button(dialog, 'Delete organization');
     expect(submitButton.getAttribute('aria-disabled')).toBe('true');
     type(root, '#delete-org-key', 'Acme');
@@ -374,14 +376,64 @@ describe('OrganizationsPage: delete an organization (0.16, issue #37)', () => {
   it('moves the current organization to another one once it is gone from the list', async () => {
     const { orgs } = setupDelete();
     const { fixture, root } = await render();
+    const header = TestBed.createComponent(Shell);
+    await settle(header);
+    const switcher = () =>
+      (header.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('#org-switch');
     const context = TestBed.inject(OrgContext);
     await context.switchTo(ACME);
+    await settle(header);
     expect(context.currentId()).toBe(ACME);
+    expect(switcher()?.value).toBe(ACME);
     orgs.splice(1, 1);
     context.organizations.reload();
     await settle(fixture);
+    await settle(header);
     expect(context.currentId()).toBe(ORG_ID);
     expect(row(root, ORG_ID).textContent).toContain('Current');
+    // One organization is left: the header has no switcher to offer the deleted one from.
+    expect(switcher()).toBeNull();
+  });
+
+  it('clears the typed key and the refusal when Escape closes the dialog', async () => {
+    const { server } = setupDelete();
+    server.on('DELETE', DELETE, { status: 409, body: problem(409, 'LAST_ORGANIZATION') });
+    const { fixture, root } = await render();
+    const dialog = await openDelete(root, fixture);
+    type(root, '#delete-org-key', 'acme');
+    await settle(fixture);
+    await submit(dialog, fixture);
+    expect(dialog.querySelector('[role="alert"]')).not.toBeNull();
+    // Escape closes the native dialog by itself and only fires "close".
+    dialog.removeAttribute('open');
+    dialog.dispatchEvent(new Event('close'));
+    await settle(fixture);
+    expect(dialog.open).toBe(false);
+    expect(field(root, '#delete-org-key').value).toBe('');
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    expect(button(dialog, 'Delete organization').getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('says "more than 100 projects" when the first page has a next one', async () => {
+    const { server } = setupDelete();
+    const items = Array.from({ length: 100 }, (_, i) => ({ id: `p${i}` }));
+    server.on('GET', '/api/v0/projects', { body: page(items, 'next') });
+    const { fixture, root } = await render();
+    const dialog = await openDelete(root, fixture);
+    expect(dialog.textContent).toContain('more than 100 projects');
+  });
+
+  it('names no number when the project count cannot be read, and still deletes', async () => {
+    const { server } = setupDelete();
+    server.on('GET', '/api/v0/projects', { status: 500, body: problem(500, 'INTERNAL') });
+    const { fixture, root } = await render();
+    const dialog = await openDelete(root, fixture);
+    expect(dialog.textContent).toContain('and its projects with');
+    type(root, '#delete-org-key', 'acme');
+    await settle(fixture);
+    await submit(dialog, fixture);
+    expect(server.requestsTo('DELETE', DELETE)).toHaveLength(1);
+    expect(dialog.open).toBe(false);
   });
 
   it('shows no organization, without throwing, when none is left', async () => {

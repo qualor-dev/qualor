@@ -175,6 +175,7 @@
     class="dialog"
     aria-labelledby="delete-org-title"
     aria-describedby="delete-org-text"
+    (close)="resetDelete()"
   >
     <form novalidate (submit)="confirmDelete($event)">
       <div class="dialog-head">
@@ -188,7 +189,8 @@
           <ng-container i18n="@@orgs.deleteGoes"
             >This deletes <strong>{{ deleteTarget()?.name }}</strong> and
             {{ deleteProjects() }} with their analyses, issues, quality gates, quality profiles,
-            members, connections and settings. This cannot be undone.</ng-container
+            members, connections, settings, compliance reports and AI usage history. This cannot be
+            undone.</ng-container
           >
         </p>
         <div class="field">

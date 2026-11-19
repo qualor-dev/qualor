@@ -154,6 +154,11 @@ export class OrganizationsPage {
   protected closeDelete(): void {
     const dialog = this.deleteDialog()?.nativeElement;
     if (dialog) closeModal(dialog);
+    this.resetDelete();
+  }
+
+  /** Whatever closed the dialog (Cancel, Escape, a queued delete): no typed key or refusal stays. */
+  protected resetDelete(): void {
     this.typed.set('');
     this.deleteError.set(null);
   }

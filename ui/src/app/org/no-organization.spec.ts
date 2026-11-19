@@ -41,17 +41,19 @@ const PAGES: {
   inputs?: Record<string, unknown>;
   /** Its own empty state is to show nothing (a corner checklist with nothing to check). */
   blank?: boolean;
+  /** Its own record is not in the fake server: the one not-found alert it shows is its answer. */
+  notFound?: boolean;
 }[] = [
   { name: 'Gates', component: GatesPage },
-  { name: 'Gate', component: GatePage, inputs: { gateId: 'g1' } },
+  { name: 'Gate', component: GatePage, inputs: { gateId: 'g1' }, notFound: true },
   { name: 'Portfolio', component: PortfolioPage },
   { name: 'Add repositories', component: AddRepositoriesPage },
   { name: 'Projects', component: ProjectsPage },
   { name: 'Profiles', component: ProfilesPage },
-  { name: 'Profile', component: ProfilePage, inputs: { profileId: 'q1' } },
+  { name: 'Profile', component: ProfilePage, inputs: { profileId: 'q1' }, notFound: true },
   { name: 'Rules', component: RulesPage },
   { name: 'AI review', component: AiReviewPage },
-  { name: 'AI provider', component: AiSettingsPage },
+  { name: 'AI provider', component: AiSettingsPage, notFound: true },
   { name: 'Audit log', component: AuditLogPage },
   { name: 'Compliance', component: SettingsCompliancePage },
   { name: 'GitHub', component: GitHubPage },
@@ -69,10 +71,14 @@ const PAGES: {
 ];
 
 describe('pages with no organization to show (0.16, issue #37)', () => {
-  for (const { name, component, inputs, blank } of PAGES) {
+  for (const { name, component, inputs, blank, notFound } of PAGES) {
     it(`${name} renders without an organization and asks the server about none`, async () => {
       const server = new FakeServer();
       server.on('GET', '/api/v0/organizations', { body: page([]) });
+      server.on('GET', '/api/v0/projects', { body: page([]) });
+      server.on('GET', '/api/v0/system/info', {
+        body: { version: '0.1.0', edition: 'community', features: [], extensions: [] },
+      });
       TestBed.configureTestingModule({
         providers: [provideRouter([{ path: '**', children: [] }]), provideFakeServer(server)],
       });
@@ -82,7 +88,11 @@ describe('pages with no organization to show (0.16, issue #37)', () => {
         fixture.componentRef.setInput(key, value);
       }
       await settle(fixture);
-      if (!blank) expect((fixture.nativeElement as HTMLElement).textContent?.trim()).not.toBe('');
+      const root = fixture.nativeElement as HTMLElement;
+      if (!blank) expect(root.textContent?.trim()).not.toBe('');
+      // Nothing to show is not an error: no page paints a failure for it.
+      const alerts = [...root.querySelectorAll('.alert-error')].map((e) => e.textContent?.trim());
+      expect(alerts).toEqual(notFound ? ['This item does not exist, or you cannot see it.'] : []);
       for (const request of server.requests) {
         expect(`${request.path}?${request.query.toString()}`).not.toMatch(/undefined|null/);
       }
