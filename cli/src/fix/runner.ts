@@ -125,17 +125,18 @@ export function createToolRunner(o: {
  * of time, else `package_manager` with "`<tool>` exited with <code>: " and the tail of its stderr,
  * scrubbed (`scrubToolOutput`: `secrets`, the B9 shapes, Qualor's secret redaction). The whole
  * message is at most 2 KiB. The job's runner already replaced the job's known secrets in both
- * streams; `secrets` names any other.
+ * streams; `secrets` names any other. `why`, when given, replaces the "exited with" sentence of a
+ * failure the adapter recognised.
  */
 export function toolFailure(
   tool: string,
   r: ToolResult,
   secrets: readonly string[],
+  why?: string,
 ): { code: 'package_manager' | 'timeout'; message: string } {
   const code = r.timedOut ? 'timeout' : 'package_manager';
-  const head = r.timedOut
-    ? `\`${tool}\` did not finish in time`
-    : `\`${tool}\` exited with ${r.exitCode ?? 'no exit code'}`;
+  const exited = `\`${tool}\` exited with ${r.exitCode ?? 'no exit code'}`;
+  const head = r.timedOut ? `\`${tool}\` did not finish in time` : (why ?? exited);
   const tail = scrubToolOutput(r.stderr, secrets).trim();
   if (tail === '') return { code, message: head };
   const prefix = `${head}: `;

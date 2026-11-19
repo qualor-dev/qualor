@@ -285,7 +285,7 @@ function contentCheck(r: Fixed, item: FixClaimItem) {
 }
 
 const UV_ENV = { UV_FROZEN: 'false', UV_LOCKED: 'false' };
-const UV_LOCK_CALL: Call = { tool: 'uv', args: ['lock'], cwd: '', env: UV_ENV };
+const UV_LOCK_CALL: Call = { tool: 'uv', args: ['lock', '--no-build'], cwd: '', env: UV_ENV };
 const TARGET = [{ installed: '1.2.5', target: '1.2.6', lockfile: 'uv.lock' }];
 
 // ─── Requirement rewrites ───────────────────────────────────────────────────
@@ -491,6 +491,53 @@ describe('the Python adapter: uv', () => {
 
     expect(r.calls.map((c) => c.env)).toEqual([UV_ENV]);
   });
+
+  it('runs uv lock with --no-build, so no dependency’s build code runs (B9, ruling FW1)', async () => {
+    const dir = committed({
+      'pyproject.toml': uvProject(['qf-a>=1.2.5']),
+      'uv.lock': uvLock(['qf-a'], uvPackage('qf-a', '1.2.5')),
+    });
+
+    const r = await fix(dir, QF_A, [uvWrites(uvLock(['qf-a'], uvPackage('qf-a', '1.2.6')))]);
+
+    expect(r.calls.map((c) => [c.tool, c.args[0]])).toEqual([['uv', 'lock']]);
+    expect(r.calls[0]?.args).toContain('--no-build');
+  });
+
+  it.each([
+    [
+      'the solver',
+      [
+        '  × No solution found when resolving dependencies:',
+        '  ╰─▶ Because qf-a==1.2.6 has no usable wheels and building from source is',
+        "      disabled and your project depends on qf-a>=1.2.6, we can conclude that your project's",
+        '      requirements are unsatisfiable.',
+      ].join('\n'),
+    ],
+    [
+      'a build',
+      'error: Failed to build `qf-b==3.0.0`\n  Caused by: Building source distributions for `qf-b` is disabled\n',
+    ],
+  ])(
+    'a lock that needs a source build (%s) fails as package_manager and says so (ruling FW1)',
+    async (_what, stderr) => {
+      const dir = committed({
+        'pyproject.toml': uvProject(['qf-a>=1.2.5']),
+        'uv.lock': uvLock(['qf-a'], uvPackage('qf-a', '1.2.5')),
+      });
+
+      const r = await fix(dir, QF_A, [failed('uv', 1, stderr)]);
+
+      expect(r.outcome).toEqual({
+        failure: {
+          code: 'package_manager',
+          message: expect.stringMatching(
+            /^`uv` needs to build a source distribution, which the fix job never does \(--no-build\): .*disabled/s,
+          ) as unknown,
+        },
+      });
+    },
+  );
 });
 
 // ─── Poetry ─────────────────────────────────────────────────────────────────

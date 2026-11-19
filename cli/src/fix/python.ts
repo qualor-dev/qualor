@@ -65,9 +65,12 @@ import { toolFailure, type ToolResult } from './runner';
  *   rewrite (a direct reference, `!=`, a range with no lower bound, `===`), a source for the package
  *   in `tool.uv.sources`, `tool.uv.dev-dependencies` or `tool.poetry.dev-dependencies` naming it,
  *   a lockfile without a `pyproject.toml` beside it, both lockfiles in one folder, links.
- * - **Tools:** `uv lock` with `UV_FROZEN` and `UV_LOCKED` off (the job's values would stop it
- *   writing); `poetry lock --no-interaction`, with `--no-update` on Poetry 1.x (from
- *   `poetry --version`, read before any file is written).
+ * - **Tools:** `uv lock --no-build` with `UV_FROZEN` and `UV_LOCKED` off (the job's values would
+ *   stop it writing). `--no-build` (B9, ruling FW1) keeps uv from building a source distribution
+ *   to read its metadata, which would run that package's build code: a lock that needs a build
+ *   fails as `package_manager`. `poetry lock --no-interaction`, with `--no-update` on Poetry 1.x
+ *   (from `poetry --version`, read before any file is written). Poetry has no such switch and may
+ *   build a source distribution to read its metadata; the guide states that residual.
  * - **Target lockfile:** each target names the `uv.lock` or `poetry.lock` it changes.
  *
  * Every edit is read back with the full TOML parser and compared with the planned change before it
@@ -128,6 +131,8 @@ const PYPROJECT = 'pyproject.toml';
 const UV_LOCK = 'uv.lock';
 const POETRY_LOCK = 'poetry.lock';
 const UV_ENV = { UV_FROZEN: 'false', UV_LOCKED: 'false' };
+/** B9, ruling FW1: `uv lock` never builds a source distribution, so no dependency's code runs. */
+const UV_LOCK_ARGS = ['lock', '--no-build'];
 const OVERRIDES = 'override-dependencies';
 const UV_PATH = ['tool', 'uv'];
 const POETRY_DEPENDENCIES = ['tool', 'poetry', 'dependencies'];
@@ -851,6 +856,16 @@ const succeeded = (r: ToolResult) => r.exitCode === 0 && !r.timedOut;
 
 /** What uv prints when no version of the requirements can be found together. */
 const UV_NO_SOLUTION = /No solution found when resolving dependencies/;
+/**
+ * What uv prints when `--no-build` stopped it (ruling FW1): the solver's "building from source is
+ * disabled", or a build's "Building source distributions (for `x`) is disabled". uv wraps its
+ * lines, so a line break may sit between the words.
+ */
+const UV_BUILD_DISABLED =
+  /building\s{1,16}(?:from\s{1,16}source|source\s{1,16}distributions?)(?:\s{1,16}for\s{1,16}\S{1,256})?\s{1,16}is\s{1,16}disabled/i;
+/** The sentence a uv lock that needs a source build fails with (ruling FW1). */
+const UV_NEEDS_BUILD =
+  '`uv` needs to build a source distribution, which the fix job never does (--no-build)';
 /** What Poetry prints when the constraints cannot be met. */
 const POETRY_NO_SOLUTION = /version solving failed|SolverProblemError|doesn't match any versions/i;
 
@@ -867,11 +882,15 @@ function namesPackage(text: string, pkg: string): boolean {
 /**
  * Ruling F36: the solver found no version for the target: `no_fix unresolvable`, when its output
  * names the package; any other failure (a Python version, a network error) is the tool's failure.
+ * Ruling FW1: a uv lock that `--no-build` stopped is `package_manager`, and says why.
  */
 function toolStop(tool: Manager, r: ToolResult, pkg: string): FixStop | null {
   if (succeeded(r)) return null;
-  const failure = toolFailure(tool, r, []);
   const output = `${r.stderr}\n${r.stdout}`;
+  if (tool === 'uv' && !r.timedOut && UV_BUILD_DISABLED.test(output)) {
+    return { kind: 'failure', ...toolFailure(tool, r, [], UV_NEEDS_BUILD) };
+  }
+  const failure = toolFailure(tool, r, []);
   const solver = tool === 'uv' ? UV_NO_SOLUTION : POETRY_NO_SOLUTION;
   if (!r.timedOut && solver.test(output) && namesPackage(output, pkg)) {
     return { kind: 'no_fix', reason: 'unresolvable', message: failure.message };
@@ -916,7 +935,7 @@ function regenerate(
 ): Promise<ToolResult> {
   const uv = project.manager === 'uv';
   ws.log.debug(`python fix in ${where(project.dir)}: ${project.manager} lock`);
-  return ws.run(project.manager, uv ? ['lock'] : poetryArgs, {
+  return ws.run(project.manager, uv ? UV_LOCK_ARGS : poetryArgs, {
     cwd: absolute(ws, project.dir),
     ...(uv && { env: UV_ENV }),
     timeoutMs: timeLeft(ws),
