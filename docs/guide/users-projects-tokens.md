@@ -10,8 +10,34 @@ need no other. Organisations, users, projects and lines of code are unlimited in
 
 An instance admin creates more in **Settings → Organizations** with **New organization**
 (`POST /api/v0/organizations`). The key, 2 to 64 lowercase letters, digits and hyphens, is what the
-CLI and the audit log use. Neither the name nor the key can be changed later. You become the new
+CLI and the audit log use. The name and key cannot be changed later. You become the new
 organisation's Organization admin, and the organisation switcher in the header lists it.
+
+### Delete an organisation
+
+An instance admin deletes an organisation in **Settings → Organizations** with **Delete** on its row
+(`DELETE /api/v0/organizations/<id>?confirm=<key>`). The dialog says how many projects go with it
+and asks for the organisation's key. A `confirm` that is not the key answers 422.
+
+The request answers 202 and a job does the deleting, so the row shows **Deleting…** for a moment and
+then disappears. Until then, Delete is off for it.
+
+| Answer | When |
+|---|---|
+| 202 | the delete is queued |
+| 404 | the organisation does not exist |
+| 422 | `confirm` is not the organisation's key |
+| 409 `LAST_ORGANIZATION` | no other organisation would be left. The last one cannot be deleted |
+| 409 `ORGANIZATION_DELETING` | a delete of it is already queued or running |
+
+| Deleted with the organisation | Stays |
+|---|---|
+| its projects, with their analyses, issues, branches, merge requests, dependencies, SBOMs and tokens | the **audit log**, which records `organization.deleted` with the key, the name and the number of projects |
+| its quality gates, quality profiles, webhooks, members and project roles | issues already created **in Jira**: Qualor only forgets the links |
+| its GitLab and GitHub connections, Jira connection, licence policy and AI settings | **merge requests and branches on the provider**, with their comments |
+| | users: they only lose their role in it |
+
+Deleting cannot be undone. If the job fails, the organisation stays whole and Delete works again.
 
 ## Users and roles
 
@@ -34,6 +60,8 @@ Instance admins manage users in **Settings → Users**: create or invite users, 
 deactivate users, and make or remove instance admins.
 
 - Passwords have at least 12 characters, and sign-in is rate-limited.
+- **Edit** on a user's row changes the username and the display name (`PATCH /api/v0/users/<id>`,
+  instance admins only). See [Rename a user](#rename-a-user).
 - A user created with an initial password, and a user whose password was reset, must choose a new
   password at their next password sign-in. A single sign-on sign-in does not ask.
 - **Reset password** on a user's row ends that user's sessions and revokes their personal tokens.
@@ -55,6 +83,24 @@ curl -fsS -X PUT -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Type
 
 Roles on a single project use `/api/v0/projects/<project id>/members/<user id>` the same way
 ([Managing members](./roles-and-audit.md#managing-members)).
+
+### Rename a user
+
+Only an instance admin renames a user, with **Edit** on the row in **Settings → Users**
+(`PATCH /api/v0/users/<id>` with `username`). The name is 1 to 64 letters, digits, dots,
+underscores and hyphens. The user keeps their password, roles, tokens and sessions, and signs in
+with the new name from then on.
+
+- **Taken names.** A name another user has, in any letter case, answers 409 `USERNAME_TAKEN`.
+  Changing only the case (`bob` to `Bob`) is allowed.
+- **Old audit entries keep the old name.** The audit log, compliance reports and sent email name
+  the person as they were then. The rename itself is recorded as `user.updated`, with the old and
+  new name.
+- **Single sign-on and SCIM keep working.** Linked accounts and SCIM records belong to the account,
+  not to its name. For a SCIM user, the identity provider may overwrite the new name at its next
+  sync.
+- **The demo account.** While `QUALOR_DEMO_USER` is set, the demo user cannot be renamed, and no
+  one can be renamed to its name: both answer 409 `DEMO_USER`. Change the setting first.
 
 ### Forgotten passwords and invitations
 
