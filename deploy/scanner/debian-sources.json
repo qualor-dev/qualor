@@ -2444,7 +2444,7 @@
     },
     {
       "source": "php8.2",
-      "version": "8.2.35-1~deb12u1",
+      "version": "8.2.36-1~deb12u1",
       "binaries": [
         "php8.2-cli",
         "php8.2-common",
@@ -2455,28 +2455,28 @@
       "directory": "pool/updates/main/p/php8.2",
       "files": [
         {
-          "name": "php8.2_8.2.35-1~deb12u1.dsc",
+          "name": "php8.2_8.2.36-1~deb12u1.dsc",
           "size": 5596,
-          "sha256": "0245227c3f81cce69909a713141bbea26a854612a8e66810b1c27c38d2690542",
-          "sha1": "4d67243ea9df467665037b741e938ff8732b0835"
+          "sha256": "9ad919484441f3c8bb14e75dc28ea386de359feea8a942c6afda1528d1599af1",
+          "sha1": "51a244d1a0b63c66ad1c4d77009ae1108697ae9b"
         },
         {
-          "name": "php8.2_8.2.35.orig.tar.xz",
-          "size": 12216408,
-          "sha256": "5737b98601fe5ab1b8c5db0c82ed3158acb9283ed3081ffe2faffb9ac81455e6",
-          "sha1": "550876878da81875fea950ee84d7f7c28ea27363"
+          "name": "php8.2_8.2.36.orig.tar.xz",
+          "size": 12229968,
+          "sha256": "df50a00d2b453096608bf2bd98a9fab9a3df8678a77b93011b65c3cfe9a018fa",
+          "sha1": "d22d34080c631d08a291c8e0adc6cbcdac2da33e"
         },
         {
-          "name": "php8.2_8.2.35.orig.tar.xz.asc",
-          "size": 870,
-          "sha256": "79af893d2e7571e0e312754af8e5536179d722b6a102481b888c28d605c4aca0",
-          "sha1": "527cdfffa6f700d07bb38725354d529d80089a1e"
+          "name": "php8.2_8.2.36.orig.tar.xz.asc",
+          "size": 858,
+          "sha256": "b8e855459da510dd89813e05b59180c77dc99147aca9ebf82b7d39fa06160ca5",
+          "sha1": "58056caff311743faee9df8c68b0133a9827f9fa"
         },
         {
-          "name": "php8.2_8.2.35-1~deb12u1.debian.tar.xz",
-          "size": 71768,
-          "sha256": "e2b72f0770ee8ff430879e2ded4a165c09ffedba1234dc15b87041934f035b4f",
-          "sha1": "8d8d305e36ed2f6a894c25a7cc7cd6a220c79805"
+          "name": "php8.2_8.2.36-1~deb12u1.debian.tar.xz",
+          "size": 72064,
+          "sha256": "b9474ba238638f31a85184305ce577320adbadcddc7ccf1ecf97a84eb16e6636",
+          "sha1": "3d678294e223f4855052c9fefdb5b19628735582"
         }
       ]
     },
