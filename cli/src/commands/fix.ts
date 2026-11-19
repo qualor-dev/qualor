@@ -21,6 +21,7 @@ import { fixJobSecrets, fixToolEnv } from '../fix/env';
 import { goAdapter } from '../fix/go';
 import { jsAdapter } from '../fix/js';
 import { mavenAdapter } from '../fix/maven';
+import { pythonAdapter } from '../fix/python';
 import { muslProblem } from '../fix/musl';
 import { prepareFix, type FixOutcome } from '../fix/run';
 import { createToolRunner, type ToolRunner } from '../fix/runner';
@@ -42,6 +43,7 @@ const ADAPTERS: Partial<Record<FixFamily, FixAdapter>> = {
   js: jsAdapter,
   go: goAdapter,
   maven: mavenAdapter,
+  python: pythonAdapter,
 };
 
 export interface FixDeps {
