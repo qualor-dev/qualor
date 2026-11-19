@@ -75,8 +75,9 @@ lists the **Authorization endpoint** (the page people's browsers open) and the *
 **Enabled: show it on the sign-in page** and **Save**.
 
 **Emails:** Qualor stores an OIDC email, and links by it, only when the IdP marks it verified
-(`email_verified: true`, the JSON boolean). **An unverified email is never stored, and never used
-to link an account.** An IdP that does not send `email_verified` gives accounts without an email;
+(`email_verified: true`, the JSON boolean). Entra ID marks it with `xms_edov: true` instead, which
+counts the same ([Microsoft Entra ID](#microsoft-entra-id)). **An unverified email is never stored,
+and never used to link an account.** An IdP that sends neither gives accounts without an email;
 SCIM fills them in.
 
 ### Keycloak
@@ -98,7 +99,10 @@ SCIM fills them in.
    multi-tenant `common` and `organizations` endpoints and Azure AD B2C are not supported: their
    discovery document names an issuer other than the URL it is read from, which Qualor refuses.
 3. The username claim is `preferred_username` (the user principal name).
-4. Groups: **Token configuration → Add groups claim**; the claim is `groups`. Entra sends each
+4. Emails: **Token configuration → Add optional claim**, token type **ID**, claims `email` and
+   `xms_edov`. Entra sends no `email_verified`; `xms_edov` says your tenant verified the email's
+   domain, and Qualor stores the email only with it. Without these claims, accounts have no email.
+5. Groups: **Token configuration → Add groups claim**; the claim is `groups`. Entra sends each
    group's **object id**, not its name, so map the object ids in Qualor. A person in very many
    groups gets no groups claim at all (Entra points to Microsoft Graph instead), so prefer
    **Groups assigned to the application**.
