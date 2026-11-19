@@ -316,12 +316,13 @@ export async function publish(
     must(exec('cosign', args, { env: cosignEnv }), what);
   // Docker Hub lists a signature or attestation among an artifact's referrers a little after it
   // was pushed; a verification right away can find none. Retried while that is the only problem,
-  // for up to two minutes; any other failure fails at once.
+  // for up to ten minutes (two were not enough for the server image of 0.16.0); any other
+  // failure fails at once.
   const verifyListed = (args: string[], what: string): RunResult => {
     for (let attempt = 1; ; attempt++) {
       const r = exec('cosign', args, { env: cosignEnv });
       const notYet = /no (signatures|attestations|matching attestations) found/i.test(r.stderr);
-      if (r.code === 0 || !notYet || attempt === 12) return must(r, what);
+      if (r.code === 0 || !notYet || attempt === 60) return must(r, what);
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10_000);
     }
   };
