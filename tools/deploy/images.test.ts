@@ -178,7 +178,9 @@ describe('image definitions (plan 1G)', () => {
     // Built from its hash-pinned module (the stage's -mod=readonly), after its own tests.
     expect(stage).toContain('GOFLAGS="-trimpath -mod=readonly"');
     const build = stage.indexOf('go build -ldflags "-s -w" -o /out/trivy-db-filter .');
-    expect(stage.indexOf('RUN cd /src/go-tools/trivy-db-filter')).toBeGreaterThan(0);
+    expect(
+      stage.indexOf('WORKDIR /src/go-tools/trivy-db-filter\nRUN go test ./...'),
+    ).toBeGreaterThan(0);
     expect(stage.indexOf('go test ./...')).toBeGreaterThan(
       stage.indexOf('/src/go-tools/trivy-db-filter'),
     );

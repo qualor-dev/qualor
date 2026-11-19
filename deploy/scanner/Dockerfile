@@ -98,8 +98,8 @@ RUN mkdir -p /out \
   && /out/gosec -version | grep -Fx "Version: ${GOSEC_VERSION}"
 # Qualor's Trivy database filter (0.16 debts D31-1), from its hash-pinned build module like the two
 # above: its tests first, then the binary that the tools stage runs once and deletes.
-RUN cd /src/go-tools/trivy-db-filter \
-  && go test ./... \
+WORKDIR /src/go-tools/trivy-db-filter
+RUN go test ./... \
   && go build -ldflags "-s -w" -o /out/trivy-db-filter .
 
 FROM node:22.23.4-bookworm@sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384 AS tools
