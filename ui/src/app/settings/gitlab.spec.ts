@@ -105,6 +105,13 @@ function button(root: HTMLElement, text: string, within: ParentNode = root): HTM
   return [...within.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)!;
 }
 
+/** The accessible name of a switch: the text of its label's name part. */
+function nameOf(input: HTMLInputElement | null): string {
+  return (input?.labels?.[0]?.querySelector('.sw-name')?.textContent ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function render() {
   const fixture = TestBed.createComponent(GitLabPage);
   await settle(fixture);
@@ -667,10 +674,6 @@ describe('GitLabPage (scm.md §2)', () => {
 
   describe('CI setup (onboarding, "Connections")', () => {
     const LABEL = 'Allow Qualor to set up CI (opens merge requests, writes CI/CD variables)';
-    const nameOf = (input: HTMLInputElement | null) =>
-      (input?.labels?.[0]?.querySelector('.sw-name')?.textContent ?? '')
-        .replace(/\s+/g, ' ')
-        .trim();
 
     it('asks when a connection is added, and sends the answer', async () => {
       const server = setup();
@@ -769,6 +772,69 @@ describe('GitLabPage (scm.md §2)', () => {
         'Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.',
       );
       expect(card.querySelector('a[href="/docs/install-server#the-settings-file"]')).not.toBeNull();
+    });
+  });
+
+  describe('fix MRs (the connection switch, 0.16)', () => {
+    const LABEL = 'Allow fix MRs (opens merge requests that bump vulnerable dependencies)';
+
+    it('is off by default and follows what the connection says', async () => {
+      setup();
+      const { root } = await render();
+      const toggle = root.querySelector<HTMLInputElement>('#fix-mrs-c1')!;
+      expect(toggle.getAttribute('role')).toBe('switch');
+      expect(nameOf(toggle)).toBe(LABEL);
+      expect(toggle.checked).toBe(false);
+      expect(toggle.disabled).toBe(false);
+    });
+
+    it('is on when the connection allows fix MRs', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/scm-connections', {
+        body: page([{ ...CONNECTION, fixMrsAllowed: true }]),
+      });
+      const { root } = await render();
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.checked).toBe(true);
+    });
+
+    it('turns it on and off on a connection, and announces each', async () => {
+      const server = setup();
+      server.on('PATCH', '/api/v0/scm-connections/c1', (r) => ({
+        body: {
+          ...CONNECTION,
+          fixMrsAllowed: (r.body as { fixMrsAllowed: boolean }).fixMrsAllowed,
+        },
+      }));
+      const { fixture, root } = await render();
+      root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.click();
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.checked).toBe(true);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain(
+        'Fix MRs are on for https://gitlab.example.com.',
+      );
+      root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('PATCH', '/api/v0/scm-connections/c1').map((r) => r.body)).toEqual([
+        { fixMrsAllowed: true },
+        { fixMrsAllowed: false },
+      ]);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.checked).toBe(false);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain(
+        'Fix MRs are off for https://gitlab.example.com.',
+      );
+    });
+
+    it('puts the switch back when the change is refused', async () => {
+      const server = setup();
+      server.on('PATCH', '/api/v0/scm-connections/c1', {
+        status: 403,
+        body: problem(403, 'FORBIDDEN'),
+      });
+      const { fixture, root } = await render();
+      root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.click();
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-c1')!.checked).toBe(false);
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
     });
   });
 });

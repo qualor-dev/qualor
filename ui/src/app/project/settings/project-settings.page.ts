@@ -15,6 +15,7 @@ import { can } from '../../auth/permissions';
 import { SessionStore } from '../../auth/session';
 import { CurrentProject } from '../current-project';
 import { ProjectAiPanel } from './ai-panel';
+import { ProjectFixesPanel } from './fixes-panel';
 import { GateProfilesPanel } from './gate-profiles-panel';
 import { ProjectJiraPanel } from './jira-panel';
 import { MainBranchPanel } from './main-branch-panel';
@@ -46,6 +47,7 @@ const MOVED: ReadonlyMap<string, string> = new Map([
     MainBranchPanel,
     NewCodePanel,
     ProjectAiPanel,
+    ProjectFixesPanel,
     ProjectJiraPanel,
     ProjectTokensPanel,
     ProjectWebhooksPanel,

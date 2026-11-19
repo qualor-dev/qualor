@@ -18,7 +18,7 @@ import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
-import { clearField, inputValue } from '../shared/forms';
+import { clearField, inputValue, isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import { ciSetupMissingText, githubTestText, type MissingAccess } from './github-text';
@@ -553,6 +553,34 @@ export class GitHubPage {
     });
   }
 
+  /**
+   * The fix-MR switch of a connection, saved at once. Refused (or while another change runs), the
+   * switch goes back to what the connection says.
+   */
+  protected async setFixMrs(connection: Connection, event: Event): Promise<void> {
+    const toggle = event.target instanceof HTMLInputElement ? event.target : null;
+    const allowed = isChecked(event);
+    const was = connection.fixMrsAllowed;
+    if (this.busy()) {
+      if (toggle) toggle.checked = was;
+      return;
+    }
+    const generation = this.orgGeneration;
+    let saved = false;
+    await this.run(async () => {
+      const updated = await this.patch(connection, { fixMrsAllowed: allowed }, false);
+      saved = true;
+      if (generation !== this.orgGeneration) return;
+      const url = updated.baseUrl;
+      this.announcement.set(
+        allowed
+          ? $localize`:@@github.fixMrsOn:Fix MRs are on for ${url}:url:.`
+          : $localize`:@@github.fixMrsOff:Fix MRs are off for ${url}:url:.`,
+      );
+    });
+    if (!saved && toggle) toggle.checked = was;
+  }
+
   private async patch(
     connection: Connection,
     body: {
@@ -560,7 +588,9 @@ export class GitHubPage {
       appId?: string;
       privateKey?: string;
       webhookSecret?: string | null;
+      fixMrsAllowed?: boolean;
     },
+    untested = true,
   ): Promise<Connection> {
     const updated = await ok(
       this.api.client.PATCH('/api/v0/scm-connections/{id}', {
@@ -569,10 +599,12 @@ export class GitHubPage {
       }),
     );
     this.connections.items.update((items) => items.map((c) => (c.id === updated.id ? updated : c)));
-    this.results.update((all) => without(all, connection.id));
-    this.missing.update((all) => without(all, connection.id));
-    // Changed settings have not been tested yet.
-    this.outcomes.update((all) => without(all, connection.id));
+    // Changed settings have not been tested yet; the fix-MR switch changes nothing a test checks.
+    if (untested) {
+      this.results.update((all) => without(all, connection.id));
+      this.missing.update((all) => without(all, connection.id));
+      this.outcomes.update((all) => without(all, connection.id));
+    }
     return updated;
   }
 
@@ -587,7 +619,10 @@ export class GitHubPage {
     )) {
       field.value = '';
     }
-    for (const box of root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+    // The switches are saved settings (fix MRs), not something typed: they stay as they are.
+    for (const box of root.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]:not(.switch)',
+    )) {
       box.checked = false;
     }
   }

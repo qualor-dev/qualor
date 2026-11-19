@@ -371,6 +371,34 @@ export class GitLabPage {
     if (!saved && toggle) toggle.checked = was;
   }
 
+  /**
+   * The fix-MR switch of a connection, saved at once. Refused (or while another change runs), the
+   * switch goes back to what the connection says.
+   */
+  protected async setFixMrs(connection: Connection, event: Event): Promise<void> {
+    const toggle = event.target instanceof HTMLInputElement ? event.target : null;
+    const allowed = isChecked(event);
+    const was = connection.fixMrsAllowed;
+    if (this.busy()) {
+      if (toggle) toggle.checked = was;
+      return;
+    }
+    const generation = this.orgGeneration;
+    let saved = false;
+    await this.run(async () => {
+      const updated = await this.patch(connection, { fixMrsAllowed: allowed }, false);
+      saved = true;
+      if (generation !== this.orgGeneration) return;
+      const url = updated.baseUrl;
+      this.announcement.set(
+        allowed
+          ? $localize`:@@gitlab.fixMrsOn:Fix MRs are on for ${url}:url:.`
+          : $localize`:@@gitlab.fixMrsOff:Fix MRs are off for ${url}:url:.`,
+      );
+    });
+    if (!saved && toggle) toggle.checked = was;
+  }
+
   protected async removeSecret(connection: Connection): Promise<void> {
     if (this.busy()) return;
     const generation = this.orgGeneration;
@@ -386,7 +414,7 @@ export class GitLabPage {
   /**
    * Changes the connection (`PATCH`) and puts the answer in the list. A changed token, address or
    * secret has not been tested yet, and the last test's result is of what it was (`untested`); the
-   * CI-setup switch changes nothing a test checks.
+   * CI-setup and fix-MR switches change nothing a test checks.
    */
   private async patch(
     connection: Connection,
@@ -395,6 +423,7 @@ export class GitLabPage {
       token?: string;
       webhookSecret?: string | null;
       ciSetupAllowed?: boolean;
+      fixMrsAllowed?: boolean;
     },
     untested = true,
   ): Promise<Connection> {

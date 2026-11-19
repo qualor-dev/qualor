@@ -1,0 +1,180 @@
+<section class="card panel" id="fixes">
+  <div class="panel-head">
+    <h2 tabindex="-1" i18n="@@project.settings.fixes">Fix MRs</h2>
+  </div>
+  <div class="panel-body">
+    <div role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+    @if (loadError(); as message) {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+      <button
+        type="button"
+        class="btn"
+        [disabled]="loading()"
+        (click)="load(project().id, true)"
+        i18n="@@fix.panel.retry"
+      >
+        Try again
+      </button>
+    } @else if (!loaded()) {
+      <p class="hint" i18n="@@fix.panel.loading">Loading…</p>
+    } @else {
+      <p class="hint" i18n="@@fix.panel.intro">
+        Qualor can open a merge request that bumps a vulnerable dependency to a fixed version. On
+        GitHub, an MR is a pull request.
+      </p>
+      @if (unmet(); as sentence) {
+        <p class="req">
+          <q-icon name="alert" />
+          <span>{{ sentence }}</span>
+        </p>
+      }
+      <div class="switch-row">
+        <input
+          id="fixes-enabled"
+          class="switch"
+          type="checkbox"
+          role="switch"
+          [checked]="enabled()"
+          [disabled]="!editable()"
+          (change)="setEnabled($event)"
+        />
+        <label for="fixes-enabled">
+          <span class="sw-name" i18n="@@fix.panel.enabled">Enabled</span>
+        </label>
+      </div>
+      @if (waitingForJob()) {
+        <p class="req">
+          <q-icon name="alert" />
+          <span>
+            <a [href]="guide" target="_blank" rel="noopener noreferrer" i18n="@@fix.panel.waiting"
+              >Waiting for the fix job</a
+            >&ngsp;<span i18n="@@fix.panel.waitingHint"
+              >The job runs in your CI and asks Qualor for work. It has not asked yet.</span
+            >
+          </span>
+        </p>
+      } @else if (loaded()?.preconditions?.lastClaimAt; as at) {
+        <p class="hint">
+          <ng-container i18n="@@fix.panel.lastRan">The fix job last ran</ng-container>
+          {{ at | dateTime }}
+        </p>
+      }
+      <p class="hint" aria-live="polite">
+        <span i18n="@@fix.panel.open"
+          >{{ loaded()?.counts?.open }} of {{ loaded()?.settings?.maxOpen }} fix MRs open</span
+        >
+        @if (onTheWay() > 0) {
+          <ng-container>
+            ·
+            <span i18n="@@fix.panel.onTheWay">{{ onTheWay() }} more on the way</span>
+          </ng-container>
+        }
+      </p>
+    }
+  </div>
+
+  @if (loaded(); as l) {
+    <div class="vm-section" role="group" aria-labelledby="fixes-auto-heading">
+      <h3 id="fixes-auto-heading" i18n="@@fix.panel.auto">Automatic requests</h3>
+      <div class="field fix-field">
+        <label for="fixes-auto" i18n="@@fix.panel.autoLabel"
+          >Request fix MRs for new vulnerabilities</label
+        >
+        <select
+          id="fixes-auto"
+          aria-describedby="fixes-auto-hint"
+          [disabled]="!editable()"
+          (change)="setMinSeverity($event)"
+        >
+          <option value="" [selected]="minSeverity() === null" i18n="@@fix.panel.auto.off">
+            Off
+          </option>
+          <option
+            value="critical"
+            [selected]="minSeverity() === 'critical'"
+            i18n="@@fix.panel.auto.critical"
+          >
+            Critical
+          </option>
+          <option value="high" [selected]="minSeverity() === 'high'" i18n="@@fix.panel.auto.high">
+            High and above
+          </option>
+          <option
+            value="medium"
+            [selected]="minSeverity() === 'medium'"
+            i18n="@@fix.panel.auto.medium"
+          >
+            Medium and above
+          </option>
+          <option value="low" [selected]="minSeverity() === 'low'" i18n="@@fix.panel.auto.low">
+            Low and above
+          </option>
+        </select>
+      </div>
+      <div class="switch-row">
+        <input
+          id="fixes-exploited"
+          class="switch"
+          type="checkbox"
+          role="switch"
+          [checked]="exploited()"
+          [disabled]="!editable() || (!l.exploitedAvailable && !exploited())"
+          (change)="setExploited($event)"
+        />
+        <label for="fixes-exploited">
+          <span class="sw-name" i18n="@@fix.panel.exploited"
+            >Exploited vulnerabilities (CISA KEV)</span
+          >
+        </label>
+      </div>
+      <p id="fixes-auto-hint" class="hint" i18n="@@fix.panel.autoNote">
+        Counts vulnerabilities first found after you save. A package that already has a fix MR is
+        not requested again.
+      </p>
+      <div class="field fix-field">
+        <label for="fixes-max" i18n="@@fix.panel.maxLabel">Open MRs at most</label>
+        <select id="fixes-max" [disabled]="!editable()" (change)="setMaxOpen($event)">
+          @for (n of maxOpenChoices; track n) {
+            <option [value]="n" [selected]="n === maxOpen()">{{ n }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="vm-section" role="group" aria-labelledby="fixes-token-heading">
+      <h3 id="fixes-token-heading" i18n="@@fix.panel.token">What the connection's token needs</h3>
+      @if (needs() !== 'github') {
+        <p i18n="@@fix.panel.token.gitlab">
+          GitLab: the api scope, and the Developer role or higher on the project.
+        </p>
+      }
+      @if (needs() !== 'gitlab') {
+        <p i18n="@@fix.panel.token.github">
+          GitHub: the App's permissions contents: write and pull_requests: write.
+        </p>
+      }
+    </div>
+
+    @if (editable()) {
+      <div class="vm-actions">
+        <button
+          type="button"
+          class="btn"
+          [class.btn-primary]="dirty()"
+          [disabled]="!dirty() || busy()"
+          (click)="save()"
+          i18n="@@fix.panel.save"
+        >
+          Save
+        </button>
+      </div>
+    }
+  }
+</section>

@@ -56,6 +56,34 @@ function jiraProblemMessage(code: string | null): string | null {
   }
 }
 
+/** {@link problemMessage} of a fix MR problem code (api.md §2.1); null for any other code. */
+function fixProblemMessage(code: string | null): string | null {
+  switch (code) {
+    case 'FIXES_DISABLED':
+      return $localize`:@@fix.error.disabled:Fix MRs are switched off for this project. A project admin turns them on under Settings → Fix MRs.`;
+    case 'SCM_NOT_BOUND':
+      return $localize`:@@fix.error.notBound:This project is not mapped to a repository yet.`;
+    case 'FIX_MRS_NOT_ALLOWED':
+      return $localize`:@@fix.error.notAllowed:An organisation admin must allow fix MRs on the repository connection, under Settings → GitLab or GitHub.`;
+    case 'MONITORING_OFF':
+      return $localize`:@@fix.error.monitoringOff:Vulnerability monitoring is off for this project. Fix MRs need it.`;
+    case 'FIX_LIMIT_REACHED':
+      return $localize`:@@fix.error.limitReached:This project has as many fix MRs in progress as its limit allows. Close or cancel one, or raise the limit in the project's settings.`;
+    case 'NOT_FIXABLE':
+      return $localize`:@@fix.error.notFixable:No version of this package fixes its vulnerabilities on the main branch yet.`;
+    case 'FIX_ECOSYSTEM_UNSUPPORTED':
+      return $localize`:@@fix.error.ecosystemUnsupported:Qualor has no automatic fix for this kind of package yet.`;
+    case 'FIX_NOT_RETRYABLE':
+      return $localize`:@@fix.error.notRetryable:This fix is in progress. It can be tried again once it has ended.`;
+    case 'FIX_BUSY':
+      return $localize`:@@fix.error.busy:Qualor is writing this fix right now. Try again in a few seconds.`;
+    case 'SCM_UNAVAILABLE':
+      return $localize`:@@fix.error.scmUnavailable:The repository could not be reached. Try again later.`;
+    default:
+      return null;
+  }
+}
+
 /**
  * A localized sentence for an error the API (or the network) returned. Problem codes are stable
  * (api.md §2.1); the server's English `title` is never shown, so every word on screen is ours.
@@ -66,6 +94,8 @@ export function problemMessage(err: unknown): string {
   }
   const jira = jiraProblemMessage(err.code);
   if (jira !== null) return jira;
+  const fix = fixProblemMessage(err.code);
+  if (fix !== null) return fix;
   switch (err.code) {
     case 'UNAUTHENTICATED':
       return $localize`:@@error.unauthenticated:Your session has ended. Sign in again.`;

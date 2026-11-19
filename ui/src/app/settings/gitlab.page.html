@@ -126,6 +126,32 @@
               </p>
             }
           </div>
+          <div class="ci-setup">
+            <div class="switch-row">
+              <input
+                [id]="'fix-mrs-' + c.id"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                [attr.aria-describedby]="'fix-mrs-help-' + c.id"
+                [checked]="c.fixMrsAllowed"
+                [disabled]="!canManage()"
+                (change)="setFixMrs(c, $event)"
+              />
+              <label [attr.for]="'fix-mrs-' + c.id">
+                <span class="sw-name" i18n="@@gitlab.fixMrs"
+                  >Allow fix MRs (opens merge requests that bump vulnerable dependencies)</span
+                >&ngsp;<span
+                  [id]="'fix-mrs-help-' + c.id"
+                  class="sw-help"
+                  i18n="@@gitlab.fixMrsHelp"
+                  >A project turns them on in its own settings. Qualor commits to a branch of its
+                  own and opens a merge request; nothing changes on your main branch until you merge
+                  it. The token needs the api scope and the Developer role or higher.</span
+                >
+              </label>
+            </div>
+          </div>
           @if (c.gitlab; as gl) {
             @if (gl.webhookSecretSet && !gl.webhookSecretReadable) {
               <p class="alert alert-error" i18n="@@gitlab.secretUnreadable">

@@ -1,0 +1,37 @@
+:host {
+  display: block;
+}
+
+.vm-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 22px 20px;
+  border-top: 1px solid var(--hairline);
+}
+
+.vm-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.vm-section p {
+  margin: 0;
+}
+
+.fix-field {
+  margin: 0;
+  max-width: 28rem;
+}
+
+.fix-field select {
+  min-width: 6rem;
+}
+
+.vm-actions {
+  display: flex;
+  gap: var(--space-3);
+  padding: 16px 22px 20px;
+  border-top: 1px solid var(--hairline);
+}

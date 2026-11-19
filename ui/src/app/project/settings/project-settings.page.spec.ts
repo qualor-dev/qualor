@@ -4,6 +4,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { orgAi } from '../../../testing/ai-settings';
 import {
   FakeServer,
+  fixSettings,
   me,
   ORG_ADMIN_PERMISSIONS,
   ORG_ID,
@@ -68,6 +69,7 @@ function setup(options: Setup): FakeServer {
       exploitedAvailable: true,
     },
   });
+  server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, { body: fixSettings() });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(options.routes ?? [{ path: '**', children: [] }], withComponentInputBinding()),
@@ -119,6 +121,7 @@ describe('ProjectSettingsPage', () => {
       'Main branch',
       'Vulnerability monitoring',
       'Jira',
+      'Fix MRs',
       'AI',
       'Analysis tokens',
       'Danger zone',
@@ -131,6 +134,7 @@ describe('ProjectSettingsPage', () => {
       'main-branch',
       'vulnerabilities',
       'jira',
+      'fixes',
       'ai',
       'tokens',
       'danger',
@@ -201,12 +205,13 @@ describe('ProjectSettingsPage index', () => {
       'Main branch',
       'Vulnerability monitoring',
       'Jira',
+      'Fix MRs',
       'AI',
       'Danger zone',
     ]);
     // To open in a new tab or copy: the page's own address, with the panel.
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
-      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'jira', 'ai', 'danger'].map(
+      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'jira', 'fixes', 'ai', 'danger'].map(
         (id) => `/projects/${PROJECT}/settings#${id}`,
       ),
     );
@@ -247,6 +252,14 @@ describe('ProjectSettingsPage index', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll.mock.contexts[0]).toBe(root.querySelector('section#jira'));
     expect(document.activeElement).toBe(root.querySelector('section#jira h2'));
+  });
+
+  it('reveals the Fix MRs panel for the address #fixes', async () => {
+    const scroll = catchScrolls();
+    const { root } = await open('fixes');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(root.querySelector('section#fixes'));
+    expect(document.activeElement).toBe(root.querySelector('section#fixes h2'));
   });
 
   it.each(['ai', 'auto-fix', 'ai-review'])(

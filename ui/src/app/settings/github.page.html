@@ -140,6 +140,30 @@
                 </p>
               }
             </div>
+            <div class="switch-row fix-mrs">
+              <input
+                [id]="'fix-mrs-' + c.id"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                [attr.aria-describedby]="'fix-mrs-help-' + c.id"
+                [checked]="c.fixMrsAllowed"
+                [disabled]="!canManage()"
+                (change)="setFixMrs(c, $event)"
+              />
+              <label [attr.for]="'fix-mrs-' + c.id">
+                <span class="sw-name" i18n="@@github.fixMrs"
+                  >Allow fix MRs (opens pull requests that bump vulnerable dependencies)</span
+                >&ngsp;<span
+                  [id]="'fix-mrs-help-' + c.id"
+                  class="sw-help"
+                  i18n="@@github.fixMrsHelp"
+                  >A project turns them on in its own settings. Qualor commits to a branch of its
+                  own and opens a pull request; nothing changes on your main branch until you merge
+                  it. The App needs the permissions contents: write and pull_requests: write.</span
+                >
+              </label>
+            </div>
             @if (!gh.webhookSecretSet) {
               <p class="muted" i18n="@@github.noSecret">
                 No webhook secret: the Re-run button does nothing, and replies and commands are

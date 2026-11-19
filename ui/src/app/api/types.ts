@@ -51,6 +51,14 @@ export type ProjectGrant = ItemOf<'/api/v0/projects/{id}/members'>;
 /** The roles a project grant may carry: `admin` is organisation-wide only (§3.2). */
 export type GrantRole = ProjectGrant['role'];
 
+/**
+ * `GET /projects/{id}/fixes/settings`: the project's fix MR settings, the preconditions of a request,
+ * the counts of fixes in flight and whether the exploited option is licensed.
+ */
+export type FixSettingsAnswer = ResponseBody<'/api/v0/projects/{id}/fixes/settings', 'get'>;
+/** One fix of a project (`GET /projects/{id}/fixes`): a vulnerable package and its fix MR. */
+export type DependencyFix = ItemOf<'/api/v0/projects/{id}/fixes'>;
+
 /** `GET /organizations/{id}/jira`: the connection (or null) and whether Qualor links can be written. */
 export type JiraSettingsAnswer = ResponseBody<'/api/v0/organizations/{id}/jira', 'get'>;
 export type JiraConnection = NonNullable<JiraSettingsAnswer['connection']>;

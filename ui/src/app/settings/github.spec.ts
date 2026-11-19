@@ -829,4 +829,79 @@ describe('GitHubPage (github.md §2)', () => {
       expect(status(root, 'url').link).toBe('/docs/install-server#the-settings-file');
     });
   });
+
+  describe('fix MRs (the connection switch, 0.16)', () => {
+    const LABEL = 'Allow fix MRs (opens pull requests that bump vulnerable dependencies)';
+    const nameOf = (input: HTMLInputElement | null) =>
+      (input?.labels?.[0]?.querySelector('.sw-name')?.textContent ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    it('is off by default and named', async () => {
+      setup();
+      const { root } = await render();
+      const toggle = root.querySelector<HTMLInputElement>('#fix-mrs-g1')!;
+      expect(toggle.getAttribute('role')).toBe('switch');
+      expect(nameOf(toggle)).toBe(LABEL);
+      expect(toggle.checked).toBe(false);
+    });
+
+    it('is on when the connection allows fix MRs', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/scm-connections', {
+        body: page([{ ...GITHUB, fixMrsAllowed: true }]),
+      });
+      const { root } = await render();
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.checked).toBe(true);
+    });
+
+    it('turns it on, sends only the switch, and announces it', async () => {
+      const server = setup();
+      server.on('PATCH', '/api/v0/scm-connections/g1', {
+        body: { ...GITHUB, fixMrsAllowed: true },
+      });
+      const { fixture, root } = await render();
+      root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('PATCH', '/api/v0/scm-connections/g1').map((r) => r.body)).toEqual([
+        { fixMrsAllowed: true },
+      ]);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.checked).toBe(true);
+      expect(news(root)?.textContent).toContain('Fix MRs are on for https://api.github.com.');
+    });
+
+    it('puts the switch back when the change is refused', async () => {
+      const server = setup();
+      server.on('PATCH', '/api/v0/scm-connections/g1', {
+        status: 403,
+        body: problem(403, 'FORBIDDEN'),
+      });
+      const { fixture, root } = await render();
+      root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.click();
+      await settle(fixture);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.checked).toBe(false);
+      expect(root.querySelector('[role="alert"]')).not.toBeNull();
+    });
+
+    it('is left as it was by "drop secret"', async () => {
+      const server = setup();
+      server.on('GET', '/api/v0/scm-connections', {
+        body: page([{ ...GITHUB, fixMrsAllowed: true }]),
+      });
+      server.on('PATCH', '/api/v0/scm-connections/g1', {
+        body: {
+          ...GITHUB,
+          fixMrsAllowed: true,
+          github: { ...GITHUB.github!, webhookSecretSet: false, webhookUrl: null },
+        },
+      });
+      const { fixture, root } = await render();
+      root.querySelector<HTMLTextAreaElement>('#key-g1')!.value = PEM;
+      root.querySelector<HTMLInputElement>('#drop-secret-g1')!.checked = true;
+      root.querySelector('#key-g1')!.closest('form')!.dispatchEvent(new Event('submit'));
+      await settle(fixture);
+      expect(server.requestsTo('PATCH', '/api/v0/scm-connections/g1')).toHaveLength(1);
+      expect(root.querySelector<HTMLInputElement>('#fix-mrs-g1')!.checked).toBe(true);
+    });
+  });
 });

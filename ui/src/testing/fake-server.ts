@@ -7,6 +7,7 @@ import type {
   PortfolioProjectRow,
 } from '../app/api/ee';
 import type {
+  FixSettingsAnswer,
   ItemOf,
   JiraConnection,
   JiraLink,
@@ -258,6 +259,40 @@ export function jiraProjectSettings(
       : null,
     monitoringOn: true,
     exploitedAvailable: false,
+  };
+}
+
+/**
+ * A project's fix MR settings as `GET /projects/{id}/fixes/settings` answers them: switched off, a
+ * bound repository whose connection allows fix MRs, monitoring on, the fix job never seen, nothing
+ * in flight. Each given part replaces the fields of its section.
+ */
+export function fixSettings(
+  given: {
+    settings?: Partial<FixSettingsAnswer['settings']>;
+    preconditions?: Partial<FixSettingsAnswer['preconditions']>;
+    counts?: Partial<FixSettingsAnswer['counts']>;
+    exploitedAvailable?: boolean;
+  } = {},
+): FixSettingsAnswer {
+  return {
+    settings: {
+      enabled: false,
+      autoCreate: { minSeverity: null, exploited: false, since: null },
+      maxOpen: 5,
+      updatedAt: null,
+      ...given.settings,
+    },
+    preconditions: {
+      scmBound: true,
+      provider: 'gitlab',
+      fixMrsAllowed: true,
+      monitoringOn: true,
+      lastClaimAt: null,
+      ...given.preconditions,
+    },
+    counts: { requested: 0, preparing: 0, committing: 0, open: 0, ...given.counts },
+    exploitedAvailable: given.exploitedAvailable ?? true,
   };
 }
 
