@@ -613,6 +613,37 @@ const halves = (chunk: readonly SbomPackage[]): (readonly SbomPackage[])[] => {
   return [chunk.slice(half), chunk.slice(0, half)];
 };
 
+type LogFields = Record<string, string>;
+
+/** The packages of `chunk` whose organisations are all past budget stay unchecked; `kept` run again. */
+function dropOverBudget(
+  run: Run,
+  chunk: readonly SbomPackage[],
+  kept: readonly SbomPackage[],
+  fields: LogFields,
+): (readonly SbomPackage[])[] {
+  for (const p of chunk) if (pastBudget(run, p.purl)) run.overBudget.add(p.purl);
+  run.logger?.warn(
+    { ...fields, packages: chunk.length - kept.length },
+    'Trivy failed on packages whose organisations are past their failure budget; they stay unchecked',
+  );
+  return kept.length > 0 ? [kept] : [];
+}
+
+/** A single package Trivy still fails on stays unchecked and counts against each organisation. */
+function giveUpPackage(run: Run, first: SbomPackage, heavy: boolean, fields: LogFields): void {
+  run.failedKeys.add(first.purl);
+  for (const owner of ownersOf(run, first.purl)) {
+    run.failuresOf.set(owner, (run.failuresOf.get(owner) ?? 0) + 1);
+  }
+  run.logger?.warn(
+    { ...fields, purl: first.purl },
+    heavy
+      ? 'Trivy gives no answer for one package (too large, timed out or killed); it stays unchecked'
+      : 'Trivy failed on one package; it stays unchecked',
+  );
+}
+
 /**
  * A failed chunk, library or OS alike (rulings R16, R17, R19, R20, R21). An infrastructure failure
  * ({@link failureOf}) fails the run. Otherwise, first and before any other Trivy run, the packages
@@ -641,14 +672,7 @@ async function chunkFailed(
   };
   // Budget first: an organisation past it costs no halving and no probe (R17).
   const kept = chunk.filter((p) => !pastBudget(run, p.purl));
-  if (kept.length < chunk.length) {
-    for (const p of chunk) if (pastBudget(run, p.purl)) run.overBudget.add(p.purl);
-    run.logger?.warn(
-      { ...fields, packages: chunk.length - kept.length },
-      'Trivy failed on packages whose organisations are past their failure budget; they stay unchecked',
-    );
-    return kept.length > 0 ? [kept] : [];
-  }
+  if (kept.length < chunk.length) return dropOverBudget(run, chunk, kept, fields);
   if (failure === 'heavy' && chunk.length > 1) return halves(chunk);
   const fault = await faultOf(run, first);
   if (fault === STOPPED || typeof fault === 'object') return fault;
@@ -662,16 +686,7 @@ async function chunkFailed(
     return [];
   }
   if (chunk.length > 1) return halves(chunk);
-  run.failedKeys.add(first.purl);
-  for (const owner of ownersOf(run, first.purl)) {
-    run.failuresOf.set(owner, (run.failuresOf.get(owner) ?? 0) + 1);
-  }
-  run.logger?.warn(
-    { ...fields, purl: first.purl, message: got.message },
-    failure === 'heavy'
-      ? 'Trivy gives no answer for one package (too large, timed out or killed); it stays unchecked'
-      : 'Trivy failed on one package; it stays unchecked',
-  );
+  giveUpPackage(run, first, failure === 'heavy', { ...fields, message: got.message });
   return [];
 }
 
