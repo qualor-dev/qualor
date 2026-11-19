@@ -64,6 +64,7 @@ export function organizationsFixture(count: number): Organization[] {
     id: `0190a6c2-0000-7000-9000-${String(i + 1).padStart(12, '0')}`,
     key: `org-${i + 1}`,
     name: `Org ${i + 1}`,
+    deleting: false,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
   }));

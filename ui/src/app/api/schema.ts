@@ -2457,6 +2457,8 @@ export interface paths {
                                 id: string;
                                 key: string;
                                 name: string;
+                                /** @description A delete of the organization is queued or running; it is listed until the delete finishes */
+                                deleting: boolean;
                                 /** Format: date-time */
                                 createdAt: string;
                                 /** Format: date-time */
@@ -2524,6 +2526,8 @@ export interface paths {
                             id: string;
                             key: string;
                             name: string;
+                            /** @description A delete of the organization is queued or running; it is listed until the delete finishes */
+                            deleting: boolean;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
@@ -2570,6 +2574,102 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/organizations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete an organisation and everything in it (?confirm must equal its key): queues the delete and answers 202 with the organisation, deleting true; instance admins only */
+        delete: {
+            parameters: {
+                query: {
+                    confirm: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            key: string;
+                            name: string;
+                            /** @description A delete of the organization is queued or running; it is listed until the delete finishes */
+                            deleting: boolean;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description ORGANIZATION_DELETING (a delete of the organization is queued or running); LAST_ORGANIZATION (no other organization would be left that is not being deleted); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;

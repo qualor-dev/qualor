@@ -146,4 +146,11 @@ export const LOCKS = {
   jiraSchedule: 7_310_038,
   /** `pg_advisory_xact_lock(key)`: schedule lock of the fix MR jobs (0.16 fix MRs). */
   fixSchedule: 7_310_039,
+  /**
+   * `pg_advisory_xact_lock(key)`: `DELETE /organizations/:id` checks the organisations left and
+   * queues its delete one request at a time, so two deletes never both see the other's
+   * organisation as left (0.16 issue #37, 409 LAST_ORGANIZATION). Taken after the target's row
+   * lock (`FOR NO KEY UPDATE`); the delete job never takes it.
+   */
+  organizationDeletes: 7_310_040,
 } as const;

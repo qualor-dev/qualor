@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray, ne, notExists, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db, Executor } from '../db/client';
 import { jobs, organizations } from '../db/schema';
@@ -13,13 +13,16 @@ import type { JobHandlers, WorkerLogger } from '../queue/worker';
  */
 export const ORGANIZATION_DELETE_QUEUE = 'organization-delete';
 
+/** What every delete job's concurrency key starts with; the organisation's id follows. */
+const KEY_PREFIX = `${ORGANIZATION_DELETE_QUEUE}:`;
+
 /**
  * The delete job's concurrency key: one delete of an organisation runs at a time, and while a job
  * with this key is queued or running the organisation is "deleting" ({@link deletingOrganizations}).
  * UUIDs compare in lower case, as the database returns them.
  */
 export function organizationDeleteKey(organizationId: string): string {
-  return `organization-delete:${organizationId.toLowerCase()}`;
+  return `${KEY_PREFIX}${organizationId.toLowerCase()}`;
 }
 
 const payloadSchema = z.object({ organizationId: z.uuid() });
@@ -68,11 +71,49 @@ export async function deletingOrganizations(
 }
 
 /**
+ * Whether an organisation other than `organizationId` exists that is not being deleted, as
+ * {@link deletingOrganizations} reads it, in one query: `DELETE /organizations/:id` keeps one
+ * (409 LAST_ORGANIZATION). The key is built in SQL from the id as the database spells it, in
+ * lower case, so it equals {@link organizationDeleteKey}.
+ */
+export async function anotherOrganizationRemains(
+  db: Executor,
+  organizationId: string,
+): Promise<boolean> {
+  const key = sql`${KEY_PREFIX}::text || ${organizations.id}::text`;
+  const [row] = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        ne(organizations.id, organizationId),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(jobs)
+            .where(
+              // One arm per status, for the partial indexes of each, as deletingOrganizations.
+              or(
+                and(eq(jobs.status, 'queued'), eq(jobs.concurrencyKey, key)),
+                and(eq(jobs.status, 'running'), eq(jobs.concurrencyKey, key)),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
  * Deletes the organisation in one transaction: its row, locked first, and through the ON DELETE
  * CASCADE of every foreign key to it everything it holds (projects and their data, connections,
  * gates, profiles, webhooks, memberships). Its entries in the `instance_settings` rows
  * `licensePolicy` and `llm` are dropped in the same transaction. Audit events have no foreign key
  * and stay. `'gone'` when the organisation no longer exists: nothing to do.
+ *
+ * Everything after the lock uses the id the database returned (ruling C1): `organizationId` may be
+ * an upper-case spelling, which the settings' JSON keys would not match.
  */
 export async function deleteOrganization(
   db: Db,
@@ -85,9 +126,9 @@ export async function deleteOrganization(
       .where(eq(organizations.id, organizationId))
       .for('update');
     if (!row) return 'gone';
-    await dropOrganizationLicensePolicy(tx, organizationId);
-    await dropOrganizationLlmSettings(tx, organizationId);
-    await tx.delete(organizations).where(eq(organizations.id, organizationId));
+    await dropOrganizationLicensePolicy(tx, row.id);
+    await dropOrganizationLlmSettings(tx, row.id);
+    await tx.delete(organizations).where(eq(organizations.id, row.id));
     return 'deleted';
   });
 }

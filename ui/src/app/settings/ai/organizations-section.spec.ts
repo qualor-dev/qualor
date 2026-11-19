@@ -28,6 +28,7 @@ const organization = (id: string, key: string, name: string): Organization => ({
   id,
   key,
   name,
+  deleting: false,
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
 });

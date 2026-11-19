@@ -457,4 +457,39 @@ describe('the organization-delete job', () => {
     expect((await jobsOf(queued)).map((j) => j.status)).toEqual(['succeeded']);
     expect(await deletingOrganizations(db, all)).toEqual(new Set());
   });
+
+  it('an upper-case id in the payload: the entries are dropped and the organisation deleted (ruling C1)', async () => {
+    const doomed = await newOrganization('upper-case');
+    const kept = await newOrganization('upper-case-kept');
+    const licenses = { organizations: { [doomed]: POLICY, [kept]: POLICY } };
+    const llm = {
+      ...DEFAULT_LLM_SETTINGS,
+      organizations: { [doomed]: DISABLED_ORGANIZATION, [kept]: DISABLED_ORGANIZATION },
+    };
+    await storeSetting(LICENSE_POLICY_SETTINGS_KEY, licenses);
+    await storeSetting(LLM_SETTINGS_KEY, llm);
+    try {
+      await queueOrganizationDelete(db, doomed.toUpperCase());
+      expect((await jobsOf(doomed)).map((j) => j.payload)).toEqual([
+        { organizationId: doomed.toUpperCase() },
+      ]);
+      const run = recordingLogger();
+      expect(
+        await runUntilIdle(db, organizationDeleteHandlers({ db, logger: run.logger }), run.logger),
+      ).toBe(1);
+
+      expect(await countOf(organizations, eq(organizations.id, doomed))).toBe(0);
+      expect(await storedSetting(LICENSE_POLICY_SETTINGS_KEY)).toEqual({
+        organizations: { [kept]: POLICY },
+      });
+      expect(await storedSetting(LLM_SETTINGS_KEY)).toEqual({
+        ...llm,
+        organizations: { [kept]: DISABLED_ORGANIZATION },
+      });
+    } finally {
+      await db
+        .delete(instanceSettings)
+        .where(inArray(instanceSettings.key, [LICENSE_POLICY_SETTINGS_KEY, LLM_SETTINGS_KEY]));
+    }
+  });
 });

@@ -299,8 +299,12 @@ export async function runAuditScenario(
   keep(personal.token);
   await call('DELETE', `/tokens/${personal.id}`, 204);
 
-  // organization.created
-  await call('POST', '/organizations', 201, { key: 'scenario-org', name: 'Scenario' });
+  // organization.created, organization.deleted (0.16 issue #37: the delete is only queued; no
+  // worker runs here, so the organisation stays, "deleting")
+  const scenarioOrg = (
+    await call('POST', '/organizations', 201, { key: 'scenario-org', name: 'Scenario' })
+  ).json() as { id: string };
+  await call('DELETE', `/organizations/${scenarioOrg.id}?confirm=scenario-org`, 202);
 
   // member.added, member.role_changed, member.removed (roles the community edition assigns)
   await call('PUT', `/organizations/${org}/members/${userId}`, 200, { role: 'member' });

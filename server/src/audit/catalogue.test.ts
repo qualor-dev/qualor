@@ -136,6 +136,8 @@ describe('the audit catalogue (rbac-audit.md §8)', () => {
    */
   const ALLOWED: Record<string, (schema: z.ZodType) => boolean> = {
     'organization.created.key': isIdentifier('acme'),
+    // 0.16 issue #37: the deleted organisation's key, as `organization.created` records it.
+    'organization.deleted.key': isIdentifier('acme'),
     'project.created.key': isIdentifier('acme:web'),
     'project.deleted.key': isIdentifier('acme:web'),
     'quality_profile.rule_set.ruleKey': isIdentifier('eslint:no-eval'),

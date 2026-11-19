@@ -39,6 +39,7 @@ const DEFAULT: Organization = {
   id: ORG_ID,
   key: 'default',
   name: 'Default',
+  deleting: false,
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
 };

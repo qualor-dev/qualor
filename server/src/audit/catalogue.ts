@@ -438,6 +438,14 @@ export const AUDIT_CATALOGUE = {
     target: 'organization',
     details: z.strictObject({ key: organizationKey, name: str }),
   },
+  /**
+   * 0.16 issue #37: `DELETE /organizations/:id` queued the delete of the organisation; `projects`
+   * counts its projects at that moment. The event outlives the organisation.
+   */
+  'organization.deleted': {
+    target: 'organization',
+    details: z.strictObject({ key: organizationKey, name: str, projects: count }),
+  },
   'member.added': {
     target: 'user',
     details: z.strictObject({ role: orgRole, managedBy: id.optional() }),

@@ -31,6 +31,7 @@ const DEFAULT_ORG: Organization = {
   id: ORG_ID,
   key: 'default',
   name: 'Default',
+  deleting: false,
   createdAt: '',
   updatedAt: '',
 };
@@ -38,6 +39,7 @@ const RESEARCH_ORG: Organization = {
   id: RESEARCH,
   key: 'research',
   name: 'Research',
+  deleting: false,
   createdAt: '',
   updatedAt: '',
 };

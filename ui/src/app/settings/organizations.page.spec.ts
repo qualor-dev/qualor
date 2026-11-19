@@ -18,7 +18,7 @@ const ACME = '0190a6c2-0000-7000-8000-0000000000ac';
 const LABS = '0190a6c2-0000-7000-8000-0000000000fb';
 
 function org(id: string, key: string, name: string): Organization {
-  return { id, key, name, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '' };
+  return { id, key, name, deleting: false, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '' };
 }
 
 function setup(options: { admin?: boolean } = {}): FakeServer {

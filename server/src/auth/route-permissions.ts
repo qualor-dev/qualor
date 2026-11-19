@@ -72,6 +72,8 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'DELETE /users/:id/oauth-grants/:grantId': 'instance-admin',
   'GET /organizations': 'list:org.read',
   'POST /organizations': 'instance-admin',
+  // 0.16 issue #37: deleting an organisation, everything in it included.
+  'DELETE /organizations/:id': 'instance-admin',
   'GET /organizations/:id/members': 'org.members.read',
   'PUT /organizations/:id/members/:userId': 'org.members.manage',
   'DELETE /organizations/:id/members/:userId': 'org.members.manage',

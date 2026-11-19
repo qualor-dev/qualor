@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, ne } from 'drizzle-orm';
+import { and, asc, count, eq, gt, ne, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
@@ -12,17 +12,24 @@ import { actorOf } from '../audit/recorder';
 import { organizationRef } from '../audit/refs';
 import { visibleOrganizationsCondition } from '../auth/facts';
 import type { Executor } from '../db/client';
+import { LOCKS } from '../db/locks';
 import { first } from '../db/rows';
 import {
   memberships,
   ORGANIZATION_ROLES,
   organizations,
+  projects,
   ssoConnections,
   users,
 } from '../db/schema';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import { conflict, notFound, validationFailed } from '../http/problem';
 import { iso, idParams, noContent, text, timestamp } from '../http/schemas';
+import {
+  anotherOrganizationRemains,
+  deletingOrganizations,
+  queueOrganizationDelete,
+} from '../orgs/delete';
 import { createOrganization, type OrganizationRow } from '../orgs/service';
 import { ORGANIZATION_KEY_PATTERN } from '../patterns';
 import { userNameMatches } from './users';
@@ -33,6 +40,14 @@ const organizationSchema = z.object({
   id: z.uuid(),
   key: z.string(),
   name: z.string(),
+  /**
+   * 0.16 issue #37: a delete of the organisation is queued or running. It stays listed until the
+   * delete job removes it; a delete job that died leaves it false.
+   */
+  deleting: z.boolean().meta({
+    description:
+      'A delete of the organization is queued or running; it is listed until the delete finishes',
+  }),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -54,13 +69,19 @@ const memberParams = z.strictObject({ id: z.uuid(), userId: z.uuid() });
  * Serialises the member changes of one organisation: the row lock (FOR NO KEY UPDATE, so inserts
  * that reference the organisation are not blocked) is held until commit, so two changes never
  * both read the same "before" (a doubled member.added) or both see another admin (LAST_ADMIN).
+ * A delete request takes it too, so it waits for a running delete job. Answers the locked row,
+ * undefined when there is none.
  */
-async function lockOrganization(tx: Executor, organizationId: string): Promise<void> {
-  await tx
-    .select({ id: organizations.id })
+async function lockOrganization(
+  tx: Executor,
+  organizationId: string,
+): Promise<OrganizationRow | undefined> {
+  const [row] = await tx
+    .select()
     .from(organizations)
     .where(eq(organizations.id, organizationId))
     .for('no key update');
+  return row;
 }
 
 /**
@@ -86,11 +107,15 @@ async function assertAnotherAdmin(
   if (!other) throw conflict('LAST_ADMIN', 'An organization keeps at least one admin');
 }
 
-function organizationDto(org: OrganizationRow): z.infer<typeof organizationSchema> {
+function organizationDto(
+  org: OrganizationRow,
+  deleting: boolean,
+): z.infer<typeof organizationSchema> {
   return {
     id: org.id,
     key: org.key,
     name: org.name,
+    deleting,
     createdAt: iso(org.createdAt),
     updatedAt: iso(org.updatedAt),
   };
@@ -122,8 +147,12 @@ export const organizationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         .orderBy(asc(organizations.id))
         .limit(limit);
       const page = toPage(rows, request.query.limit);
+      const deleting = await deletingOrganizations(
+        deps.db,
+        page.items.map((o) => o.id),
+      );
       return {
-        items: page.items.map((o) => organizationDto(o)),
+        items: page.items.map((o) => organizationDto(o, deleting.has(o.id))),
         nextCursor: page.nextCursor,
       };
     },
@@ -154,7 +183,76 @@ export const organizationRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         },
         { recorder: deps.audit, context: actorOf(request) },
       );
-      return reply.code(201).send(organizationDto(org));
+      return reply.code(201).send(organizationDto(org, false));
+    },
+  );
+
+  app.delete(
+    '/organizations/:id',
+    {
+      config: {
+        openapi: {
+          problems: [409],
+          problemDescriptions: {
+            409: 'ORGANIZATION_DELETING (a delete of the organization is queued or running); LAST_ORGANIZATION (no other organization would be left that is not being deleted)',
+          },
+        },
+      },
+      schema: {
+        tags: ['organizations'],
+        summary:
+          'Delete an organisation and everything in it (?confirm must equal its key): queues the delete and answers 202 with the organisation, deleting true; instance admins only',
+        params: idParams,
+        querystring: z.strictObject({ confirm: z.string().max(255) }),
+        response: { 202: organizationSchema },
+      },
+    },
+    async (request, reply) => {
+      requireInstanceAdmin(request);
+      const [org] = await deps.db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, request.params.id));
+      if (!org) throw notFound('Organization');
+      if (request.query.confirm !== org.key) {
+        throw validationFailed([
+          { path: 'query.confirm', message: 'Must equal the organization key' },
+        ]);
+      }
+      const queued = await deps.db.transaction(async (tx) => {
+        // From here on the row's own id, as the database spells it (ruling C1): the job's key and
+        // payload, and the event, never carry the path's spelling.
+        const row = await lockOrganization(tx, org.id);
+        if (!row) throw notFound('Organization');
+        // Review Focus 2: the deletes count the organisations left one at a time, so two
+        // requests never both see the other's organisation as left.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.organizationDeletes})`);
+        if ((await deletingOrganizations(tx, [row.id])).size > 0) {
+          throw conflict('ORGANIZATION_DELETING', 'This organization is already being deleted');
+        }
+        if (!(await anotherOrganizationRemains(tx, row.id))) {
+          throw conflict('LAST_ORGANIZATION', 'The last organization cannot be deleted');
+        }
+        // The project count is an audit-only read: none while audit-log is inactive (§8.1). The
+        // event is read and recorded before the job is queued; it outlives the organisation.
+        if (deps.audit.active()) {
+          const [held] = await tx
+            .select({ n: count() })
+            .from(projects)
+            .where(eq(projects.organizationId, row.id));
+          await deps.audit.record(tx, actorOf(request), [
+            {
+              action: 'organization.deleted',
+              organization: { id: row.id, key: row.key },
+              target: { type: 'organization', id: row.id, label: row.name },
+              details: { key: row.key, name: row.name, projects: held?.n ?? 0 },
+            },
+          ]);
+        }
+        await queueOrganizationDelete(tx, row.id);
+        return row;
+      });
+      return reply.code(202).send(organizationDto(queued, true));
     },
   );
 
