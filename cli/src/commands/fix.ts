@@ -435,7 +435,8 @@ function checkedBody(body: FixResultBody): FixResultBody {
 
 /**
  * Sends a fix's result and logs what came of it. False when the run stops: the project can take no
- * fixes now (ruling T12f, 409 `SCM_NOT_BOUND` or `FIX_MRS_NOT_ALLOWED`, as the claim's reasons).
+ * fixes now (rulings T12f, FW15: 409 `SCM_NOT_BOUND`, `FIX_MRS_NOT_ALLOWED` or `FIXES_DISABLED`, as
+ * the claim's reasons).
  */
 async function send(job: FixJob, item: FixClaimItem, outcome: Outcome): Promise<boolean> {
   const body = checkedBody(bodyOf(job, item, outcome));

@@ -136,8 +136,8 @@ describe('sendFixResult (R6, R16, rulings T9b and T9d)', () => {
     }
   });
 
-  it('answers stopped on 409 SCM_NOT_BOUND and FIX_MRS_NOT_ALLOWED (ruling T12f)', async () => {
-    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']) {
+  it('answers stopped on 409 SCM_NOT_BOUND, FIX_MRS_NOT_ALLOWED and FIXES_DISABLED (rulings T12f, FW15)', async () => {
+    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED', 'FIXES_DISABLED']) {
       const { url } = await serve((_req, res) => problem(res, 409, code));
       expect(await sendFixResult(endpoint(url), FIX_ID, FAILURE, {})).toEqual({
         stopped: expect.stringContaining(code),

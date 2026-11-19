@@ -118,8 +118,15 @@ export async function claimFix(
 export type FixSendAnswer =
   { accepted: string } | 'lease_lost' | { refused: string } | { stopped: string };
 
-/** Ruling T12f: the result route's 409s that mean the project's fixes cannot go on (as R4's reasons). */
-const STOPPING_CONFLICTS: ReadonlySet<string> = new Set(['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']);
+/**
+ * Rulings T12f, FW15: the result route's 409s that mean the project's fixes cannot go on (as R4's
+ * reasons): the project unmapped, the connection's switch off, or the project's own switch off.
+ */
+const STOPPING_CONFLICTS: ReadonlySet<string> = new Set([
+  'SCM_NOT_BOUND',
+  'FIX_MRS_NOT_ALLOWED',
+  'FIXES_DISABLED',
+]);
 
 const acceptedSchema = z.looseObject({ state: z.string() });
 
@@ -158,7 +165,8 @@ function resultAnswer(res: HttpResponse, retries: number): FixSendAnswer | null 
 /**
  * `PUT /api/v0/fixes/{id}/result` (R6): any 202 is accepted, with the state the server answers
  * (`committing`, or `failed`/`open` after a permanent SCM error, ruling T9d); 409 `FIX_LEASE_LOST`
- * is `lease_lost`; 409 `SCM_NOT_BOUND` or `FIX_MRS_NOT_ALLOWED` is `stopped` (ruling T12f); a 422 is
+ * is `lease_lost`; 409 `SCM_NOT_BOUND`, `FIX_MRS_NOT_ALLOWED` or `FIXES_DISABLED` is `stopped`
+ * (rulings T12f, FW15); a 422 is
  * `refused` with the rule and file. A 503 (`SCM_UNAVAILABLE`,
  * `FIX_CHECK_BUSY`) is retried 3 times, after its `Retry-After` (at most 60 s) or 10 s (R16, T9b);
  * every other answer is a CliError as for the claim.

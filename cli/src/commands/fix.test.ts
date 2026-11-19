@@ -966,8 +966,8 @@ describe('qualor fix: the result route’s answers (R16, rulings T9b, T9d)', () 
     expect(server.claims).toHaveLength(2);
   });
 
-  it('stops, exit 0, when the result route says the project cannot take fixes now (ruling T12f)', async () => {
-    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED']) {
+  it('stops, exit 0, when the result route says the project cannot take fixes now (rulings T12f, FW15)', async () => {
+    for (const code of ['SCM_NOT_BOUND', 'FIX_MRS_NOT_ALLOWED', 'FIXES_DISABLED']) {
       const { dir } = repo();
       const server = await qualor({
         claims: [claimOf(item(1)), claimOf(item(2))],
