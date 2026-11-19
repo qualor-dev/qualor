@@ -69,10 +69,14 @@ function spdxVersion(doc: Record<string, unknown>): string | null {
   return text(pkg?.['versionInfo']);
 }
 
+/**
+ * The bytes as a stream of one Uint8Array chunk: a bare ArrayBuffer chunk leaves some
+ * CompressionStream implementations (Node 22's) waiting forever, so the upload would never start.
+ */
 function bytesStream(bytes: ArrayBuffer): ReadableStream<BufferSource> {
   return new ReadableStream({
     start(controller) {
-      controller.enqueue(bytes);
+      controller.enqueue(new Uint8Array(bytes));
       controller.close();
     },
   });
