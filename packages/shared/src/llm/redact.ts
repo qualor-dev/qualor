@@ -132,6 +132,30 @@ function looksRandom(value: string): boolean {
   return mixed(value);
 }
 
+/**
+ * A URL's scheme, also JSON-escaped (`https:\/\/`), as a pattern's source. Shared with
+ * `scrubUrlUserinfo` (fix/scrub.ts), so the two read a URL's credentials alike (ruling FW17).
+ */
+export const URL_SCHEME_SOURCE = String.raw`[a-z][a-z0-9+.-]{0,30}:(?:\/\/|\\\/\\\/)`;
+/**
+ * What ends a URL's authority, as a character class's body: where the WHATWG URL parser ends it
+ * (`/`, `\`, `?`, `#`), and white space, a quote or `<>` in text. Shared with `scrubUrlUserinfo`.
+ */
+export const URL_AUTHORITY_END = String.raw`\s/\\?#"'` + '`<>';
+
+/**
+ * Ruling FW17: a URL password that holds a `/`, `\`, `?` or `#` before its `@`, which the URL
+ * parser reads as a port and a path: a secret, unless what comes before that character is a port
+ * (at most five digits) or holds an `@` (then the authority's own userinfo is the password, which
+ * `url-password` already redacted). One with none of them is the authority's userinfo too.
+ */
+function pastAuthority(secret: string): boolean {
+  const end = secret.search(/[/\\?#]/);
+  if (end < 0) return true;
+  const authority = secret.slice(0, end);
+  return !authority.includes('@') && !/^\d{0,5}$/.test(authority);
+}
+
 export const SECRET_PATTERNS: readonly SecretPattern[] = [
   { id: 'aws-access-key-id', pattern: /(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}/g },
   {
@@ -172,12 +196,28 @@ export const SECRET_PATTERNS: readonly SecretPattern[] = [
   /** A DER private key (or certificate) in base64 without its PEM lines. */
   { id: 'private-key-der', pattern: /\bMII[A-Za-z0-9+/]{60,4096}={0,2}/g },
   {
-    // The password runs to the last `@` of the URL (it may hold `/` or `@`); `host:8080/…@` is a
-    // port and a path, not a password.
+    // Ruling FW17: the authority rule of `scrubUrlUserinfo` (fix/scrub.ts). The authority ends at
+    // `/`, `\`, `?`, `#` (and white space, a quote, `<>`); its userinfo runs to its last `@`, the
+    // password from the userinfo's first `:`. So `user:12345@host` has a password, a long user
+    // name too, and `host:8080/…@scope` or `[::1]:8080/@x` has none (a port and a path).
     id: 'url-password',
-    pattern: /([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:/@"'`]{0,256}:)([^\s"'`]{1,1024})(@|…$)/gi,
+    pattern: new RegExp(
+      `(${URL_SCHEME_SOURCE}[^${URL_AUTHORITY_END}:]{0,4096}:)([^${URL_AUTHORITY_END}]{1,4096})(@|…$)`,
+      'gi',
+    ),
     group: 2,
-    accept: (s) => !/^[0-9]{1,5}(?:\/|$)/.test(s),
+  },
+  {
+    // Fail closed: a password the URL parser would not see, for it holds a `/` (`app:Hun/ter2@db`,
+    // a URL with no valid port), runs to the URL's last `@` ({@link pastAuthority}). An IPv6 host
+    // (`[`) never starts a user name here.
+    id: 'url-password-past-authority',
+    pattern: new RegExp(
+      `(${URL_SCHEME_SOURCE}[^\\s:/@"'\`\\[]{0,4096}:)([^\\s"'\`]{1,4096})(@|…$)`,
+      'gi',
+    ),
+    group: 2,
+    accept: (s) => pastAuthority(s),
   },
   {
     // The closing quote is optional: a value cut by the CLI's truncation, or continued on the next

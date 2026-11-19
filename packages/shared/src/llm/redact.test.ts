@@ -606,6 +606,32 @@ describe('redactText: more token shapes and positions', () => {
     expect(lines[8]).toBe('done');
   });
 
+  it('redacts a numeric URL password, which is no port before an @ (ruling FW17)', () => {
+    expect(redactText('https://user:12345@registry.example/x').text).toBe(
+      `https://user:${REDACTED}@registry.example/x`,
+    );
+    expect(redactText('https://user:4873@host:4873/x').text).toBe(
+      `https://user:${REDACTED}@host:4873/x`,
+    );
+  });
+
+  it('redacts the password of a long userinfo (ruling FW17)', () => {
+    const user = 'u'.repeat(300);
+    expect(redactText(`https://${user}:${PASS}@host/x`).text).toBe(
+      `https://${user}:${REDACTED}@host/x`,
+    );
+  });
+
+  it('leaves an IPv6 host and its port alone, an @ in the path too (ruling FW17)', () => {
+    for (const text of [
+      'see https://[::1]:8080/@scope/pkg',
+      'see http://[2001:db8::1]:4873/-/@scope/pkg/-/pkg-1.0.0.tgz',
+      'see https://pkgs.example.com:8080/a/@scope/pkg',
+    ]) {
+      expect(redactText(text)).toEqual({ text, count: 0 });
+    }
+  });
+
   it('redacts a URL password holding a / or an @', () => {
     expect(redactText('mysql://app:Hun/ter2Secret@db/x').text).toBe(`mysql://app:${REDACTED}@db/x`);
     expect(redactText(`mysql://app:Hun@${PASS}@db/x`).text).toBe(`mysql://app:${REDACTED}@db/x`);

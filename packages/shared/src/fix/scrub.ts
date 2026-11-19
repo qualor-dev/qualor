@@ -3,7 +3,7 @@
  * CLI and again by the server: known secret values, the B9 shapes, Qualor's general secret
  * redaction, then the last {@link FIX_LIMITS} `messageBytes` bytes.
  */
-import { redactText } from '../llm/redact';
+import { redactText, URL_AUTHORITY_END, URL_SCHEME_SOURCE } from '../llm/redact';
 import { FIX_LIMITS } from './families';
 
 /** B9: an environment variable whose name says it holds a secret. */
@@ -92,9 +92,10 @@ function scrubPasswordElements(text: string): string {
 
 /**
  * A URL's scheme (also JSON-escaped, `https:\/\/`) and authority. The authority ends where the
- * WHATWG URL parser ends it, at `/`, `\`, `?` or `#`, and at white space, a quote or `<>`.
+ * WHATWG URL parser ends it, at `/`, `\`, `?` or `#`, and at white space, a quote or `<>`. The LLM
+ * redaction's `url-password` reads a URL by the same rule (ruling FW17).
  */
-const URL_AUTHORITY = /([a-z][a-z0-9+.-]{0,30}:(?:\/\/|\\\/\\\/))([^\s/\\?#"'`<>]+)/gi;
+const URL_AUTHORITY = new RegExp(`(${URL_SCHEME_SOURCE})([^${URL_AUTHORITY_END}]+)`, 'gi');
 
 /**
  * Any userinfo of a URL: everything up to the authority's last `@` (as the WHATWG URL parser reads
