@@ -337,3 +337,143 @@ describe('UsersPage: a user’s connected apps (6N spec §8)', () => {
     expect(document.activeElement).toBe(row(root, 'u2').querySelector('[data-test=show-apps]'));
   });
 });
+
+describe('UsersPage: edit a user (0.16 issue #37)', () => {
+  const ME_ID = '0190a6c2-0000-7000-8000-00000000000a';
+  const type = (root: HTMLElement, selector: string, value: string) => {
+    const input = root.querySelector<HTMLInputElement>(selector)!;
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+  };
+  async function open(server: FakeServer, users: User[]) {
+    server.on('GET', '/api/v0/auth/methods', {
+      body: { password: 'everyone', providers: [], demo: false, passwordReset: false },
+    });
+    server.on('GET', '/api/v0/users', { body: page(users) });
+    const fixture = TestBed.createComponent(UsersPage);
+    await settle(fixture);
+    const root = fixture.nativeElement as HTMLElement;
+    return { fixture, root };
+  }
+  const edit = async (
+    root: HTMLElement,
+    fixture: { whenStable(): Promise<unknown> },
+    id: string,
+  ) => {
+    row(root, id).querySelector<HTMLButtonElement>('.row-actions [data-test=edit-user]')!.click();
+    await settle(fixture);
+  };
+  const save = async (root: HTMLElement, fixture: { whenStable(): Promise<unknown> }) => {
+    root.querySelector('#edit-dialog form')!.dispatchEvent(new Event('submit'));
+    await settle(fixture);
+  };
+
+  it('opens a dialog with the current username and display name', async () => {
+    const server = setup();
+    const { fixture, root } = await open(server, [user('u1', 'bob', { displayName: 'Bob B' })]);
+    await edit(root, fixture, 'u1');
+    const username = root.querySelector<HTMLInputElement>('#edit-username')!;
+    expect(username.value).toBe('bob');
+    expect(username.getAttribute('pattern')).toBe('^[A-Za-z0-9._-]{1,64}$');
+    expect(root.querySelector<HTMLInputElement>('#edit-display')!.value).toBe('Bob B');
+    expect(root.querySelector('#edit-dialog')?.textContent).not.toContain('may overwrite');
+  });
+
+  it('sends only the changed fields and shows the new name in the row', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/users/u1', {
+      body: user('u1', 'robert', { displayName: 'Bob B' }),
+    });
+    const { fixture, root } = await open(server, [user('u1', 'bob', { displayName: 'Bob B' })]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-username', 'robert');
+    await save(root, fixture);
+    const sent = server.requestsTo('PATCH', '/api/v0/users/u1');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toEqual({ username: 'robert' });
+    expect(row(root, 'u1').textContent).toContain('robert');
+    expect(server.requestsTo('GET', '/api/v0/auth/me')).toEqual([]);
+  });
+
+  it('clears the display name with null', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/users/u1', { body: user('u1', 'bob') });
+    const { fixture, root } = await open(server, [user('u1', 'bob', { displayName: 'Bob B' })]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-display', '');
+    await save(root, fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/users/u1')[0]?.body).toEqual({
+      displayName: null,
+    });
+  });
+
+  it('sends nothing when nothing changed', async () => {
+    const server = setup();
+    const { fixture, root } = await open(server, [user('u1', 'bob')]);
+    await edit(root, fixture, 'u1');
+    await save(root, fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/users/u1')).toEqual([]);
+  });
+
+  it('refuses a username the pattern does not allow, without asking the server', async () => {
+    const server = setup();
+    const { fixture, root } = await open(server, [user('u1', 'bob')]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-username', 'a b');
+    await save(root, fixture);
+    expect(root.querySelector('#edit-username-error')?.textContent).toContain('1 to 64 letters');
+    expect(server.requestsTo('PATCH', '/api/v0/users/u1')).toEqual([]);
+  });
+
+  it('says next to the field that the username is taken', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/users/u1', { status: 409, body: problem(409, 'USERNAME_TAKEN') });
+    const { fixture, root } = await open(server, [user('u1', 'bob')]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-username', 'alice');
+    await save(root, fixture);
+    expect(root.querySelector('#edit-username-error')?.textContent).toContain(
+      'This username is already taken.',
+    );
+    expect(root.querySelector<HTMLInputElement>('#edit-username')!.value).toBe('alice');
+  });
+
+  it('says next to the field that the demo user keeps its name', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/users/u1', { status: 409, body: problem(409, 'DEMO_USER') });
+    const { fixture, root } = await open(server, [user('u1', 'guest')]);
+    await edit(root, fixture, 'u1');
+    type(root, '#edit-username', 'other');
+    await save(root, fixture);
+    expect(root.querySelector('#edit-username-error')?.textContent).toContain(
+      'The demo user keeps its name',
+    );
+  });
+
+  it('reloads the session when you rename yourself, so the header shows the new name', async () => {
+    const server = setup();
+    server.on('PATCH', `/api/v0/users/${ME_ID}`, {
+      body: user(ME_ID, 'alicia', { isInstanceAdmin: true }),
+    });
+    const renamed = me({ admin: true });
+    renamed.user.username = 'alicia';
+    server.on('GET', '/api/v0/auth/me', { body: renamed });
+    const { fixture, root } = await open(server, [user(ME_ID, 'alice', { isInstanceAdmin: true })]);
+    await edit(root, fixture, ME_ID);
+    type(root, '#edit-username', 'alicia');
+    await save(root, fixture);
+    expect(server.requestsTo('GET', '/api/v0/auth/me')).toHaveLength(1);
+    expect(TestBed.inject(SessionStore).user()?.username).toBe('alicia');
+  });
+
+  it('shows the SCIM note in the dialog of a provisioned user', async () => {
+    const server = setup();
+    const { fixture, root } = await open(server, [
+      user('u3', 'scim', { hasPassword: false, sso: { identities: 1, scim: true } }),
+    ]);
+    await edit(root, fixture, 'u3');
+    expect(root.querySelector('#edit-dialog')?.textContent).toContain(
+      'The identity provider may overwrite changes to this account.',
+    );
+  });
+});

@@ -28,6 +28,9 @@ import { type GrantSource, OAuthGrants } from './oauth-grants';
 export type User = ItemOf<'/api/v0/users'>;
 type UserPatch = { active: boolean } | { isInstanceAdmin: boolean };
 type Field = 'username' | 'displayName' | 'email' | 'password';
+type EditField = 'username' | 'displayName';
+/** The pattern the server holds usernames to (`USERNAME_PATTERN`). */
+const USERNAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 /** Whether "New user" can invite: it can, or the server has no email, or passwords are break-glass. */
 type InviteState = 'available' | 'no-mail' | 'break-glass';
 /** A change to one's own account the confirmation dialog asks about. */
@@ -114,6 +117,11 @@ export class UsersPage {
   protected readonly resetTarget = signal<User | null>(null);
   protected readonly resetPassword = signal('');
   protected readonly resetError = signal<string | null>(null);
+  /** The user the edit dialog changes; null while it is closed. */
+  protected readonly editTarget = signal<User | null>(null);
+  protected readonly editUsername = signal('');
+  protected readonly editDisplayName = signal('');
+  protected readonly editErrors = signal<Partial<Record<EditField, string>>>({});
   /** A refusal of an open dialog's form that names no field, shown in that dialog. */
   protected readonly dialogError = signal<string | null>(null);
   /** The change to your own account the confirmation dialog asks about. */
@@ -132,6 +140,9 @@ export class UsersPage {
   private readonly passwordField = viewChild<ElementRef<HTMLInputElement>>('passwordField');
   private readonly resetField = viewChild<ElementRef<HTMLInputElement>>('resetField');
   private readonly createDialog = viewChild<ElementRef<HTMLDialogElement>>('createDialog');
+  private readonly editDialog = viewChild<ElementRef<HTMLDialogElement>>('editDialog');
+  private readonly editUsernameField = viewChild<ElementRef<HTMLInputElement>>('editUsernameField');
+  private readonly editDisplayField = viewChild<ElementRef<HTMLInputElement>>('editDisplayField');
   private readonly resetDialog = viewChild<ElementRef<HTMLDialogElement>>('resetDialog');
   private readonly confirmDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmDialog');
   private readonly appsHeading = viewChild<ElementRef<HTMLElement>>('appsHeading');
@@ -407,6 +418,93 @@ export class UsersPage {
     this.pending.set(null);
     const dialog = this.confirmDialog()?.nativeElement;
     if (dialog?.open) closeModal(dialog);
+  }
+
+  protected setEdit(field: EditField, event: Event): void {
+    const value = inputValue(event);
+    if (field === 'username') this.editUsername.set(value);
+    else this.editDisplayName.set(value);
+    this.editErrors.update((all) => ({ ...all, [field]: undefined }));
+  }
+
+  /** Opens the edit dialog on the user's current username and display name. */
+  protected openEdit(user: User): void {
+    if (this.busy()) return;
+    this.editTarget.set(user);
+    this.editUsername.set(user.username);
+    this.editDisplayName.set(user.displayName ?? '');
+    this.editErrors.set({});
+    this.dialogError.set(null);
+    openAfterRender(
+      this.injector,
+      () => this.editDialog()?.nativeElement,
+      () => this.editTarget() !== null,
+    );
+  }
+
+  protected closeEdit(): void {
+    const dialog = this.editDialog()?.nativeElement;
+    if (dialog) closeModal(dialog);
+    this.cancelEdit();
+  }
+
+  /** The edit dialog closed, however: its user is forgotten. */
+  protected cancelEdit(): void {
+    this.editTarget.set(null);
+  }
+
+  /** Saves what changed: only the changed fields are sent; nothing changed, nothing is sent. */
+  protected async saveEdit(event: Event): Promise<void> {
+    event.preventDefault();
+    const user = this.editTarget();
+    if (this.busy() || !user) return;
+    const username = this.editUsername().trim();
+    const displayName = this.editDisplayName().trim();
+    this.dialogError.set(null);
+    if (!USERNAME_PATTERN.test(username)) {
+      this.editErrors.set({ username: usernameMessage() });
+      this.editUsernameField()?.nativeElement.focus();
+      return;
+    }
+    const body = {
+      ...(username !== user.username ? { username } : {}),
+      ...(displayName !== (user.displayName ?? '') ? { displayName: displayName || null } : {}),
+    };
+    if (Object.keys(body).length === 0) {
+      this.closeEdit();
+      return;
+    }
+    await this.run(
+      async () => {
+        const updated = await ok(
+          this.api.client.PATCH('/api/v0/users/{id}', { params: { path: { id: user.id } }, body }),
+        );
+        this.replace(updated);
+        this.announcement.set($localize`:@@users.edited:${updated.username}:username: is saved.`);
+        this.closeEdit();
+        // The header shows your own name from the session, which still holds the old one.
+        if (user.id === this.selfId()) await this.auth.refresh();
+      },
+      (err) => this.editFailed(err),
+    );
+  }
+
+  /** Puts a refused edit on its field (else in the dialog) and focuses it. */
+  private editFailed(err: unknown): boolean {
+    const fields = fieldErrors(err);
+    const errors: Partial<Record<EditField, string>> = {};
+    if (fields['body.username'] !== undefined) errors.username = usernameMessage();
+    if (fields['body.displayName'] !== undefined) {
+      errors.displayName = $localize`:@@users.badDisplayName:Enter a display name of at most 255 characters, without control characters.`;
+    }
+    if (err instanceof ApiError && (err.code === 'USERNAME_TAKEN' || err.code === 'DEMO_USER')) {
+      errors.username = problemMessage(err);
+    }
+    this.editErrors.set(errors);
+    if (Object.keys(errors).length === 0) this.dialogError.set(problemMessage(err));
+    if (errors.username) this.editUsernameField()?.nativeElement.focus();
+    else if (errors.displayName) this.editDisplayField()?.nativeElement.focus();
+    return true;
   }
 
   /** Opens the reset dialog for another user's row. */

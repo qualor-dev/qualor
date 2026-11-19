@@ -151,6 +151,8 @@ export function problemMessage(err: unknown): string {
       return $localize`:@@error.orgKeyTaken:An organization with this key already exists.`;
     case 'USERNAME_TAKEN':
       return $localize`:@@error.usernameTaken:This username is already taken.`;
+    case 'DEMO_USER':
+      return $localize`:@@error.demoUser:The demo user keeps its name, and no other user can take it.`;
     case 'LAST_ORGANIZATION':
       return $localize`:@@error.lastOrganization:The last organization cannot be deleted.`;
     case 'ORGANIZATION_DELETING':

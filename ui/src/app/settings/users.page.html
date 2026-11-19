@@ -150,6 +150,16 @@
                       <ng-container i18n="@@users.makeAdmin">Make admin</ng-container>
                     }
                   </button>
+                  <button
+                    type="button"
+                    class="btn-quiet"
+                    data-test="edit-user"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    (click)="openEdit(u)"
+                    i18n="@@users.editOpen"
+                  >
+                    Edit
+                  </button>
                   @if (u.id !== selfId()) {
                     <button
                       type="button"
@@ -393,6 +403,79 @@
           i18n="@@users.create"
         >
           Create user
+        </button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog
+    #editDialog
+    id="edit-dialog"
+    class="dialog"
+    aria-labelledby="edit-title"
+    (close)="cancelEdit()"
+  >
+    <form novalidate (submit)="saveEdit($event)">
+      <div class="dialog-head">
+        <h2 id="edit-title" i18n="@@users.editTitleOf">Edit {{ editTarget()?.username }}</h2>
+      </div>
+      <div class="dialog-body">
+        @if (dialogError(); as message) {
+          <p class="alert alert-error" role="alert">{{ message }}</p>
+        }
+        @if (editTarget()?.sso?.scim) {
+          <p class="hint" i18n="@@users.scimNote">
+            The identity provider may overwrite changes to this account.
+          </p>
+        }
+        <div class="field">
+          <label for="edit-username" i18n="@@users.username">Username</label>
+          <input
+            #editUsernameField
+            id="edit-username"
+            required
+            autofocus
+            maxlength="64"
+            pattern="^[A-Za-z0-9._-]{1,64}$"
+            autocomplete="off"
+            spellcheck="false"
+            [attr.aria-invalid]="editErrors().username ? true : null"
+            [attr.aria-describedby]="editErrors().username ? 'edit-username-error' : null"
+            [value]="editUsername()"
+            (input)="setEdit('username', $event)"
+          />
+          @if (editErrors().username; as message) {
+            <span id="edit-username-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+        <div class="field">
+          <label for="edit-display" i18n="@@users.displayName">Display name</label>
+          <input
+            #editDisplayField
+            id="edit-display"
+            maxlength="255"
+            autocomplete="off"
+            [attr.aria-invalid]="editErrors().displayName ? true : null"
+            [attr.aria-describedby]="editErrors().displayName ? 'edit-display-error' : null"
+            [value]="editDisplayName()"
+            (input)="setEdit('displayName', $event)"
+          />
+          @if (editErrors().displayName; as message) {
+            <span id="edit-display-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" (click)="closeEdit()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          [attr.aria-disabled]="busy() ? true : null"
+          i18n="@@users.editSave"
+        >
+          Save
         </button>
       </div>
     </form>
