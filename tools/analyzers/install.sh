@@ -118,11 +118,18 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$PREFIX/bin" "$PREFIX/lib"
 
-fetch() { # url sha256 file
-  # --retry-all-errors: release downloads have answered a passing 404 in CI (2026-11-19); a pinned
-  # file that is really gone still fails, after the retries, and names its URL.
-  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused --retry-all-errors -o "$TMP/$3" "$1" \
-    || { echo "download failed: $1" >&2; exit 1; }
+get() { # url file
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --retry 7 --retry-connrefused --retry-all-errors -o "$TMP/$2" "$1"
+}
+fetch() { # url sha256 file [another url of the same file]
+  # --retry-all-errors: downloads have answered a 404 that went away, in CI (2026-11-19), and
+  # repo1.maven.org kept answering 404 to one runner: a fourth argument names a second host of the
+  # same file. The SHA-256 is checked whichever host answered; a file really gone fails, named.
+  if ! get "$1" "$3"; then
+    [ -n "${4:-}" ] || { echo "download failed: $1" >&2; exit 1; }
+    echo "download failed: $1; trying $4" >&2
+    get "$4" "$3" || { echo "download failed: $4" >&2; exit 1; }
+  fi
   echo "$2  $TMP/$3" | sha256sum -c - >/dev/null || { echo "checksum mismatch: $1" >&2; exit 1; }
 }
 
@@ -150,10 +157,10 @@ rm -rf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION"
 tar -xzf "$TMP/spotbugs.tgz" -C "$PREFIX/lib"
 chmod +x "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs"
 ln -sf "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/bin/spotbugs" "$PREFIX/bin/spotbugs"
-fetch "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/$FINDSECBUGS_VERSION/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar" "$FINDSECBUGS_SHA256" findsecbugs.jar
+fetch "https://repo1.maven.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/$FINDSECBUGS_VERSION/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar" "$FINDSECBUGS_SHA256" findsecbugs.jar "https://repo.maven.apache.org/maven2/com/h3xstream/findsecbugs/findsecbugs-plugin/$FINDSECBUGS_VERSION/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar"
 install -m 0644 "$TMP/findsecbugs.jar" "$PREFIX/lib/spotbugs-$SPOTBUGS_VERSION/plugin/findsecbugs-plugin-$FINDSECBUGS_VERSION.jar"
 
-fetch "https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar" "$DETEKT_SHA256" detekt.jar
+fetch "https://repo1.maven.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar" "$DETEKT_SHA256" detekt.jar "https://repo.maven.apache.org/maven2/io/gitlab/arturbosch/detekt/detekt-cli/$DETEKT_VERSION/detekt-cli-$DETEKT_VERSION-all.jar"
 mkdir -p "$PREFIX/lib/detekt"
 install -m 0644 "$TMP/detekt.jar" "$PREFIX/lib/detekt/detekt-cli.jar"
 fetch "$GH/phpstan/phpstan/releases/download/$PHPSTAN_VERSION/phpstan.phar" "$PHPSTAN_SHA256" phpstan.phar
