@@ -84,22 +84,10 @@
           }
         }
         @case ('failed') {
-          <span
-            class="fix-failure"
-            [class.badge]="compact()"
-            [class.badge-failed]="compact()"
-            [attr.title]="compact() ? failure() : null"
-            >{{ failure() }}</span
-          >
+          <ng-container *ngTemplateOutlet="reason; context: { kind: 'failed' }" />
         }
         @case ('no_fix') {
-          <span
-            class="fix-failure"
-            [class.badge]="compact()"
-            [class.badge-tag]="compact()"
-            [attr.title]="compact() ? failure() : null"
-            >{{ failure() }}</span
-          >
+          <ng-container *ngTemplateOutlet="reason; context: { kind: 'no_fix' }" />
         }
         @case ('merged') {
           <span class="badge badge-tag" i18n="@@fix.link.merged">Merged</span>
@@ -138,14 +126,8 @@
       @if (version(); as v) {
         <span class="fix-version" i18n="@@fix.link.version">to {{ v }}</span>
       }
-      @if (f.state === 'open' && failure(); as why) {
-        <span
-          class="fix-failure"
-          [class.badge]="compact()"
-          [class.badge-failed]="compact()"
-          [attr.title]="compact() ? why : null"
-          >{{ why }}</span
-        >
+      @if (f.state === 'open' && failure()) {
+        <ng-container *ngTemplateOutlet="reason; context: { kind: 'open' }" />
       }
     }
   </span>
@@ -208,4 +190,16 @@
       </button>
     </span>
   }
+</ng-template>
+
+<!-- Why a fix failed or has none: a badge in the pill, plain text in the card. -->
+<ng-template #reason let-kind="kind">
+  <span
+    class="fix-failure"
+    [class.badge]="compact()"
+    [class.badge-failed]="compact() && kind !== 'no_fix'"
+    [class.badge-tag]="compact() && kind === 'no_fix'"
+    [attr.title]="compact() ? failure() : null"
+    >{{ failure() }}</span
+  >
 </ng-template>

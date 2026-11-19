@@ -239,13 +239,14 @@ describe('which vulnerabilities a fix handles (spec §6.2, B5, B7, R12)', () => 
         updatedAt: expect.any(String),
       },
       fixable: true,
+      ecosystem: 'npm',
     });
-    expect(at(1)).toEqual({ fix: null, fixable: false });
-    expect(at(2)).toEqual({ fix: null, fixable: false });
+    expect(at(1)).toEqual({ fix: null, fixable: false, ecosystem: 'npm' });
+    expect(at(2)).toEqual({ fix: null, fixable: false, ecosystem: null });
     // A fix of the package is not shown on a pair main does not have (it fixes main's rows).
-    expect(at(3)).toEqual({ fix: null, fixable: false });
-    expect(at(4)).toEqual({ fix: null, fixable: false });
-    expect(at(5)).toEqual({ fix: null, fixable: false });
+    expect(at(3)).toEqual({ fix: null, fixable: false, ecosystem: null });
+    expect(at(4)).toEqual({ fix: null, fixable: false, ecosystem: 'gomod' });
+    expect(at(5)).toEqual({ fix: null, fixable: false, ecosystem: null });
     expect(facets.size).toBe(pairs.length);
     expect(await fixFacets(db(), projectId, [])).toEqual(new Map());
 
@@ -258,7 +259,7 @@ describe('which vulnerabilities a fix handles (spec §6.2, B5, B7, R12)', () => 
     });
     expect(
       (await fixFacets(db(), projectId, [pairs[1]!])).get(pairKey(unfixable, 'CVE-2026-0402')),
-    ).toEqual({ fix: null, fixable: true });
+    ).toEqual({ fix: null, fixable: true, ecosystem: 'npm' });
     // The match the rows join must exist; one without a fixed version is not fixable.
     await seedMatch(db(), {
       purl: purlFor(unfixable, '3.0.0', 'yarn'),
@@ -267,7 +268,7 @@ describe('which vulnerabilities a fix handles (spec §6.2, B5, B7, R12)', () => 
     });
     expect(
       (await fixFacets(db(), projectId, [pairs[1]!])).get(pairKey(unfixable, 'CVE-2026-0402')),
-    ).toEqual({ fix: null, fixable: false });
+    ).toEqual({ fix: null, fixable: false, ecosystem: 'npm' });
   });
 
   it('matches Python names by PEP 503 and every other family exactly (ruling T8b)', async () => {

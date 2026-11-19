@@ -7802,6 +7802,7 @@ export interface paths {
                                     updatedAt: string;
                                 } | null;
                                 fixable: boolean;
+                                fixEcosystem: string | null;
                             }[];
                             nextCursor: string | null;
                             facets?: {
@@ -7975,6 +7976,7 @@ export interface paths {
                                 updatedAt: string;
                             } | null;
                             fixable: boolean;
+                            fixEcosystem: string | null;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8187,6 +8189,7 @@ export interface paths {
                                 updatedAt: string;
                             } | null;
                             fixable: boolean;
+                            fixEcosystem: string | null;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -8437,6 +8440,7 @@ export interface paths {
                                 updatedAt: string;
                             } | null;
                             fixable: boolean;
+                            fixEcosystem: string | null;
                             fingerprint: string;
                             snippet: unknown;
                             secondaryLocations: {
@@ -17246,7 +17250,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. Checked as a request: the preconditions, the state, the cap, the package */
+        /** Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. An open fix whose last refresh failed is retried in place: its failure is cleared and the fix job refreshes its MR. Checked as a request: the preconditions, the state, the cap, the package */
         post: {
             parameters: {
                 query?: never;
@@ -17319,7 +17323,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, open); FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                /** @description FIXES_DISABLED: fix merge requests are switched off for the project; SCM_NOT_BOUND: the project is not mapped to a repository; FIX_MRS_NOT_ALLOWED: an organisation admin has not allowed fix merge requests on the connection; MONITORING_OFF: vulnerability monitoring is off; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, or open without a failure); FIX_LIMIT_REACHED: the project's fixes in flight (requested, preparing, committing, open) fill its cap; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
                 409: {
                     headers: {
                         [name: string]: unknown;

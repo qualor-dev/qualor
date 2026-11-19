@@ -51,6 +51,7 @@ function issue(id: string, overrides: Partial<Issue> = {}): Issue {
     jiraLinkable: false,
     fix: null,
     fixable: false,
+    fixEcosystem: null,
     ...overrides,
   };
 }

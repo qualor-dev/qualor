@@ -39,8 +39,8 @@ export function cancelFix(api: Api, id: string): Promise<void> {
  */
 export function fixRequestError(err: unknown, maxOpen?: number): string {
   if (err instanceof ApiError && err.code === 'FIX_LIMIT_REACHED' && maxOpen !== undefined) {
-    const open = maxOpen;
-    return $localize`:@@fix.request.limit:${open}:open: of ${maxOpen}:max: fix MRs are open. Close or cancel one first.`;
+    // The project is full: as many are open as it allows.
+    return $localize`:@@fix.request.limit:${maxOpen}:open: of ${maxOpen}:max: fix MRs are open. Close or cancel one first.`;
   }
   return problemMessage(err);
 }
@@ -57,27 +57,4 @@ export function fixPending(fix: FixShown | null | undefined): boolean {
     fix.state === 'committing' ||
     (fix.state === 'open' && fix.refresh)
   );
-}
-
-/** The Trivy package type of a lockfile's name; the server reads the family of it. */
-const LOCKFILE_ECOSYSTEM: Readonly<Record<string, string>> = {
-  'package-lock.json': 'npm',
-  'npm-shrinkwrap.json': 'npm',
-  'pnpm-lock.yaml': 'pnpm',
-  'yarn.lock': 'yarn',
-  'go.mod': 'gomod',
-  'go.sum': 'gomod',
-  'pom.xml': 'pom',
-  'uv.lock': 'uv',
-  'poetry.lock': 'poetry',
-};
-
-/**
- * The ecosystem of a Trivy issue, read from the lockfile it was found in (an issue does not carry
- * one); null for a file with no automatic fix.
- */
-export function ecosystemOfLockfile(path: string | null): string | null {
-  if (path === null) return null;
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  return Object.hasOwn(LOCKFILE_ECOSYSTEM, name) ? (LOCKFILE_ECOSYSTEM[name] ?? null) : null;
 }

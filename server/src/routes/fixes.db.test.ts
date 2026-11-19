@@ -452,6 +452,54 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
     expect(await events('dependency_fix.retried')).toHaveLength(2);
   });
 
+  it('retries an open fix whose refresh failed in place, and refuses one without a failure (T18a)', async () => {
+    const stuck = fresh();
+    await vulnerable(stuck);
+    const failing = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: stuck,
+      state: 'open',
+      mrNumber: 12,
+      failure: { code: 'scm_permission', message: 'x' },
+    });
+    const before = await row(failing);
+    const res = await retry(failing);
+    expect(res.statusCode, res.body).toBe(202);
+    expect(res.json()).toMatchObject({
+      id: failing,
+      state: 'open',
+      refresh: true,
+      failure: null,
+      mrNumber: 12,
+    });
+    expect(await row(failing)).toMatchObject({
+      state: 'open',
+      refresh: true,
+      failure: null,
+      mrNumber: 12,
+      generation: before.generation + 1,
+    });
+    expect(
+      (await events('dependency_fix.retried')).filter((e) => e.details.packageName === stuck),
+    ).toEqual([
+      { details: { family: 'js', packageName: stuck }, targetType: 'project', targetId: projectId },
+    ]);
+
+    const quiet = fresh();
+    await vulnerable(quiet);
+    const open = await seedFix(db(), {
+      projectId,
+      family: 'js',
+      packageName: quiet,
+      state: 'open',
+      mrNumber: 13,
+    });
+    const untouched = await row(open);
+    expect(answer(await retry(open))).toEqual([409, 'FIX_NOT_RETRYABLE']);
+    expect(await row(open)).toEqual(untouched);
+  });
+
   it('cancels: requested and preparing end, committing is busy, open closes its MR (R10, F1)', async () => {
     const requestedPkg = fresh();
     const requested = await seedFix(db(), { projectId, family: 'js', packageName: requestedPkg });
@@ -617,14 +665,34 @@ describe('fix requests: request, retry, cancel, list and the embedded fix (0.16 
       .values({ projectId, kind: 'merge_request', name: '77', isMain: false })
       .returning();
     const onMr = await trivy(mr!.id);
-    type Issue = { id: string; fix: Fix | null; fixable: boolean };
+    type Issue = { id: string; fix: Fix | null; fixable: boolean; fixEcosystem: string | null };
     const mainIssues = (await get<{ items: Issue[] }>(`/issues?branchId=${main}&limit=500`)).items;
-    expect(mainIssues.find((i) => i.id === onMain)).toMatchObject({ fix: expected, fixable: true });
-    expect(mainIssues.find((i) => i.id === code)).toMatchObject({ fix: null, fixable: false });
-    expect(await get<Issue>(`/issues/${onMain}`)).toMatchObject({ fix: expected, fixable: true });
+    expect(mainIssues.find((i) => i.id === onMain)).toMatchObject({
+      fix: expected,
+      fixable: true,
+      fixEcosystem: 'npm',
+    });
+    expect(mainIssues.find((i) => i.id === code)).toMatchObject({
+      fix: null,
+      fixable: false,
+      fixEcosystem: null,
+    });
+    expect(await get<Issue>(`/issues/${onMain}`)).toMatchObject({
+      fix: expected,
+      fixable: true,
+      fixEcosystem: 'npm',
+    });
     const mrIssues = (await get<{ items: Issue[] }>(`/issues?branchId=${mr!.id}`)).items;
-    expect(mrIssues.find((i) => i.id === onMr)).toMatchObject({ fix: null, fixable: false });
-    expect(await get<Issue>(`/issues/${onMr}`)).toMatchObject({ fix: null, fixable: false });
+    expect(mrIssues.find((i) => i.id === onMr)).toMatchObject({
+      fix: null,
+      fixable: false,
+      fixEcosystem: null,
+    });
+    expect(await get<Issue>(`/issues/${onMr}`)).toMatchObject({
+      fix: null,
+      fixable: false,
+      fixEcosystem: null,
+    });
   });
 
   it('lists the fixes newest first in keyset pages, by state (spec §6.8)', async () => {

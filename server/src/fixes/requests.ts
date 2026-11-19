@@ -277,3 +277,26 @@ export async function cancelFix(tx: Executor, row: DependencyFixRow): Promise<De
   }
   return cancelled;
 }
+
+/**
+ * T18a: Retry of an open fix whose last refresh failed (R8): the failure is cleared, `refresh` is
+ * set and the generation raised, so the next fix job claims it as a refresh. The MR stays.
+ * Precondition: the caller holds the project row lock and the locked row is `open` with a failure.
+ */
+export async function refreshOpenFix(
+  tx: Executor,
+  row: DependencyFixRow,
+): Promise<DependencyFixRow> {
+  const [refreshed] = await tx
+    .update(dependencyFixes)
+    .set({
+      generation: sql`${dependencyFixes.generation} + 1`,
+      refresh: true,
+      failure: null,
+      updatedAt: sql`now()`,
+    })
+    .where(and(eq(dependencyFixes.id, row.id), eq(dependencyFixes.state, 'open')))
+    .returning();
+  if (!refreshed) throw new Error(`fix ${row.id} is not open`);
+  return refreshed;
+}

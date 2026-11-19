@@ -119,6 +119,11 @@ export const issueSchema = z.object({
    * ecosystem, and is not Go's standard library.
    */
   fixable: z.boolean(),
+  /**
+   * T18b: the Trivy package type of the pair's main row (npm, pnpm, yarn, gomod, pom, uv, poetry),
+   * the `ecosystem` a fix request names; null for a code issue or an issue off main.
+   */
+  fixEcosystem: z.string().nullable(),
 });
 export type IssueDto = z.infer<typeof issueSchema>;
 
@@ -293,7 +298,11 @@ export function facetList(raw: string | undefined): IssueFacet[] {
 }
 
 /** A code issue's, or an issue off main's: no fix, none to request. */
-const NO_FIX: FixFacet = Object.freeze({ fix: null, fixable: false });
+const NO_FIX: FixFacet = Object.freeze({
+  fix: null,
+  fixable: false,
+  ecosystem: null,
+});
 
 export function issueDto(row: IssueListRow, jira: IssueJira, fix: FixFacet): IssueDto {
   return {
@@ -324,6 +333,7 @@ export function issueDto(row: IssueListRow, jira: IssueJira, fix: FixFacet): Iss
     jiraLinkable: jira.linkable,
     fix: fix.fix,
     fixable: fix.fixable,
+    fixEcosystem: fix.ecosystem,
   };
 }
 

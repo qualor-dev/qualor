@@ -179,6 +179,24 @@ describe('FixLinkView', () => {
       expect(button(root, 'Cancel')).toBeDefined();
     });
 
+    it('retries an open fix whose refresh failed: the retry request, then the page reads again (T18a)', async () => {
+      setup();
+      server.on('POST', RETRY, {
+        status: 202,
+        body: dependencyFix({ refresh: true, failure: null }),
+      });
+      const { fixture, root, changed } = await render({
+        fix: dependencyFix({ failure: { code: 'scm_permission', message: '' } }),
+      });
+      button(root, 'Retry')?.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', RETRY)).toHaveLength(1);
+      expect(changed).toHaveBeenCalledOnce();
+      expect(text(root)).toContain('updating');
+      expect(text(root)).not.toContain('The connection');
+      expect(button(root, 'Retry')).toBeUndefined();
+    });
+
     it('shows a failure with the fix text, and a server message only as text', async () => {
       setup();
       const { root } = await render({
@@ -346,6 +364,22 @@ describe('FixLinkView', () => {
   });
 
   describe('as a pill', () => {
+    it('starts each action name with its visible text (WCAG 2.5.3)', async () => {
+      setup();
+      const states = [
+        dependencyFix({ state: 'failed', mrNumber: null, mrUrl: null }),
+        dependencyFix({ state: 'merged' }),
+        dependencyFix(),
+      ];
+      for (const fix of [null, ...states]) {
+        const { root } = await render({ compact: true, fix });
+        for (const b of root.querySelectorAll('button')) {
+          expect(b.getAttribute('aria-label')).toMatch(new RegExp('^' + text(b)));
+        }
+        expect(root.querySelectorAll('button').length).toBeGreaterThan(0);
+      }
+    });
+
     it('names its actions after the package and has no card', async () => {
       setup();
       const { root } = await render({ compact: true });

@@ -1,7 +1,9 @@
+import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import {
+  dependencyFix,
   FakeServer,
   FakeVulnerabilities,
   fixSettings,
@@ -1304,6 +1306,7 @@ describe('VulnerabilitiesPage fix MRs', () => {
       settings: { enabled: true, maxOpen: 5 },
       counts: { open: 2, requested: 1 },
     }),
+    extra: (server: FakeServer) => void = () => undefined,
   ): Promise<HTMLElement> {
     const server = new FakeServer();
     TestBed.configureTestingModule({
@@ -1326,6 +1329,7 @@ describe('VulnerabilitiesPage fix MRs', () => {
       },
     });
     server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, { body: settings });
+    extra(server);
     const fake = FakeVulnerabilities.install(server, PROJECT, { targets: TARGETS });
     fake.cards = [
       vulnerabilityCard({
@@ -1350,6 +1354,28 @@ describe('VulnerabilitiesPage fix MRs', () => {
     expect(header?.compareDocumentPosition(root.querySelector('.vuln-fixes')!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+  });
+
+  it('moves the header count when a fix MR is created in a row', async () => {
+    let created = false;
+    const root = await renderFixes({ view: 'vulnerability' }, undefined, (server) => {
+      server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, () => ({
+        body: fixSettings({
+          settings: { enabled: true, maxOpen: 5 },
+          counts: { open: created ? 3 : 2, requested: 1 },
+        }),
+      }));
+      server.on('POST', `/api/v0/projects/${PROJECT}/fixes`, () => {
+        created = true;
+        return { status: 202, body: dependencyFix({ state: 'requested', mrNumber: null }) };
+      });
+    });
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('3 of 5 fix MRs open');
+    button(root, 'Create fix MR')?.click();
+    await settle();
+    await settle();
+    TestBed.inject(ApplicationRef).tick();
+    expect(text(root.querySelector('.vuln-fixes'))).toBe('4 of 5 fix MRs open');
   });
 
   it('says nothing while fix MRs are off', async () => {

@@ -156,8 +156,8 @@ export class FixLinkView {
     const subject = this.target().packageName;
     return {
       create: $localize`:@@fix.link.createLabel:Create fix MR for ${subject}:subject:`,
-      retry: $localize`:@@fix.link.retryLabel:Retry the fix MR for ${subject}:subject:`,
-      createAgain: $localize`:@@fix.link.createAgainLabel:Create the fix MR for ${subject}:subject: again`,
+      retry: $localize`:@@fix.link.retryLabel:Retry: the fix MR for ${subject}:subject:`,
+      createAgain: $localize`:@@fix.link.createAgainLabel:Create again: the fix MR for ${subject}:subject:`,
       cancel: $localize`:@@fix.link.cancelLabel:Cancel the fix MR for ${subject}:subject:`,
     };
   });
@@ -229,8 +229,14 @@ export class FixLinkView {
     this.busy.set(false);
     if (this.destroyed) return;
     if ('error' in outcome) this.failed(outcome.error);
-    else if (outcome.changed) this.changed.emit();
+    else if (outcome.changed) this.settled();
     this.keepFocus();
+  }
+
+  /** The fix changed: the page reads the finding again, and the project's count of fixes. */
+  private settled(): void {
+    this.fixes.reload(this.projectId());
+    this.changed.emit();
   }
 
   private failed(err: unknown): void {

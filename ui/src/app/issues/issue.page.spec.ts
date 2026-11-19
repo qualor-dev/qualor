@@ -74,6 +74,7 @@ function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
     jiraLinkable: false,
     fix: null,
     fixable: false,
+    fixEcosystem: null,
     fingerprint: 'f',
     snippet: { startLine: 43, lines: ['const a = 1;', 'if (a == "1") {'] },
     secondaryLocations: [],
@@ -1019,7 +1020,8 @@ describe('IssuePage', () => {
     /** A Trivy issue of main: the vulnerability of a package, found in a lockfile. */
     const trivy = (overrides: Partial<IssueDetail> = {}) =>
       detail({
-        path: 'package-lock.json',
+        path: 'pnpm-lock.yaml',
+        fixEcosystem: 'pnpm',
         startLine: null,
         jiraLinkable: true,
         vulnerability: {
@@ -1047,7 +1049,7 @@ describe('IssuePage', () => {
       expect(root.querySelector('.issue-aside a.fix-mr')?.textContent?.trim()).toBe('MR !12');
     });
 
-    it('creates the fix MR of the package, its ecosystem read from the lockfile', async () => {
+    it('creates the fix MR of the package, the ecosystem the server names', async () => {
       server.on('GET', `/api/v0/issues/${ID}`, { body: trivy({ fixable: true }) });
       server.on('POST', CREATE, {
         status: 202,
@@ -1057,7 +1059,7 @@ describe('IssuePage', () => {
       buttonIn(root, 'Create fix MR')!.click();
       await settle(fixture);
       expect(server.requestsTo('POST', CREATE).map((r) => r.body)).toEqual([
-        { ecosystem: 'npm', packageName: 'lodash' },
+        { ecosystem: 'pnpm', packageName: 'lodash' },
       ]);
       expect(root.querySelector('.issue-aside')?.textContent).toContain('Waiting for the fix job');
     });
@@ -1076,14 +1078,14 @@ describe('IssuePage', () => {
       expect(headings(root)).not.toContain('Fix MR');
     });
 
-    it('shows a fix whose lockfile has no automatic fix, but offers no new one', async () => {
+    it('shows a fix when the server names no ecosystem, but offers no new one', async () => {
       server.on('GET', `/api/v0/issues/${ID}`, {
-        body: trivy({ path: 'Gemfile.lock', fixable: true }),
+        body: trivy({ fixEcosystem: null, fixable: true }),
       });
       const { root } = await render();
       expect(headings(root)).not.toContain('Fix MR');
       server.on('GET', `/api/v0/issues/${ID}`, {
-        body: trivy({ path: 'Gemfile.lock', fixable: true, fix: dependencyFix() }),
+        body: trivy({ fixEcosystem: null, fixable: true, fix: dependencyFix() }),
       });
       const shown = await render();
       expect(headings(shown.root)).toContain('Fix MR');
@@ -1182,6 +1184,7 @@ describe('IssuePage while its Jira link is pending (R22)', () => {
         },
         fix: dependencyFix({ state: 'requested' }),
         fixable: true,
+        fixEcosystem: 'npm',
       }),
     });
     const root = await render();

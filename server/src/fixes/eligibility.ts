@@ -180,9 +180,15 @@ export function fixProblem(
 export interface FixFacet {
   fix: DependencyFix | null;
   fixable: boolean;
+  /** The Trivy package type of the pair's main row, the `ecosystem` a request names (T18b). */
+  ecosystem: string | null;
 }
 
-const NO_FACET: FixFacet = Object.freeze({ fix: null, fixable: false });
+const NO_FACET: FixFacet = Object.freeze({
+  fix: null,
+  fixable: false,
+  ecosystem: null,
+});
 
 interface FacetRow extends Record<string, unknown> {
   package_name: string;
@@ -197,6 +203,7 @@ interface PairFamilies {
   packageName: string;
   families: Set<FixFamily>;
   fixable: boolean;
+  ecosystem: string;
 }
 
 function familiesOf(rows: readonly FacetRow[]): Map<string, PairFamilies> {
@@ -209,8 +216,11 @@ function familiesOf(rows: readonly FacetRow[]): Map<string, PairFamilies> {
       packageName: r.package_name,
       families: new Set<FixFamily>(),
       fixable: false,
+      ecosystem: r.ecosystem,
     };
     entry.families.add(family);
+    // The least spelling, so the answer does not depend on the order of the rows.
+    if (r.ecosystem < entry.ecosystem) entry.ecosystem = r.ecosystem;
     const fixed = (r.fixed ?? []).some((v) => parseFixedVersions(v).length > 0);
     if (fixed && !isGoStdlib(family, r.package_name)) entry.fixable = true;
     byPair.set(key, entry);
@@ -278,7 +288,11 @@ export async function fixFacets(
     const row = FIX_FAMILIES.filter((f) => entry.families.has(f))
       .map((f) => fixOf.get(fixKey(f, fixName(f, entry))))
       .find((f) => f !== undefined);
-    facets.set(key, { fix: row ? fixDto(row) : null, fixable: entry.fixable });
+    facets.set(key, {
+      fix: row ? fixDto(row) : null,
+      fixable: entry.fixable,
+      ecosystem: entry.ecosystem,
+    });
   }
   return facets;
 }

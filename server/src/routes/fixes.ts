@@ -17,6 +17,7 @@ import {
   lockPackageFix,
   lockProject,
   rearmFix,
+  refreshOpenFix,
   requestFix,
   requireCancellable,
 } from '../fixes/requests';
@@ -223,7 +224,7 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
         openapi: {
           problems: [409],
           problemDescriptions: {
-            409: `${PRECONDITIONS}; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, open); ${LIMIT_REACHED}`,
+            409: `${PRECONDITIONS}; FIX_NOT_RETRYABLE: the fix is in flight (requested, preparing, committing, or open without a failure); ${LIMIT_REACHED}`,
             422: `Validation failed (VALIDATION_FAILED); ${NOT_FIXABLE}`,
           },
         },
@@ -231,7 +232,7 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
       schema: {
         tags: ['fixes'],
         summary:
-          'Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. Checked as a request: the preconditions, the state, the cap, the package',
+          'Retry an ended fix (failed, no fix, merged, fixed, declined, taken over or cancelled): it goes back to `requested` with a new generation, its failure and MR cleared; a taken-over fix gets the next branch. An open fix whose last refresh failed is retried in place: its failure is cleared and the fix job refreshes its MR. Checked as a request: the preconditions, the state, the cap, the package',
         params: idParams,
         response: { 202: fixListItemSchema },
       },
@@ -249,6 +250,14 @@ export const fixRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (app,
         const settings = await requireFixesUsable(tx, locked);
         const current = await lockFix(tx, fix.id);
         if (!current) throw notFound('Fix');
+        if (current.state === 'open' && current.failure !== null) {
+          const refreshed = await refreshOpenFix(tx, current);
+          await recordProjectEvent(deps.audit, tx, request, locked, 'dependency_fix.retried', {
+            family: refreshed.family,
+            packageName: refreshed.packageName,
+          });
+          return refreshed;
+        }
         if (isActiveFix(current.state)) notRetryable();
         await requireUnderCap(tx, locked.id, settings.maxOpen);
         await requireFixable(tx, locked.id, current.family, current.packageName);
