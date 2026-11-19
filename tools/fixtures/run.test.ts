@@ -353,7 +353,7 @@ describe('runFixtures', () => {
 
     expect(outcomes.map((o) => o.name)).toEqual(['good']);
     // A name, not a rule: no other directory is left out.
-    expect([...NOT_SCAN_FIXTURES]).toEqual(['review-eval']);
+    expect([...NOT_SCAN_FIXTURES]).toEqual(['review-eval', 'fix-npm']);
   });
 
   it('still reports any other directory without an expected.json, the evaluation set beside it', () => {

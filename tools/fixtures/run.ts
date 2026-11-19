@@ -38,10 +38,11 @@ const fixturesDir = path.join(root, 'fixtures');
 
 /**
  * Directories of fixtures/ that are no scan fixture and have no expected.json: the evaluation set
- * of the AI review (plan 6I-3, tools/review), which only `pnpm review:live` reads. They are named,
+ * of the AI review (plan 6I-3, tools/review), which only `pnpm review:live` reads, and the input of the
+ * fix MRs end-to-end test (0.16, `fix-npm`: one manifest, its lockfile is made by npm at run time). They are named,
  * never "any directory without an expected.json": a scan fixture that lost its file still fails.
  */
-export const NOT_SCAN_FIXTURES: ReadonlySet<string> = new Set(['review-eval']);
+export const NOT_SCAN_FIXTURES: ReadonlySet<string> = new Set(['review-eval', 'fix-npm']);
 
 export type ProblemKind = Mismatch['kind'] | 'static' | 'scan';
 export interface Problem {
