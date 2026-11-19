@@ -52,6 +52,9 @@ const DEFAULTS = {
   'allow-failure': 'false',
   dotnet: 'false',
   'build-command': 'dotnet build --no-incremental',
+  fix: 'false',
+  'fix-image': '',
+  'fix-args': '',
 };
 
 /** The first line of `script`, trimmed, that starts with `prefix` (the script is one multi-line
@@ -79,6 +82,9 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
       'allow-failure',
       'dotnet',
       'build-command',
+      'fix',
+      'fix-image',
+      'fix-args',
     ]);
     expect(
       Object.entries(inputs)
@@ -91,6 +97,9 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
       type: 'string',
       default: 'dotnet build --no-incremental',
     });
+    expect(inputs['fix']).toMatchObject({ type: 'boolean', default: false });
+    expect(inputs['fix-image']).toMatchObject({ type: 'string', default: '' });
+    expect(inputs['fix-args']).toMatchObject({ type: 'string', default: '' });
     expect(inputs).toMatchObject({
       stage: { type: 'string', default: 'test' },
       image: { type: 'string', default: 'qualor/scanner' },
@@ -119,7 +128,8 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
   it('runs the scanner image with its tag, full history, the three reports kept always', () => {
     const { bodyText } = load();
     const jobs = interpolate(bodyText, DEFAULTS);
-    expect(Object.keys(jobs)).toEqual(['qualor']);
+    // The fix job pair is always declared; its first rule switches it off unless fix is true.
+    expect(Object.keys(jobs)).toEqual(['qualor', 'qualor-fix-cli', 'qualor-fix']);
     const job = jobs['qualor'] as Record<string, unknown>;
     expect(job).toMatchObject({
       stage: 'test',
@@ -286,5 +296,98 @@ describe('the GitLab CI/CD component (scm.md §10)', () => {
     for (const doc of [text, readFileSync(path.join(ROOT, 'README.md'), 'utf8')]) {
       expect(doc).toContain(`component: ${FUTURE_PATH}`);
     }
+  });
+
+  describe('the optional fix job pair (0.16 fix MRs, §6.6)', () => {
+    type Rule = { if: string; when?: string; variables?: Record<string, string> };
+    type FixJob = {
+      image: { name: string; entrypoint: string[] };
+      variables?: Record<string, string>;
+      needs?: string[];
+      allow_failure?: boolean;
+      script: string[];
+      artifacts?: { paths: string[]; expire_in: string };
+      rules: Rule[];
+    };
+    const jobs = (values: Record<string, string>) => {
+      const all = interpolate(load().bodyText, { ...DEFAULTS, ...values });
+      return { cli: all['qualor-fix-cli'] as FixJob, fix: all['qualor-fix'] as FixJob };
+    };
+    const ON = { fix: 'true' };
+
+    it('declares fix, fix-image and fix-args, and the two jobs', () => {
+      const { inputs, bodyText } = load();
+      expect(inputs['fix']).toMatchObject({ type: 'boolean', default: false });
+      expect(inputs['fix-image']).toMatchObject({ type: 'string', default: '' });
+      expect(inputs['fix-args']).toMatchObject({ type: 'string', default: '' });
+      expect(bodyText).toMatch(/^qualor-fix-cli:$/m);
+      expect(bodyText).toMatch(/^qualor-fix:$/m);
+    });
+
+    it('qualor-fix-cli saves the binary of the scanner image for a day', () => {
+      const { cli } = jobs({ ...ON, image: 'acme/scanner', 'image-tag': '0.16.0' });
+      expect(cli.image).toEqual({ name: 'acme/scanner:0.16.0', entrypoint: [''] });
+      expect(cli.script).toEqual(['cp /usr/local/bin/qualor qualor-bin']);
+      expect(cli.artifacts).toEqual({ paths: ['qualor-bin'], expire_in: '1 day' });
+    });
+
+    it('qualor-fix needs the saved binary, may fail, and runs in the fix image', () => {
+      const { fix } = jobs(ON);
+      expect(fix.needs).toEqual(['qualor-fix-cli']);
+      expect(fix.allow_failure).toBe(true);
+      expect(fix.image).toEqual({ name: '$QUALOR_FIX_IMAGE', entrypoint: [''] });
+      expect(fix.variables).toEqual({ QUALOR_FIX_IMAGE: '' });
+      expect(jobs({ ...ON, 'fix-image': 'registry.acme.test/ci/node:22' }).fix.variables).toEqual({
+        QUALOR_FIX_IMAGE: 'registry.acme.test/ci/node:22',
+      });
+    });
+
+    it('is switched off with fix: false: the first rule of both jobs is when: never', () => {
+      for (const job of Object.values(jobs({ fix: 'false' }))) {
+        expect(job.rules[0]).toEqual({ if: '"false" != "true"', when: 'never' });
+      }
+      for (const job of Object.values(jobs(ON))) {
+        expect(job.rules[0]).toEqual({ if: '"true" != "true"', when: 'never' });
+      }
+    });
+
+    it('runs only on the default branch, schedules included', () => {
+      const { cli, fix } = jobs(ON);
+      expect(cli.rules[1]).toEqual({ if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' });
+      expect(fix.rules[2]).toEqual({ if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH' });
+      for (const job of [cli, fix]) {
+        expect(JSON.stringify(job.rules)).not.toMatch(/merge_request|CI_COMMIT_TAG|schedule/);
+      }
+    });
+
+    it('with an empty fix-image, the second rule sets the scanner image and tag (R36)', () => {
+      const { fix } = jobs({ ...ON, image: 'acme/scanner', 'image-tag': '0.16.0' });
+      expect(fix.rules[1]).toEqual({
+        if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "" == ""',
+        variables: { QUALOR_FIX_IMAGE: 'acme/scanner:0.16.0' },
+      });
+      // With a fix-image, that rule cannot match and the job variable stays.
+      const own = jobs({ ...ON, 'fix-image': 'node:22' }).fix;
+      expect(own.rules[1]!.if).toBe('$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && "node:22" == ""');
+    });
+
+    it('checks for musl before it runs the binary, which takes the CLI-accepted fix-args', () => {
+      const { fix } = jobs({ ...ON, 'fix-args': '--max 3 --timeout 1h' });
+      expect(fix.script).toHaveLength(2);
+      expect(fix.script[0]).toContain(
+        'if [ -e /lib/ld-musl-x86_64.so.1 ] || [ -e /lib/ld-musl-aarch64.so.1 ]; then echo "qualor fix needs a glibc image (Debian, Ubuntu, RHEL); this image uses musl" >&2; exit 2; fi',
+      );
+      const line = fix.script[1]!;
+      expect(line.startsWith('./qualor-bin fix')).toBe(true);
+      const [, ...argv] = line.split(/\s+/);
+      expect(parseCommandLine(argv)).toMatchObject({
+        name: 'fix',
+        flags: { max: 3, timeoutSeconds: 3600 },
+      });
+      // The default (empty) fix-args is accepted too.
+      const [, ...plain] = jobs(ON).fix.script[1]!.trim().split(/\s+/);
+      expect(parseCommandLine(plain)).toMatchObject({ name: 'fix' });
+      expect(fix.script.join('\n')).not.toMatch(/QUALOR_TOKEN|QUALOR_URL|qlr_/);
+    });
   });
 });
