@@ -688,17 +688,16 @@ export const vulndbUploadRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = as
         if (total > maxBytes) throw tooLargeProblem(maxBytes);
         chunks.push(chunk);
       }
-      const stored = await storePriorityFile(
-        deps.db,
+      const stored = await storePriorityFile(deps.db, {
         dataset,
-        Buffer.concat(chunks),
-        'upload',
-        { etag: null, lastModified: null, url: null },
-        new Date(),
-        request.log,
-        (tx, state) =>
+        body: Buffer.concat(chunks),
+        source: 'upload',
+        validators: { etag: null, lastModified: null, url: null },
+        now: new Date(),
+        logger: request.log,
+        inTransaction: (tx, state) =>
           onStored(tx, { dataset, sizeBytes: state.sizeBytes ?? total, builtAt: state.dataDate }),
-      );
+      });
       if ('problem' in stored) {
         // The body fit; the parser refused its inflated size or its entry count, and says which.
         const [status, code, title] =

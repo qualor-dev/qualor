@@ -77,6 +77,18 @@ async function parseFile(
   };
 }
 
+/** What {@link storePriorityFile} stores, and how. */
+export interface StorePriorityOptions {
+  dataset: PriorityDataset;
+  body: Buffer;
+  source: 'official' | 'mirror' | 'upload';
+  validators: PriorityValidators;
+  now: Date;
+  logger?: Pick<FastifyBaseLogger, 'info'>;
+  /** Runs last in the store's transaction, with the state written; when it throws, nothing is stored. */
+  inTransaction?: (tx: Tx, state: PriorityDatasetState) => Promise<void>;
+}
+
 /**
  * Stores one KEV or EPSS file as downloaded or uploaded (gzip or not). A file that does not parse
  * is the answer, with no state written (the job records it as `lastError`; an upload answers 422).
@@ -91,14 +103,9 @@ async function parseFile(
  */
 export async function storePriorityFile(
   db: Db,
-  dataset: PriorityDataset,
-  body: Buffer,
-  source: 'official' | 'mirror' | 'upload',
-  validators: PriorityValidators,
-  now: Date,
-  logger?: Pick<FastifyBaseLogger, 'info'>,
-  inTransaction?: (tx: Tx, state: PriorityDatasetState) => Promise<void>,
+  options: StorePriorityOptions,
 ): Promise<PriorityDatasetState | PriorityProblem> {
+  const { dataset, body, source, validators, now, logger, inTransaction } = options;
   const at = now.toISOString();
   const digest = `sha256:${createHash('sha256').update(body).digest('hex')}`;
   const parsed = await parseFile(dataset, body);
@@ -189,15 +196,14 @@ async function checkDataset(
     }));
     return null;
   }
-  const stored = await storePriorityFile(
-    deps.db,
+  const stored = await storePriorityFile(deps.db, {
     dataset,
-    got.body,
-    sourceOf(settings, dataset),
-    { etag: got.etag, lastModified: got.lastModified, url },
-    now(),
-    deps.logger,
-  );
+    body: got.body,
+    source: sourceOf(settings, dataset),
+    validators: { etag: got.etag, lastModified: got.lastModified, url },
+    now: now(),
+    logger: deps.logger,
+  });
   return 'problem' in stored ? stored.problem : null;
 }
 

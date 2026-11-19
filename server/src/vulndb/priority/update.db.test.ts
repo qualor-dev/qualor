@@ -445,8 +445,20 @@ describe('storePriorityFile', () => {
       Object.assign(pause, { ms: 800, calls: 0 });
       try {
         await Promise.all([
-          storePriorityFile(t.db, 'epss', first, 'official', none, now),
-          storePriorityFile(t.db, 'epss', second, 'upload', none, now),
+          storePriorityFile(t.db, {
+            dataset: 'epss',
+            body: first,
+            source: 'official',
+            validators: none,
+            now: now,
+          }),
+          storePriorityFile(t.db, {
+            dataset: 'epss',
+            body: second,
+            source: 'upload',
+            validators: none,
+            now: now,
+          }),
         ]);
       } finally {
         pause.ms = 0;
@@ -466,7 +478,13 @@ describe('storePriorityFile', () => {
 
   it('stores an uploaded file without validators', async () => {
     const body = epssFile([A, B]);
-    const got = await storePriorityFile(t.db, 'epss', body, 'upload', none, now);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'epss',
+      body: body,
+      source: 'upload',
+      validators: none,
+      now: now,
+    });
     const at = now.toISOString();
     expect(got).toEqual({
       source: 'upload',
@@ -487,10 +505,22 @@ describe('storePriorityFile', () => {
   });
 
   it('answers a parse problem and writes no state', async () => {
-    await storePriorityFile(t.db, 'kev', kevFile([A]), 'official', none, now);
+    await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: kevFile([A]),
+      source: 'official',
+      validators: none,
+      now: now,
+    });
     const before = await readPriorityState(t.db);
     now = new Date(now.getTime() + 60_000);
-    const got = await storePriorityFile(t.db, 'kev', Buffer.from('{}'), 'upload', none, now);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: Buffer.from('{}'),
+      source: 'upload',
+      validators: none,
+      now: now,
+    });
     expect(got).toMatchObject({ problem: { code: 'INVALID_DATA' } });
     expect(await readPriorityState(t.db)).toEqual(before);
     expect(await kevIds()).toEqual([A]);
@@ -498,7 +528,13 @@ describe('storePriorityFile', () => {
 
   it('for the same bytes, writes the validators and the check times only', async () => {
     const body = kevFile([A]);
-    await storePriorityFile(t.db, 'kev', body, 'upload', none, now);
+    await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: body,
+      source: 'upload',
+      validators: none,
+      now: now,
+    });
     await updatePriorityState(t.db, 'kev', (s) => ({
       ...s,
       lastError: { code: 'UNREACHABLE', message: 'old' },
@@ -507,7 +543,13 @@ describe('storePriorityFile', () => {
     const before = (await readPriorityState(t.db)).kev;
     const later = new Date(now.getTime() + 60_000);
     const validators = { etag: '"kev-1"', lastModified: 'x', url: OFFICIAL_KEV_URL };
-    const got = await storePriorityFile(t.db, 'kev', body, 'official', validators, later);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: body,
+      source: 'official',
+      validators: validators,
+      now: later,
+    });
     expect(got).toEqual({
       ...before,
       ...validators,
@@ -520,10 +562,22 @@ describe('storePriorityFile', () => {
 
   it('marks an official file uploaded again as uploaded', async () => {
     const body = kevFile([A]);
-    await storePriorityFile(t.db, 'kev', body, 'official', none, now);
+    await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: body,
+      source: 'official',
+      validators: none,
+      now: now,
+    });
     const before = (await readPriorityState(t.db)).kev;
     const later = new Date(now.getTime() + 60_000);
-    const got = await storePriorityFile(t.db, 'kev', body, 'upload', none, later);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: body,
+      source: 'upload',
+      validators: none,
+      now: later,
+    });
     expect(got).toMatchObject({
       source: 'upload',
       storedAt: before.storedAt,
@@ -532,9 +586,21 @@ describe('storePriorityFile', () => {
   });
 
   it('clears the stale record when it stores a new file', async () => {
-    await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+    await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: kevFile([A]),
+      source: 'upload',
+      validators: none,
+      now: now,
+    });
     await updatePriorityState(t.db, 'kev', (s) => ({ ...s, staleNotifiedDigest: s.digest }));
-    const got = await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: kevFile([A, B]),
+      source: 'upload',
+      validators: none,
+      now: now,
+    });
     expect(got).toMatchObject({ staleNotifiedDigest: null, count: 2 });
   });
 
@@ -546,31 +612,79 @@ describe('storePriorityFile', () => {
     beforeEach(clearJobs);
 
     it('is queued by a KEV file that adds an id, and by one that lists an id again', async () => {
-      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       expect(await alertJobs()).toEqual([{ status: 'queued' }]);
 
       await clearJobs();
-      await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A, B]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       expect(await alertJobs()).toEqual([{ status: 'queued' }]);
 
       await clearJobs();
       // B goes (delisted): nothing to send.
-      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       expect(await alertJobs()).toEqual([]);
       // B comes back.
-      await storePriorityFile(t.db, 'kev', kevFile([A, B]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A, B]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       expect(await alertJobs()).toEqual([{ status: 'queued' }]);
     });
 
     it('is not queued by a KEV file that changes no listing, nor by EPSS', async () => {
-      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       await clearJobs();
 
       // The same bytes, then other bytes with the same ids.
-      await storePriorityFile(t.db, 'kev', kevFile([A]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       const later = '2026-10-31T14:22:10.123Z';
-      await storePriorityFile(t.db, 'kev', kevFile([A], later), 'upload', none, now);
-      await storePriorityFile(t.db, 'epss', epssFile([A, B]), 'upload', none, now);
+      await storePriorityFile(t.db, {
+        dataset: 'kev',
+        body: kevFile([A], later),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
+      await storePriorityFile(t.db, {
+        dataset: 'epss',
+        body: epssFile([A, B]),
+        source: 'upload',
+        validators: none,
+        now: now,
+      });
       expect(await alertJobs()).toEqual([]);
     });
   });
@@ -588,13 +702,27 @@ describe('storePriorityFile', () => {
       }),
     );
     const logger = { info: (fields: unknown) => void infos.push(fields) };
-    await storePriorityFile(t.db, 'kev', body, 'upload', none, now, logger);
+    await storePriorityFile(t.db, {
+      dataset: 'kev',
+      body: body,
+      source: 'upload',
+      validators: none,
+      now: now,
+      logger,
+    });
     expect(infos).toEqual([
       { component: 'vulndb', dataset: 'kev', count: 1, sizeBytes: body.length, skipped: 1 },
     ]);
     infos.length = 0;
     const epss = epssFile([A]);
-    await storePriorityFile(t.db, 'epss', epss, 'upload', none, now, logger);
+    await storePriorityFile(t.db, {
+      dataset: 'epss',
+      body: epss,
+      source: 'upload',
+      validators: none,
+      now: now,
+      logger,
+    });
     expect(infos).toEqual([
       { component: 'vulndb', dataset: 'epss', count: 1, sizeBytes: epss.length },
     ]);
@@ -606,7 +734,14 @@ describe('storePriorityFile', () => {
       `#score_date:${EPSS_DATE}\ncve,epss,percentile\n${A},0.5,0.5\n${B},1e-50,0.5\n`,
     );
     const logger = { info: (fields: unknown) => void infos.push(fields) };
-    const got = await storePriorityFile(t.db, 'epss', body, 'upload', none, now, logger);
+    const got = await storePriorityFile(t.db, {
+      dataset: 'epss',
+      body: body,
+      source: 'upload',
+      validators: none,
+      now: now,
+      logger,
+    });
     expect(got).toMatchObject({ count: 1, lastError: null });
     expect(infos).toEqual([
       { component: 'vulndb', dataset: 'epss', count: 1, sizeBytes: body.length, skipped: 1 },
