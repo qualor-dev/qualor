@@ -103,10 +103,19 @@ describe('fixTitle and the comments (R29, R30)', () => {
 
   it('puts the package in a code span on GitLab, which reads mentions in titles (ruling FW2)', () => {
     expect(fixTitle('@all/x', '1.2.5', '1.2.6', 'gitlab')).toBe(
-      'Bump ` @all/x ` from 1.2.5 to 1.2.6',
+      'Bump ` @all/x ` from ` 1.2.5 ` to ` 1.2.6 `',
     );
     // A backtick in the name gets a longer fence, as codeSpan writes it.
-    expect(fixTitle('a`b', '1', '2', 'gitlab')).toBe('Bump `` a`b `` from 1 to 2');
+    expect(fixTitle('a`b', '1', '2', 'gitlab')).toBe('Bump `` a`b `` from ` 1 ` to ` 2 `');
+  });
+
+  it('puts the versions in code spans on GitLab too: an upload’s version may hold @all (ruling FW2b)', () => {
+    expect(fixTitle('qf-a', '1.0@all', '1.0.1@all', 'gitlab')).toBe(
+      'Bump ` qf-a ` from ` 1.0@all ` to ` 1.0.1@all `',
+    );
+    // GitHub reads no mention in a title, and a commit message notifies no one: both stay plain.
+    expect(fixTitle('qf-a', '1.0@all', '1.0.1', 'github')).toBe('Bump qf-a from 1.0@all to 1.0.1');
+    expect(fixTitle('qf-a', '1.0@all', '1.0.1')).toBe('Bump qf-a from 1.0@all to 1.0.1');
   });
 
   it('keeps a title on one line, within 255 characters', () => {
@@ -116,6 +125,8 @@ describe('fixTitle and the comments (R29, R30)', () => {
       expect([...title].length).toBeLessThanOrEqual(255);
       const fenced = fixTitle('`'.repeat(150), '1'.repeat(80), '2'.repeat(80), provider);
       expect([...fenced].length).toBeLessThanOrEqual(255);
+      const ticks = fixTitle('`'.repeat(150), '`'.repeat(80), '`'.repeat(80), provider);
+      expect([...ticks].length).toBeLessThanOrEqual(255);
     }
   });
 

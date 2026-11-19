@@ -67,27 +67,25 @@ const changeWord = (provider: FixProvider): string => (provider === 'github' ? '
 const version = (value: string): string => codeSpan(value, VERSION_CHARS);
 const path = (value: string): string => codeSpan(value, MAX_PATH_CHARS);
 
-/** The package name in a GitLab title's code span, fence and padding included, at most. */
-const TITLE_SPAN_CHARS = MAX_VALUE_CHARS + 4;
-
 /**
- * Ruling FW2: the package name as a GitLab title shows it: a code span (`codeSpan`), since GitLab
- * reads mentions in a title (`@all/x` would notify a group) but not inside code. A name whose
- * backticks lengthen the fence is cut further, so the span stays within {@link TITLE_SPAN_CHARS}.
+ * Rulings FW2, FW2b: a value as a GitLab title shows it: a code span (`codeSpan`) of at most `max`
+ * characters of it, since GitLab reads mentions in a title (`@all/x`, a version `1.0@all` would
+ * notify a group) but not inside code. A value whose backticks lengthen the fence is cut further,
+ * so the span, fence and padding included, stays within `max + 4` characters.
  */
-function titleSpan(packageName: string): string {
-  let span = codeSpan(packageName, MAX_VALUE_CHARS);
-  for (let max = MAX_VALUE_CHARS - 1; [...span].length > TITLE_SPAN_CHARS && max > 0; max -= 1) {
-    span = codeSpan(packageName, max);
+function titleSpan(value: string, max: number): string {
+  let span = codeSpan(value, max);
+  for (let room = max - 1; [...span].length > max + 4 && room > 0; room -= 1) {
+    span = codeSpan(value, room);
   }
   return span;
 }
 
 /**
- * R30 (amended by ruling FW2): `Bump <pkg> from <installed> to <target>`, the commit message and
- * the MR title. One line of at most 247 characters (GitLab takes 255): each value through
- * `plainValue`. The commit message (no `provider`) and a GitHub title are plain; a GitLab title
- * holds the package name in a code span ({@link titleSpan}).
+ * R30 (amended by rulings FW2, FW2b): `Bump <pkg> from <installed> to <target>`, the commit
+ * message and the MR title, one line. The commit message (no `provider`) and a GitHub title are
+ * plain, each value through `plainValue` (at most 243 characters); a GitLab title holds the name
+ * and both versions in code spans ({@link titleSpan}; at most 255 characters, GitLab's limit).
  */
 export function fixTitle(
   packageName: string,
@@ -95,9 +93,9 @@ export function fixTitle(
   target: string,
   provider?: FixProvider,
 ): string {
-  const name =
-    provider === 'gitlab' ? titleSpan(packageName) : plainValue(packageName, MAX_VALUE_CHARS);
-  return `Bump ${name} from ${plainValue(installed, VERSION_CHARS)} to ${plainValue(target, VERSION_CHARS)}`;
+  const shown =
+    provider === 'gitlab' ? titleSpan : (value: string, max: number) => plainValue(value, max);
+  return `Bump ${shown(packageName, MAX_VALUE_CHARS)} from ${shown(installed, VERSION_CHARS)} to ${shown(target, VERSION_CHARS)}`;
 }
 
 /** R29: the comment Qualor closes a cancelled fix's MR with ("PR" on GitHub). */

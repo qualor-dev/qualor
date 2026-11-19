@@ -26,8 +26,8 @@ const CVE = 'CVE-2026-9301';
 const BRANCH = 'qualor/fix/js/qf-a';
 /** The commit message: plain (R30). */
 const TITLE = 'Bump qf-a from 1.2.5 to 1.2.6';
-/** Ruling FW2: GitLab reads mentions in titles, so the MR title holds the name in a code span. */
-const GITLAB_TITLE = 'Bump ` qf-a ` from 1.2.5 to 1.2.6';
+/** Rulings FW2, FW2b: GitLab reads mentions in titles, so the name and versions are code spans. */
+const GITLAB_TITLE = 'Bump ` qf-a ` from ` 1.2.5 ` to ` 1.2.6 `';
 
 /** A GitLab project of the fake, mapped to a Qualor project with fix MRs on and qf-a vulnerable. */
 interface Repo {
