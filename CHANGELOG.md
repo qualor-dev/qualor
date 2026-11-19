@@ -8,6 +8,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Security
 
+- `qualor/scanner`: the `gosec` engine is built with go.opentelemetry.io/otel/trace 1.47.0 (was 1.45.0),
+  which fixes GHSA-q7gw-24fr-5p69.
 - The release pin check (`tools/release/check-pins.sh`) installs dnspython 2.9.2 (was 2.9.0), which fixes
   GHSA-vvf4-9x63-8xvv.
 
