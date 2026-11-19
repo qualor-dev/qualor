@@ -132,7 +132,8 @@ function indexRelationships(items: readonly unknown[]): Graph | SbomRefusal {
   return { described, dependsOn };
 }
 
-export function readSpdx(doc: Record<string, unknown>): SbomDocument | SbomRefusal {
+/** The document's spdxVersion, once its header is one this reader takes; else the refusal. */
+function checkedVersion(doc: Record<string, unknown>): string | SbomRefusal {
   const spdxVersion = doc.spdxVersion;
   if (typeof spdxVersion !== 'string') {
     return {
@@ -154,6 +155,107 @@ export function readSpdx(doc: Record<string, unknown>): SbomDocument | SbomRefus
       path: 'SPDXID',
     };
   }
+  return spdxVersion;
+}
+
+/** The packages, each checked when read, so a bad one is named by its index. */
+function parsePackages(items: readonly unknown[]): Package[] | SbomRefusal {
+  const packages: Package[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const parsed = packageSchema.safeParse(items[i]);
+    if (!parsed.success) return invalid(parsed.error, ['packages', i]);
+    packages.push(parsed.data);
+  }
+  return packages;
+}
+
+/** The subject package's name and version, bounded and cleaned; null without a name. */
+function subjectOf(p: Package | undefined): SbomDocument['subject'] {
+  if (p === undefined) return null;
+  const name = cleanText(cutText(p.name ?? '', SBOM_BOUNDS.subject)).trim();
+  const version = cleanText(cutText(p.versionInfo ?? '', SBOM_BOUNDS.version)).trim();
+  return name === '' ? null : { name, version: version === '' ? null : version };
+}
+
+/**
+ * Whether a package is one the subject `DEPENDS_ON`; null for every package when there is no
+ * subject, or no `DEPENDS_ON` at all.
+ */
+function directness(subjectId: string | undefined, graph: Graph): (id: string) => boolean | null {
+  if (subjectId === undefined || graph.dependsOn.size === 0) return () => null;
+  const subjectDepends = graph.dependsOn.get(subjectId);
+  return (id) => subjectDepends?.has(id) ?? false;
+}
+
+/** Trivy's OS package id, or a purpose that names an operating system. */
+function isOperatingSystem(p: Package): boolean {
+  return (
+    p.SPDXID.startsWith(OS_ID_PREFIX) ||
+    (p.primaryPackagePurpose !== undefined && OS_PURPOSES.has(p.primaryPackagePurpose))
+  );
+}
+
+/** An operating-system package's name and version, bounded and cleaned; null without a name. */
+function operatingSystemOf(p: Package): SbomDocument['operatingSystems'][number] | null {
+  const name = cleanText(cutText(p.name ?? '', SBOM_BOUNDS.name)).trim();
+  if (name === '') return null;
+  return { name, version: cleanText(cutText(p.versionInfo ?? '', SBOM_BOUNDS.version)).trim() };
+}
+
+/** What the packages other than the subject hold. */
+interface Contents {
+  components: SbomComponent[];
+  operatingSystems: SbomDocument['operatingSystems'];
+  invalidPurls: string[];
+  noPurl: number;
+}
+
+/** Reads a package that is neither the subject nor an operating system into `out`. */
+function readPackage(p: Package, direct: (id: string) => boolean | null, out: Contents): void {
+  const text = purlTextOf(p);
+  if (text === '') {
+    out.noPurl++;
+    return;
+  }
+  const purl = parsePurl(text);
+  if (purl === null) {
+    out.noPurl++;
+    if (out.invalidPurls.length < NAMED_INVALID_PURLS) {
+      out.invalidPurls.push(cutText(cleanText(text), 200));
+    }
+    return;
+  }
+  out.components.push({
+    purl,
+    path: '',
+    licenses: licensesOf(p),
+    direct: direct(p.SPDXID),
+    source: sourceOf(p),
+  });
+}
+
+/** Reads every package but the subject, by kind: an operating system, or a package. */
+function contentsOf(
+  packages: readonly Package[],
+  subjectId: string | undefined,
+  direct: (id: string) => boolean | null,
+): Contents {
+  const out: Contents = { components: [], operatingSystems: [], invalidPurls: [], noPurl: 0 };
+  for (const p of packages) {
+    if (p.SPDXID === subjectId) continue;
+    if (isOperatingSystem(p)) {
+      const os = operatingSystemOf(p);
+      if (os !== null) out.operatingSystems.push(os);
+      continue;
+    }
+    readPackage(p, direct, out);
+  }
+  return out;
+}
+
+export function readSpdx(doc: Record<string, unknown>): SbomDocument | SbomRefusal {
+  const spdxVersion = checkedVersion(doc);
+  if (typeof spdxVersion !== 'string') return spdxVersion;
   const top = documentSchema.safeParse(doc);
   if (!top.success) return invalid(top.error, []);
 
@@ -161,81 +263,23 @@ export function readSpdx(doc: Record<string, unknown>): SbomDocument | SbomRefus
   if ('code' in graph) return graph;
   const describedIds = [...graph.described, ...(top.data.documentDescribes ?? [])];
 
-  // The packages, each checked when read, so a bad one is named by its index.
-  const packages: Package[] = [];
-  for (let i = 0; i < (top.data.packages?.length ?? 0); i++) {
-    const parsed = packageSchema.safeParse(top.data.packages?.[i]);
-    if (!parsed.success) return invalid(parsed.error, ['packages', i]);
-    packages.push(parsed.data);
-  }
+  const packages = parsePackages(top.data.packages ?? []);
+  if (!Array.isArray(packages)) return packages;
   const byId = new Map<string, Package>();
   for (const p of packages) if (!byId.has(p.SPDXID)) byId.set(p.SPDXID, p);
 
   // The subject: the first described element that is a package.
   const subjectId = describedIds.find((id) => byId.has(id));
-  const subjectPackage = subjectId === undefined ? undefined : byId.get(subjectId);
-  let subject: SbomDocument['subject'] = null;
-  if (subjectPackage !== undefined) {
-    const name = cleanText(cutText(subjectPackage.name ?? '', SBOM_BOUNDS.subject)).trim();
-    const version = cleanText(
-      cutText(subjectPackage.versionInfo ?? '', SBOM_BOUNDS.version),
-    ).trim();
-    if (name !== '') subject = { name, version: version === '' ? null : version };
-  }
-  const subjectDepends = subjectId === undefined ? undefined : graph.dependsOn.get(subjectId);
-
-  const components: SbomComponent[] = [];
-  const operatingSystems: SbomDocument['operatingSystems'] = [];
-  const invalidPurls: string[] = [];
-  let noPurl = 0;
-
-  for (const p of packages) {
-    if (p.SPDXID === subjectId) continue;
-    if (
-      p.SPDXID.startsWith(OS_ID_PREFIX) ||
-      (p.primaryPackagePurpose !== undefined && OS_PURPOSES.has(p.primaryPackagePurpose))
-    ) {
-      const name = cleanText(cutText(p.name ?? '', SBOM_BOUNDS.name)).trim();
-      if (name !== '') {
-        operatingSystems.push({
-          name,
-          version: cleanText(cutText(p.versionInfo ?? '', SBOM_BOUNDS.version)).trim(),
-        });
-      }
-      continue;
-    }
-    const text = purlTextOf(p);
-    if (text === '') {
-      noPurl++;
-      continue;
-    }
-    const purl = parsePurl(text);
-    if (purl === null) {
-      noPurl++;
-      if (invalidPurls.length < NAMED_INVALID_PURLS) {
-        invalidPurls.push(cutText(cleanText(text), 200));
-      }
-      continue;
-    }
-    components.push({
-      purl,
-      path: '',
-      licenses: licensesOf(p),
-      direct:
-        subjectId === undefined || graph.dependsOn.size === 0
-          ? null
-          : (subjectDepends?.has(p.SPDXID) ?? false),
-      source: sourceOf(p),
-    });
-  }
+  const subject = subjectOf(subjectId === undefined ? undefined : byId.get(subjectId));
+  const contents = contentsOf(packages, subjectId, directness(subjectId, graph));
 
   return {
     format: `SPDX ${spdxVersion.slice('SPDX-'.length)}`,
     subject,
-    operatingSystems,
-    components,
-    skipped: { noPurl, unsupportedType: 0 },
-    invalidPurls,
+    operatingSystems: contents.operatingSystems,
+    components: contents.components,
+    skipped: { noPurl: contents.noPurl, unsupportedType: 0 },
+    invalidPurls: contents.invalidPurls,
     tooDeep: 0,
   };
 }
