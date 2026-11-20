@@ -837,6 +837,11 @@ describe('VulnerabilitiesPage', () => {
       input.dispatchEvent(new Event('change'));
       await settle();
       root.querySelector('q-sbom-upload-dialog form')!.dispatchEvent(new Event('submit'));
+      // The dialog gzips the file through a real CompressionStream, which can take longer than a
+      // few ticks under CI load: wait for the result, for at most a second.
+      for (let i = 0; i < 100 && !root.querySelector('.sbom-result'); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
       await settle();
     }
 
