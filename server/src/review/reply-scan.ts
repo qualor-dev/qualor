@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import type { ReviewJobDeps } from './job';
 import {
   queueGitHubAnswers,
@@ -99,10 +100,17 @@ class ScanFlow extends JobSteps {
       return;
     }
     const ids = { projectId: target.project.id, branchId };
-    const queued =
-      found.provider === 'gitlab'
-        ? await queueGitLabAnswers(db, ids, window, found.botId, found.discussions)
-        : await queueGitHubAnswers(db, ids, window, found.login, found);
+    let queued: number;
+    switch (found.provider) {
+      case 'gitlab':
+        queued = await queueGitLabAnswers(db, ids, window, found.botId, found.discussions);
+        break;
+      case 'github':
+        queued = await queueGitHubAnswers(db, ids, window, found.login, found);
+        break;
+      default:
+        return assertNever(found, 'provider');
+    }
     if (queued > 0) logger.info({ branchId, queued }, 'AI reply scan queued answers');
   }
 
@@ -125,9 +133,14 @@ class ScanFlow extends JobSteps {
     const { connection } = target;
     const found = providerClientOf(this.deps, target);
     if (connection === null || found === null) return null;
-    return found.provider === 'github'
-      ? githubScanSide(connection.id, found.client, found.repo, found.number)
-      : gitlabScanSide(connection.id, found.client, found.ref, found.iid);
+    switch (found.provider) {
+      case 'github':
+        return githubScanSide(connection.id, found.client, found.repo, found.number);
+      case 'gitlab':
+        return gitlabScanSide(connection.id, found.client, found.ref, found.iid);
+      default:
+        return assertNever(found, 'provider');
+    }
   }
 }
 

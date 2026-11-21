@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import type { WorkerLogger } from '../queue/worker';
 import { gitlabClientFor, type ScmConnectionRow } from '../scm/connections';
 import {
@@ -143,15 +144,26 @@ export function providerClientOf(
 ): ProviderClient | null {
   const { connection, project, branch } = target;
   if (connection === null || project.scmProjectRef === null) return null;
-  if (connection.provider === 'github') {
-    const repo = parseRepoRef(project.scmProjectRef);
-    const found = githubClientFor(connection, deps.scm, deps.scmRuntime);
-    if (repo === null || 'problem' in found || !GITHUB_PR_NUMBER.test(branch.name)) return null;
-    return { provider: 'github', client: found.client, repo, number: branch.name };
+  switch (connection.provider) {
+    case 'github': {
+      const repo = parseRepoRef(project.scmProjectRef);
+      const found = githubClientFor(connection, deps.scm, deps.scmRuntime);
+      if (repo === null || 'problem' in found || !GITHUB_PR_NUMBER.test(branch.name)) return null;
+      return { provider: 'github', client: found.client, repo, number: branch.name };
+    }
+    case 'gitlab': {
+      const found = gitlabClientFor(connection, deps.scm);
+      if ('problem' in found || !GITLAB_MR_IID.test(branch.name)) return null;
+      return {
+        provider: 'gitlab',
+        client: found.client,
+        ref: project.scmProjectRef,
+        iid: branch.name,
+      };
+    }
+    default:
+      return assertNever(connection.provider, 'provider');
   }
-  const found = gitlabClientFor(connection, deps.scm);
-  if ('problem' in found || !GITLAB_MR_IID.test(branch.name)) return null;
-  return { provider: 'gitlab', client: found.client, ref: project.scmProjectRef, iid: branch.name };
 }
 
 /**

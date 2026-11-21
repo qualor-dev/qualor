@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { assertNever } from '@qualor/shared';
 import type { Db, Executor } from '../db/client';
 import {
   analyses,
@@ -181,20 +182,26 @@ export async function decorateRun(db: Executor, run: RunRef, logger: Logger): Pr
     return;
   }
   const target = { analysisId: run.analysisId, branchId: run.branchId };
-  if (stored.context.provider === 'gitlab') {
-    await enqueueLatestDecoration(db, { ...target, gitlab: stored.context.gitlab });
-    return;
+  switch (stored.context.provider) {
+    case 'gitlab':
+      await enqueueLatestDecoration(db, { ...target, gitlab: stored.context.gitlab });
+      return;
+    case 'github': {
+      const github = stored.context.github ?? null;
+      if (github === null) {
+        // Without the GitHub context, which revision was checked out is unknown: fail closed.
+        logger.warn(
+          where,
+          'AI review ended but not decorated: the analysis has no stored GitHub Actions context',
+        );
+        return;
+      }
+      await enqueueLatestDecoration(db, { ...target, gitlab: null, github });
+      return;
+    }
+    default:
+      return assertNever(stored.context.provider, 'provider');
   }
-  const github = stored.context.github ?? null;
-  if (github === null) {
-    // Without the GitHub context, which revision was checked out is unknown: fail closed.
-    logger.warn(
-      where,
-      'AI review ended but not decorated: the analysis has no stored GitHub Actions context',
-    );
-    return;
-  }
-  await enqueueLatestDecoration(db, { ...target, gitlab: null, github });
 }
 
 /**

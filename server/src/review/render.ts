@@ -1,4 +1,4 @@
-import { redactText, suggestionLineProblem } from '@qualor/shared';
+import { redactText, suggestionLineProblem, type ScmProvider } from '@qualor/shared';
 import type { AiCategory, ReviewFailureReason, ReviewSkipReason } from '../db/schema';
 import {
   codeSpan,
@@ -133,7 +133,6 @@ export function withUnplacedFindings(
 
 // ─── Qualor's fixed text ─────────────────────────────────────────────────────
 
-type Provider = 'gitlab' | 'github';
 /** The words that differ between GitLab and GitHub. */
 interface Words {
   request: string;
@@ -141,7 +140,7 @@ interface Words {
   /** What a person's note in the request is called: the note that gives a command. */
   note: string;
 }
-const WORDS: Record<Provider, Words> = {
+const WORDS: Record<ScmProvider, Words> = {
   gitlab: { request: 'merge request', run: 'pipeline', note: 'note' },
   github: { request: 'pull request', run: 'workflow run', note: 'comment' },
 };
@@ -499,10 +498,10 @@ function doneSection(state: Done, words: Words, maxBytes: number): string[] {
  */
 export function aiSummarySection(
   state: ReviewSummaryState,
-  provider: Provider,
+  provider: ScmProvider,
   maxBytes: number,
 ): string[] {
-  const words = provider === 'github' ? WORDS.github : WORDS.gitlab;
+  const words = WORDS[provider];
   let lines: string[];
   switch (state.kind) {
     case 'pending':
@@ -556,7 +555,7 @@ const NEEDS_VALIDATION =
 
 /** What the first note of a finding's thread is made of. */
 export interface AiThreadInput {
-  provider: Provider;
+  provider: ScmProvider;
   issueId: string;
   /** The issue's severity: blocker and high read as high, low and info as low. */
   severity: string;
@@ -576,6 +575,12 @@ export interface AiThreadInput {
   issueUrl: string | null;
 }
 
+/** The opening line of a suggestion block on each provider; `extraLines` follow the first line. */
+const SUGGESTION_FENCE: Record<ScmProvider, (extraLines: number) => string> = {
+  gitlab: (extraLines) => `\`\`\`suggestion:-0+${extraLines}`,
+  github: () => '```suggestion',
+};
+
 /**
  * The suggestion block, GitLab's `suggestion:-0+N` (the line the thread is on and the N below it) or
  * GitHub's, or null when the suggestion is none a person should be offered: a range that is no
@@ -593,8 +598,7 @@ function suggestionBlock(input: AiThreadInput): string[] | null {
   if (lines.length > ANSWER_LIMITS.suggestionLines) return null;
   if (lines.some((line) => suggestionLineProblem(line) !== null)) return null;
   if (redactText(lines.join('\n')).count > 0) return null;
-  const fence =
-    input.provider === 'gitlab' ? `\`\`\`suggestion:-0+${endLine - startLine}` : '```suggestion';
+  const fence = SUGGESTION_FENCE[input.provider](endLine - startLine);
   return [fence, ...lines, '```'];
 }
 

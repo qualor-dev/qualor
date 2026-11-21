@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import { readLlmSettings } from '../llm/settings';
 import { handleCommand, NothingToReview, type CommandDecision } from './commands';
 import type { ReviewJobDeps } from './job';
@@ -141,19 +142,30 @@ class CommandFlow extends JobSteps {
     const found = providerClientOf(this.deps, target);
     if (found === null) return 'unusable';
     const { logger } = this.deps;
-    if (found.provider === 'github') {
-      return githubCommandSide(connection.id, found.client, found.repo, found.number, row, logger);
+    switch (found.provider) {
+      case 'github':
+        return githubCommandSide(
+          connection.id,
+          found.client,
+          found.repo,
+          found.number,
+          row,
+          logger,
+        );
+      case 'gitlab':
+        if (row.threadId === null) return 'unusable';
+        return gitlabCommandSide(
+          connection.id,
+          found.client,
+          found.ref,
+          found.iid,
+          row,
+          row.threadId,
+          logger,
+        );
+      default:
+        return assertNever(found, 'provider');
     }
-    if (row.threadId === null) return 'unusable';
-    return gitlabCommandSide(
-      connection.id,
-      found.client,
-      found.ref,
-      found.iid,
-      row,
-      row.threadId,
-      logger,
-    );
   }
 }
 

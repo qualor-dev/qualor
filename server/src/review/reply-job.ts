@@ -1,4 +1,5 @@
 import { and, desc, eq, gt, inArray, isNotNull, lt, max, or } from 'drizzle-orm';
+import { assertNever } from '@qualor/shared';
 import { SYSTEM_ACTOR } from '../audit/recorder';
 import type { Db } from '../db/client';
 import {
@@ -636,9 +637,14 @@ class ReplyJob extends JobSteps {
     const found = providerClientOf(this.deps, target);
     if (found === null) return 'unusable';
     const { logger } = this.deps;
-    return found.provider === 'github'
-      ? githubSide(connection.id, found.client, found.repo, found.number, row, logger)
-      : gitlabSide(connection.id, found.client, found.ref, found.iid, row, logger);
+    switch (found.provider) {
+      case 'github':
+        return githubSide(connection.id, found.client, found.repo, found.number, row, logger);
+      case 'gitlab':
+        return gitlabSide(connection.id, found.client, found.ref, found.iid, row, logger);
+      default:
+        return assertNever(found, 'provider');
+    }
   }
 
   /**

@@ -15,6 +15,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
+import type { ScmProvider } from '@qualor/shared';
 import type { Db, Executor } from '../db/client';
 import { LOCKS } from '../db/locks';
 import {
@@ -163,7 +164,7 @@ export const REPLY_MAX_AGE_DAYS = 30;
 export interface ReplyContext {
   projectId: string;
   branchId: string;
-  provider: 'gitlab' | 'github';
+  provider: ScmProvider;
 }
 
 /**
