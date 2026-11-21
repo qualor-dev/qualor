@@ -34,8 +34,12 @@ const GITLAB_CI_FILE = '.gitlab-ci.yml';
 /** The name of the secret or CI/CD variable the token goes into: a name, not text to translate. */
 const SECRET_NAME = 'QUALOR_TOKEN';
 
-/** The provider a snippet is for, told by its first line; null for any other text. */
-function providerOfSnippet(snippet: string): Provider | null {
+/**
+ * The provider a snippet is for, told by its first line; null for any other text. It mirrors the
+ * snippets of server/src/onboarding/ci-templates.ts: GitHub's workflow starts `name: qualor`,
+ * GitLab's start `include:` or `qualor:`.
+ */
+export function providerOfSnippet(snippet: string): Provider | null {
   if (/^name: /.test(snippet)) return 'github';
   if (/^(include|qualor):/.test(snippet)) return 'gitlab';
   return null;

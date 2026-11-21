@@ -220,7 +220,8 @@
                       each project.</ng-container
                     >
                   } @else {
-                    @switch (chosen()?.provider) {
+                    @let provider = chosen()?.provider;
+                    @switch (provider) {
                       @case ('gitlab') {
                         <ng-container i18n="@@addRepos.ciSetup.gitlab"
                           >Qualor opens a merge request that adds the Qualor job. Your pipelines
@@ -235,6 +236,8 @@
                           Actions secret QUALOR_TOKEN right away.</ng-container
                         >
                       }
+                      @case (undefined) {}
+                      @default never;
                     }
                   }
                 </span>

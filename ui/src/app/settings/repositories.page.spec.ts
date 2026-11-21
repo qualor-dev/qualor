@@ -322,6 +322,8 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
     expect(ref.placeholder).toBe('');
     expect(root.querySelector('#ref-hint-p1')?.textContent?.trim()).toBe('');
     expect(root.querySelector('label[for="ref-p1"]')?.textContent).not.toMatch(/GitLab|GitHub/);
+    // Check has nothing to test against: it is disabled, not a silent no-op.
+    expect(button(root, 'Check').getAttribute('aria-disabled')).toBe('true');
   });
 
   it('points to GitLab and GitHub while the organization has no connection', async () => {

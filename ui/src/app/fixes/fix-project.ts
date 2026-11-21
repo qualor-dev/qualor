@@ -8,8 +8,8 @@ import {
   type WritableSignal,
 } from '@angular/core';
 import { Api, ok } from '../api/api';
-import type { ScmProvider } from '../shared/scm-provider';
 import type { FixSettingsAnswer } from '../api/types';
+import type { ScmProvider } from '../shared/scm-provider';
 
 /** What a finding needs to know of its project's fix MRs (spec §6.9). */
 export interface FixProjectView {

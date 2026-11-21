@@ -91,7 +91,8 @@
                 }
               </td>
               <td class="ref-cell">
-                @switch (providerOf(p)) {
+                @let provider = providerOf(p);
+                @switch (provider) {
                   @case ('github') {
                     <label
                       class="visually-hidden"
@@ -106,7 +107,7 @@
                       GitLab project of {{ p.name }}
                     </label>
                   }
-                  @default {
+                  @case (null) {
                     <label
                       class="visually-hidden"
                       [attr.for]="'ref-' + p.id"
@@ -115,6 +116,7 @@
                       Repository of {{ p.name }}
                     </label>
                   }
+                  @default never;
                 }
                 <input
                   [id]="'ref-' + p.id"
@@ -133,7 +135,7 @@
                   [disabled]="!canManage()"
                   (input)="setRef(p, $event)"
                 />
-                @switch (providerOf(p)) {
+                @switch (provider) {
                   @case ('github') {
                     <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
                       >owner/repo</span
@@ -144,9 +146,10 @@
                       >group/project or its id</span
                     >
                   }
-                  @default {
+                  @case (null) {
                     <span [id]="'ref-hint-' + p.id" class="hint"></span>
                   }
+                  @default never;
                 }
                 @if (refErrors()[p.id]; as message) {
                   <span [id]="'ref-error-' + p.id" class="field-error" role="alert">{{
@@ -174,7 +177,9 @@
                     type="button"
                     class="btn-quiet"
                     [attr.aria-disabled]="
-                      busy() || !draft(p).connectionId || !draft(p).ref.trim() ? true : null
+                      busy() || !draft(p).connectionId || !draft(p).ref.trim() || provider === null
+                        ? true
+                        : null
                     "
                     (click)="check(p)"
                     i18n="@@gitlab.check"

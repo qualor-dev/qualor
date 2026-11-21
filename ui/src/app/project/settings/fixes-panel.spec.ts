@@ -259,6 +259,7 @@ describe('ProjectFixesPanel', () => {
     const neither = (await render()).textContent ?? '';
     expect(neither).not.toContain('api scope');
     expect(neither).not.toContain('contents: write');
+    expect(neither).not.toContain("What the connection's token needs");
   });
 
   it('shows a viewer the settings read-only', async () => {

@@ -153,25 +153,31 @@
       </div>
     </div>
 
-    <div class="setting-row" data-line="token">
-      <div class="setting-text">
-        <span class="setting-name" i18n="@@fix.panel.token">What the connection's token needs</span>
-      </div>
-      <div class="setting-field">
-        @switch (needs()) {
-          @case ('gitlab') {
-            <p i18n="@@fix.panel.token.gitlab">
-              GitLab: the api scope, and the Developer role or higher on the project.
-            </p>
+    @let provider = needs();
+    @if (provider !== null) {
+      <div class="setting-row" data-line="token">
+        <div class="setting-text">
+          <span class="setting-name" i18n="@@fix.panel.token"
+            >What the connection's token needs</span
+          >
+        </div>
+        <div class="setting-field">
+          @switch (provider) {
+            @case ('gitlab') {
+              <p i18n="@@fix.panel.token.gitlab">
+                GitLab: the api scope, and the Developer role or higher on the project.
+              </p>
+            }
+            @case ('github') {
+              <p i18n="@@fix.panel.token.github">
+                GitHub: the App's permissions contents: write and pull_requests: write.
+              </p>
+            }
+            @default never;
           }
-          @case ('github') {
-            <p i18n="@@fix.panel.token.github">
-              GitHub: the App's permissions contents: write and pull_requests: write.
-            </p>
-          }
-        }
+        </div>
       </div>
-    </div>
+    }
 
     @if (editable()) {
       <div class="setting-actions">
