@@ -83,7 +83,7 @@ Everything outside `enterprise/` is MIT.
 |---|---|---|---|
 | Community | free, no key | the community edition (MIT), including all four roles and project access, with no limit on lines of code, users, projects or organisations | the community |
 | Business | $4,900 a year | single sign-on (OIDC, SAML 2.0) with one enabled connection at a time, the audit log with its JSON Lines export, the support bundle, the dependency licence policy, exploited vulnerabilities and exploit probability, vulnerability alerts, and SBOM and VEX export | email |
-| Enterprise | $12,000 a year | everything in Business, plus SCIM 2.0 provisioning, streaming the audit log to a SIEM, several identity providers at once (up to 10 connections), compliance reports, portfolio reports and automatic fix suggestions | SLA: email only, first reply within 1 business day for critical issues; no phone, no 24x7 |
+| Enterprise | $12,000 a year | everything in Business, plus SCIM 2.0 provisioning, streaming the audit log to a SIEM, several identity providers at once (up to 10 connections), compliance reports, portfolio reports and automatic fix suggestions | SLA: tickets in the customer portal or email, first reply within 1 business day for critical issues; no phone, no 24x7 |
 
 Prices are per server instance and year, in US dollars. They never depend on lines of code or on
 the number of users. Both plans use the same kind of key: a plan is the set of features its key
