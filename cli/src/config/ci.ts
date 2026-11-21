@@ -4,10 +4,11 @@ import {
   GITLAB_ID,
   GITLAB_MR_EVENT_TYPES,
   type GitLabMergeRequestEventType,
+  type ScmProvider,
 } from '@qualor/shared';
 import { z } from 'zod';
 
-export type CiProvider = 'gitlab' | 'github' | 'none';
+export type CiProvider = ScmProvider | 'none';
 
 /** CI values of config.md §4 (read-only, never required). */
 export interface CiInfo {

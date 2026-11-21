@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  assertNever,
   engineMapping,
   REPORT_BOUNDS,
   type DependencyIgnore,
@@ -618,12 +619,21 @@ export function incompleteSecretScans(
 }
 
 /** What CI lacks when it does not name the merge request's head commit, for the warning. */
-function unnamedHead(ci: Settings['ci']): string {
-  if (ci.provider === 'github') return "the event's pull_request.head.sha is not a commit id";
-  const merged = ci.gitlab?.mergeRequestEventType;
-  return merged === 'merged_result' || merged === 'merge_train'
-    ? `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA is not a commit id in this ${merged.replace('_', ' ')} pipeline`
-    : 'CI_COMMIT_SHA is not a commit id';
+export function unnamedHead(ci: Settings['ci']): string {
+  switch (ci.provider) {
+    case 'github':
+      return "the event's pull_request.head.sha is not a commit id";
+    case 'gitlab':
+    case 'none': {
+      // Outside CI (--mr flags) the warning keeps GitLab's wording, as it always did.
+      const merged = ci.gitlab?.mergeRequestEventType;
+      return merged === 'merged_result' || merged === 'merge_train'
+        ? `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA is not a commit id in this ${merged.replace('_', ' ')} pipeline`
+        : 'CI_COMMIT_SHA is not a commit id';
+    }
+    default:
+      return assertNever(ci.provider, 'CI provider');
+  }
 }
 
 /** Why the snapshot could not be built, for its warning. */

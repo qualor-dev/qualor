@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { validateRepoPath } from '../paths';
+import { SCM_PROVIDERS } from '../scm';
 import {
   BUILTIN_ENGINES,
   ENGINE_ID_PATTERN,
@@ -193,7 +194,7 @@ export type GitHubCheckout = (typeof GITHUB_CHECKOUTS)[number];
 export const GITHUB_ID = /^[0-9]{1,20}$/;
 
 const scm = z.object({
-  provider: z.enum(['gitlab', 'github', 'none']),
+  provider: z.enum([...SCM_PROVIDERS, 'none']),
   revision: gitRevision,
   branch: z.string().min(1).max(255).nullable(),
   mainBranch: z.string().min(1).max(255),

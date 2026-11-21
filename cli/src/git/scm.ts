@@ -346,7 +346,7 @@ function githubContext(
   isPullRequest: boolean,
   headSha: string,
 ): { github?: NonNullable<Report['scm']['github']> } {
-  if (ci.provider !== 'github' || ci.github === null) return {};
+  if (ci.provider !== 'github' || ci.github === null) return {}; // provider-guard: scm.github exists only for GitHub Actions
   const github: NonNullable<Report['scm']['github']> = {
     ...ci.github,
     ...(isPullRequest && ci.pullRequestHead !== null

@@ -41,7 +41,7 @@ import { builtinAnalyzers } from '../analyzers/registry';
 import { trivyJsonToSarif } from '../analyzers/trivy-output';
 import type { Analyzer } from '../analyzers/types';
 import { ANALYZER_OUTPUT_DIR } from '../../test/analyzers';
-import { runScan } from './run';
+import { runScan, unnamedHead } from './run';
 import { resolveVulnerabilityDb } from './vulndb';
 
 const tmp = useTempDirs();
@@ -65,6 +65,20 @@ function scanFlags(argv: string[]): ScanFlags {
 function readReport(file: string): Report {
   return reportSchema.parse(JSON.parse(gunzipSync(readFileSync(file)).toString('utf8')));
 }
+
+describe('unnamedHead', () => {
+  const ci = (provider: 'gitlab' | 'github' | 'none', gitlab: object | null = null) =>
+    ({ provider, gitlab }) as never;
+
+  it("names GitHub's variables for github, GitLab's for gitlab, and the --mr flags outside CI", () => {
+    expect(unnamedHead(ci('github'))).toBe("the event's pull_request.head.sha is not a commit id");
+    expect(unnamedHead(ci('gitlab', { mergeRequestEventType: 'merge_train' }))).toBe(
+      'CI_MERGE_REQUEST_SOURCE_BRANCH_SHA is not a commit id in this merge train pipeline',
+    );
+    expect(unnamedHead(ci('gitlab'))).toBe('CI_COMMIT_SHA is not a commit id');
+    expect(unnamedHead(ci('none'))).toBe('CI_COMMIT_SHA is not a commit id');
+  });
+});
 
 describe('qualor scan --dry-run', () => {
   it(
