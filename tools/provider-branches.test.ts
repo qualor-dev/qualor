@@ -6,16 +6,13 @@ import { SCM_PROVIDERS } from '../packages/shared/src/scm';
 /**
  * Guard against two-way provider branches. Every comparison of a value with 'gitlab' or 'github'
  * must either move to an exhaustive switch (assertNever default) or a Record<ScmProvider, T>, or
- * carry a `provider-guard: <reason>` marker. BASELINE lists the comparisons still to convert, per
- * file; later tasks lower it, and the test refuses a baseline entry that is already clean.
+ * carry a `provider-guard: <reason>` marker. No file is exempt.
  */
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const DIRS = ['server/src', 'cli/src', 'packages/shared/src', 'ui/src', 'enterprise/src'];
 const SKIP = /\.(test|spec|db\.test)\.ts$|^ui\/src\/app\/api\/schema\.ts$/;
 const COMPARISON =
   /(?:[!=]==|<>|!=)\s*['"](?:gitlab|github)['"]|['"](?:gitlab|github)['"]\s*[!=]==/;
-
-const BASELINE: Record<string, number> = {};
 
 function walk(dir: string, out: string[]): void {
   for (const name of readdirSync(dir)) {
@@ -69,16 +66,8 @@ function providerSwitches(text: string): string[] {
 describe('provider branches', () => {
   const current = counts();
 
-  it('no file has more unmarked provider comparisons than its baseline', () => {
-    for (const [file, n] of Object.entries(current)) {
-      expect(n, file).toBeLessThanOrEqual(BASELINE[file] ?? 0);
-    }
-  });
-
-  it('the baseline holds no file that is already clean', () => {
-    for (const [file, n] of Object.entries(BASELINE)) {
-      expect(current[file] ?? 0, file).toBe(n);
-    }
+  it('no file has an unmarked provider comparison', () => {
+    expect(current).toEqual({});
   });
 
   it('every switch on a provider ends in assertNever', () => {
