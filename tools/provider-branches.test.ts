@@ -16,10 +16,6 @@ const COMPARISON =
   /(?:[!=]==|<>|!=)\s*['"](?:gitlab|github)['"]|['"](?:gitlab|github)['"]\s*[!=]==/;
 
 const BASELINE: Record<string, number> = {
-  'server/src/fixes/body.ts': 2,
-  'server/src/fixes/repository.ts': 1,
-  'server/src/llm/post.ts': 5,
-  'server/src/llm/render.ts': 1,
   'server/src/onboarding/ci-setup.ts': 5,
   'server/src/onboarding/setup-run.ts': 2,
   'server/src/routes/github-webhooks.ts': 3,

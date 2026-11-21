@@ -1,3 +1,4 @@
+import type { ScmProvider } from '@qualor/shared';
 import { codeSpan, MAX_MESSAGE_CHARS, qualorLink } from '../scm/markdown';
 
 /**
@@ -26,8 +27,14 @@ export function aiFixMarker(issueId: string, requestId: string): string {
   return `<!-- qualor:ai-fix ${issueId} ${requestId} -->`;
 }
 
+/** The opening line of a suggestion block on each provider; `extraLines` follow the first line. */
+const SUGGESTION_FENCE: Record<ScmProvider, (extraLines: number) => string> = {
+  gitlab: (extraLines) => `\`\`\`suggestion:-0+${extraLines}`,
+  github: () => '```suggestion',
+};
+
 export interface FixSuggestionInput {
-  provider: 'gitlab' | 'github';
+  provider: ScmProvider;
   issueId: string;
   requestId: string;
   model: string;
@@ -53,10 +60,7 @@ export interface FixSuggestionInput {
  */
 export function fixSuggestionBody(input: FixSuggestionInput): string {
   // GitLab: `-0+N` covers the commented line and the N below it (the range startLine..endLine).
-  const fence =
-    input.provider === 'gitlab'
-      ? `\`\`\`suggestion:-0+${input.endLine - input.startLine}`
-      : '```suggestion';
+  const fence = SUGGESTION_FENCE[input.provider](input.endLine - input.startLine);
   const head = [
     aiFixMarker(input.issueId, input.requestId),
     `**AI-generated fix suggestion** from Qualor (model ${codeSpan(input.model)}). It may be wrong: review it before applying.`,

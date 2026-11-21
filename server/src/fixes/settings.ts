@@ -1,3 +1,4 @@
+import type { ScmProvider } from '@qualor/shared';
 import { and, count, eq, inArray } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { dependencyFixes, projectFixSettings, scmConnections, type FixState } from '../db/schema';
@@ -30,7 +31,7 @@ export async function fixSettingsOf(
 /** What a request, a claim and an automatic pass need besides the project's own switch (spec §6.2). */
 export interface FixPreconditions {
   scmBound: boolean;
-  provider: 'gitlab' | 'github' | null;
+  provider: ScmProvider | null;
   fixMrsAllowed: boolean;
   monitoringOn: boolean;
   /** When a CLI job last claimed on this project; null before the first claim. */

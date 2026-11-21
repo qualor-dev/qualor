@@ -1,3 +1,4 @@
+import { assertNever, type ScmProvider } from '@qualor/shared';
 import type { FixLockfileAdditions, FixPreparedValue, FixTargetValue } from '../db/schema';
 import {
   codeSpan,
@@ -19,8 +20,6 @@ import type { VulnerabilitySeverity } from '../vulnerabilities/order';
  * cell has its pipes escaped ({@link cell}).
  */
 
-export type FixProvider = 'gitlab' | 'github';
-
 /** One vulnerability as the body lists it: the package's main rows of that id (§6.7). */
 export interface FixBodyVulnerability {
   id: string;
@@ -30,7 +29,7 @@ export interface FixBodyVulnerability {
 }
 
 export interface FixBodyInput {
-  provider: FixProvider;
+  provider: ScmProvider;
   /** One per vulnerable installed version (B3), as the upload named them. */
   targets: FixTargetValue[];
   /** The vulnerabilities the MR fixes. */
@@ -62,7 +61,8 @@ export const MAX_BODY_CHARS = 60_000;
 /** A version as a title or a body shows it, at most. */
 const VERSION_CHARS = 64;
 
-const changeWord = (provider: FixProvider): string => (provider === 'github' ? 'PR' : 'MR');
+const CHANGE_WORD: Record<ScmProvider, 'MR' | 'PR'> = { gitlab: 'MR', github: 'PR' };
+const changeWord = (provider: ScmProvider): string => CHANGE_WORD[provider];
 
 const version = (value: string): string => codeSpan(value, VERSION_CHARS);
 const path = (value: string): string => codeSpan(value, MAX_PATH_CHARS);
@@ -81,6 +81,20 @@ function titleSpan(value: string, max: number): string {
   return span;
 }
 
+/** How a title shows a value: GitLab in a code span, GitHub and the commit message (no provider) plain. */
+function titleShower(provider: ScmProvider | undefined): (value: string, max: number) => string {
+  const plain = (value: string, max: number): string => plainValue(value, max);
+  if (provider === undefined) return plain;
+  switch (provider) {
+    case 'gitlab':
+      return titleSpan;
+    case 'github':
+      return plain;
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
+
 /**
  * R30 (amended by rulings FW2, FW2b): `Bump <pkg> from <installed> to <target>`, the commit
  * message and the MR title, one line. The commit message (no `provider`) and a GitHub title are
@@ -91,15 +105,14 @@ export function fixTitle(
   packageName: string,
   installed: string,
   target: string,
-  provider?: FixProvider,
+  provider?: ScmProvider,
 ): string {
-  const shown =
-    provider === 'gitlab' ? titleSpan : (value: string, max: number) => plainValue(value, max);
+  const shown = titleShower(provider);
   return `Bump ${shown(packageName, MAX_VALUE_CHARS)} from ${shown(installed, VERSION_CHARS)} to ${shown(target, VERSION_CHARS)}`;
 }
 
 /** R29: the comment Qualor closes a cancelled fix's MR with ("PR" on GitHub). */
-export function cancelComment(provider: FixProvider): string {
+export function cancelComment(provider: ScmProvider): string {
   return `Qualor closed this ${changeWord(provider)}: a member cancelled the fix in Qualor.`;
 }
 

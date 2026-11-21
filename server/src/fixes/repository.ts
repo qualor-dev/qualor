@@ -1,3 +1,4 @@
+import { assertNever, type ScmProvider } from '@qualor/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { projects, scmConnections } from '../db/schema';
@@ -45,7 +46,7 @@ export interface FixCommitInput {
 }
 
 export interface FixRepository {
-  readonly provider: 'gitlab' | 'github';
+  readonly provider: ScmProvider;
   /** The project's main branch, as Qualor knows it. */
   readonly mainBranch: string;
   /** The head sha of a branch; null when there is no such branch. */
@@ -396,7 +397,12 @@ async function repositoryOf(
   signal: AbortSignal | undefined,
 ): Promise<FixRepository | { problem: FixRepositoryProblem }> {
   const bound = { ...deps, scm: boundTo(deps.scm, signal) };
-  return row.connection.provider === 'github'
-    ? githubRepository(row.connection, bound, row.ref, row.mainBranch)
-    : gitlabRepository(row.connection, bound, row.ref, row.mainBranch);
+  switch (row.connection.provider) {
+    case 'github':
+      return githubRepository(row.connection, bound, row.ref, row.mainBranch);
+    case 'gitlab':
+      return gitlabRepository(row.connection, bound, row.ref, row.mainBranch);
+    default:
+      return assertNever(row.connection.provider, 'provider');
+  }
 }

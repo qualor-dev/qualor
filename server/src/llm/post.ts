@@ -1,4 +1,11 @@
-import { checkFix, fixOutputSchema, type FixResult } from '@qualor/shared';
+import {
+  assertNever,
+  checkFix,
+  fixOutputSchema,
+  SCM_PROVIDERS,
+  type FixResult,
+  type ScmProvider,
+} from '@qualor/shared';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { AuditActorContext, AuditRecorder } from '../audit/recorder';
@@ -43,6 +50,12 @@ import {
   readLlmSettings,
   type StoredLlmSettings,
 } from './settings';
+
+/** The branch name of a merge request analysis on each provider: the request's number. */
+const CHANGE_NUMBER: Record<ScmProvider, RegExp> = {
+  gitlab: GITLAB_MR_IID,
+  github: GITHUB_PR_NUMBER,
+};
 
 /** llm.md §8.2: posting a fix suggestion is a job of its own, run by the `scm` worker. */
 export const AI_FIX_QUEUE = 'scm-ai-fix';
@@ -162,11 +175,11 @@ async function postRefusal(
           .select()
           .from(scmConnections)
           .where(eq(scmConnections.id, project.scmConnectionId));
-  if (!connection || (connection.provider !== 'gitlab' && connection.provider !== 'github')) {
+  if (!connection || !SCM_PROVIDERS.includes(connection.provider)) {
     return { refusal: 'not_mapped' };
   }
-  const number = connection.provider === 'gitlab' ? GITLAB_MR_IID : GITHUB_PR_NUMBER;
-  if (!number.test(branch.name)) return { refusal: 'not_merge_request' };
+  if (!CHANGE_NUMBER[connection.provider].test(branch.name))
+    return { refusal: 'not_merge_request' };
   if (branch.lastAnalysisId === null || issue.lastSeenAnalysisId !== branch.lastAnalysisId) {
     return { refusal: 'not_latest' };
   }
@@ -175,12 +188,18 @@ async function postRefusal(
     .from(analyses)
     .where(eq(analyses.id, branch.lastAnalysisId));
   const stored = readScmContext(analysis?.scmContext);
-  if (
-    stored.kind !== 'ok' ||
-    stored.context.provider !== connection.provider ||
-    (connection.provider === 'github' && stored.context.github?.checkout !== 'head')
-  ) {
+  if (stored.kind !== 'ok' || stored.context.provider !== connection.provider) {
     return { refusal: 'no_scm_context' };
+  }
+  switch (connection.provider) {
+    case 'github':
+      // The suggestion lands on the pull request's head, so the analysis must have checked it out.
+      if (stored.context.github?.checkout !== 'head') return { refusal: 'no_scm_context' };
+      break;
+    case 'gitlab':
+      break;
+    default:
+      return assertNever(connection.provider, 'provider');
   }
   return { ok: true };
 }
@@ -362,7 +381,7 @@ async function loadTarget(
   }
   const marker = aiFixMarker(built.issue.id, row.id);
   const body = fixSuggestionBody({
-    provider: loaded.connection.provider === 'github' ? 'github' : 'gitlab',
+    provider: loaded.connection.provider,
     issueId: built.issue.id,
     requestId: row.id,
     model: row.model,
@@ -483,15 +502,21 @@ async function postToGitHub(
  */
 function posterFor(deps: DecorationDeps, t: Target): (() => Promise<Outcome>) | null {
   const { connection, project } = t.loaded;
-  if (connection.provider === 'github') {
-    const found = githubClientFor(connection, deps.scm, deps.runtime);
-    const repoRef = parseRepoRef(project.scmProjectRef ?? '');
-    if ('problem' in found || repoRef === null) return null;
-    return () => postToGitHub(found.client, repoRef, t);
+  switch (connection.provider) {
+    case 'github': {
+      const found = githubClientFor(connection, deps.scm, deps.runtime);
+      const repoRef = parseRepoRef(project.scmProjectRef ?? '');
+      if ('problem' in found || repoRef === null) return null;
+      return () => postToGitHub(found.client, repoRef, t);
+    }
+    case 'gitlab': {
+      const found = gitlabClientFor(connection, deps.scm);
+      if ('problem' in found) return null;
+      return () => postToGitLab(found.client, t);
+    }
+    default:
+      return assertNever(connection.provider, 'provider');
   }
-  const found = gitlabClientFor(connection, deps.scm);
-  if ('problem' in found) return null;
-  return () => postToGitLab(found.client, t);
 }
 
 /** Records the post's end, only while it is still the queued post this job was started for. */
