@@ -89,7 +89,7 @@ export const githubWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = asyn
         .from(scmConnections)
         .where(eq(scmConnections.id, connectionId));
       const secret =
-        row?.provider === 'github' ? decryptWebhookSecret(key, row.webhookSecretEnc) : null;
+        row?.provider === 'github' ? decryptWebhookSecret(key, row.webhookSecretEnc) : null; // provider-guard: this route serves only its own provider
       if (!row || row.appId === null || secret === null) throw missing();
       // Never the signature of an empty body in place of one that was not read as bytes.
       if (!Buffer.isBuffer(request.body)) {
@@ -169,7 +169,7 @@ async function rerequested(
       .where(and(eq(analyses.id, ids.analysisId), eq(projects.scmConnectionId, connectionId)));
     if (!found || found.branch.lastAnalysisId !== found.analysis.id) return;
     const stored = readScmContext(found.analysis.scmContext);
-    if (stored.kind !== 'ok' || stored.context.provider !== 'github') return;
+    if (stored.kind !== 'ok' || stored.context.provider !== 'github') return; // provider-guard: this route serves only its own provider
     // Ruling C1, as a re-evaluation (gates/reevaluate.ts): without the GitHub context (an older
     // CLI), or without the repository it came from, nothing is re-decorated (fail closed).
     const github = stored.context.github ?? null;
@@ -257,7 +257,7 @@ async function queueScans(
     const stored = readScmContext(scmContext);
     return (
       stored.kind === 'ok' &&
-      stored.context.provider === 'github' &&
+      stored.context.provider === 'github' && // provider-guard: this route serves only its own provider
       stored.context.github?.repositoryId === comment.repositoryId
     );
   });

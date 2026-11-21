@@ -2,6 +2,7 @@
 // existing one adopted) mapped to it, then its CI: a merge request that adds the Qualor job and
 // keeps the project's token in the repository's CI secrets, or a snippet and the token to copy.
 // Every step's outcome is saved as soon as it is known, so a retried job resumes where it stopped.
+import { assertNever, type ScmProvider } from '@qualor/shared';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { canonicalJson } from '../audit/canonical';
@@ -150,14 +151,15 @@ export interface SetupRunDeps {
  * github.com, GHE.com and gitlab.com run the Qualor Action or CI/CD component; GitHub Enterprise
  * Server and self-managed GitLab get the plain job on the scanner image.
  */
-export function ciHostOf(row: {
-  provider: 'github' | 'gitlab';
-  baseUrl: string;
-}): 'cloud' | 'self-hosted' {
-  if (row.provider === 'github') {
-    return githubHostKind(row.baseUrl) === 'cloud' ? 'cloud' : 'self-hosted';
+export function ciHostOf(row: { provider: ScmProvider; baseUrl: string }): 'cloud' | 'self-hosted' {
+  switch (row.provider) {
+    case 'github':
+      return githubHostKind(row.baseUrl) === 'cloud' ? 'cloud' : 'self-hosted';
+    case 'gitlab':
+      return gitlabHostKind(row.baseUrl) === 'gitlab.com' ? 'cloud' : 'self-hosted';
+    default:
+      return assertNever(row.provider, 'provider');
   }
-  return gitlabHostKind(row.baseUrl) === 'gitlab.com' ? 'cloud' : 'self-hosted';
 }
 
 const payloadSchema = z.object({
@@ -201,7 +203,7 @@ function errorOf(code: Exclude<SetupErrorCode, 'permission'>): ItemError {
  */
 function scmErrorOf(
   err: ScmError,
-  provider: 'github' | 'gitlab',
+  provider: ScmProvider,
   stage: 'open' | 'ci_read' | 'change',
 ): ItemError {
   switch (err.kind) {
@@ -518,17 +520,23 @@ async function openRepository(
   ref: string,
   changesCi: boolean,
 ): Promise<OpenedRepository> {
-  if (connection.provider === 'github') {
-    const repo = parseRepoRef(ref);
-    if (repo === null) throw new ScmError('not_found', ERROR_TEXT.not_found);
-    const made = githubClientFor(connection, deps.scm, deps.runtime);
-    if ('problem' in made) throw new UnusableConnection();
-    const found = await made.client.useRepository(repo, changesCi ? { ciSetup: true } : {});
-    return githubRepository(made.client, found);
+  switch (connection.provider) {
+    case 'github': {
+      const repo = parseRepoRef(ref);
+      if (repo === null) throw new ScmError('not_found', ERROR_TEXT.not_found);
+      const made = githubClientFor(connection, deps.scm, deps.runtime);
+      if ('problem' in made) throw new UnusableConnection();
+      const found = await made.client.useRepository(repo, changesCi ? { ciSetup: true } : {});
+      return githubRepository(made.client, found);
+    }
+    case 'gitlab': {
+      const made = gitlabClientFor(connection, deps.scm);
+      if ('problem' in made) throw new UnusableConnection();
+      return gitlabRepository(made.client, await made.client.project(ref));
+    }
+    default:
+      return assertNever(connection.provider, 'provider');
   }
-  const made = gitlabClientFor(connection, deps.scm);
-  if ('problem' in made) throw new UnusableConnection();
-  return gitlabRepository(made.client, await made.client.project(ref));
 }
 
 // ─── The project ───────────────────────────────────────────────────────────────────────────

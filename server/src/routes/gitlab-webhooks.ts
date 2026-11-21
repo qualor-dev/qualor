@@ -87,7 +87,7 @@ export const gitlabWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = asyn
         .from(scmConnections)
         .where(eq(scmConnections.id, connectionId));
       const secret =
-        row?.provider === 'gitlab' ? decryptWebhookSecret(key, row.webhookSecretEnc) : null;
+        row?.provider === 'gitlab' ? decryptWebhookSecret(key, row.webhookSecretEnc) : null; // provider-guard: this route serves only its own provider
       if (!row || secret === null) throw missing();
       if (!Buffer.isBuffer(request.body)) {
         throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', 'The body must be JSON');

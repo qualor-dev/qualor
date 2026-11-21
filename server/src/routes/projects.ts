@@ -1,3 +1,4 @@
+import type { ScmProvider } from '@qualor/shared';
 import { and, asc, eq, gt, ilike, inArray, isNull, or } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -309,8 +310,6 @@ export async function projectDtos(
     };
   });
 }
-
-type ScmProvider = 'gitlab' | 'github';
 
 /** The fields a project PATCH may send. */
 interface ProjectPatch {

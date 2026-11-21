@@ -2,6 +2,7 @@ import {
   ENGINE_ID_PATTERN,
   LICENSE_GROUPS,
   RULE_SCOPES,
+  SCM_PROVIDERS,
   SEVERITIES,
   type LicenseGroupId,
 } from '@qualor/shared';
@@ -223,7 +224,7 @@ const condition = z.strictObject({
 });
 const profileRef = z.strictObject({ name: str, language: z.string().max(32) });
 const empty = z.strictObject({});
-const provider = z.enum(['gitlab', 'github']);
+const provider = z.enum(SCM_PROVIDERS);
 const webhookRef = z.strictObject({
   origin: url,
   projectId: nullableId,

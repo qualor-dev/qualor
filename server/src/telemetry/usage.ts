@@ -1,3 +1,4 @@
+import { SCM_PROVIDERS, type ScmProvider } from '@qualor/shared';
 import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { readLicensePolicies } from '../licenses/settings';
@@ -28,14 +29,59 @@ export interface UsageBlocks {
   /** The organisations with a dependency licence policy. */
   licensePolicyOrgs: number;
   /** Analyses of merge requests, by the SCM provider the report named. */
-  mergeRequests30d: { gitlab: number; github: number };
+  mergeRequests30d: Record<ScmProvider, number>;
   /** Analyses by the CI system whose context they carried; `other` carried neither. */
-  ci: { gitlab: number; github: number; other: number };
+  ci: Record<ScmProvider | 'other', number>;
   /** The booleans of `features`. */
   flags: { autoFix: boolean; mcp: boolean; chat: boolean; email: boolean; licensePolicy: boolean };
 }
 
 const MAIL_TOKENS: readonly string[] = MAIL_KINDS;
+
+/** Whether the analysis's SCM context carries the provider's own block. */
+const carries = (p: ScmProvider): SQL =>
+  sql`coalesce(scm_context -> ${p}::text, 'null'::jsonb) <> 'null'::jsonb`;
+
+/**
+ * The counts of the analyses of the last 30 days, one column per provider of SCM_PROVIDERS:
+ * `mr_<provider>` (merge request analyses the report named for that provider) and `ci_<provider>`
+ * (analyses whose context carries that provider's block, the first provider in the list winning
+ * when several do), and `ci_other` (analyses that carry none of them). The column names come from
+ * the constant list, never from input.
+ */
+function scmCountsQuery(): SQL {
+  const columns: SQL[] = [];
+  SCM_PROVIDERS.forEach((p, i) => {
+    columns.push(sql`count(*) FILTER (
+                   WHERE scm_context ->> 'provider' = ${p}::text
+                     AND scm_context ->> 'mergeRequestId' IS NOT NULL
+                 ) AS ${sql.raw(`mr_${p}`)}`);
+    const earlier = SCM_PROVIDERS.slice(0, i).map((q) => sql`NOT (${carries(q)})`);
+    columns.push(sql`count(*) FILTER (
+                   WHERE ${sql.join([carries(p), ...earlier], sql` AND `)}
+                 ) AS ${sql.raw(`ci_${p}`)}`);
+  });
+  const none = SCM_PROVIDERS.map((p) => sql`NOT (${carries(p)})`);
+  columns.push(sql`count(*) FILTER (WHERE ${sql.join(none, sql` AND `)}) AS ci_other`);
+  return sql`
+          SELECT ${sql.join(
+            columns,
+            sql`,
+                 `,
+          )}
+            FROM analyses
+           WHERE queued_at > now() - interval '30 days'`;
+}
+
+/** The counts of {@link scmCountsQuery} for one provider, in the report's shape. */
+function perProvider(
+  counts: Record<string, number>,
+  prefix: 'mr' | 'ci',
+): Record<ScmProvider, number> {
+  const out = {} as Record<ScmProvider, number>;
+  for (const p of SCM_PROVIDERS) out[p] = counts[`${prefix}_${p}`] ?? 0;
+  return out;
+}
 
 /** The one row of an aggregate query, each of its counts a number. */
 async function row<K extends string>(db: Db, query: SQL): Promise<Record<K, number>> {
@@ -98,30 +144,7 @@ export async function collectUsage(
                    WHERE action = 'issue.statuses_imported' AND outcome = 'success'
                      AND created_at > now() - interval '30 days') AS sonar`,
       ),
-      row<'gitlab_mr' | 'github_mr' | 'gitlab' | 'github' | 'other'>(
-        db,
-        sql`
-          SELECT count(*) FILTER (
-                   WHERE scm_context ->> 'provider' = 'gitlab'
-                     AND scm_context ->> 'mergeRequestId' IS NOT NULL
-                 ) AS gitlab_mr,
-                 count(*) FILTER (
-                   WHERE scm_context ->> 'provider' = 'github'
-                     AND scm_context ->> 'mergeRequestId' IS NOT NULL
-                 ) AS github_mr,
-                 count(*) FILTER (WHERE scm_context -> 'gitlab' IS NOT NULL
-                   AND scm_context -> 'gitlab' <> 'null'::jsonb) AS gitlab,
-                 count(*) FILTER (
-                   WHERE coalesce(scm_context -> 'gitlab', 'null'::jsonb) = 'null'::jsonb
-                     AND coalesce(scm_context -> 'github', 'null'::jsonb) <> 'null'::jsonb
-                 ) AS github,
-                 count(*) FILTER (
-                   WHERE coalesce(scm_context -> 'gitlab', 'null'::jsonb) = 'null'::jsonb
-                     AND coalesce(scm_context -> 'github', 'null'::jsonb) = 'null'::jsonb
-                 ) AS other
-            FROM analyses
-           WHERE queued_at > now() - interval '30 days'`,
-      ),
+      row<string>(db, scmCountsQuery()),
       db.execute<{ id: string }>(sql`SELECT id FROM organizations`),
       readLicensePolicies(db),
       readMailSettings(db),
@@ -161,8 +184,8 @@ export async function collectUsage(
       sonarImport: reports.sonar,
     },
     licensePolicyOrgs,
-    mergeRequests30d: { gitlab: scm.gitlab_mr, github: scm.github_mr },
-    ci: { gitlab: scm.gitlab, github: scm.github, other: scm.other },
+    mergeRequests30d: perProvider(scm, 'mr'),
+    ci: { ...perProvider(scm, 'ci'), other: scm.ci_other ?? 0 },
     flags: {
       autoFix: autoFixOn,
       mcp: grants.n > 0,

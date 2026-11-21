@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import { and, asc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -163,42 +164,49 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
       let listed: Listed[];
       let hasMore: boolean;
       try {
-        if (row.provider === 'github') {
-          const found = await listInstallationRepositories(row, scmDeps, undefined, {
-            page,
-            perPage: PAGE_SIZE,
-          });
-          // GitHub has no server-side search for an installation's repositories, so the filter
-          // narrows the listed page only (acceptable for the first version).
-          const needle = filter.toLowerCase();
-          listed = found.repositories
-            .filter((r) => r.ref.toLowerCase().includes(needle))
-            .map((r) => ({
-              ref: r.ref,
-              name: r.ref,
-              defaultBranch: r.defaultBranch,
-              language: r.language,
-              archived: r.archived,
-            }));
-          hasMore = found.hasMore;
-        } else {
-          const made = gitlabClientFor(row, scmDeps);
-          if ('problem' in made) {
-            throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
+        switch (row.provider) {
+          case 'github': {
+            const found = await listInstallationRepositories(row, scmDeps, undefined, {
+              page,
+              perPage: PAGE_SIZE,
+            });
+            // GitHub has no server-side search for an installation's repositories, so the filter
+            // narrows the listed page only (acceptable for the first version).
+            const needle = filter.toLowerCase();
+            listed = found.repositories
+              .filter((r) => r.ref.toLowerCase().includes(needle))
+              .map((r) => ({
+                ref: r.ref,
+                name: r.ref,
+                defaultBranch: r.defaultBranch,
+                language: r.language,
+                archived: r.archived,
+              }));
+            hasMore = found.hasMore;
+            break;
           }
-          const found = await made.client.listProjects({
-            page,
-            perPage: PAGE_SIZE,
-            ...(filter === '' ? {} : { search: filter }),
-          });
-          listed = found.projects.map((p) => ({
-            ref: p.ref,
-            name: p.path,
-            defaultBranch: p.defaultBranch,
-            language: null,
-            archived: p.archived,
-          }));
-          hasMore = found.hasMore;
+          case 'gitlab': {
+            const made = gitlabClientFor(row, scmDeps);
+            if ('problem' in made) {
+              throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
+            }
+            const found = await made.client.listProjects({
+              page,
+              perPage: PAGE_SIZE,
+              ...(filter === '' ? {} : { search: filter }),
+            });
+            listed = found.projects.map((p) => ({
+              ref: p.ref,
+              name: p.path,
+              defaultBranch: p.defaultBranch,
+              language: null,
+              archived: p.archived,
+            }));
+            hasMore = found.hasMore;
+            break;
+          }
+          default:
+            return assertNever(row.provider, 'provider');
         }
       } catch (err) {
         if (err instanceof ScmError) throw scmProblem(err);

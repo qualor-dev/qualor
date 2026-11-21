@@ -1,3 +1,4 @@
+import { assertNever, SCM_PROVIDERS, type ScmProvider } from '@qualor/shared';
 import { and, asc, count, eq, gt, isNull } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -103,7 +104,7 @@ const ciSetupSchema = z.object({
 const connectionSchema = z.object({
   id: z.uuid(),
   organizationId: z.uuid(),
-  provider: z.enum(['gitlab', 'github']),
+  provider: z.enum(SCM_PROVIDERS),
   baseUrl: z.string(),
   createdAt: timestamp,
   /** The GitHub App (github.md §2.2); null for GitLab. Never the key or the secret. */
@@ -142,30 +143,37 @@ function connectionDto(
 ): z.infer<typeof connectionSchema> {
   const secretSet = row.webhookSecretEnc !== null;
   const secretReadable = secretSet && decryptWebhookSecret(key, row.webhookSecretEnc) !== null;
-  const github = row.provider === 'github';
+  let github: z.infer<typeof githubSchema> | null = null;
+  let gitlab: z.infer<typeof gitlabSchema> | null = null;
+  switch (row.provider) {
+    case 'github':
+      github = {
+        appId: row.appId ?? '',
+        keyReadable: decryptPrivateKey(key, row.tokenEnc) !== null,
+        webhookSecretSet: secretSet,
+        webhookSecretReadable: secretReadable,
+        webhookUrl: secretSet ? githubWebhookUrl(publicUrl, row.id) : null,
+      };
+      break;
+    case 'gitlab':
+      gitlab = {
+        webhookSecretSet: secretSet,
+        webhookSecretReadable: secretReadable,
+        webhookUrl: secretSet ? gitlabWebhookUrl(publicUrl, row.id) : null,
+        ciSetupAllowed: row.ciSetupAllowed,
+      };
+      break;
+    default:
+      return assertNever(row.provider, 'provider');
+  }
   return {
     id: row.id,
     organizationId: row.organizationId,
     provider: row.provider,
     baseUrl: row.baseUrl,
     createdAt: iso(row.createdAt),
-    github: github
-      ? {
-          appId: row.appId ?? '',
-          keyReadable: decryptPrivateKey(key, row.tokenEnc) !== null,
-          webhookSecretSet: secretSet,
-          webhookSecretReadable: secretReadable,
-          webhookUrl: secretSet ? githubWebhookUrl(publicUrl, row.id) : null,
-        }
-      : null,
-    gitlab: github
-      ? null
-      : {
-          webhookSecretSet: secretSet,
-          webhookSecretReadable: secretReadable,
-          webhookUrl: secretSet ? gitlabWebhookUrl(publicUrl, row.id) : null,
-          ciSetupAllowed: row.ciSetupAllowed,
-        },
+    github,
+    gitlab,
     ciSetup,
     fixMrsAllowed: row.fixMrsAllowed,
   };
@@ -207,10 +215,14 @@ const notAField = (provider: string) =>
     .meta({ description: `Not a field of a ${provider} connection: sending it is a 422` })
     .optional();
 
-const PROJECT_REF_TEXT = {
+const PROJECT_REF_TEXT: Record<ScmProvider, string> = {
   gitlab: 'Use the GitLab project id or its full path (group/project)',
   github: 'Use the GitHub repository as owner/repo',
-} as const;
+};
+const PROJECT_REF_PATTERN: Record<ScmProvider, RegExp> = {
+  gitlab: SCM_PROJECT_REF_PATTERN,
+  github: GITHUB_REPO_PATTERN,
+};
 /**
  * A project reference of either provider: a GitLab project id or path (scm.md §2.2), or a GitHub
  * `owner/repo` (github.md §2.3). Where the connection is known, it is checked against its own
@@ -224,9 +236,8 @@ export const scmProjectRef = z
   });
 
 /** Why `ref` is not a project reference of `provider`, or null. */
-export function projectRefProblem(provider: 'gitlab' | 'github', ref: string): string | null {
-  const pattern = provider === 'github' ? GITHUB_REPO_PATTERN : SCM_PROJECT_REF_PATTERN;
-  return pattern.test(ref) ? null : PROJECT_REF_TEXT[provider];
+export function projectRefProblem(provider: ScmProvider, ref: string): string | null {
+  return PROJECT_REF_PATTERN[provider].test(ref) ? null : PROJECT_REF_TEXT[provider];
 }
 
 /** The canonical PKCS#8 PEM of an App private key, or a 422 on `body.privateKey`. */
@@ -251,34 +262,55 @@ interface ConnectionPatch {
   fixMrsAllowed?: boolean;
 }
 
+const FOREIGN_FIELDS: Record<ScmProvider, readonly (keyof ConnectionPatch)[]> = {
+  github: ['token', 'ciSetupAllowed'],
+  gitlab: ['appId', 'privateKey'],
+};
+const PROVIDER_LABEL: Record<ScmProvider, string> = { github: 'GitHub', gitlab: 'GitLab' };
+/** The credential field a move of the address must bring again. */
+const CREDENTIAL_FIELD: Record<ScmProvider, 'privateKey' | 'token'> = {
+  github: 'privateKey',
+  gitlab: 'token',
+};
+/**
+ * Whether a lost race on the stored address is reported as a changed address whatever the request
+ * names (GitHub), or only when it names no address and brings no credential (GitLab).
+ */
+const ADDRESS_CONFLICT_WHATEVER_NAMED: Record<ScmProvider, boolean> = {
+  github: true,
+  gitlab: false,
+};
+
 /** A 422 for each sent field the connection's provider does not have. */
-function checkProviderFields(body: ConnectionPatch, github: boolean): void {
-  const foreign = github
-    ? (['token', 'ciSetupAllowed'] as const)
-    : (['appId', 'privateKey'] as const);
+function checkProviderFields(body: ConnectionPatch, provider: ScmProvider): void {
+  const foreign = FOREIGN_FIELDS[provider];
   const wrong = foreign.filter((f) => body[f] !== undefined);
   if (wrong.length > 0) {
     throw validationFailed(
       wrong.map((f) => ({
         path: `body.${f}`,
-        message: `Not a field of a ${github ? 'GitHub' : 'GitLab'} connection`,
+        message: `Not a field of a ${PROVIDER_LABEL[provider]} connection`,
       })),
     );
   }
 }
 
 /** The 422 of a move of the address without the provider's credential. */
-function credentialNeeded(github: boolean): FieldError {
-  if (github) {
-    return {
-      path: 'body.privateKey',
-      message: 'Changing the address needs the private key again, in the same request',
-    };
+function credentialNeeded(provider: ScmProvider): FieldError {
+  switch (provider) {
+    case 'github':
+      return {
+        path: 'body.privateKey',
+        message: 'Changing the address needs the private key again, in the same request',
+      };
+    case 'gitlab':
+      return {
+        path: 'body.token',
+        message: 'Changing the base URL needs the token again, in the same request',
+      };
+    default:
+      return assertNever(provider, 'provider');
   }
-  return {
-    path: 'body.token',
-    message: 'Changing the base URL needs the token again, in the same request',
-  };
 }
 
 /**
@@ -383,11 +415,11 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
   });
   const dto = async (row: ScmConnectionRow) =>
     connectionDto(row, key, publicUrl, await ciSetupOf(row));
-  const checkedBaseUrl = (raw: string, provider: 'gitlab' | 'github'): string => {
+  const checkedBaseUrl = (raw: string, provider: ScmProvider): string => {
     const problem = scmBaseUrlProblem(raw, deps.config.scmInternalHosts);
     if (problem) throw validationFailed([{ path: 'body.baseUrl', message: problem }]);
     const url = normalBaseUrl(raw);
-    const githubProblem = provider === 'github' ? githubBaseUrlProblem(url) : null;
+    const githubProblem = provider === 'github' ? githubBaseUrlProblem(url) : null; // provider-guard: only GitHub has an address-shape check
     if (githubProblem) throw validationFailed([{ path: 'body.baseUrl', message: githubProblem }]);
     return url;
   };
@@ -472,32 +504,35 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const url = checkedBaseUrl(body.baseUrl, body.provider);
       // The CHECK of migrations 0003 and 0017 backs the App id rules (migration 0017 lets a GitLab
       // connection hold a webhook secret); the API refuses first, with field errors.
-      const values: typeof scmConnections.$inferInsert =
-        body.provider === 'github'
-          ? {
-              organizationId: body.organizationId,
-              provider: 'github',
-              baseUrl: url,
-              appId: body.appId,
-              tokenEnc: encryptPrivateKey(key, checkedPrivateKey(body.privateKey)),
-              webhookSecretEnc:
-                body.webhookSecret === undefined
-                  ? null
-                  : encryptWebhookSecret(key, body.webhookSecret),
-              fixMrsAllowed: body.fixMrsAllowed ?? false,
-            }
-          : {
-              organizationId: body.organizationId,
-              provider: 'gitlab',
-              baseUrl: url,
-              tokenEnc: encryptSecret(key, body.token, SCM_TOKEN_AAD),
-              webhookSecretEnc:
-                body.webhookSecret === undefined
-                  ? null
-                  : encryptWebhookSecret(key, body.webhookSecret),
-              ciSetupAllowed: body.ciSetupAllowed ?? false,
-              fixMrsAllowed: body.fixMrsAllowed ?? false,
-            };
+      const webhookSecretEnc =
+        body.webhookSecret === undefined ? null : encryptWebhookSecret(key, body.webhookSecret);
+      let values: typeof scmConnections.$inferInsert;
+      switch (body.provider) {
+        case 'github':
+          values = {
+            organizationId: body.organizationId,
+            provider: 'github',
+            baseUrl: url,
+            appId: body.appId,
+            tokenEnc: encryptPrivateKey(key, checkedPrivateKey(body.privateKey)),
+            webhookSecretEnc,
+            fixMrsAllowed: body.fixMrsAllowed ?? false,
+          };
+          break;
+        case 'gitlab':
+          values = {
+            organizationId: body.organizationId,
+            provider: 'gitlab',
+            baseUrl: url,
+            tokenEnc: encryptSecret(key, body.token, SCM_TOKEN_AAD),
+            webhookSecretEnc,
+            ciSetupAllowed: body.ciSetupAllowed ?? false,
+            fixMrsAllowed: body.fixMrsAllowed ?? false,
+          };
+          break;
+        default:
+          return assertNever(body, 'provider');
+      }
       const created = await deps.db.transaction(async (tx) => {
         // Serialises concurrent creations for the organisation, so the bound below holds.
         await tx
@@ -560,15 +595,14 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const principal = requireUser(request);
       const row = await connectionFor(accessOf(deps), principal, request.params.id);
       const body = request.body;
-      const github = row.provider === 'github';
-      checkProviderFields(body, github);
+      checkProviderFields(body, row.provider);
       // scm.md §2.1, github.md §2.2: stored credentials only ever serve the address they were
       // saved for. A new origin or path needs them in the same request, so no admin can redirect a
       // token or a key they were never shown (one an instance admin set up, say) to a host of
       // their choosing.
-      const credential = github ? ('privateKey' as const) : ('token' as const);
+      const credential = CREDENTIAL_FIELD[row.provider];
       const bringsCredential = body[credential] !== undefined;
-      const needsCredential = credentialNeeded(github);
+      const needsCredential = credentialNeeded(row.provider);
       const changes: Partial<typeof scmConnections.$inferInsert> = {};
       let moves = false;
       if (body.baseUrl !== undefined) {
@@ -609,7 +643,10 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           // A change without the credential that names no address (the GitHub App id or either
           // provider's secret alone) did not ask for a move, so it is told the address changed,
           // not that a move needs the credential. A GitHub change is told so whatever it names.
-          if (!bringsCredential && (github || body.baseUrl === undefined)) {
+          if (
+            !bringsCredential &&
+            (ADDRESS_CONFLICT_WHATEVER_NAMED[row.provider] || body.baseUrl === undefined)
+          ) {
             throw new ProblemError(
               503,
               'CONCURRENCY_CONFLICT',
@@ -697,9 +734,14 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const ref = request.body.projectRef ?? null;
       const problem = ref === null ? null : projectRefProblem(row.provider, ref);
       if (problem) throw validationFailed([{ path: 'body.projectRef', message: problem }]);
-      return row.provider === 'github'
-        ? testGitHubConnection(row, scmDeps, ref)
-        : testConnection(row, scmDeps, ref);
+      switch (row.provider) {
+        case 'github':
+          return testGitHubConnection(row, scmDeps, ref);
+        case 'gitlab':
+          return testConnection(row, scmDeps, ref);
+        default:
+          return assertNever(row.provider, 'provider');
+      }
     },
   );
 };

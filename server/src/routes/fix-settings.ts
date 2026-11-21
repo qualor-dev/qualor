@@ -1,3 +1,4 @@
+import { SCM_PROVIDERS } from '@qualor/shared';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -30,7 +31,7 @@ const answerSchema = z.object({
   }),
   preconditions: z.object({
     scmBound: z.boolean().meta({ description: 'The project is mapped to a repository' }),
-    provider: z.enum(['gitlab', 'github']).nullable(),
+    provider: z.enum(SCM_PROVIDERS).nullable(),
     fixMrsAllowed: z.boolean().meta({
       description: "An organisation admin allowed fix merge requests on the project's connection",
     }),

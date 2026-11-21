@@ -1,3 +1,4 @@
+import { SCM_PROVIDERS } from '@qualor/shared';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -334,5 +335,34 @@ describe('telemetry schema 3: feature use (telemetry.md, 0.13)', () => {
     const p = await collect();
     expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2 });
     expect(p.ci).toEqual({ gitlab: 2, github: 2, other: 2 });
+  });
+
+  it('the telemetry usage report counts each provider of SCM_PROVIDERS and the rest as other', async () => {
+    await h.ctx.db.execute(sql`DELETE FROM analyses WHERE project_id = ${projectId}`);
+    const analysis = (ctx: object | null, old = false) =>
+      h.ctx.db.execute(sql`
+        INSERT INTO analyses (id, project_id, scm_context, queued_at)
+        VALUES (${uuidv7()}, ${projectId}, ${ctx === null ? null : JSON.stringify(ctx)}::jsonb,
+                ${old ? OLD : sql`now()`})`);
+    const blocks: Record<string, object> = { gitlab: { projectId: '1' }, github: { runId: '2' } };
+    const context = (provider: string, mergeRequestId: string | null) => ({
+      provider,
+      mergeRequestId,
+      ...Object.fromEntries(SCM_PROVIDERS.map((p) => [p, p === provider ? blocks[p] : null])),
+    });
+    // Provider number i (from 0) gets i + 1 merge request analyses, one push analysis and one
+    // merge request analysis too old to count.
+    for (const [i, provider] of SCM_PROVIDERS.entries()) {
+      for (let n = 0; n <= i; n++) await analysis(context(provider, String(n + 1)));
+      await analysis(context(provider, null));
+      await analysis(context(provider, '9'), true);
+    }
+    await analysis({ provider: 'none', mergeRequestId: null, gitlab: null });
+    await analysis(null);
+    const p = await collect();
+    expect(Object.keys(p.mergeRequests30d).sort()).toEqual([...SCM_PROVIDERS].sort());
+    expect(Object.keys(p.ci).sort()).toEqual([...SCM_PROVIDERS, 'other'].sort());
+    expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2 });
+    expect(p.ci).toEqual({ gitlab: 2, github: 3, other: 2 });
   });
 });

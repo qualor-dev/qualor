@@ -2,6 +2,7 @@
 // Pure: the caller reads the repository and applies the plan. The edit of an existing
 // `.gitlab-ci.yml` is a text insertion computed from the YAML document's ranges, so every comment,
 // quote and blank line of the customer's file stays byte-identical outside the inserted lines.
+import { assertNever, type ScmProvider } from '@qualor/shared';
 import {
   isAlias,
   isMap,
@@ -28,7 +29,7 @@ export type CiSnippetReason =
   'already_set_up' | 'yaml_unsupported' | 'custom_ci_path' | 'no_public_url';
 
 export interface CiSetupInput {
-  provider: 'github' | 'gitlab';
+  provider: ScmProvider;
   host: 'cloud' | 'self-hosted';
   serverUrl: string;
   /**
@@ -310,15 +311,32 @@ function gitlabDescription(i: CiSetupInput): string[] {
   ];
 }
 
+const CHANGE_REQUEST_WORD: Record<ScmProvider, string> = {
+  gitlab: 'merge request',
+  github: 'pull request',
+};
+
+function providerDescription(i: CiSetupInput): string[] {
+  switch (i.provider) {
+    case 'github':
+      return githubDescription(i);
+    case 'gitlab':
+      return gitlabDescription(i);
+    default:
+      return assertNever(i.provider, 'provider');
+  }
+}
+
 function descriptionFor(i: CiSetupInput): string {
   const lines = [
-    `Qualor analyses every ${i.provider === 'gitlab' ? 'merge request' : 'pull request'} and every push to the default branch, and reports the result there.`,
+    `Qualor analyses every ${CHANGE_REQUEST_WORD[i.provider]} and every push to the default branch, and reports the result there.`,
     "On each tag, it records a version: the release's dependency list.",
     `The analyses go to the Qualor project \`${i.projectKey}\`.`,
     '',
-    ...(i.provider === 'github' ? githubDescription(i) : gitlabDescription(i)),
+    ...providerDescription(i),
   ];
-  if (i.provider === 'github' && i.host === 'self-hosted') {
+  const githubRunner = i.provider === 'github' && i.host === 'self-hosted'; // provider-guard: only GitHub has runner labels
+  if (githubRunner) {
     lines.push('The job needs a Linux runner with Docker (labels `self-hosted` and `linux`).');
   }
   if (i.host === 'self-hosted') {
@@ -342,7 +360,7 @@ function changePlan(input: CiSetupInput, files: ChangeFiles): CiPlan {
     kind: 'change',
     files,
     secrets: [{ name: 'QUALOR_TOKEN' }],
-    variables: input.provider === 'gitlab' ? [{ key: 'QUALOR_URL', value: input.serverUrl }] : [],
+    variables: input.provider === 'gitlab' ? [{ key: 'QUALOR_URL', value: input.serverUrl }] : [], // provider-guard: only GitLab has a CI/CD variable for the address
     description: descriptionFor(input),
   };
 }
@@ -426,5 +444,12 @@ function planGitlab(input: CiSetupInput): CiPlan {
 }
 
 export function planCiSetup(input: CiSetupInput): CiPlan {
-  return input.provider === 'github' ? planGithub(input) : planGitlab(input);
+  switch (input.provider) {
+    case 'github':
+      return planGithub(input);
+    case 'gitlab':
+      return planGitlab(input);
+    default:
+      return assertNever(input.provider, 'provider');
+  }
 }
