@@ -30,7 +30,7 @@ export interface UsageBlocks {
   licensePolicyOrgs: number;
   /** Analyses of merge requests, by the SCM provider the report named. */
   mergeRequests30d: Record<ScmProvider, number>;
-  /** Analyses by the CI system whose context they carried; `other` carried neither. */
+  /** Analyses by the CI system whose context they carried; `other` carried none of SCM_PROVIDERS. */
   ci: Record<ScmProvider | 'other', number>;
   /** The booleans of `features`. */
   flags: { autoFix: boolean; mcp: boolean; chat: boolean; email: boolean; licensePolicy: boolean };

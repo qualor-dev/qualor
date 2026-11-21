@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import { eq } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { projects, scmConnections } from '../db/schema';
@@ -6,7 +7,6 @@ import { GITHUB_PR_NUMBER } from './github/client';
 import { githubClientFor } from './github/connections';
 import { parseRepoRef } from './github/url';
 import { GITLAB_MR_IID } from './gitlab/client';
-import { assertNever } from '@qualor/shared';
 import { ScmError } from './provider';
 import type { ScmRuntime } from './runtime';
 

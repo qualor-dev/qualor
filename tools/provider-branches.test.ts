@@ -1,14 +1,15 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SCM_PROVIDERS } from '../packages/shared/src/scm';
 
 /**
  * Guard against two-way provider branches. Every comparison of a value with 'gitlab' or 'github'
- * must either move to an exhaustive switch (assertNever default) or a Record<ScmProvider, T>, or
+ * must either move to an exhaustive switch (assertNever default, or `@default never;` in a template) or a Record<ScmProvider, T>, or
  * carry a `provider-guard: <reason>` marker. No file is exempt.
  */
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIRS = ['server/src', 'cli/src', 'packages/shared/src', 'ui/src', 'enterprise/src'];
 const SKIP = /\.(test|spec|db\.test)\.ts$|^ui\/src\/app\/api\/schema\.ts$/;
 const COMPARISON =
@@ -45,23 +46,53 @@ function counts(): Record<string, number> {
   return found;
 }
 
-/** The text of each `switch (…provider…)` block, found by matching braces. */
+/** The text from `open` (an opening bracket) to its match, brackets balanced; null when unbalanced. */
+function balanced(text: string, open: number, pair: '()' | '{}'): string | null {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === pair[0]) depth++;
+    else if (text[i] === pair[1] && --depth === 0) return text.slice(open, i + 1);
+  }
+  return null;
+}
+
+/** The text of each TypeScript `switch (…provider…) { … }` block; the condition's parentheses balance. */
 function providerSwitches(text: string): string[] {
   const blocks: string[] = [];
-  const start = /switch\s*\(([^)]*)\)\s*\{/g;
+  const start = /switch\s*\(/g;
   for (let m = start.exec(text); m; m = start.exec(text)) {
-    if (!/provider/i.test(m[1] ?? '')) continue;
-    let depth = 1;
-    let i = m.index + m[0].length;
-    while (i < text.length && depth > 0) {
-      if (text[i] === '{') depth++;
-      else if (text[i] === '}') depth--;
-      i++;
-    }
-    blocks.push(text.slice(m.index, i));
+    const open = m.index + m[0].length - 1;
+    const condition = balanced(text, open, '()');
+    if (condition === null || !/provider/i.test(condition)) continue;
+    const brace = text.indexOf('{', open + condition.length);
+    const body = brace < 0 ? null : balanced(text, brace, '{}');
+    if (body === null) continue;
+    blocks.push(text.slice(m.index, brace + body.length));
   }
   return blocks;
 }
+
+/** The text of each template `@switch (…) { … }` that has a 'gitlab' or 'github' case. */
+function templateProviderSwitches(text: string): string[] {
+  const blocks: string[] = [];
+  const start = /@switch\s*\(/g;
+  for (let m = start.exec(text); m; m = start.exec(text)) {
+    const open = m.index + m[0].length - 1;
+    const condition = balanced(text, open, '()');
+    if (condition === null) continue;
+    const brace = text.indexOf('{', open + condition.length);
+    const body = brace < 0 ? null : balanced(text, brace, '{}');
+    if (body === null) continue;
+    const block = text.slice(m.index, brace + body.length);
+    if (/@case\s*\(\s*['"](?:gitlab|github)['"]\s*\)/.test(block)) blocks.push(block);
+  }
+  return blocks;
+}
+
+const missingAssertNever = (text: string): string[] =>
+  providerSwitches(text).filter((block) => !block.includes('assertNever('));
+const missingDefaultNever = (text: string): string[] =>
+  templateProviderSwitches(text).filter((block) => !/@default\s+never\s*;/.test(block));
 
 describe('provider branches', () => {
   const current = counts();
@@ -70,14 +101,47 @@ describe('provider branches', () => {
     expect(current).toEqual({});
   });
 
-  it('every switch on a provider ends in assertNever', () => {
+  it('every TypeScript switch on a provider ends in assertNever', () => {
     const bad: string[] = [];
     for (const file of sources(['server/src', 'cli/src', 'ui/src'])) {
-      for (const block of providerSwitches(read(file))) {
-        if (!block.includes('assertNever(')) bad.push(`${file}: ${block.split('\n')[0]}`);
-      }
+      if (!file.endsWith('.ts')) continue;
+      for (const block of missingAssertNever(read(file)))
+        bad.push(`${file}: ${block.split('\n')[0]}`);
     }
     expect(bad).toEqual([]);
+  });
+
+  it('every template @switch with a provider case ends in @default never;', () => {
+    const bad: string[] = [];
+    for (const file of sources(['ui/src'])) {
+      if (!file.endsWith('.html')) continue;
+      for (const block of missingDefaultNever(read(file)))
+        bad.push(`${file}: ${block.split('\n')[0]}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  describe('positive controls: each rule flags a sample it must flag', () => {
+    it('a TS switch without assertNever, also with a nested-paren condition', () => {
+      const plain = "switch (row.provider) { case 'gitlab': return 1; default: return 2; }";
+      const nested = "switch (providerOf(row.connection(a))) { case 'gitlab': return 1; }";
+      expect(missingAssertNever(plain)).toHaveLength(1);
+      expect(missingAssertNever(nested)).toHaveLength(1);
+    });
+
+    it('accepts a TS switch that ends in assertNever, and ignores one on another value', () => {
+      const ok = 'switch (p(x)) { case 1: break; default: return assertNever(p(x)); }';
+      expect(missingAssertNever(ok.replace('p(x)', 'provider(x)'))).toEqual([]);
+      expect(missingAssertNever('switch (kind(x)) { case 1: break; }')).toEqual([]);
+    });
+
+    it('a template @switch with a provider case but no @default never;', () => {
+      const bad = "@switch (needs()) { @case ('gitlab') { <p>a</p> } @case (null) { } }";
+      const ok = "@switch (provider) { @case ('github') { <p>a</p> } @default never; }";
+      expect(missingDefaultNever(bad)).toHaveLength(1);
+      expect(missingDefaultNever(ok)).toEqual([]);
+      expect(missingDefaultNever('@switch (n) { @case (1) { } }')).toEqual([]);
+    });
   });
 
   it('the UI’s provider list is the shared one', () => {

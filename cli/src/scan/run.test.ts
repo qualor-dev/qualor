@@ -70,7 +70,7 @@ describe('unnamedHead', () => {
   const ci = (provider: 'gitlab' | 'github' | 'none', gitlab: object | null = null) =>
     ({ provider, gitlab }) as never;
 
-  it("names GitHub's variables for github, GitLab's for gitlab, and the --mr flags outside CI", () => {
+  it("names GitHub's variables for github, GitLab's for gitlab, and GitLab's again when there is no CI", () => {
     expect(unnamedHead(ci('github'))).toBe("the event's pull_request.head.sha is not a commit id");
     expect(unnamedHead(ci('gitlab', { mergeRequestEventType: 'merge_train' }))).toBe(
       'CI_MERGE_REQUEST_SOURCE_BRANCH_SHA is not a commit id in this merge train pipeline',
