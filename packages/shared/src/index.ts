@@ -42,3 +42,4 @@ export * from './llm/fix';
 export * from './licenses';
 export * from './review/snapshot';
 export * from './sbom';
+export * from './scm';
