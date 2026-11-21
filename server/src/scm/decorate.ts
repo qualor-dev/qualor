@@ -1,3 +1,4 @@
+import { assertNever, type ScmProvider } from '@qualor/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client';
 import type { Limits } from '../limits';
@@ -68,7 +69,7 @@ export type DecorationOutcome =
   | {
       kind: 'failed';
       /** Whose decoration failed, for the log lines. */
-      provider: 'GitLab' | 'GitHub';
+      provider: (typeof PROVIDER_LABEL)[ScmProvider];
       connectionId: string;
       branchId: string;
       error: ScmError;
@@ -315,6 +316,24 @@ function decisiveError(errors: readonly ScmError[]): ScmError | null {
   return errors.find((e) => e.kind === 'budget') ?? errors.find(retryable) ?? errors[0] ?? null;
 }
 
+/** The display name of each provider, as the decoration's log lines and outcomes say it. */
+export const PROVIDER_LABEL: Record<ScmProvider, 'GitLab' | 'GitHub'> = {
+  gitlab: 'GitLab',
+  github: 'GitHub',
+};
+
+/** The error of a decoration refused by the open circuit, in the provider's own error class. */
+function circuitError(provider: ScmProvider, text: string): ScmError {
+  switch (provider) {
+    case 'gitlab':
+      return new GitLabError('transient', text);
+    case 'github':
+      return new ScmError('transient', text);
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
+
 /**
  * One decoration (scm.md §4.2): the commit status of the analysis's revision and, for the
  * branch's latest analysis of an open merge request, the inline discussions and the summary. A
@@ -329,7 +348,7 @@ export async function decorateAnalysis(
   const loaded = await loadDecoration(deps.db, payload.analysisId);
   if (typeof loaded === 'string') return { kind: 'nothing', reason: loaded };
   const { connection, branch } = loaded;
-  const provider = connection.provider === 'github' ? 'GitHub' : 'GitLab';
+  const provider = PROVIDER_LABEL[connection.provider];
   const failed = (error: ScmError, circuit = false): DecorationOutcome => ({
     kind: 'failed',
     provider,
@@ -345,10 +364,7 @@ export async function decorateAnalysis(
       openUntil === null
         ? `${provider} unreachable (circuit half-open, another job is probing)`
         : `${provider} unreachable (circuit open until ${new Date(openUntil).toISOString()})`;
-    return failed(
-      provider === 'GitLab' ? new GitLabError('transient', text) : new ScmError('transient', text),
-      true,
-    );
+    return failed(circuitError(connection.provider, text), true);
   }
   let outcome: DecorationOutcome | undefined;
   try {
@@ -390,9 +406,14 @@ async function decorateThroughCircuit(
     return { kind: 'busy', branchId: branch.id };
   }
   try {
-    return loaded.connection.provider === 'github'
-      ? await decorateGitHub(deps, payload, loaded, failed)
-      : await decorateGitLab(deps, payload, loaded, failed);
+    switch (loaded.connection.provider) {
+      case 'gitlab':
+        return await decorateGitLab(deps, payload, loaded, failed);
+      case 'github':
+        return await decorateGitHub(deps, payload, loaded, failed);
+      default:
+        return assertNever(loaded.connection.provider, 'provider');
+    }
   } finally {
     deps.runtime.slots.release(project.organizationId);
   }

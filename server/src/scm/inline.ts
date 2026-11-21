@@ -1,4 +1,4 @@
-import type { Quality, Severity } from '@qualor/shared';
+import type { Quality, ScmProvider, Severity } from '@qualor/shared';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db, Executor } from '../db/client';
 import { issues, rules } from '../db/schema';
@@ -274,7 +274,7 @@ export async function liveSuggestion(
  * the summary instead, as one that never had a suggestion is.
  */
 export function aiFindingNote(
-  provider: 'gitlab' | 'github',
+  provider: ScmProvider,
   issue: DesiredAiIssue,
   suggestion: ReviewSuggestion | null,
   issueUrl: string | null,

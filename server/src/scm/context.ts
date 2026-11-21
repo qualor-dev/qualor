@@ -3,6 +3,7 @@ import {
   GITHUB_ID,
   GITLAB_ID,
   GITLAB_MR_EVENT_TYPES,
+  SCM_PROVIDERS,
   type Report,
 } from '@qualor/shared';
 import type { FastifyBaseLogger } from 'fastify';
@@ -15,7 +16,7 @@ import { z } from 'zod';
  * (at most 64 characters, as the report allows it).
  */
 export const scmContextSchema = z.strictObject({
-  provider: z.enum(['gitlab', 'github', 'none']),
+  provider: z.enum([...SCM_PROVIDERS, 'none']),
   /** `scm.mergeRequest.id`, or null for a branch analysis. */
   mergeRequestId: z.string().min(1).max(64).nullable(),
   /** `scm.gitlab` (scm.md §3), or null outside GitLab CI. */
@@ -53,15 +54,14 @@ export function scmContextOf(
   report: Report,
   logger?: Pick<FastifyBaseLogger, 'warn'>,
 ): ScmContext | typeof INVALID_SCM_CONTEXT {
+  const github = report.scm.provider === 'github' ? report.scm.github : undefined; // provider-guard: the github key is stored for a GitHub report only
   const parsed = scmContextSchema.safeParse({
     provider: report.scm.provider,
     mergeRequestId: report.scm.mergeRequest?.id ?? null,
     gitlab: report.scm.gitlab ?? null,
     // Only for a GitHub report that has one: a GitLab or local analysis stores the 2A shape
     // unchanged, and an absent key reads as null (D2, ruling C1).
-    ...(report.scm.provider !== 'github' || report.scm.github === undefined
-      ? {}
-      : { github: report.scm.github }),
+    ...(github === undefined ? {} : { github }),
   });
   if (parsed.success) return parsed.data;
   logger?.warn(

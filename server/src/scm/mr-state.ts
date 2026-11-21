@@ -6,6 +6,7 @@ import { GITHUB_PR_NUMBER } from './github/client';
 import { githubClientFor } from './github/connections';
 import { parseRepoRef } from './github/url';
 import { GITLAB_MR_IID } from './gitlab/client';
+import { assertNever } from '@qualor/shared';
 import { ScmError } from './provider';
 import type { ScmRuntime } from './runtime';
 
@@ -156,10 +157,17 @@ export async function readMergeRequestState(
   if (!found || found.ref === null) return null;
   const { connection, organizationId } = found;
   const { runtime, scm } = deps;
-  const ask =
-    connection.provider === 'github'
-      ? githubAsk(connection, found.ref, mergeRequestId, scm, runtime ?? deps.tokens)
-      : gitlabAsk(connection, found.ref, mergeRequestId, scm);
+  let ask: Ask | null;
+  switch (connection.provider) {
+    case 'gitlab':
+      ask = gitlabAsk(connection, found.ref, mergeRequestId, scm);
+      break;
+    case 'github':
+      ask = githubAsk(connection, found.ref, mergeRequestId, scm, runtime ?? deps.tokens);
+      break;
+    default:
+      return assertNever(connection.provider, 'provider');
+  }
   if (ask === null) return null;
   try {
     return runtime === undefined

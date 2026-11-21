@@ -1,4 +1,5 @@
 import {
+  assertNever,
   DEFAULT_SMALL_CHANGESET_LINES,
   ruleHelpUri,
   type GateResult,
@@ -70,16 +71,24 @@ export async function loadDecoration(db: Db, analysisId: string): Promise<Loaded
     return 'the analysis did not succeed';
   }
   if (!row.connection || row.project.scmProjectRef === null) return 'the project is not mapped';
-  if (row.connection.provider !== 'gitlab' && row.connection.provider !== 'github') {
+  if (
+    row.connection.provider !== 'gitlab' /* provider-guard: allowlist of supported connections */ &&
+    row.connection.provider !== 'github' /* provider-guard: allowlist of supported connections */
+  ) {
     return 'the connection is not supported';
   }
   // §4.1: a local scan never decorates (checked when enqueued; again here, from what was stored),
   // and a report decorates only through a connection of its own provider (github.md §5.1).
   const stored = readScmContext(row.analysis.scmContext);
   if (stored.kind === 'ok' && stored.context.provider !== row.connection.provider) {
-    return row.connection.provider === 'gitlab'
-      ? 'the analysis is not from GitLab CI'
-      : 'the analysis is not from GitHub Actions';
+    switch (row.connection.provider) {
+      case 'gitlab':
+        return 'the analysis is not from GitLab CI';
+      case 'github':
+        return 'the analysis is not from GitHub Actions';
+      default:
+        return assertNever(row.connection.provider, 'provider');
+    }
   }
   const gate = row.analysis.gateResult as GateResult | null;
   if (!gate || typeof gate !== 'object' || !Array.isArray(gate.conditions)) {

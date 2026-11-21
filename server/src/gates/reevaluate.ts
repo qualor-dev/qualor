@@ -1,4 +1,4 @@
-import { reevaluateGate, type GateResult } from '@qualor/shared';
+import { assertNever, reevaluateGate, type GateResult, type ScmProvider } from '@qualor/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { z } from 'zod';
@@ -228,7 +228,7 @@ async function recordStatusChange(
 }
 
 /** Why an analysis whose stored SCM context cannot be read is not decorated again, per provider. */
-const UNREADABLE_CONTEXT: Record<'missing' | 'invalid', Record<'gitlab' | 'github', string>> = {
+const UNREADABLE_CONTEXT: Record<'missing' | 'invalid', Record<ScmProvider, string>> = {
   missing: {
     gitlab:
       'quality gate re-evaluated but not decorated again on GitLab: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitLab CI is unknown',
@@ -267,33 +267,40 @@ async function decorateAgain(
   }
   // github.md §5.1: an analysis decorates only through a connection of its own provider.
   if (stored.context.provider !== connection.provider) return;
-  if (stored.context.provider === 'gitlab') {
-    await enqueueDecoration(tx, {
-      analysisId: analysis.id,
-      branchId: branch.id,
-      gitlab: stored.context.gitlab,
-      reevaluation: true,
-    });
-    return;
+  // The stored provider equals the connection's here, so the connection's provider picks the arm.
+  switch (connection.provider) {
+    case 'gitlab':
+      await enqueueDecoration(tx, {
+        analysisId: analysis.id,
+        branchId: branch.id,
+        gitlab: stored.context.gitlab,
+        reevaluation: true,
+      });
+      return;
+    case 'github': {
+      // Stored only when the report had one (D2): an older CLI's GitHub analysis has none.
+      const github = stored.context.github ?? null;
+      if (github === null) {
+        // Ruling C1: without the GitHub context, which revision was checked out (and so which
+        // lines a review thread may be on) is unknown; fail closed.
+        logger?.warn(
+          where,
+          'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored GitHub Actions context (sent by an older CLI)',
+        );
+        return;
+      }
+      await enqueueDecoration(tx, {
+        analysisId: analysis.id,
+        branchId: branch.id,
+        gitlab: null,
+        github,
+        reevaluation: true,
+      });
+      return;
+    }
+    default:
+      return assertNever(connection.provider, 'provider');
   }
-  // Stored only when the report had one (D2): an older CLI's GitHub analysis has none.
-  const github = stored.context.github ?? null;
-  if (github === null) {
-    // Ruling C1: without the GitHub context, which revision was checked out (and so which
-    // lines a review thread may be on) is unknown; fail closed.
-    logger?.warn(
-      where,
-      'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored GitHub Actions context (sent by an older CLI)',
-    );
-    return;
-  }
-  await enqueueDecoration(tx, {
-    analysisId: analysis.id,
-    branchId: branch.id,
-    gitlab: null,
-    github,
-    reevaluation: true,
-  });
 }
 
 /** What a re-evaluation changed: the status over the gate result over the measures alone. */

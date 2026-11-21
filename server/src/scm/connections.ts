@@ -186,11 +186,12 @@ export async function testConnection(
 export function webBaseSql(c: string): SQL {
   const col = sql.raw(`${c}.base_url`);
   const provider = sql.raw(`${c}.provider`);
-  return sql`CASE WHEN ${provider} <> 'github' THEN ${col}
-    WHEN ${col} = 'https://api.github.com' THEN 'https://github.com'
+  // An unknown provider matches no arm: NULL, never GitLab's column.
+  const github = sql`CASE WHEN ${col} = 'https://api.github.com' THEN 'https://github.com'
     WHEN ${col} ~ '^https://api\\.[a-z0-9-]+\\.ghe\\.com$' THEN 'https://' || substr(${col}, 13)
     WHEN right(${col}, 7) = '/api/v3' THEN left(${col}, length(${col}) - 7)
     ELSE ${col} END`;
+  return sql`CASE ${provider} WHEN 'gitlab' THEN ${col} WHEN 'github' THEN ${github} END`;
 }
 
 /**

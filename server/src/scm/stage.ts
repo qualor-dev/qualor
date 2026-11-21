@@ -28,8 +28,8 @@ export const scmStage: IngestionStage = {
     await enqueueDecoration(ctx.tx, {
       analysisId: ctx.analysisId,
       branchId: ctx.branch.id,
-      gitlab: provider === 'gitlab' ? (ctx.report.scm.gitlab ?? null) : null,
-      github: provider === 'github' ? (ctx.report.scm.github ?? null) : null,
+      gitlab: provider === 'gitlab' ? (ctx.report.scm.gitlab ?? null) : null, // provider-guard: a report carries only its own provider's CI context
+      github: provider === 'github' ? (ctx.report.scm.github ?? null) : null, // provider-guard: a report carries only its own provider's CI context
     });
     await enqueueAutoFix(ctx.tx, ctx.limits, {
       analysisId: ctx.analysisId,

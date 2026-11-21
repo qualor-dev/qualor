@@ -1081,6 +1081,17 @@ describe('GitHub App connections (github.md §2.2, §2.5, D1)', () => {
     );
     expect(result.rows[0]?.web).toBe(githubWebBase(baseUrl));
   });
+
+  it.each([
+    ['gitlab', 'https://gitlab.example.com', 'https://gitlab.example.com'],
+    ['github', 'https://api.github.com', 'https://github.com'],
+    ['bitbucket', 'https://x', null],
+  ])('webBaseSql for provider %s gives %s', async (provider, baseUrl, expected) => {
+    const result = await h.ctx.db.execute(
+      sql`SELECT ${webBaseSql('c')} AS web FROM (SELECT ${provider}::text AS provider, ${baseUrl}::text AS base_url) c`,
+    );
+    expect(result.rows[0]?.web ?? null).toBe(expected);
+  });
 });
 
 describe('GitLab connections: the webhook secret (6I-4)', () => {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   QUALITIES,
+  type ScmProvider,
   resolveMetricKey,
   type GateResult,
   type Quality,
@@ -192,7 +193,7 @@ export interface SummaryInput {
   /** The merge request's head when it is no longer the analysed revision. */
   mergeRequestHead: string | null;
   /** Whose words the summary uses (github.md §6.2); GitLab's when absent. */
-  vocabulary?: 'gitlab' | 'github';
+  vocabulary?: ScmProvider;
   /**
    * The instance's small-changeset threshold (gates.md §6 rule 3), for the reason of a skipped
    * condition; without it the reason says "small change".
@@ -207,7 +208,12 @@ export interface SummaryInput {
 }
 
 /** The words that differ between GitLab and GitHub (github.md §6.2). */
-const WORDS = {
+interface Words {
+  request: string;
+  placed: string;
+  stale: string;
+}
+const WORDS: Record<ScmProvider, Words> = {
   gitlab: {
     request: 'merge request',
     placed: 'commented inline',
@@ -218,7 +224,7 @@ const WORDS = {
     placed: 'commented inline',
     stale: 'Inline comments wait for the analysis of the pull request’s latest commit.',
   },
-} as const;
+};
 /**
  * github.md §6.2. Fixed text: the `${{ … }}` is an Actions expression, not a template. It speaks of
  * the analyzers' issues only: the AI review's threads are posted after such a checkout too.
@@ -492,7 +498,8 @@ function footer(
  * whole lines from the end.
  */
 export function summaryBody(input: SummaryInput): string {
-  const words = WORDS[input.vocabulary === 'github' ? 'github' : 'gitlab'];
+  const vocabulary = input.vocabulary ?? 'gitlab';
+  const words = WORDS[vocabulary];
   const status = input.gate.status;
   const known = Object.hasOwn(HEADLINE, status);
   const head = [
@@ -516,7 +523,6 @@ export function summaryBody(input: SummaryInput): string {
   const bare = [...head, ...footer(input, words, 0)];
   const room = SUMMARY_MAX_BYTES - Buffer.byteLength(bare.join('\n'), 'utf8') - 2; // the blank line
   const review = input.review ?? null;
-  const vocabulary = input.vocabulary === 'github' ? 'github' : 'gitlab';
   const section =
     review === null
       ? []

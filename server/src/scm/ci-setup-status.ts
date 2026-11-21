@@ -1,3 +1,4 @@
+import { assertNever } from '@qualor/shared';
 import { ScmError } from './provider';
 import type { ScmConnectionRow, ScmDeps } from './connections';
 import { listInstallations, type GitHubInstallationAccess } from './github/installations';
@@ -67,17 +68,22 @@ function statusOf(
   publicUrl: string | null,
   grants: Grants | null,
 ): CiSetupStatus {
-  if (row.provider === 'gitlab') {
-    if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
-    return row.ciSetupAllowed
-      ? { available: true, reason: null, missing: [] }
-      : { available: false, reason: 'not_allowed', missing: [] };
+  switch (row.provider) {
+    case 'gitlab':
+      if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
+      return row.ciSetupAllowed
+        ? { available: true, reason: null, missing: [] }
+        : { available: false, reason: 'not_allowed', missing: [] };
+    case 'github': {
+      const { missing, granted } = grants ?? { missing: [], granted: false };
+      if (publicUrl === null) return { available: false, reason: 'no_public_url', missing };
+      return granted
+        ? { available: true, reason: null, missing: [] }
+        : { available: false, reason: 'missing_permissions', missing };
+    }
+    default:
+      return assertNever(row.provider, 'provider');
   }
-  const { missing, granted } = grants ?? { missing: [], granted: false };
-  if (publicUrl === null) return { available: false, reason: 'no_public_url', missing };
-  return granted
-    ? { available: true, reason: null, missing: [] }
-    : { available: false, reason: 'missing_permissions', missing };
 }
 
 /**
@@ -90,7 +96,7 @@ export async function readCiSetupStatus(
   deps: ScmDeps,
   publicUrl: string | null,
 ): Promise<CiSetupStatus> {
-  return statusOf(row, publicUrl, row.provider === 'github' ? await githubGrants(row, deps) : null);
+  return statusOf(row, publicUrl, row.provider === 'github' ? await githubGrants(row, deps) : null); // provider-guard: grants are read for GitHub only
 }
 
 /**
@@ -135,5 +141,5 @@ export function createCiSetupStatus(options: {
   };
 
   return async (row) =>
-    statusOf(row, publicUrl, row.provider === 'github' ? await githubPermissions(row) : null);
+    statusOf(row, publicUrl, row.provider === 'github' ? await githubPermissions(row) : null); // provider-guard: permissions are read for GitHub only
 }

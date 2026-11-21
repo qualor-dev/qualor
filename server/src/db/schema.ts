@@ -1,4 +1,10 @@
-import type { DependencyIgnore, LlmFeature, RuleScope, Severity } from '@qualor/shared';
+import type {
+  DependencyIgnore,
+  LlmFeature,
+  RuleScope,
+  ScmProvider,
+  Severity,
+} from '@qualor/shared';
 import { FIX_FAMILIES, type FixFamily } from '@qualor/shared/fix';
 import { sql } from 'drizzle-orm';
 import {
@@ -231,7 +237,7 @@ export const scmConnections = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    provider: text('provider').notNull().$type<'gitlab' | 'github'>(),
+    provider: text('provider').notNull().$type<ScmProvider>(),
     baseUrl: text('base_url').notNull(),
     tokenEnc: jsonb('token_enc').notNull().$type<EncryptedValue>(),
     /** github.md §2.5 (D1, migration 0003): the GitHub App id, plain text; NULL for GitLab. */
@@ -250,7 +256,7 @@ export const scmConnections = pgTable(
   },
   (t) => [
     index('scm_connections_organization_idx').on(t.organizationId),
-    check('scm_connections_provider_check', sql`provider IN ('gitlab','github')`),
+    check('scm_connections_provider_check', sql`provider IN ('gitlab','github')`), // provider-guard: SQL CHECK, widened by migration
     // A NULL app_id would make the regex test NULL, which a CHECK lets through: hence IS NOT NULL.
     check(
       'scm_connections_github_app_check',
@@ -2834,7 +2840,7 @@ export const reviewReplies = pgTable(
     branchId: uuid('branch_id')
       .notNull()
       .references(() => branches.id, { onDelete: 'cascade' }),
-    provider: text('provider').notNull().$type<'gitlab' | 'github'>(),
+    provider: text('provider').notNull().$type<ScmProvider>(),
     /** The SCM's id of the note (GitLab) or comment (GitHub), which it counts upwards. */
     noteId: bigint('note_id', { mode: 'number' }).notNull(),
     /**
@@ -2884,7 +2890,7 @@ export const reviewReplies = pgTable(
     index('review_replies_active_idx')
       .on(t.status)
       .where(sql`status IN ('queued','running')`),
-    check('review_replies_provider_check', sql`provider IN ('gitlab','github')`),
+    check('review_replies_provider_check', sql`provider IN ('gitlab','github')`), // provider-guard: SQL CHECK, widened by migration
     check('review_replies_kind_check', sql`kind IN ('reply','command')`),
     check('review_replies_command_check', sql`command IN ('review','fix','stop')`),
     // `kind` is never NULL and neither is `IS NOT NULL`: a NULL result would pass a CHECK.
