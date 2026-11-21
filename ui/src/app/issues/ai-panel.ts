@@ -17,6 +17,7 @@ import { type Branch, findBranch } from '../project/branches';
 import { llmProblemText } from '../settings/ai-text';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { safeHelpUri } from '../shared/links';
+import { SCM_PROVIDERS, type ScmProvider } from '../shared/scm-provider';
 
 type OrgAi = ResponseBody<'/api/v0/organizations/{id}/ai', 'get'>;
 export type AiRequest = ResponseBody<'/api/v0/ai-requests/{id}', 'get'>;
@@ -57,13 +58,32 @@ export interface PostTarget {
 /** llm.md §8.2: a fix can be posted only on a merge request of a mapped project. */
 export function postTarget(branch: Branch): PostTarget | null {
   if (branch.kind !== 'merge_request') return null;
-  const github = /^https?:\/\/[^/]+\/.+\/pull\/\d+\/?$/.test(branch.mrUrl ?? '');
-  return {
-    kind: github ? 'pull_request' : 'merge_request',
-    reference: `${github ? '#' : '!'}${branch.name}`,
-    title: branch.mrTitle,
-  };
+  const url = branch.mrUrl ?? '';
+  for (const provider of SCM_PROVIDERS) {
+    const { pattern, kind, prefix } = POST_TARGETS[provider];
+    if (pattern.test(url)) {
+      return { kind, reference: `${prefix}${branch.name}`, title: branch.mrTitle };
+    }
+  }
+  return null;
 }
+
+/** How each provider's merge request address looks, and what its requests are called. */
+const POST_TARGETS: Record<
+  ScmProvider,
+  { pattern: RegExp; kind: PostTarget['kind']; prefix: string }
+> = {
+  github: {
+    pattern: /^https?:\/\/[^/]+\/.+\/pull\/\d+\/?$/,
+    kind: 'pull_request',
+    prefix: '#',
+  },
+  gitlab: {
+    pattern: /^https?:\/\/[^/]+\/.+\/merge_requests\/\d+\/?$/,
+    kind: 'merge_request',
+    prefix: '!',
+  },
+};
 
 /**
  * The issue view's AI assistant (llm.md §18): shown only when the issue's organisation has the

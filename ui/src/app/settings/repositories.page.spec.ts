@@ -286,6 +286,10 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
       'GitHub · https://api.github.com (App 123456)',
     ]);
     const ref = root.querySelector<HTMLInputElement>('#ref-p1')!;
+    // No connection chosen yet: no provider's example.
+    expect(ref.placeholder).toBe('');
+    choose(root, '#conn-p1', 'c1');
+    await settle(fixture);
     expect(ref.placeholder).toBe('group/project');
     choose(root, '#conn-p1', 'g1');
     await settle(fixture);
@@ -306,6 +310,18 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
     button(root, 'Save', row).click();
     await settle(fixture);
     expect(root.querySelector('#ref-error-p1')?.textContent).toContain('Use owner/repo');
+  });
+
+  it('a mapping whose connection is unknown shows no provider hint and the generic placeholder', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/projects', {
+      body: page([project('p1', { scmConnectionId: 'gone', scmProjectRef: 'acme/api' })]),
+    });
+    const { root } = await render();
+    const ref = root.querySelector<HTMLInputElement>('#ref-p1')!;
+    expect(ref.placeholder).toBe('');
+    expect(root.querySelector('#ref-hint-p1')?.textContent?.trim()).toBe('');
+    expect(root.querySelector('label[for="ref-p1"]')?.textContent).not.toMatch(/GitLab|GitHub/);
   });
 
   it('points to GitLab and GitHub while the organization has no connection', async () => {

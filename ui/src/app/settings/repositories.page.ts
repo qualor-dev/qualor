@@ -19,6 +19,7 @@ import { OrgContext } from '../org/org-context';
 import { keepFocus } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
+import { assertNever, type ScmProvider } from '../shared/scm-provider';
 import { githubTestText } from './github-text';
 import { gitlabTestText } from './gitlab-text';
 import type { Connection } from './gitlab.page';
@@ -115,17 +116,24 @@ export class RepositoriesPage {
     );
   }
 
-  /** The provider of the connection a project's mapping names (its draft), GitLab when none. */
-  protected providerOf(project: Project): Connection['provider'] {
+  /** The provider of the connection a project's mapping names (its draft), null when none. */
+  protected providerOf(project: Project): ScmProvider | null {
     const id = this.draft(project).connectionId;
-    return this.connections.items().find((c) => c.id === id)?.provider ?? 'gitlab';
+    return this.connections.items().find((c) => c.id === id)?.provider ?? null;
   }
 
   /** The example reference of a project's mapping, after its connection's provider. */
   protected refPlaceholder(project: Project): string {
-    return this.providerOf(project) === 'github'
-      ? $localize`:@@gitlab.githubRefPlaceholder:owner/repo`
-      : $localize`:@@gitlab.refPlaceholder:group/project`;
+    const provider = this.providerOf(project);
+    if (provider === null) return '';
+    switch (provider) {
+      case 'github':
+        return $localize`:@@gitlab.githubRefPlaceholder:owner/repo`;
+      case 'gitlab':
+        return $localize`:@@gitlab.refPlaceholder:group/project`;
+      default:
+        return assertNever(provider, 'provider');
+    }
   }
 
   /**
@@ -133,9 +141,14 @@ export class RepositoriesPage {
    * its App id (two Apps may share an address).
    */
   protected connectionLabel(connection: Connection): string {
-    return connection.provider === 'github'
-      ? $localize`:@@gitlab.optionGitHub:GitHub · ${connection.baseUrl}:url: (App ${connection.github?.appId ?? ''}:appId:)`
-      : $localize`:@@gitlab.optionGitLab:GitLab · ${connection.baseUrl}:url:`;
+    switch (connection.provider) {
+      case 'github':
+        return $localize`:@@gitlab.optionGitHub:GitHub · ${connection.baseUrl}:url: (App ${connection.github?.appId ?? ''}:appId:)`;
+      case 'gitlab':
+        return $localize`:@@gitlab.optionGitLab:GitLab · ${connection.baseUrl}:url:`;
+      default:
+        return assertNever(connection.provider, 'provider');
+    }
   }
 
   protected setConnection(project: Project, event: Event): void {
@@ -185,15 +198,25 @@ export class RepositoriesPage {
     if (!(project.scmConnectionId && project.scmProjectRef)) {
       return $localize`:@@gitlab.unmapped:Not decorated.`;
     }
-    return this.providerOf(project) === 'github'
-      ? $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`
-      : $localize`:@@gitlab.mapped:Decorated in GitLab.`;
+    const provider = this.providerOf(project);
+    if (provider === null) return $localize`:@@gitlab.mappedAny:Decorated.`;
+    switch (provider) {
+      case 'github':
+        return $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`;
+      case 'gitlab':
+        return $localize`:@@gitlab.mapped:Decorated in GitLab.`;
+      default:
+        return assertNever(provider, 'provider');
+    }
   }
 
   protected async check(project: Project): Promise<void> {
     const draft = this.draft(project);
     const ref = draft.ref.trim();
     if (!draft.connectionId || ref === '' || this.busy()) return;
+    const provider = this.providerOf(project);
+    // A connection this page does not list is not one to test.
+    if (provider === null) return;
     const generation = this.orgGeneration;
     await this.run(
       async () => {
@@ -205,8 +228,7 @@ export class RepositoriesPage {
         );
         // An answer for another organisation or another mapping than the one on screen is dropped.
         if (generation !== this.orgGeneration || !this.sameDraft(project, draft)) return;
-        const text =
-          this.providerOf(project) === 'github' ? githubTestText(result) : gitlabTestText(result);
+        const text = testText(provider, result);
         this.results.update((all) => ({ ...all, [project.id]: text }));
         // A failure reads as one: the error alert, never the green news of a success.
         if (result.ok) this.announcement.set(text);
@@ -226,7 +248,7 @@ export class RepositoriesPage {
   private projectFieldError(project: Project, err: unknown, refPath: string): boolean {
     const fields = fieldErrors(err);
     if (fields[refPath] !== undefined) {
-      const message = this.providerOf(project) === 'github' ? badGitHubRef() : badRef();
+      const message = badRefOf(this.providerOf(project));
       this.refErrors.update((all) => ({ ...all, [project.id]: message }));
       this.focusById(`ref-${project.id}`);
       return true;
@@ -277,6 +299,31 @@ function badRef(): string {
 
 function badGitHubRef(): string {
   return $localize`:@@gitlab.badGitHubRef:Use owner/repo, the GitHub repository's owner and name, such as acme/api.`;
+}
+
+function testText(provider: ScmProvider, result: Parameters<typeof gitlabTestText>[0]): string {
+  switch (provider) {
+    case 'github':
+      return githubTestText(result);
+    case 'gitlab':
+      return gitlabTestText(result);
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
+
+function badRefOf(provider: ScmProvider | null): string {
+  if (provider === null) {
+    return $localize`:@@gitlab.badAnyRef:Use the repository's id or full path.`;
+  }
+  switch (provider) {
+    case 'github':
+      return badGitHubRef();
+    case 'gitlab':
+      return badRef();
+    default:
+      return assertNever(provider, 'provider');
+  }
 }
 
 function badConnection(): string {

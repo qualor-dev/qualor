@@ -18,6 +18,7 @@ import { ApiError } from '../api/errors';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { Icon } from '../shared/icon';
 import { safeHelpUri } from '../shared/links';
+import { assertNever } from '../shared/scm-provider';
 import { FixProjectState } from './fix-project';
 import {
   cancelFix,
@@ -119,8 +120,19 @@ export class FixLinkView {
       this.inFlightWhileOff() ||
       (this.usable() && (this.shown() !== null || this.canCreate() || this.error() !== null)),
   );
-  /** "MR" on GitLab, "PR" on GitHub. */
-  protected readonly word = computed(() => (this.state()?.provider === 'github' ? 'PR' : 'MR'));
+  /** "MR" on GitLab, "PR" on GitHub, the plain "MR" while the provider is not known. */
+  protected readonly word = computed(() => {
+    const provider = this.state()?.provider;
+    if (provider === null || provider === undefined) return 'MR';
+    switch (provider) {
+      case 'github':
+        return 'PR';
+      case 'gitlab':
+        return 'MR';
+      default:
+        return assertNever(provider, 'provider');
+    }
+  });
 
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -133,9 +145,18 @@ export class FixLinkView {
   protected readonly mrLabel = computed(() => {
     const number = this.shown()?.mrNumber;
     if (number === null || number === undefined) return null;
-    return this.state()?.provider === 'github'
-      ? $localize`:@@fix.link.pr:PR #${number}:number:`
-      : $localize`:@@fix.link.mr:MR !${number}:number:`;
+    const provider = this.state()?.provider;
+    if (provider === null || provider === undefined) {
+      return $localize`:@@fix.link.mr:MR !${number}:number:`;
+    }
+    switch (provider) {
+      case 'github':
+        return $localize`:@@fix.link.pr:PR #${number}:number:`;
+      case 'gitlab':
+        return $localize`:@@fix.link.mr:MR !${number}:number:`;
+      default:
+        return assertNever(provider, 'provider');
+    }
   });
   /** The version the fix moves to, only where it is the current one. */
   protected readonly version = computed(() => {

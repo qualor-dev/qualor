@@ -8,6 +8,7 @@ import {
   type WritableSignal,
 } from '@angular/core';
 import { Api, ok } from '../api/api';
+import type { ScmProvider } from '../shared/scm-provider';
 import type { FixSettingsAnswer } from '../api/types';
 
 /** What a finding needs to know of its project's fix MRs (spec §6.9). */
@@ -15,7 +16,7 @@ export interface FixProjectView {
   /** The project switched fix MRs on. */
   enabled: boolean;
   /** The connection's provider: it names the request "MR" or "PR". */
-  provider: 'gitlab' | 'github' | null;
+  provider: ScmProvider | null;
   /** Requests can be made: on, a mapped repository, an allowing connection, monitoring on. */
   usable: boolean;
   /** The fixes in flight, by state: they count against `maxOpen`. */

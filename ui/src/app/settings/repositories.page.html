@@ -91,18 +91,30 @@
                 }
               </td>
               <td class="ref-cell">
-                @if (providerOf(p) === 'github') {
-                  <label
-                    class="visually-hidden"
-                    [attr.for]="'ref-' + p.id"
-                    i18n="@@gitlab.githubRefOf"
-                  >
-                    GitHub repository of {{ p.name }}
-                  </label>
-                } @else {
-                  <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@gitlab.refOf">
-                    GitLab project of {{ p.name }}
-                  </label>
+                @switch (providerOf(p)) {
+                  @case ('github') {
+                    <label
+                      class="visually-hidden"
+                      [attr.for]="'ref-' + p.id"
+                      i18n="@@gitlab.githubRefOf"
+                    >
+                      GitHub repository of {{ p.name }}
+                    </label>
+                  }
+                  @case ('gitlab') {
+                    <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@gitlab.refOf">
+                      GitLab project of {{ p.name }}
+                    </label>
+                  }
+                  @default {
+                    <label
+                      class="visually-hidden"
+                      [attr.for]="'ref-' + p.id"
+                      i18n="@@gitlab.anyRefOf"
+                    >
+                      Repository of {{ p.name }}
+                    </label>
+                  }
                 }
                 <input
                   [id]="'ref-' + p.id"
@@ -121,14 +133,20 @@
                   [disabled]="!canManage()"
                   (input)="setRef(p, $event)"
                 />
-                @if (providerOf(p) === 'github') {
-                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
-                    >owner/repo</span
-                  >
-                } @else {
-                  <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.refHint"
-                    >group/project or its id</span
-                  >
+                @switch (providerOf(p)) {
+                  @case ('github') {
+                    <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
+                      >owner/repo</span
+                    >
+                  }
+                  @case ('gitlab') {
+                    <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.refHint"
+                      >group/project or its id</span
+                    >
+                  }
+                  @default {
+                    <span [id]="'ref-hint-' + p.id" class="hint"></span>
+                  }
                 }
                 @if (refErrors()[p.id]; as message) {
                   <span [id]="'ref-error-' + p.id" class="field-error" role="alert">{{

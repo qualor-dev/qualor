@@ -67,7 +67,9 @@ export class RepositoryList {
 
   private readonly connectionId = computed(() => this.connection().id);
   /** GitHub names each repository's language, GitLab does not: no column for it there. */
-  protected readonly languages = computed(() => this.connection().provider === 'github');
+  protected readonly languages = computed(
+    () => this.connection().provider === 'github', // provider-guard: only GitHub names languages
+  );
   protected readonly full = computed(() => this.selected().size >= MAX_REPOSITORIES);
   protected readonly selectable = computed(() => this.repos().filter((r) => this.canPick(r)));
   protected readonly pageState = computed(() => {

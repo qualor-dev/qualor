@@ -91,8 +91,8 @@ export class GitLabPage {
     ),
   );
   /** The GitLab connections this page lists; the mapping offers every connection. */
-  protected readonly gitlabConnections = computed(() =>
-    this.connections.items().filter((c) => c.provider === 'gitlab'),
+  protected readonly gitlabConnections = computed(
+    () => this.connections.items().filter((c) => c.provider === 'gitlab'), // provider-guard: this page lists GitLab connections
   );
   protected readonly url = signal('');
   protected readonly token = signal('');

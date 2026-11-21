@@ -119,8 +119,8 @@ export class GitHubPage {
     ),
   );
   /** Only GitHub connections are this page's; the GitLab tab lists the others. */
-  protected readonly apps = computed(() =>
-    this.connections.items().filter((c) => c.provider === 'github'),
+  protected readonly apps = computed(
+    () => this.connections.items().filter((c) => c.provider === 'github'), // provider-guard: this page lists GitHub connections
   );
   protected readonly url = signal('https://api.github.com');
   protected readonly appId = signal('');

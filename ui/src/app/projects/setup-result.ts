@@ -15,6 +15,7 @@ import { RouterLink } from '@angular/router';
 import { SecretOnce } from '../settings/secret-once';
 import { Icon } from '../shared/icon';
 import { safeHelpUri } from '../shared/links';
+import { assertNever } from '../shared/scm-provider';
 import {
   type Connection,
   errorText,
@@ -32,6 +33,49 @@ const WORKFLOW_FILE = '.github/workflows/qualor.yml';
 const GITLAB_CI_FILE = '.gitlab-ci.yml';
 /** The name of the secret or CI/CD variable the token goes into: a name, not text to translate. */
 const SECRET_NAME = 'QUALOR_TOKEN';
+
+/** The provider a snippet is for, told by its first line; null for any other text. */
+function providerOfSnippet(snippet: string): Provider | null {
+  if (/^name: /.test(snippet)) return 'github';
+  if (/^(include|qualor):/.test(snippet)) return 'gitlab';
+  return null;
+}
+
+/** Where the address goes without a public URL: in GitHub's file, a variable on GitLab. */
+function noPublicUrlText(provider: Provider | null): string {
+  if (provider === null) {
+    return $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
+  }
+  switch (provider) {
+    case 'github':
+      return $localize`:@@addRepos.reason.noPublicUrlGithub:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`;
+    case 'gitlab':
+      return $localize`:@@addRepos.reason.noPublicUrlGitlab:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.`;
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
+
+/** What the token is called, and where it goes, for a provider (nothing while it is unknown). */
+function secretText(provider: Provider | null): { title: string; intro: string; where: string } {
+  if (provider === null) return { title: '', intro: '', where: '' };
+  switch (provider) {
+    case 'github':
+      return {
+        title: $localize`:@@addRepos.secret.github:Secret`,
+        intro: $localize`:@@addRepos.secret.githubIntro:Add it to the repository's Actions secrets.`,
+        where: $localize`:@@addRepos.secret.githubWhere:On GitHub: the repository's Settings, then Secrets and variables, Actions, New repository secret.`,
+      };
+    case 'gitlab':
+      return {
+        title: $localize`:@@addRepos.secret.gitlab:CI/CD variable`,
+        intro: $localize`:@@addRepos.secret.gitlabIntro:Add it to the project's CI/CD variables, masked.`,
+        where: $localize`:@@addRepos.secret.gitlabWhere:On GitLab: the project's Settings, then CI/CD, Variables, Add variable. Add QUALOR_URL with this server's address too.`,
+      };
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
 
 /**
  * `q-setup-result`: what a finished repository-setup run did for one repository, as an article
@@ -86,16 +130,25 @@ export class SetupResult {
   });
   /**
    * The provider: the connection's, else told by the snippet (a GitHub workflow starts with its
-   * name; GitLab's is an include or a job).
+   * name; GitLab's is an include or a job); null when neither says.
    */
-  protected readonly provider = computed<Provider>(() => {
+  protected readonly provider = computed<Provider | null>(() => {
     const connection = this.connection();
     if (connection) return connection.provider;
-    return /^name: /.test(this.item().snippet ?? '') ? 'github' : 'gitlab';
+    return providerOfSnippet(this.item().snippet ?? '');
   });
-  protected readonly file = computed(() =>
-    this.provider() === 'github' ? WORKFLOW_FILE : GITLAB_CI_FILE,
-  );
+  protected readonly file = computed(() => {
+    const provider = this.provider();
+    if (provider === null) return '';
+    switch (provider) {
+      case 'github':
+        return WORKFLOW_FILE;
+      case 'gitlab':
+        return GITLAB_CI_FILE;
+      default:
+        return assertNever(provider, 'provider');
+    }
+  });
   protected readonly copyState = signal<'idle' | 'copied' | 'failed'>('idle');
   protected readonly secretName = SECRET_NAME;
 
@@ -120,29 +173,15 @@ export class SetupResult {
         return $localize`:@@addRepos.reason.yaml:Qualor cannot change this .gitlab-ci.yml safely (anchors, several documents or invalid YAML), so it did not change it.`;
       // The address is in GitHub's workflow file; GitLab's job reads it from a CI/CD variable.
       case 'no_public_url':
-        return this.provider() === 'github'
-          ? $localize`:@@addRepos.reason.noPublicUrlGithub:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`
-          : $localize`:@@addRepos.reason.noPublicUrlGitlab:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.`;
+        return noPublicUrlText(this.provider());
       default:
         return $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
     }
   });
 
-  protected readonly secretTitle = computed(() =>
-    this.provider() === 'github'
-      ? $localize`:@@addRepos.secret.github:Secret`
-      : $localize`:@@addRepos.secret.gitlab:CI/CD variable`,
-  );
-  protected readonly secretIntro = computed(() =>
-    this.provider() === 'github'
-      ? $localize`:@@addRepos.secret.githubIntro:Add it to the repository's Actions secrets.`
-      : $localize`:@@addRepos.secret.gitlabIntro:Add it to the project's CI/CD variables, masked.`,
-  );
-  protected readonly secretWhere = computed(() =>
-    this.provider() === 'github'
-      ? $localize`:@@addRepos.secret.githubWhere:On GitHub: the repository's Settings, then Secrets and variables, Actions, New repository secret.`
-      : $localize`:@@addRepos.secret.gitlabWhere:On GitLab: the project's Settings, then CI/CD, Variables, Add variable. Add QUALOR_URL with this server's address too.`,
-  );
+  protected readonly secretTitle = computed(() => secretText(this.provider()).title);
+  protected readonly secretIntro = computed(() => secretText(this.provider()).intro);
+  protected readonly secretWhere = computed(() => secretText(this.provider()).where);
   protected readonly tokenLabel = computed(
     () => $localize`:@@addRepos.secret.label:Token for ${this.item().name}:repository:`,
   );

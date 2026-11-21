@@ -158,15 +158,17 @@
         <span class="setting-name" i18n="@@fix.panel.token">What the connection's token needs</span>
       </div>
       <div class="setting-field">
-        @if (needs() !== 'github') {
-          <p i18n="@@fix.panel.token.gitlab">
-            GitLab: the api scope, and the Developer role or higher on the project.
-          </p>
-        }
-        @if (needs() !== 'gitlab') {
-          <p i18n="@@fix.panel.token.github">
-            GitHub: the App's permissions contents: write and pull_requests: write.
-          </p>
+        @switch (needs()) {
+          @case ('gitlab') {
+            <p i18n="@@fix.panel.token.gitlab">
+              GitLab: the api scope, and the Developer role or higher on the project.
+            </p>
+          }
+          @case ('github') {
+            <p i18n="@@fix.panel.token.github">
+              GitHub: the App's permissions contents: write and pull_requests: write.
+            </p>
+          }
         }
       </div>
     </div>

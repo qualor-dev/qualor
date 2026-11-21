@@ -10,7 +10,7 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
-import { AI_POLL_INTERVAL, AiPanel } from './ai-panel';
+import { AI_POLL_INTERVAL, AiPanel, postTarget } from './ai-panel';
 
 const ISSUE = { id: 'i1', projectId: 'p1', branchId: 'b1', status: 'open' } as const;
 const ORG_AI = {
@@ -429,6 +429,22 @@ describe('AiPanel (llm.md §18)', () => {
     button(root, 'Post to merge request').click();
     await settle(fixture);
     expect(root.textContent).toContain('pull request #42?');
+  });
+
+  it('a merge request URL that is neither /pull/N nor /merge_requests/N gives no post target', () => {
+    const branch = (mrUrl: string | null) => ({
+      ...MERGE_REQUEST,
+      kind: 'merge_request' as const,
+      mrUrl,
+    });
+    expect(postTarget(branch('https://github.com/acme/payments/pull/42'))?.kind).toBe(
+      'pull_request',
+    );
+    expect(
+      postTarget(branch('https://gitlab.example/acme/payments/-/merge_requests/42'))?.kind,
+    ).toBe('merge_request');
+    expect(postTarget(branch('https://dev.azure.com/acme/p/_git/r/pullrequest/42'))).toBeNull();
+    expect(postTarget(branch(null))).toBeNull();
   });
 
   it('offers no post when the issue is not on a merge request', async () => {

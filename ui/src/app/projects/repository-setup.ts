@@ -1,8 +1,9 @@
 import type { ItemOf, ResponseBody } from '../api/types';
+import { assertNever, SCM_PROVIDERS, type ScmProvider } from '../shared/scm-provider';
 
 /** The types and words that the **Add repositories** page and its parts share. */
 export type Connection = ItemOf<'/api/v0/scm-connections'>;
-export type Provider = Connection['provider'];
+export type Provider = ScmProvider;
 export type Repository = ResponseBody<
   '/api/v0/scm-connections/{id}/repositories',
   'get'
@@ -19,8 +20,14 @@ export type ItemState =
 
 /** The provider's name for people ("GitHub Enterprise" for a server of one's own). */
 export function providerName(connection: Pick<Connection, 'provider' | 'baseUrl'>): string {
-  if (connection.provider === 'gitlab') return 'GitLab';
-  return githubCloud(connection.baseUrl) ? 'GitHub' : 'GitHub Enterprise';
+  switch (connection.provider) {
+    case 'gitlab':
+      return 'GitLab';
+    case 'github':
+      return githubCloud(connection.baseUrl) ? 'GitHub' : 'GitHub Enterprise';
+    default:
+      return assertNever(connection.provider, 'provider');
+  }
 }
 
 /** github.com's API, or a GHE.com tenant's (`api.<name>.ghe.com`). */
@@ -40,16 +47,25 @@ function hostOf(url: string): string {
 /** Where a connection is, as people know it: github.com rather than its API's address. */
 export function connectionHost(connection: Pick<Connection, 'provider' | 'baseUrl'>): string {
   const host = hostOf(connection.baseUrl);
-  return connection.provider === 'github' && host.startsWith('api.') ? host.slice(4) : host;
+  const githubApi = connection.provider === 'github' && host.startsWith('api.'); // provider-guard: only GitHub's API host differs
+  return githubApi ? host.slice(4) : host;
 }
 
 /** `#7` for a GitHub pull request, `!7` for a GitLab merge request, from its address. */
 export function mergeRequestNumber(url: string): string | null {
-  const github = /\/pull\/(\d+)\/?$/.exec(url);
-  if (github) return `#${github[1]}`;
-  const gitlab = /\/merge_requests\/(\d+)\/?$/.exec(url);
-  return gitlab ? `!${gitlab[1]}` : null;
+  for (const provider of SCM_PROVIDERS) {
+    const { pattern, prefix } = MERGE_REQUEST_URL[provider];
+    const found = pattern.exec(url);
+    if (found) return `${prefix}${found[1]}`;
+  }
+  return null;
 }
+
+/** How each provider's merge request address ends, and how its number is written. */
+export const MERGE_REQUEST_URL: Record<ScmProvider, { pattern: RegExp; prefix: string }> = {
+  github: { pattern: /\/pull\/(\d+)\/?$/, prefix: '#' },
+  gitlab: { pattern: /\/merge_requests\/(\d+)\/?$/, prefix: '!' },
+};
 
 /** A repository's path split for reading: the owner muted, the last segment set in bold. */
 export function pathParts(path: string): { owner: string; last: string } {

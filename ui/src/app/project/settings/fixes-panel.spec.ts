@@ -242,7 +242,7 @@ describe('ProjectFixesPanel', () => {
     expect(text).not.toContain('on the way');
   });
 
-  it('always prints the permissions the connection token needs, for its provider', async () => {
+  it("with needs() of 'github' only the GitHub text shows, with 'gitlab' only the GitLab text, with null neither", async () => {
     setup();
     const gitlab = (await render()).textContent ?? '';
     expect(gitlab).toContain('api scope');
@@ -256,9 +256,9 @@ describe('ProjectFixesPanel', () => {
     expect(github).not.toContain('api scope');
     TestBed.resetTestingModule();
     setup(fixSettings({ preconditions: { scmBound: false, provider: null } }));
-    const both = (await render()).textContent ?? '';
-    expect(both).toContain('api scope');
-    expect(both).toContain('contents: write');
+    const neither = (await render()).textContent ?? '';
+    expect(neither).not.toContain('api scope');
+    expect(neither).not.toContain('contents: write');
   });
 
   it('shows a viewer the settings read-only', async () => {

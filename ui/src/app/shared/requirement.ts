@@ -3,9 +3,10 @@ import { RouterLink } from '@angular/router';
 import { SessionStore } from '../auth/session';
 import { OrgContext } from '../org/org-context';
 import { Icon } from './icon';
+import type { ScmProvider } from './scm-provider';
 
 /** Where a missing setting is changed: the settings page that holds it. */
-export type RequirementPlace = 'ai-provider' | 'org-ai' | 'repositories' | 'gitlab' | 'github';
+export type RequirementPlace = 'ai-provider' | 'org-ai' | 'repositories' | ScmProvider;
 
 /**
  * A place's page and its name as the navigation shows it. `opens` says whether the viewer can

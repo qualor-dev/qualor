@@ -15,18 +15,7 @@ const SKIP = /\.(test|spec|db\.test)\.ts$|^ui\/src\/app\/api\/schema\.ts$/;
 const COMPARISON =
   /(?:[!=]==|<>|!=)\s*['"](?:gitlab|github)['"]|['"](?:gitlab|github)['"]\s*[!=]==/;
 
-const BASELINE: Record<string, number> = {
-  'ui/src/app/fixes/fix-link.ts': 2,
-  'ui/src/app/project/settings/fixes-panel.html': 2,
-  'ui/src/app/projects/add-repositories.page.html': 1,
-  'ui/src/app/projects/repository-list.ts': 1,
-  'ui/src/app/projects/repository-setup.ts': 2,
-  'ui/src/app/projects/setup-result.ts': 5,
-  'ui/src/app/settings/github.page.ts': 1,
-  'ui/src/app/settings/gitlab.page.ts': 1,
-  'ui/src/app/settings/repositories.page.html': 2,
-  'ui/src/app/settings/repositories.page.ts': 5,
-};
+const BASELINE: Record<string, number> = {};
 
 function walk(dir: string, out: string[]): void {
   for (const name of readdirSync(dir)) {

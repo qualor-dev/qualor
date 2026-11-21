@@ -80,7 +80,7 @@ export class ProjectFixesPanel {
     const c = this.loaded()?.counts;
     return c ? c.requested + c.preparing + c.committing + c.open : 0;
   });
-  /** The permissions the connection's token needs, for the project's provider (both when unknown). */
+  /** The permissions the connection's token needs, for the project's provider (none when unknown). */
   protected readonly needs = computed(() => this.loaded()?.preconditions.provider ?? null);
 
   protected readonly body = computed<Body>(() => ({
