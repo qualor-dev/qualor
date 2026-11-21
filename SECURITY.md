@@ -2,9 +2,9 @@
 
 ## Reporting a vulnerability
 
-Email **security@qualor.dev**. Please do not open a public issue, merge request or pull request
-for a vulnerability. Once the repository is public, GitHub's private vulnerability reporting
-(**Security → Report a vulnerability**) works too.
+Email **security@qualor.dev**, or report it privately on GitHub: open the Qualor repository
+(<https://github.com/qualor-dev/qualor>) and choose **Security → Report a vulnerability**.
+Please do not open a public issue, merge request or pull request for a vulnerability.
 
 Include what you found, the affected version or commit, how to reproduce it, and what an attacker
 gains. There is no PGP key; send the report as plain email.
@@ -19,11 +19,11 @@ What to expect:
 
 ## Scope
 
-Everything in this repository (the server, the web UI, the `qualor` CLI, `packages/shared`, the
-CI templates and integrations, the Helm chart, and `enterprise/`), and the published images
-`qualor/server`, `qualor/scanner` and `qualor/scanner-dotnet`. Vulnerabilities in the analyzers
-Qualor runs (ESLint, PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Roslyn) belong to their projects;
-tell us too if Qualor's use of them makes things worse.
+Everything in the Qualor repository (the server, the web UI, the `qualor` CLI,
+`packages/shared`, the CI templates and integrations, the Helm chart, and `enterprise/`), and the
+published images `qualor/server`, `qualor/scanner` and `qualor/scanner-dotnet`. Vulnerabilities in
+the analyzers Qualor runs (ESLint, PMD, SpotBugs, OpenGrep, Gitleaks, Trivy, Roslyn) belong to their
+projects; tell us too if Qualor's use of them makes things worse.
 
 ## Supported versions
 
@@ -36,11 +36,12 @@ it.
 ## Verifying a release
 
 Every release since 0.1.0 is signed with cosign: the images, the Helm chart, and the release
-files through their `SHA256SUMS`. The public key is `cosign.pub` in this repository and at
+files through their `SHA256SUMS`. The public key is `cosign.pub` in the Qualor repository and at
 <https://qualor.dev/cosign.pub>. Verify with that key, not with the copy a release carries.
 
-The signatures are not recorded in the public Rekor transparency log, so every command below
-carries `--insecure-ignore-tlog=true`; without it, cosign looks for a log entry and fails.
+Every command below carries `--insecure-ignore-tlog=true`. The signatures are checked against our
+public key only and are not uploaded to the public Rekor transparency log, so without the flag
+cosign looks for a log entry and fails.
 
 ```sh
 cosign verify --key https://qualor.dev/cosign.pub --insecure-ignore-tlog=true qualor/server:0.16.0
