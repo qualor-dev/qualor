@@ -17,7 +17,7 @@ import { type Branch, findBranch } from '../project/branches';
 import { llmProblemText } from '../settings/ai-text';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { safeHelpUri } from '../shared/links';
-import { SCM_PROVIDERS, type ScmProvider } from '../shared/scm-provider';
+import { assertNever, SCM_PROVIDERS, type ScmProvider } from '../shared/scm-provider';
 
 type OrgAi = ResponseBody<'/api/v0/organizations/{id}/ai', 'get'>;
 export type AiRequest = ResponseBody<'/api/v0/ai-requests/{id}', 'get'>;
@@ -56,16 +56,29 @@ export interface PostTarget {
 }
 
 /** llm.md §8.2: a fix can be posted only on a merge request of a mapped project. */
-export function postTarget(branch: Branch): PostTarget | null {
+export function postTarget(branch: Branch, provider: ScmProvider | null = null): PostTarget | null {
   if (branch.kind !== 'merge_request') return null;
-  const url = branch.mrUrl ?? '';
-  for (const provider of SCM_PROVIDERS) {
-    const { pattern, kind, prefix } = POST_TARGETS[provider];
-    if (pattern.test(url)) {
-      return { kind, reference: `${prefix}${branch.name}`, title: branch.mrTitle };
-    }
+  // A recorded address tells the provider; a branch without one (not decorated yet, or the link
+  // is off the connection's web address) takes the project's connection's provider.
+  if (branch.mrUrl === null) {
+    return provider === null ? null : target(provider, branch);
+  }
+  for (const candidate of SCM_PROVIDERS) {
+    if (POST_TARGETS[candidate].pattern.test(branch.mrUrl)) return target(candidate, branch);
   }
   return null;
+}
+
+function target(provider: ScmProvider, branch: Branch): PostTarget {
+  switch (provider) {
+    case 'github':
+    case 'gitlab': {
+      const { kind, prefix } = POST_TARGETS[provider];
+      return { kind, reference: `${prefix}${branch.name}`, title: branch.mrTitle };
+    }
+    default:
+      return assertNever(provider, 'provider');
+  }
 }
 
 /** How each provider's merge request address looks, and what its requests are called. */
@@ -378,9 +391,27 @@ export class AiPanel {
   private async loadTarget(issue: AiIssue, generation: number): Promise<void> {
     try {
       const branch = await findBranch(this.api, issue.projectId, issue.branchId);
-      if (generation === this.generation) this.target.set(postTarget(branch));
+      let target = postTarget(branch);
+      if (target === null && branch.kind === 'merge_request' && branch.mrUrl === null) {
+        target = postTarget(branch, await this.projectProvider(issue.projectId));
+      }
+      if (generation === this.generation) this.target.set(target);
     } catch {
       // Without the branch there is nothing to post to: Post is not offered.
+    }
+  }
+
+  /** The provider of the project's connection (project.read, as the panel's page); null if unread. */
+  private async projectProvider(projectId: string): Promise<ScmProvider | null> {
+    try {
+      const answer = await ok(
+        this.api.client.GET('/api/v0/projects/{id}/fixes/settings', {
+          params: { path: { id: projectId } },
+        }),
+      );
+      return answer.preconditions.provider;
+    } catch {
+      return null;
     }
   }
 

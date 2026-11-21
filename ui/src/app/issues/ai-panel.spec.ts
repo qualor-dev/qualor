@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   FakeServer,
+  fixSettings,
   me,
   ORG_ID,
   page,
@@ -445,6 +446,36 @@ describe('AiPanel (llm.md §18)', () => {
     ).toBe('merge_request');
     expect(postTarget(branch('https://dev.azure.com/acme/p/_git/r/pullrequest/42'))).toBeNull();
     expect(postTarget(branch(null))).toBeNull();
+    expect(postTarget(branch(null), 'gitlab')).toMatchObject({
+      kind: 'merge_request',
+      reference: '!42',
+    });
+    expect(postTarget(branch(null), 'github')).toMatchObject({
+      kind: 'pull_request',
+      reference: '#42',
+    });
+    expect(postTarget(branch('https://dev.azure.com/a/pullrequest/42'), 'gitlab')).toBeNull();
+  });
+
+  it('offers Post for a merge request with no recorded URL, by the connection’s provider', async () => {
+    for (const [provider, text] of [
+      ['gitlab', 'merge request !42?'],
+      ['github', 'pull request #42?'],
+    ] as const) {
+      TestBed.resetTestingModule();
+      const server = setup();
+      server.on('GET', '/api/v0/issues/i1/ai', { body: { explain: null, triage: null, fix: FIX } });
+      server.on('GET', '/api/v0/projects/p1/branches', {
+        body: page([{ ...MERGE_REQUEST, mrTitle: null, mrUrl: null }]),
+      });
+      server.on('GET', '/api/v0/projects/p1/fixes/settings', {
+        body: fixSettings({ preconditions: { provider } }),
+      });
+      const { fixture, root } = await render();
+      button(root, 'Post to merge request').click();
+      await settle(fixture);
+      expect(root.textContent).toContain(text);
+    }
   });
 
   it('offers no post when the issue is not on a merge request', async () => {
