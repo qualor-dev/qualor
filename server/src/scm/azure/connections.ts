@@ -10,7 +10,7 @@ import {
   type TestProblemCode,
 } from '../connections';
 import { InstallationTokenCache } from '../github/app-auth';
-import { ScmError } from '../provider';
+import { ScmError, type ScmErrorReason } from '../provider';
 import { isInternalHostAllowed, scmBaseUrlProblem } from '../url';
 import type { AzureAuthKind } from './auth-kinds';
 import { AZURE_CERTIFICATE_PROBLEM_TEXT, parseAzureCertificate } from './certificate';
@@ -280,7 +280,12 @@ function bearer(
   const options: EntraOptions =
     origin === null
       ? {}
-      : { tokenUrl: (tenantId) => entraTokenUrl(tenantId, origin), allowInternalHosts: true };
+      : {
+          tokenUrl: (tenantId) => entraTokenUrl(tenantId, origin),
+          allowInternalHosts: true,
+          // The tests' stall check shortens the wait (undefined keeps the default).
+          timeoutMs: deps.azureClientOptions?.timeoutMs,
+        };
   return async () => {
     const cached = tokens.get(key);
     if (cached !== null) return cached;
@@ -295,7 +300,7 @@ function bearer(
   };
 }
 
-/** Fixed texts for a token request that failed in transport or on Microsoft's side (M3). */
+/** Fixed texts for a token request that failed in transport or on Microsoft's side. */
 export const ENTRA_FAILURE_TEXT = {
   unreachable: 'Microsoft Entra could not be reached',
   timeout: 'Microsoft Entra did not answer in time',
@@ -303,28 +308,33 @@ export const ENTRA_FAILURE_TEXT = {
 } as const;
 
 /**
- * An error of the Entra token request as one the test reports as token_endpoint, so a blocked or
- * failing Entra is never blamed on Azure DevOps. Entra's refusals already are token_endpoint and
- * stay; the rest get a fixed text naming Microsoft Entra and the class of the cause, never Entra's
- * own words. The error's kind stays, so retries still tell transient from final.
+ * An error of the Entra token request as one the test reports under a token_endpoint code, so a
+ * blocked or failing Entra is never blamed on Azure DevOps. Entra's refusals already are
+ * token_endpoint and stay; the rest get a code and a fixed text naming Microsoft Entra and the
+ * class of the cause, never Entra's own words. The error's kind stays, so retries still tell
+ * transient from final.
  */
 function entraFailure(err: unknown): unknown {
   if (!(err instanceof ScmError) || err.reason === 'token_endpoint') return err;
+  let reason: ScmErrorReason;
   let message: string;
   switch (err.reason) {
     case 'unresolved':
     case 'unreachable':
     case 'not_public':
+      reason = 'token_endpoint_unreachable';
       message = ENTRA_FAILURE_TEXT.unreachable;
       break;
     case 'timeout':
+      reason = 'token_endpoint_timeout';
       message = ENTRA_FAILURE_TEXT.timeout;
       break;
     default:
+      reason = 'token_endpoint_error';
       message = ENTRA_FAILURE_TEXT.error;
   }
   return new ScmError(err.kind, message, {
-    reason: 'token_endpoint',
+    reason,
     status: err.status,
     retryAfterSeconds: err.retryAfterSeconds,
     request: err.request,
@@ -428,6 +438,9 @@ function problemCode(err: ScmError): TestProblemCode {
     case 'sign_in_required':
     case 'html_answer':
     case 'token_endpoint':
+    case 'token_endpoint_unreachable':
+    case 'token_endpoint_timeout':
+    case 'token_endpoint_error':
     case 'permission_missing':
       return err.reason;
     default:

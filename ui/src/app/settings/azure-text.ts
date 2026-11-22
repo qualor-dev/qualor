@@ -44,8 +44,14 @@ export function azureProblemText(problem: Problem, expiredOn: string | null = nu
       return $localize`:@@azure.problem.htmlAnswer:Azure DevOps answered with a web page instead of data. Check the credential and the address.`;
     case 'token_endpoint':
       return expiredOn === null
-        ? entraText(problem.message)
+        ? $localize`:@@azure.problem.tokenEndpoint:Microsoft Entra refused the service principal. Check the tenant id, client id and the secret or certificate.`
         : $localize`:@@azure.problem.certificateExpired:The certificate expired on ${expiredOn}:date:. Replace it, then test again.`;
+    case 'token_endpoint_unreachable':
+      return $localize`:@@azure.problem.entraUnreachable:Microsoft Entra could not be reached. Check that the server can reach login.microsoftonline.com.`;
+    case 'token_endpoint_timeout':
+      return $localize`:@@azure.problem.entraTimeout:Microsoft Entra did not answer in time. Check that the server can reach login.microsoftonline.com.`;
+    case 'token_endpoint_error':
+      return $localize`:@@azure.problem.entraError:Microsoft Entra answered with an error. Try again later; if it persists, check that the server can reach login.microsoftonline.com.`;
     case 'permission_missing':
       return $localize`:@@azure.problem.permission:The credential lacks a permission in Azure DevOps. Give it read access to Code.`;
     case 'not_found':
@@ -57,23 +63,6 @@ export function azureProblemText(problem: Problem, expiredOn: string | null = nu
     default:
       return $localize`:@@azure.problem.unknown:The test failed.`;
   }
-}
-
-/**
- * A failed token request: the cause class when the server's fixed text names one (Microsoft Entra
- * could not be reached, did not answer, or answered with an error), else a refusal.
- */
-function entraText(serverText: string): string {
-  if (serverText.includes('could not be reached')) {
-    return $localize`:@@azure.problem.entraUnreachable:Microsoft Entra could not be reached. Check that the server can reach login.microsoftonline.com.`;
-  }
-  if (serverText.includes('did not answer')) {
-    return $localize`:@@azure.problem.entraTimeout:Microsoft Entra did not answer in time. Check that the server can reach login.microsoftonline.com.`;
-  }
-  if (serverText.includes('answered with an error')) {
-    return $localize`:@@azure.problem.entraError:Microsoft Entra answered with an error. Try again later.`;
-  }
-  return $localize`:@@azure.problem.tokenEndpoint:Microsoft Entra refused the service principal. Check the tenant id, client id and the secret or certificate.`;
 }
 
 /** An Azure DevOps test answer as the pages show it: who connected, and what that identity sees. */

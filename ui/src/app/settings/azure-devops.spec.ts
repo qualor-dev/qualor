@@ -449,20 +449,26 @@ describe('AzureDevOpsPage', () => {
   });
 
   it('names the cause when Microsoft Entra could not be reached, not Azure DevOps', () => {
-    const entra = (message: string) =>
-      azureProblemText({ code: 'token_endpoint', message: message });
-    expect(entra('Microsoft Entra could not be reached')).toContain(
-      'Microsoft Entra could not be reached',
-    );
-    expect(entra('Microsoft Entra did not answer in time')).toContain('did not answer in time');
-    expect(entra('Microsoft Entra answered with an error')).toContain('answered with an error');
-    for (const message of [
-      'Microsoft Entra could not be reached',
-      'Microsoft Entra did not answer in time',
-      'Microsoft Entra answered with an error',
-    ]) {
-      expect(entra(message)).not.toMatch(/refused|Azure DevOps (host|did)/);
+    const text = (
+      code: 'token_endpoint_unreachable' | 'token_endpoint_timeout' | 'token_endpoint_error',
+    ) => azureProblemText({ code, message: 'raw server text' });
+    expect(text('token_endpoint_unreachable')).toContain('Microsoft Entra could not be reached');
+    expect(text('token_endpoint_timeout')).toContain('did not answer in time');
+    expect(text('token_endpoint_error')).toContain('answered with an error');
+    for (const code of [
+      'token_endpoint_unreachable',
+      'token_endpoint_timeout',
+      'token_endpoint_error',
+    ] as const) {
+      expect(text(code)).not.toMatch(/refused|Azure DevOps (host|did)/);
     }
+  });
+
+  it('keys on the code, never on the words of the server message', () => {
+    const misleading = 'Microsoft Entra could not be reached';
+    expect(azureProblemText({ code: 'token_endpoint', message: misleading })).toBe(
+      'Microsoft Entra refused the service principal. Check the tenant id, client id and the secret or certificate.',
+    );
   });
 
   it('says a certificate expired, and when, only for a connection whose certificate has', () => {

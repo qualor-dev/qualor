@@ -93,10 +93,14 @@ export const TEST_PROBLEM_CODES = [
   'not_installed',
   'permission_missing',
   // Azure DevOps design §7.1: TF401444 (the organisation has not added the identity, or it has
-  // no access level), a sign-in page instead of an answer, and Entra refusing the client.
+  // no access level), a sign-in page instead of an answer, Entra refusing the client, and the
+  // three ways its token request fails before any refusal.
   'sign_in_required',
   'html_answer',
   'token_endpoint',
+  'token_endpoint_unreachable',
+  'token_endpoint_timeout',
+  'token_endpoint_error',
 ] as const;
 export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
 
@@ -160,6 +164,9 @@ function problemCode(err: GitLabError): TestProblemCode {
     case 'other':
     case 'not_installed':
     case 'token_endpoint':
+    case 'token_endpoint_unreachable':
+    case 'token_endpoint_timeout':
+    case 'token_endpoint_error':
     case 'sign_in_required':
     case 'html_answer':
       return 'http_error';

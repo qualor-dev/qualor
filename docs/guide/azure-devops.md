@@ -85,7 +85,9 @@ A failing test shows one of these:
 | Azure DevOps answered with a web page instead of data | Check the credential and the address |
 | Microsoft Entra refused the service principal | Check the tenant id, the client id and the secret or certificate |
 | The certificate expired on a date | Upload a new certificate |
-| Microsoft Entra could not be reached, did not answer in time, or answered with an error | Check that the server can reach `login.microsoftonline.com` |
+| Microsoft Entra could not be reached | Check that the server can reach `login.microsoftonline.com` |
+| Microsoft Entra did not answer in time | Check that the server can reach `login.microsoftonline.com` |
+| Microsoft Entra answered with an error | Try again later; if it persists, check that the server can reach `login.microsoftonline.com` |
 | The credential lacks a permission in Azure DevOps | Give it read access to Code |
 
 A service principal sees only the projects it was added to. A test that connects but finds no

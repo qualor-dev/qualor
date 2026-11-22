@@ -75,6 +75,9 @@ function problemCode(err: ScmError): TestProblemCode {
     case 'http':
     case 'other':
     case 'token_endpoint':
+    case 'token_endpoint_unreachable':
+    case 'token_endpoint_timeout':
+    case 'token_endpoint_error':
     case 'sign_in_required':
     case 'html_answer':
       return 'http_error';

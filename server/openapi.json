@@ -26190,7 +26190,10 @@
                                 "permission_missing",
                                 "sign_in_required",
                                 "html_answer",
-                                "token_endpoint"
+                                "token_endpoint",
+                                "token_endpoint_unreachable",
+                                "token_endpoint_timeout",
+                                "token_endpoint_error"
                               ]
                             },
                             "message": {

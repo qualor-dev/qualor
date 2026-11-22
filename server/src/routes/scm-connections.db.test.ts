@@ -1,4 +1,6 @@
 import { createHash, generateKeyPairSync, X509Certificate } from 'node:crypto';
+import { createServer as createHttpServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_PASSWORD, addMember, createUser, login, type Session } from '../../test/app';
@@ -2386,9 +2388,59 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     expect(result).toMatchObject({
       ok: false,
       user: null,
-      problem: { code: 'token_endpoint', message: 'Microsoft Entra could not be reached' },
+      problem: {
+        code: 'token_endpoint_unreachable',
+        message: 'Microsoft Entra could not be reached',
+      },
     });
     expect(services.requests).toHaveLength(0);
+  });
+
+  it('gives a token endpoint that never answers, or answers 503, its own code', async () => {
+    const row = await rowOf((await created(SP_SECRET)).id);
+    const stalled = createHttpServer(() => undefined);
+    const failing = createHttpServer((_req, res) => {
+      res.writeHead(503).end();
+    });
+    const origins: string[] = [];
+    for (const fake of [stalled, failing]) {
+      await new Promise<void>((resolve) => fake.listen(0, '127.0.0.1', resolve));
+      origins.push(`http://127.0.0.1:${(fake.address() as AddressInfo).port}`);
+    }
+    try {
+      services.clearRequests();
+      const base = scmDepsOf(h.ctx.config);
+      const slow = await testAzureConnection(
+        row,
+        { ...base, azureTokenOrigin: origins[0]!, azureClientOptions: { timeoutMs: 200 } },
+        null,
+      );
+      expect(slow).toMatchObject({
+        ok: false,
+        problem: {
+          code: 'token_endpoint_timeout',
+          message: 'Microsoft Entra did not answer in time',
+        },
+      });
+      const broken = await testAzureConnection(
+        row,
+        { ...base, azureTokenOrigin: origins[1]! },
+        null,
+      );
+      expect(broken).toMatchObject({
+        ok: false,
+        problem: {
+          code: 'token_endpoint_error',
+          message: 'Microsoft Entra answered with an error',
+        },
+      });
+      expect(services.requests).toHaveLength(0);
+    } finally {
+      for (const fake of [stalled, failing]) {
+        fake.closeAllConnections();
+        fake.close();
+      }
+    }
   });
 
   it('sends nothing to an address the operator no longer lists or the Azure DevOps rules refuse', async () => {

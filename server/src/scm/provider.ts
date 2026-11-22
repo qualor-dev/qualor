@@ -14,7 +14,9 @@ export type ScmErrorKind =
  * an error status), `bad_answer`, `budget`, `invalid_input` (an id, revision or ref Qualor would not
  * put into a path), `permission_missing` (a 403: the credentials are valid but lack a permission),
  * `not_installed` (GitHub only), `other`. Azure DevOps only (design §7.1): `token_endpoint`
- * (Microsoft Entra gave no token for the service principal), `sign_in_required` (TF401444: the
+ * (Microsoft Entra refused the service principal), `token_endpoint_unreachable`,
+ * `token_endpoint_timeout` and `token_endpoint_error` (its token request failed in transport, ran
+ * out of time, or got an error answer), `sign_in_required` (TF401444: the
  * identity is not a member of the organisation or has no access level), `html_answer` (a 3xx, or
  * a 2xx HTML page: a sign-in page, so the credential was refused).
  */
@@ -30,6 +32,9 @@ export type ScmErrorReason =
   | 'not_installed'
   | 'permission_missing'
   | 'token_endpoint'
+  | 'token_endpoint_unreachable'
+  | 'token_endpoint_timeout'
+  | 'token_endpoint_error'
   | 'sign_in_required'
   | 'html_answer'
   | 'other';
