@@ -1,0 +1,42 @@
+import { createPublicKey, sign, X509Certificate, type KeyObject } from 'node:crypto';
+
+/** A DER element: its tag, its length (short or long form, up to 64 KiB) and its content. */
+function der(tag: number, ...content: Buffer[]): Buffer {
+  const body = Buffer.concat(content);
+  const n = body.length;
+  const length = n < 0x80 ? [n] : n < 0x100 ? [0x81, n] : [0x82, n >> 8, n & 0xff];
+  return Buffer.concat([Buffer.from([tag, ...length]), body]);
+}
+
+/** AlgorithmIdentifier sha256WithRSAEncryption (1.2.840.113549.1.1.11) with NULL parameters. */
+const SHA256_WITH_RSA = der(0x30, Buffer.from('06092a864886f70d01010b0500', 'hex'));
+
+/**
+ * A self-signed X.509 v3 certificate for an RSA key, as PEM, for the tests that need a
+ * certificate no committed fixture has (a 1024-bit RSA key): version 3, serial 1, subject and
+ * issuer `CN=qualor-test`, valid 2000-01-01 to 2049-12-31, no extensions. The key is generated
+ * by the test and never written anywhere.
+ */
+export function selfSignedRsaCertificate(key: KeyObject): string {
+  const name = der(
+    0x30,
+    der(0x31, der(0x30, Buffer.from('0603550403', 'hex'), der(0x0c, Buffer.from('qualor-test')))),
+  );
+  const validity = der(
+    0x30,
+    der(0x17, Buffer.from('000101000000Z')),
+    der(0x17, Buffer.from('491231235959Z')),
+  );
+  const tbs = der(
+    0x30,
+    Buffer.from('a003020102', 'hex'), // [0] version: v3
+    Buffer.from('020101', 'hex'), // serial number 1
+    SHA256_WITH_RSA,
+    name,
+    validity,
+    name,
+    createPublicKey(key).export({ type: 'spki', format: 'der' }),
+  );
+  const signature = der(0x03, Buffer.from([0]), sign('sha256', tbs, key));
+  return new X509Certificate(der(0x30, tbs, SHA256_WITH_RSA, signature)).toString();
+}

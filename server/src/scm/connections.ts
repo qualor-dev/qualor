@@ -123,10 +123,14 @@ function problemCode(err: GitLabError): TestProblemCode {
     case 'budget':
     case 'invalid_input':
       return 'bad_answer';
-    // GitLab never raises not_installed (GitHub only); the switch stays exhaustive.
+    // GitLab never raises not_installed (GitHub only) nor the Azure DevOps reasons; the switch
+    // stays exhaustive.
     case 'http':
     case 'other':
     case 'not_installed':
+    case 'token_endpoint':
+    case 'sign_in_required':
+    case 'html_answer':
       return 'http_error';
   }
 }

@@ -76,22 +76,37 @@ export function parseAppPrivateKey(
 const base64url = (value: Buffer | string): string => Buffer.from(value).toString('base64url');
 
 /**
- * github.md §4: the App's JWT, RS256 (`RSASSA-PKCS1-v1_5` with SHA-256, the default padding of
- * `sign` for an RSA key), `iat` back-dated 60 s, `exp` 9 minutes on, `iss` the App id.
+ * A JWT signed RS256 (`RSASSA-PKCS1-v1_5` with SHA-256, the default padding of `sign` for an RSA
+ * key): the header `alg: RS256`, `typ: JWT` and `header`'s fields after them (never in place of
+ * those two), then `claims`. Shared by the GitHub App's JWT and the Microsoft Entra client
+ * assertion (scm/azure/entra.ts).
+ */
+export function rs256Jwt(
+  claims: Readonly<Record<string, unknown>>,
+  key: KeyObject,
+  header: Readonly<Record<string, string>> & { alg?: never; typ?: never } = {},
+): string {
+  const head = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT', ...header }));
+  const payload = base64url(JSON.stringify(claims));
+  const signature = sign('sha256', Buffer.from(`${head}.${payload}`), key);
+  return `${head}.${payload}.${base64url(signature)}`;
+}
+
+/**
+ * github.md §4: the App's JWT, RS256 ({@link rs256Jwt}), `iat` back-dated 60 s, `exp` 9 minutes
+ * on, `iss` the App id.
  */
 export function appJwt(appId: string, key: KeyObject, nowSeconds: number): string {
   if (!isGitHubAppId(appId)) throw new Error('not a GitHub App id');
   if (!Number.isSafeInteger(nowSeconds)) throw new Error('not a time in whole seconds');
-  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = base64url(
-    JSON.stringify({
+  return rs256Jwt(
+    {
       iat: nowSeconds - JWT_BACKDATE_SECONDS,
       exp: nowSeconds + JWT_LIFETIME_SECONDS,
       iss: appId,
-    }),
+    },
+    key,
   );
-  const signature = sign('sha256', Buffer.from(`${header}.${payload}`), key);
-  return `${header}.${payload}.${base64url(signature)}`;
 }
 
 const SIGNATURE = /^sha256=([0-9a-f]{64})$/;

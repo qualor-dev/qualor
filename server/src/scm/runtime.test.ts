@@ -41,6 +41,19 @@ describe('one GitHub decoration at a time per installation', () => {
   });
 });
 
+describe('the token caches of the runtime', () => {
+  it('keeps Microsoft Entra tokens apart from GitHub installation tokens, on the same clock', () => {
+    let now = 1_000_000;
+    const { azureTokens, githubTokens } = createScmRuntime(() => now);
+    expect(azureTokens).not.toBe(githubTokens);
+    azureTokens.set('key', 'entra', now + 60 * 60_000);
+    expect(azureTokens.get('key')).toBe('entra');
+    expect(githubTokens.get('key')).toBeNull();
+    now += 56 * 60_000; // within the reuse margin of the token's end: asked again
+    expect(azureTokens.get('key')).toBeNull();
+  });
+});
+
 describe('the circuit breaker of a connection (scm.md §4.2)', () => {
   it('opens after the threshold, then lets one probe through; the others wait for its answer', () => {
     let now = 0;

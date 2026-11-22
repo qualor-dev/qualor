@@ -71,8 +71,12 @@ function problemCode(err: ScmError): TestProblemCode {
     case 'budget':
     case 'invalid_input':
       return 'bad_answer';
+    // GitHub never raises the Azure DevOps reasons; the switch stays exhaustive.
     case 'http':
     case 'other':
+    case 'token_endpoint':
+    case 'sign_in_required':
+    case 'html_answer':
       return 'http_error';
   }
 }

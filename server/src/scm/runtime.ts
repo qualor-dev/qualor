@@ -174,6 +174,11 @@ export interface ScmRuntime {
   githubTokens: InstallationTokenCache;
   /** github.md §5.3: mutations of one installation at least a second apart, per process. */
   githubPacer: MutationPacer;
+  /**
+   * Azure DevOps design §7.1: Microsoft Entra tokens of service principal connections (key:
+   * `entraCacheKey`), reused until shortly before they expire, never stored.
+   */
+  azureTokens: InstallationTokenCache;
 }
 
 export function createScmRuntime(now: () => number = Date.now): ScmRuntime {
@@ -184,5 +189,6 @@ export function createScmRuntime(now: () => number = Date.now): ScmRuntime {
     installationSlots: new OrganizationSlots(1),
     githubTokens: new InstallationTokenCache(now),
     githubPacer: new MutationPacer(now),
+    azureTokens: new InstallationTokenCache(now),
   };
 }

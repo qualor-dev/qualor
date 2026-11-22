@@ -13,7 +13,10 @@ export type ScmErrorKind =
  * `unresolved`, `timeout`, `unreachable` (a connection failure), `http` (the provider answered with
  * an error status), `bad_answer`, `budget`, `invalid_input` (an id, revision or ref Qualor would not
  * put into a path), `permission_missing` (a 403: the credentials are valid but lack a permission),
- * `not_installed` (GitHub only), `other`.
+ * `not_installed` (GitHub only), `other`. Azure DevOps only (design §7.1): `token_endpoint`
+ * (Microsoft Entra gave no token for the service principal), `sign_in_required` (TF401444: the
+ * identity is not a member of the organisation or has no access level), `html_answer` (a 3xx, or
+ * a 2xx HTML page: a sign-in page, so the credential was refused).
  */
 export type ScmErrorReason =
   | 'not_public'
@@ -26,6 +29,9 @@ export type ScmErrorReason =
   | 'invalid_input'
   | 'not_installed'
   | 'permission_missing'
+  | 'token_endpoint'
+  | 'sign_in_required'
+  | 'html_answer'
   | 'other';
 
 const DEFAULT_REASON: Record<ScmErrorKind, ScmErrorReason> = {
