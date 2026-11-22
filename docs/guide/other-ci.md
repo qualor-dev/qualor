@@ -1,8 +1,9 @@
 # Other CI systems and local scans
 
-Run the scanner on Jenkins, Bitbucket Pipelines, TeamCity, Azure Pipelines, Buildkite or your own
-machine. The scanner reads GitLab CI and GitHub Actions variables by itself. Everywhere else it
-reads the revision and the branch from git, and you pass the rest.
+Run the scanner on Jenkins, Bitbucket Pipelines, TeamCity, Buildkite or your own machine. The
+scanner reads GitLab CI, GitHub Actions and Azure Pipelines variables by itself (Azure Pipelines:
+see [Azure DevOps](./azure-devops.md#run-the-scanner-in-azure-pipelines)). Everywhere else it reads
+the revision and the branch from git, and you pass the rest.
 
 ## What every job needs
 
@@ -142,5 +143,5 @@ configuration, with every default filled in and the token redacted.
 The job fails when the scanner exits with a non-zero code, and code `1` means the gate failed. The
 full table is in the [CLI reference](./cli.md#exit-codes).
 
-Qualor does not comment on Bitbucket, Azure DevOps or Gerrit reviews. There, the job's exit code
-carries the verdict.
+Qualor does not comment on Bitbucket or Gerrit reviews, and does not yet comment on Azure DevOps
+pull requests. There, the job's exit code carries the verdict.

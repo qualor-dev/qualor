@@ -5,8 +5,7 @@ An organisation administrator adds a connection, tests it and maps each Qualor p
 repository.
 
 Not yet available in this release: comments and statuses on pull requests, AI review, fix pull
-requests, CI setup, Azure Boards and the pipeline extension. A connection and a mapping prepare
-them.
+requests, CI setup, Azure Boards. A connection and a mapping prepare them.
 
 ## Before you start
 
@@ -100,6 +99,72 @@ the repository from the list. Its entries read `project/repository`. Type in the
 narrow a long list, and press **Save**.
 
 A repository is stored by its id, so a rename in Azure DevOps keeps the mapping.
+
+## Run the scanner in Azure Pipelines
+
+A pipeline runs the scanner on Linux agents with Docker and uploads the report to your Qualor
+server. Pipelines on Azure Repos are detected: Qualor reads the branch, the tag, the pull request
+and its target, and the commit from the agent's variables.
+
+### Variables
+
+Set both under **Pipelines → Edit → Variables**.
+
+| Variable | Value |
+|---|---|
+| `QUALOR_URL` | The address of your Qualor server |
+| `QUALOR_TOKEN` | The project's analysis token, marked as a secret |
+
+### Pick a pipeline
+
+Copy one file to `azure-pipelines.yml`.
+
+| File | Use it for |
+|---|---|
+| [`integrations/azure-devops/qualor.yml`](../../integrations/azure-devops/qualor.yml) | Any language but C#, with the `Qualor@0` task |
+| [`integrations/azure-devops/qualor-docker.yml`](../../integrations/azure-devops/qualor-docker.yml) | The same, with `docker run` and no extension |
+| [`integrations/azure-devops/qualor-dotnet.yml`](../../integrations/azure-devops/qualor-dotnet.yml) | C#, with the `Qualor@0` task |
+| [`integrations/azure-devops/qualor-dotnet-docker.yml`](../../integrations/azure-devops/qualor-dotnet-docker.yml) | C#, with `docker run` and no extension |
+
+The `Qualor@0` task needs the Qualor extension in your organisation. Until its Marketplace listing
+is public, install it from the VSIX file attached to the release.
+
+| Task input | Meaning |
+|---|---|
+| `dotnet` | `true` analyses C# with the MSBuild integration |
+| `dotnetBuild` | The build command for C#. Default: `dotnet build --no-incremental` |
+| `imageTag` | The tag of `qualor/scanner`. Default: the extension's version |
+| `arguments` | Extra arguments for `qualor scan` |
+
+The checkout step needs `fetchDepth: 0`. The task fails with that hint on a shallow clone.
+
+### Pull requests
+
+Azure Repos ignores `pr:` in the YAML. Add the pipeline as a Build validation policy under
+**Repos → Branches → Branch policies** of the target branch.
+
+The task checks out the pull request's head, not Azure's merge commit. A pipeline that skips this
+checkout still uploads, but later inline comments cannot be placed in it.
+
+### The default branch
+
+Qualor does not detect the default branch on Azure Pipelines. When it is not `main`, set it in
+`.qualor.yml`:
+
+```yaml
+scm:
+  mainBranch: develop
+```
+
+### C#
+
+With `dotnet: true` the build runs inside the `qualor/scanner-dotnet` container. Two things follow.
+
+- The build sees `.git` read-only. A tool that writes into `.git`, such as GitVersion, must run in
+  an earlier step.
+- The container gets neither the agent's NuGet credential provider nor the `VSS_NUGET_*` variables.
+  For a private feed, restore the packages in an earlier step on the agent. The build then finds
+  them in the sources.
 
 ## Roles and audit
 

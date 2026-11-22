@@ -12,7 +12,7 @@ From highest to lowest:
 1. command-line flags (`--project-key`, `--sarif`, …)
 2. environment variables (`QUALOR_*`)
 3. `qualor.yml` (or the file named by `--config` or `QUALOR_CONFIG`)
-4. values detected from GitLab CI or GitHub Actions
+4. values detected from GitLab CI, GitHub Actions or Azure Pipelines
 5. built-in defaults
 
 **Secrets never come from `qualor.yml`.** A merge request can edit the file, so it must not be able
