@@ -54,7 +54,12 @@ const PLACES: Record<RequirementPlace, Place> = {
     organization: true,
     opens: (_, org) => org.can('org.scm.manage'),
   },
-  azure: REPOSITORIES, // azure-pending(2): Settings → Azure DevOps (Task 7)
+  azure: {
+    route: '/settings/azure-devops',
+    label: () => $localize`:@@requirement.azure:Settings → Azure DevOps`,
+    organization: true,
+    opens: (_, org) => org.can('org.scm.manage'),
+  },
 };
 
 /** A place as a viewer sees it: its page, its name, and whether it is a link for them. */

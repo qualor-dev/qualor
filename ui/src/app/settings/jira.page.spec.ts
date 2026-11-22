@@ -80,10 +80,10 @@ describe('SettingsPage: Jira (0.16 §6.1)', () => {
     return [...root.querySelectorAll('nav a')].map((a) => a.textContent?.trim());
   }
 
-  it('lists Jira for org.jira.manage only, after GitHub', async () => {
+  it('lists Jira for org.jira.manage only, after Azure DevOps', async () => {
     const admin = await labels(true);
     expect(admin).toContain('Jira');
-    expect(admin.indexOf('Jira')).toBe(admin.indexOf('GitHub') + 1);
+    expect(admin.indexOf('Jira')).toBe(admin.indexOf('Azure DevOps') + 1);
     TestBed.resetTestingModule();
     expect(await labels(false)).not.toContain('Jira');
   });

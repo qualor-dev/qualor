@@ -1,0 +1,458 @@
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@azure.title">Azure DevOps</h2>
+    @if (!canRead()) {
+      <p class="muted" i18n="@@azure.adminsOnly">
+        Only organization administrators connect Azure DevOps.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@azure.intro">
+        Connect Azure DevOps Services with a service principal or a personal access token, or Azure
+        DevOps Server with a personal access token. Map its repositories to projects under
+        <a routerLink="/settings/repositories">Repositories</a>.
+      </p>
+    }
+  </div>
+  @if (canManage()) {
+    <button type="button" class="btn btn-primary" (click)="openCreate()">
+      <q-icon name="plus" /><ng-container i18n="@@azure.newOpen">New connection</ng-container>
+    </button>
+  }
+</div>
+
+<!-- The fields shared by "New connection" and a connection's own form. -->
+<ng-template #fields let-f>
+  <div class="setting-row">
+    <div class="setting-text">
+      <label [attr.for]="f.prefix + '-url'" i18n="@@azure.address">Address</label>
+    </div>
+    <div class="setting-field">
+      <input
+        [id]="f.prefix + '-url'"
+        name="url"
+        type="url"
+        required
+        maxlength="2048"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="https://dev.azure.com/your-organization"
+        i18n-placeholder="@@azure.urlPlaceholder"
+        [attr.aria-invalid]="f.errors.url ? true : null"
+        [attr.aria-describedby]="f.errors.url ? f.prefix + '-url-error' : null"
+        [value]="f.url"
+        (input)="f.urlTyped($event)"
+      />
+      @if (f.errors.url; as message) {
+        <span [id]="f.prefix + '-url-error'" class="field-error" role="alert">{{ message }}</span>
+      }
+    </div>
+  </div>
+  <div class="setting-row">
+    <div class="setting-text">
+      <fieldset
+        class="kind-group"
+        [attr.aria-describedby]="f.principals ? null : f.prefix + '-kind-hint'"
+      >
+        <legend i18n="@@azure.authentication">Authentication</legend>
+        <label class="row">
+          <input
+            type="radio"
+            [name]="f.prefix + '-kind'"
+            value="service_principal_secret"
+            [checked]="f.kind === 'service_principal_secret'"
+            [disabled]="!f.principals"
+            (change)="f.kindChosen($event)"
+          />
+          <span i18n="@@azure.kind.secret">Service principal with a client secret</span>
+        </label>
+        <label class="row">
+          <input
+            type="radio"
+            [name]="f.prefix + '-kind'"
+            value="service_principal_certificate"
+            [checked]="f.kind === 'service_principal_certificate'"
+            [disabled]="!f.principals"
+            (change)="f.kindChosen($event)"
+          />
+          <span i18n="@@azure.kind.certificate">Service principal with a certificate</span>
+        </label>
+        <label class="row">
+          <input
+            type="radio"
+            [name]="f.prefix + '-kind'"
+            value="pat"
+            [checked]="f.kind === 'pat'"
+            (change)="f.kindChosen($event)"
+          />
+          <span i18n="@@azure.kind.pat">Personal access token</span>
+        </label>
+      </fieldset>
+      @if (!f.principals) {
+        <p [id]="f.prefix + '-kind-hint'" class="hint" i18n="@@azure.kindHint">
+          Azure DevOps Server takes a personal access token. Service principals work with Azure
+          DevOps Services (dev.azure.com).
+        </p>
+      }
+      @if (f.errors.kind; as message) {
+        <span [id]="f.prefix + '-kind-error'" class="field-error" role="alert">{{ message }}</span>
+      }
+    </div>
+  </div>
+  @if (f.kind !== 'pat') {
+    <div class="setting-row">
+      <div class="setting-text">
+        <label [attr.for]="f.prefix + '-tenant'" i18n="@@azure.tenant">Directory (tenant) id</label>
+      </div>
+      <div class="setting-field">
+        <input
+          [id]="f.prefix + '-tenant'"
+          name="tenant"
+          type="text"
+          required
+          maxlength="36"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="f.errors.tenant ? true : null"
+          [attr.aria-describedby]="f.errors.tenant ? f.prefix + '-tenant-error' : null"
+          [value]="f.tenant"
+          (input)="f.changed()"
+        />
+        @if (f.errors.tenant; as message) {
+          <span [id]="f.prefix + '-tenant-error'" class="field-error" role="alert">{{
+            message
+          }}</span>
+        }
+      </div>
+    </div>
+    <div class="setting-row">
+      <div class="setting-text">
+        <label [attr.for]="f.prefix + '-client'" i18n="@@azure.client"
+          >Application (client) id</label
+        >
+      </div>
+      <div class="setting-field">
+        <input
+          [id]="f.prefix + '-client'"
+          name="client"
+          type="text"
+          required
+          maxlength="36"
+          autocomplete="off"
+          spellcheck="false"
+          [attr.aria-invalid]="f.errors.client ? true : null"
+          [attr.aria-describedby]="f.errors.client ? f.prefix + '-client-error' : null"
+          [value]="f.client"
+          (input)="f.changed()"
+        />
+        @if (f.errors.client; as message) {
+          <span [id]="f.prefix + '-client-error'" class="field-error" role="alert">{{
+            message
+          }}</span>
+        }
+      </div>
+    </div>
+  }
+  <div class="setting-row">
+    <div class="setting-text">
+      @switch (f.kind) {
+        @case ('service_principal_certificate') {
+          <label [attr.for]="f.prefix + '-credential'" i18n="@@azure.certificate"
+            >Certificate and private key (PEM)</label
+          >
+        }
+        @case ('service_principal_secret') {
+          <label [attr.for]="f.prefix + '-credential'" i18n="@@azure.secret">Client secret</label>
+        }
+        @case ('pat') {
+          <label [attr.for]="f.prefix + '-credential'" i18n="@@azure.pat"
+            >Personal access token</label
+          >
+        }
+      }
+      <p [id]="f.prefix + '-credential-hint'" i18n="@@azure.credentialHint">
+        Stored encrypted; Qualor never shows it again. Changing the address, the kind or an id needs
+        it again.
+      </p>
+    </div>
+    <div class="setting-field">
+      @if (f.kind === 'service_principal_certificate') {
+        <textarea
+          [id]="f.prefix + '-credential'"
+          name="credential"
+          rows="6"
+          required
+          autocomplete="off"
+          spellcheck="false"
+          data-1p-ignore
+          data-lpignore="true"
+          [attr.aria-invalid]="f.errors.credential ? true : null"
+          [attr.aria-describedby]="
+            f.errors.credential
+              ? f.prefix + '-credential-error ' + f.prefix + '-credential-hint'
+              : f.prefix + '-credential-hint'
+          "
+          (input)="f.changed()"
+        ></textarea>
+        <label class="file-label" [attr.for]="f.prefix + '-credential-file'" i18n="@@azure.file">
+          Or choose the PEM file
+        </label>
+        <input
+          [id]="f.prefix + '-credential-file'"
+          type="file"
+          accept=".pem,.crt"
+          (change)="f.loadFile($event)"
+        />
+      } @else {
+        <input
+          [id]="f.prefix + '-credential'"
+          name="credential"
+          type="password"
+          required
+          maxlength="1024"
+          autocomplete="new-password"
+          data-1p-ignore
+          data-lpignore="true"
+          spellcheck="false"
+          [attr.aria-invalid]="f.errors.credential ? true : null"
+          [attr.aria-describedby]="
+            f.errors.credential
+              ? f.prefix + '-credential-error ' + f.prefix + '-credential-hint'
+              : f.prefix + '-credential-hint'
+          "
+          (input)="f.changed()"
+        />
+      }
+      @if (f.errors.credential; as message) {
+        <span [id]="f.prefix + '-credential-error'" class="field-error" role="alert">{{
+          message
+        }}</span>
+      }
+    </div>
+  </div>
+</ng-template>
+
+@if (canRead()) {
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (connections.error() ?? error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+
+  <h3 class="subhead" i18n="@@azure.connections">Connections</h3>
+  <div class="connection-list">
+    @for (c of azureConnections(); track c.id) {
+      <section class="card panel" [attr.data-key]="c.id" [attr.aria-label]="c.baseUrl">
+        <div class="panel-head connection-head">
+          <div class="connection-title">
+            <code class="connection-url">{{ c.baseUrl }}</code>
+            <span class="muted" i18n="@@azure.addedAt">Added {{ c.createdAt | dateTime }}</span>
+          </div>
+          <div class="connection-side">
+            @switch (outcomes()[c.id]) {
+              @case ('ok') {
+                <span class="badge badge-passed connection-state"
+                  ><q-icon name="check" /><ng-container i18n="@@scm.state.connected"
+                    >Connected</ng-container
+                  ></span
+                >
+              }
+              @case ('failed') {
+                <span class="badge badge-failed connection-state"
+                  ><q-icon name="cross" /><ng-container i18n="@@scm.state.failed"
+                    >Test failed</ng-container
+                  ></span
+                >
+              }
+              @default {
+                <span class="badge badge-none connection-state"
+                  ><q-icon name="minus" /><ng-container i18n="@@scm.state.untestedYet"
+                    >Not tested yet</ng-container
+                  ></span
+                >
+              }
+            }
+            <button
+              type="button"
+              class="btn"
+              [attr.aria-disabled]="busy() ? true : null"
+              (click)="test(c)"
+              i18n="@@azure.test"
+            >
+              Test
+            </button>
+            @if (canManage()) {
+              <button
+                type="button"
+                class="btn-quiet danger"
+                [attr.aria-disabled]="busy() ? true : null"
+                (click)="remove(c)"
+                i18n="@@azure.delete"
+              >
+                Delete
+              </button>
+            }
+          </div>
+        </div>
+        <div class="panel-body connection-body">
+          @if (c.azure; as az) {
+            <dl class="app-facts">
+              <div>
+                <dt class="visually-hidden" i18n="@@azure.factKind">Authentication</dt>
+                <dd>
+                  {{ kindText(az.auth) }}
+                  @if (az.deployment === 'server') {
+                    <span class="muted" i18n="@@azure.deploymentServer">· Azure DevOps Server</span>
+                  } @else {
+                    <span class="muted" i18n="@@azure.deploymentServices"
+                      >· Azure DevOps Services</span
+                    >
+                  }
+                </dd>
+              </div>
+              @if (az.clientId; as clientId) {
+                <div>
+                  <dt class="muted" i18n="@@azure.factClient">Client id</dt>
+                  <dd>
+                    <code>{{ clientId }}</code>
+                  </dd>
+                </div>
+              }
+              @if (az.certificate; as cert) {
+                <div>
+                  <dt class="muted" i18n="@@azure.factCertificate">Certificate</dt>
+                  <dd>
+                    <code>{{ cert.thumbprint }}</code>
+                    <span i18n="@@azure.expires">expires {{ cert.notAfter | dateTime }}</span>
+                  </dd>
+                </div>
+              }
+            </dl>
+            @if (!az.credentialReadable) {
+              <p class="alert alert-error" i18n="@@azure.unreadable">
+                The stored credential can no longer be read: set it again.
+              </p>
+            }
+            @switch (certificateState(c)) {
+              @case ('expired') {
+                <p class="alert alert-error" i18n="@@azure.certExpired">
+                  The certificate has expired. Upload a new one to keep Qualor connected.
+                </p>
+              }
+              @case ('soon') {
+                <p class="req">
+                  <q-icon name="alert" />
+                  <span i18n="@@azure.certSoon"
+                    >The certificate expires soon. Upload a new one before then.</span
+                  >
+                </p>
+              }
+            }
+          }
+          @if (results()[c.id]; as result) {
+            <p class="prose-text connection-result">{{ result }}</p>
+          }
+          @if (canManage()) {
+            <details class="connection-edit">
+              <summary i18n="@@azure.replace">
+                Replace the credential or change the connection
+              </summary>
+              <form novalidate (submit)="update(c, $event)">
+                <p class="connection-replacing" i18n="@@azure.replacing">
+                  Replacing the credential of <code class="prose-text">{{ c.baseUrl }}</code>
+                </p>
+                <ng-container
+                  [ngTemplateOutlet]="fields"
+                  [ngTemplateOutletContext]="{ $implicit: rowFields(c) }"
+                />
+                <div class="setting-actions">
+                  <button
+                    type="submit"
+                    class="btn"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    i18n="@@azure.save"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+            </details>
+          }
+        </div>
+      </section>
+    } @empty {
+      @if (connections.loaded()) {
+        <p class="muted" i18n="@@azure.empty">No Azure DevOps connection yet.</p>
+      }
+    }
+  </div>
+
+  @if (canManage()) {
+    <dialog
+      #createDialog
+      id="create-dialog"
+      class="dialog"
+      aria-labelledby="create-azure-title"
+      (close)="closeCreate()"
+    >
+      <form novalidate (submit)="create($event)">
+        <div class="dialog-head">
+          <h2 id="create-azure-title" i18n="@@azure.new">New Azure DevOps connection</h2>
+        </div>
+        <div class="dialog-body">
+          @if (createError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <ng-container
+            [ngTemplateOutlet]="fields"
+            [ngTemplateOutletContext]="{ $implicit: createFields() }"
+          />
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeCreate()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+            [attr.aria-disabled]="busy() ? true : null"
+            i18n="@@azure.create"
+          >
+            Add connection
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      #confirmDialog
+      id="confirm-dialog"
+      class="dialog"
+      aria-labelledby="confirm-title"
+      aria-describedby="confirm-text"
+      (close)="cancelDelete()"
+    >
+      <div class="dialog-head">
+        <h2 id="confirm-title" i18n="@@azure.deleteTitle">Delete the connection</h2>
+      </div>
+      <div class="dialog-body">
+        <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-danger-solid"
+          (click)="confirmDelete()"
+          i18n="@@azure.delete"
+        >
+          Delete
+        </button>
+      </div>
+    </dialog>
+  }
+}

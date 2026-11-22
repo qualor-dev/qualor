@@ -20,11 +20,21 @@ import { keepFocus } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
 import { assertNever, type ScmProvider } from '../shared/scm-provider';
+import { azureTestText } from './azure-text';
 import { githubTestText } from './github-text';
 import { gitlabTestText } from './gitlab-text';
 import type { Connection } from './gitlab.page';
 
 type Project = ItemOf<'/api/v0/projects'>;
+
+/** An Azure DevOps connection's repositories, as its list shows them. */
+interface AzureList {
+  state: 'loading' | 'loaded' | 'failed';
+  items: { ref: string; label: string }[];
+}
+
+/** At most this many pages of 100 repositories are listed for a mapping. */
+const AZURE_LIST_PAGES = 10;
 
 /** A project's mapping as edited on the page, before it is saved. */
 interface Draft {
@@ -81,6 +91,9 @@ export class RepositoriesPage {
   protected readonly drafts = signal<Record<string, Draft>>({});
   protected readonly refErrors = signal<Record<string, string>>({});
   protected readonly connErrors = signal<Record<string, string>>({});
+  /** The repositories of each Azure DevOps connection a mapping names, by connection id. */
+  private readonly azureLists = signal<Record<string, AzureList>>({});
+  private readonly azureRequested = new Set<string>();
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   /** Counts organisation changes: an answer for an earlier organisation is dropped. */
   private orgGeneration = 0;
@@ -98,12 +111,73 @@ export class RepositoriesPage {
         this.drafts.set({});
         this.refErrors.set({});
         this.connErrors.set({});
+        this.azureLists.set({});
+        this.azureRequested.clear();
         if (organizationId && admin) {
           void this.connections.reset(organizationId);
           void this.projects.reset(organizationId);
         }
       });
     });
+    // A mapping to an Azure DevOps connection picks from its repositories: listed once, when first named.
+    effect(() => {
+      const wanted = this.projects
+        .items()
+        .map((p) => this.draft(p).connectionId)
+        .filter((id) =>
+          this.connections.items().some((c) => c.id === id && c.provider === 'azure'),
+        ); // provider-guard: only an Azure DevOps mapping lists repositories
+      untracked(() => {
+        for (const id of new Set(wanted)) void this.loadAzureRepositories(id);
+      });
+    });
+  }
+
+  private async loadAzureRepositories(connectionId: string): Promise<void> {
+    if (this.azureRequested.has(connectionId)) return;
+    this.azureRequested.add(connectionId);
+    const generation = this.orgGeneration;
+    const set = (list: AzureList) => {
+      if (generation === this.orgGeneration) {
+        this.azureLists.update((all) => ({ ...all, [connectionId]: list }));
+      }
+    };
+    set({ state: 'loading', items: [] });
+    const items: AzureList['items'] = [];
+    try {
+      for (let pageNumber = 1; pageNumber <= AZURE_LIST_PAGES; pageNumber++) {
+        const answer = await ok(
+          this.api.client.GET('/api/v0/scm-connections/{id}/repositories', {
+            params: { path: { id: connectionId }, query: { page: pageNumber } },
+          }),
+        );
+        for (const r of answer.items) items.push({ ref: r.ref, label: r.name.replace('/', ' / ') });
+        if (!answer.hasMore) break;
+      }
+      set({ state: 'loaded', items });
+    } catch {
+      set({ state: 'failed', items: [] });
+    }
+  }
+
+  /** The repositories a project's Azure DevOps mapping can pick, its saved one always among them. */
+  protected azureOptions(project: Project): AzureList['items'] {
+    const draft = this.draft(project);
+    const items = this.azureLists()[draft.connectionId]?.items ?? [];
+    if (draft.ref === '' || items.some((r) => r.ref === draft.ref)) return items;
+    return [{ ref: draft.ref, label: draft.ref }, ...items];
+  }
+
+  /** What the list of an Azure DevOps mapping says while it loads or when it could not load. */
+  protected azureHint(project: Project): string {
+    switch (this.azureLists()[this.draft(project).connectionId]?.state) {
+      case 'loading':
+        return $localize`:@@azure.loadingRepositories:Loading the repositories…`;
+      case 'failed':
+        return $localize`:@@azure.repositoriesFailed:The repositories could not be listed. Test the connection under Azure DevOps.`;
+      default:
+        return '';
+    }
   }
 
   /** The mapping shown for a project: its draft, else what the server has. */
@@ -131,7 +205,7 @@ export class RepositoriesPage {
         return $localize`:@@gitlab.githubRefPlaceholder:owner/repo`;
       case 'gitlab':
         return $localize`:@@gitlab.refPlaceholder:group/project`;
-      case 'azure': // azure-pending(2): an Azure DevOps repository's example (Task 7)
+      case 'azure': // a list of the connection's repositories, not a text box
         return '';
       default:
         return assertNever(provider, 'provider');
@@ -148,8 +222,8 @@ export class RepositoriesPage {
         return $localize`:@@gitlab.optionGitHub:GitHub · ${connection.baseUrl}:url: (App ${connection.github?.appId ?? ''}:appId:)`;
       case 'gitlab':
         return $localize`:@@gitlab.optionGitLab:GitLab · ${connection.baseUrl}:url:`;
-      case 'azure': // azure-pending(2): an Azure DevOps connection's name in the list (Task 7)
-        return connection.baseUrl;
+      case 'azure':
+        return $localize`:@@azure.optionAzure:Azure DevOps · ${connection.baseUrl}:url:`;
       default:
         return assertNever(connection.provider, 'provider');
     }
@@ -209,8 +283,8 @@ export class RepositoriesPage {
         return $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`;
       case 'gitlab':
         return $localize`:@@gitlab.mapped:Decorated in GitLab.`;
-      case 'azure': // azure-pending(2): what a saved Azure DevOps mapping says (Task 7)
-        return mappedAny();
+      case 'azure':
+        return $localize`:@@azure.mapped:Mapped to Azure DevOps.`;
       default:
         return assertNever(provider, 'provider');
     }
@@ -317,8 +391,8 @@ function testText(provider: ScmProvider, result: Parameters<typeof gitlabTestTex
       return githubTestText(result);
     case 'gitlab':
       return gitlabTestText(result);
-    case 'azure': // azure-pending(2): an Azure DevOps test's text (Task 7)
-      return $localize`:@@gitlab.problem.unknown:The test failed.`;
+    case 'azure':
+      return azureTestText(result);
     default:
       return assertNever(provider, 'provider');
   }
@@ -335,13 +409,13 @@ function badRefOf(provider: ScmProvider | null): string {
       return badGitHubRef();
     case 'gitlab':
       return badRef();
-    case 'azure': // azure-pending(2): the refusal of an Azure DevOps repository (Task 7)
-      return badAnyRef();
+    case 'azure':
+      return $localize`:@@azure.badRef:Choose one of the repositories in the list.`;
     default:
       return assertNever(provider, 'provider');
   }
 }
 
 function badConnection(): string {
-  return $localize`:@@gitlab.badConnection:Choose one of this organization's GitLab or GitHub connections.`;
+  return $localize`:@@gitlab.badConnection:Choose one of this organization's GitLab, GitHub or Azure DevOps connections.`;
 }

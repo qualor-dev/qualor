@@ -328,14 +328,14 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
     expect(button(root, 'Check').getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('points to GitLab and GitHub while the organization has no connection', async () => {
+  it('points to GitLab, GitHub and Azure DevOps while the organization has no connection', async () => {
     const server = setup();
     server.on('GET', '/api/v0/scm-connections', { body: page([]) });
     const { root } = await render();
     const note = root.querySelector('#repositories-no-connection');
-    expect(note?.textContent).toContain('Connect GitLab or GitHub first');
+    expect(note?.textContent).toContain('Connect GitLab, GitHub or Azure DevOps first');
     const links = [...(note?.querySelectorAll('a') ?? [])].map((a) => a.getAttribute('href'));
-    expect(links).toEqual(['/settings/gitlab', '/settings/github']);
+    expect(links).toEqual(['/settings/gitlab', '/settings/github', '/settings/azure-devops']);
   });
 
   it('tells a member who is not an organization admin, and asks the server nothing', async () => {
@@ -346,5 +346,142 @@ describe('RepositoriesPage (scm.md §2.3, github.md §2.3)', () => {
     );
     expect(server.requestsTo('GET', '/api/v0/projects')).toHaveLength(0);
     expect(root.querySelector('table')).toBeNull();
+  });
+});
+
+describe('RepositoriesPage with Azure DevOps', () => {
+  const GUID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const AZURE: Connection = {
+    ...CONNECTION,
+    id: 'a1',
+    provider: 'azure',
+    baseUrl: 'https://dev.azure.com/acme',
+    gitlab: null,
+    azure: {
+      deployment: 'services',
+      auth: 'pat',
+      tenantId: null,
+      clientId: null,
+      credentialReadable: true,
+      certificate: null,
+    },
+  };
+
+  function azureSetup(): FakeServer {
+    const server = setup();
+    server.on('GET', '/api/v0/scm-connections', { body: page([CONNECTION, AZURE]) });
+    server.on('GET', '/api/v0/scm-connections/a1/repositories', {
+      body: {
+        items: [
+          {
+            ref: GUID,
+            name: 'Shop/api',
+            defaultBranch: 'main',
+            language: null,
+            archived: false,
+            project: null,
+          },
+          {
+            ref: '11111111-2222-4333-8444-555555555555',
+            name: 'Shop/web',
+            defaultBranch: 'main',
+            language: null,
+            archived: false,
+            project: null,
+          },
+        ],
+        hasMore: false,
+      },
+    });
+    return server;
+  }
+
+  it('offers the connection’s repositories in a list and saves the repository id', async () => {
+    const server = azureSetup();
+    server.on('PATCH', '/api/v0/projects/p1', (request) => ({
+      body: project('p1', request.body as Record<string, unknown>),
+    }));
+    const { fixture, root } = await render();
+    const row = root.querySelector('tbody tr')!;
+    expect(root.querySelector('#conn-p1')?.textContent).toContain(
+      'Azure DevOps · https://dev.azure.com/acme',
+    );
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    const select = root.querySelector<HTMLSelectElement>('select#ref-p1')!;
+    expect(root.querySelector('input#ref-p1')).toBeNull();
+    expect(server.requestsTo('GET', '/api/v0/scm-connections/a1/repositories')).toHaveLength(1);
+    expect([...select.options].map((o) => o.textContent?.trim())).toEqual([
+      'Choose a repository',
+      'Shop / api',
+      'Shop / web',
+    ]);
+    choose(root, 'select#ref-p1', GUID);
+    await settle(fixture);
+    button(root, 'Save', row).click();
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/projects/p1')[0]?.body).toEqual({
+      scmConnectionId: 'a1',
+      scmProjectRef: GUID,
+    });
+    expect(row.textContent).toContain('Mapped to Azure DevOps.');
+  });
+
+  it('checks the chosen repository and words the answer for Azure DevOps', async () => {
+    const server = azureSetup();
+    server.on('POST', '/api/v0/scm-connections/a1/test', {
+      body: {
+        ok: true,
+        user: { username: 'Qualor Bot' },
+        project: { id: GUID, pathWithNamespace: 'Shop/api', accessLevel: null },
+        problem: null,
+        missingAccess: null,
+        visible: null,
+      },
+    });
+    const { fixture, root } = await render();
+    const row = root.querySelector('tbody tr')!;
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    choose(root, 'select#ref-p1', GUID);
+    await settle(fixture);
+    button(root, 'Check', row).click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/scm-connections/a1/test')[0]?.body).toEqual({
+      projectRef: GUID,
+    });
+    expect(row.textContent).toContain(
+      'Connected as Qualor Bot; the repository Shop/api is reachable.',
+    );
+  });
+
+  it('keeps an already mapped repository selectable while the list is on its way', async () => {
+    const server = azureSetup();
+    server.on('GET', '/api/v0/projects', {
+      body: page([
+        project('p1', {
+          scmConnectionId: 'a1',
+          scmProjectRef: 'ffffffff-0000-4000-8000-000000000000',
+        }),
+      ]),
+    });
+    const { root } = await render();
+    expect(server.requestsTo('GET', '/api/v0/scm-connections/a1/repositories')).toHaveLength(1);
+    const select = root.querySelector<HTMLSelectElement>('select#ref-p1')!;
+    expect(select.value).toBe('ffffffff-0000-4000-8000-000000000000');
+  });
+
+  it('says so when the list cannot be read', async () => {
+    const server = azureSetup();
+    server.on('GET', '/api/v0/scm-connections/a1/repositories', {
+      status: 502,
+      body: problem(502, 'SCM_UNREACHABLE'),
+    });
+    const { fixture, root } = await render();
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    expect(root.querySelector('tbody tr')?.textContent).toContain(
+      'The repositories could not be listed',
+    );
   });
 });

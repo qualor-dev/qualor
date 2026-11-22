@@ -9,7 +9,7 @@
       <p class="muted" i18n="@@repositories.intro">
         Qualor reports each project's analyses to its repository: a commit status or a check run,
         and comments on merge requests and pull requests. Choose each project's connection and its
-        GitLab project or GitHub repository.
+        repository.
       </p>
     }
   </div>
@@ -25,9 +25,10 @@
   }
   @if (connections.loaded() && connections.items().length === 0) {
     <p id="repositories-no-connection" class="alert alert-info" i18n="@@repositories.noConnection">
-      Connect GitLab or GitHub first: add a connection under
-      <a routerLink="/settings/gitlab">GitLab</a> or a GitHub App under
-      <a routerLink="/settings/github">GitHub</a>.
+      Connect GitLab, GitHub or Azure DevOps first: add a connection under
+      <a routerLink="/settings/gitlab">GitLab</a>, a GitHub App under
+      <a routerLink="/settings/github">GitHub</a> or a connection under
+      <a routerLink="/settings/azure-devops">Azure DevOps</a>.
     </p>
   }
 
@@ -45,7 +46,7 @@
           <tr>
             <th scope="col" i18n="@@gitlab.col.project">Project</th>
             <th scope="col" i18n="@@gitlab.col.connection">Connection</th>
-            <th scope="col" i18n="@@gitlab.col.ref">GitLab project or GitHub repository</th>
+            <th scope="col" i18n="@@gitlab.col.ref">Repository</th>
             <th scope="col" class="actions-col">
               <span class="visually-hidden" i18n="@@gitlab.col.actions">Actions</span>
             </th>
@@ -117,34 +118,56 @@
                     </label>
                   }
                   @case ('azure') {
-                    <!-- azure-pending(2): the label of an Azure DevOps repository (Task 7) -->
-                    <label
-                      class="visually-hidden"
-                      [attr.for]="'ref-' + p.id"
-                      i18n="@@gitlab.anyRefOf"
-                    >
-                      Repository of {{ p.name }}
+                    <label class="visually-hidden" [attr.for]="'ref-' + p.id" i18n="@@azure.refOf">
+                      Azure DevOps repository of {{ p.name }}
                     </label>
                   }
                   @default never;
                 }
-                <input
-                  [id]="'ref-' + p.id"
-                  type="text"
-                  maxlength="255"
-                  autocomplete="off"
-                  spellcheck="false"
-                  [attr.placeholder]="refPlaceholder(p)"
-                  [attr.aria-invalid]="refErrors()[p.id] ? true : null"
-                  [attr.aria-describedby]="
-                    refErrors()[p.id]
-                      ? 'ref-error-' + p.id + ' ref-hint-' + p.id
-                      : 'ref-hint-' + p.id
-                  "
-                  [value]="draft(p).ref"
-                  [disabled]="!canManage()"
-                  (input)="setRef(p, $event)"
-                />
+                @if (provider === 'azure') {
+                  <select
+                    [id]="'ref-' + p.id"
+                    [attr.aria-invalid]="refErrors()[p.id] ? true : null"
+                    [attr.aria-describedby]="
+                      refErrors()[p.id]
+                        ? 'ref-error-' + p.id + ' ref-hint-' + p.id
+                        : 'ref-hint-' + p.id
+                    "
+                    [disabled]="!canManage()"
+                    (change)="setRef(p, $event)"
+                  >
+                    <option
+                      value=""
+                      [selected]="draft(p).ref === ''"
+                      i18n="@@azure.chooseRepository"
+                    >
+                      Choose a repository
+                    </option>
+                    @for (r of azureOptions(p); track r.ref) {
+                      <option [value]="r.ref" [selected]="draft(p).ref === r.ref">
+                        {{ r.label }}
+                      </option>
+                    }
+                  </select>
+                } @else {
+                  <input
+                    [id]="'ref-' + p.id"
+                    type="text"
+                    maxlength="255"
+                    autocomplete="off"
+                    spellcheck="false"
+                    [attr.placeholder]="refPlaceholder(p)"
+                    [attr.aria-invalid]="refErrors()[p.id] ? true : null"
+                    [attr.aria-describedby]="
+                      refErrors()[p.id]
+                        ? 'ref-error-' + p.id + ' ref-hint-' + p.id
+                        : 'ref-hint-' + p.id
+                    "
+                    [value]="draft(p).ref"
+                    [disabled]="!canManage()"
+                    (input)="setRef(p, $event)"
+                  />
+                }
                 @switch (provider) {
                   @case ('github') {
                     <span [id]="'ref-hint-' + p.id" class="hint" i18n="@@gitlab.githubRefHint"
@@ -160,8 +183,7 @@
                     <span [id]="'ref-hint-' + p.id" class="hint"></span>
                   }
                   @case ('azure') {
-                    <!-- azure-pending(2): the hint of an Azure DevOps repository (Task 7) -->
-                    <span [id]="'ref-hint-' + p.id" class="hint"></span>
+                    <span [id]="'ref-hint-' + p.id" class="hint">{{ azureHint(p) }}</span>
                   }
                   @default never;
                 }

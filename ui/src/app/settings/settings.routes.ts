@@ -60,6 +60,11 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./github.page').then((m) => m.GitHubPage),
   },
   {
+    path: 'azure-devops',
+    title: $localize`:@@title.azure:Azure DevOps`,
+    loadComponent: () => import('./azure-devops.page').then((m) => m.AzureDevOpsPage),
+  },
+  {
     // Jira 0.16 §6.1: the organisation's Jira connection, for its admins (org.jira.manage).
     path: 'jira',
     title: $localize`:@@title.jira:Jira`,
