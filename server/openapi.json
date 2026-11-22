@@ -24819,7 +24819,8 @@
                             "type": "string",
                             "enum": [
                               "gitlab",
-                              "github"
+                              "github",
+                              "azure"
                             ]
                           },
                           "baseUrl": {
@@ -25161,7 +25162,8 @@
                       "type": "string",
                       "enum": [
                         "gitlab",
-                        "github"
+                        "github",
+                        "azure"
                       ]
                     },
                     "baseUrl": {
@@ -25447,7 +25449,8 @@
                       "type": "string",
                       "enum": [
                         "gitlab",
-                        "github"
+                        "github",
+                        "azure"
                       ]
                     },
                     "baseUrl": {
@@ -40238,7 +40241,8 @@
                               "type": "string",
                               "enum": [
                                 "gitlab",
-                                "github"
+                                "github",
+                                "azure"
                               ]
                             },
                             {
@@ -40532,7 +40536,8 @@
                               "type": "string",
                               "enum": [
                                 "gitlab",
-                                "github"
+                                "github",
+                                "azure"
                               ]
                             },
                             {

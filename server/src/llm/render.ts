@@ -31,6 +31,7 @@ export function aiFixMarker(issueId: string, requestId: string): string {
 const SUGGESTION_FENCE: Record<ScmProvider, (extraLines: number) => string> = {
   gitlab: (extraLines) => `\`\`\`suggestion:-0+${extraLines}`,
   github: () => '```suggestion',
+  azure: () => '```suggestion', // azure-pending(6): a fix suggestion in an Azure DevOps thread
 };
 
 export interface FixSuggestionInput {

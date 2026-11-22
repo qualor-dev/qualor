@@ -67,7 +67,7 @@ function readReport(file: string): Report {
 }
 
 describe('unnamedHead', () => {
-  const ci = (provider: 'gitlab' | 'github' | 'none', gitlab: object | null = null) =>
+  const ci = (provider: 'gitlab' | 'github' | 'azure' | 'none', gitlab: object | null = null) =>
     ({ provider, gitlab }) as never;
 
   it("names GitHub's variables for github, GitLab's for gitlab, and GitLab's again when there is no CI", () => {
@@ -77,6 +77,10 @@ describe('unnamedHead', () => {
     );
     expect(unnamedHead(ci('gitlab'))).toBe('CI_COMMIT_SHA is not a commit id');
     expect(unnamedHead(ci('none'))).toBe('CI_COMMIT_SHA is not a commit id');
+  });
+
+  it('says neutrally what is missing on Azure DevOps, whose CI is not detected yet (Azure sub-plan 2, Task 2)', () => {
+    expect(unnamedHead(ci('azure'))).toBe("CI does not name the pull request's head commit");
   });
 });
 

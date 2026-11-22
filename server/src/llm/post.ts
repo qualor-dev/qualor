@@ -55,6 +55,7 @@ import {
 const CHANGE_NUMBER: Record<ScmProvider, RegExp> = {
   gitlab: GITLAB_MR_IID,
   github: GITHUB_PR_NUMBER,
+  azure: /[^\s\S]/, // azure-pending(6): an Azure DevOps pull request's number (this matches nothing)
 };
 
 /** llm.md §8.2: posting a fix suggestion is a job of its own, run by the `scm` worker. */
@@ -177,6 +178,15 @@ async function postRefusal(
           .where(eq(scmConnections.id, project.scmConnectionId));
   if (!connection || !SCM_PROVIDERS.includes(connection.provider)) {
     return { refusal: 'not_mapped' };
+  }
+  switch (connection.provider) {
+    case 'gitlab':
+    case 'github':
+      break;
+    case 'azure': // azure-pending(6): fix suggestions posted on Azure DevOps (refused as unmapped)
+      return { refusal: 'not_mapped' };
+    default:
+      return assertNever(connection.provider, 'provider');
   }
   if (!CHANGE_NUMBER[connection.provider].test(branch.name))
     return { refusal: 'not_merge_request' };
@@ -514,6 +524,8 @@ function posterFor(deps: DecorationDeps, t: Target): (() => Promise<Outcome>) | 
       if ('problem' in found) return null;
       return () => postToGitLab(found.client, t);
     }
+    case 'azure': // azure-pending(6): the post to an Azure DevOps pull request
+      return null;
     default:
       return assertNever(connection.provider, 'provider');
   }

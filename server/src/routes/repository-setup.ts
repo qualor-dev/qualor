@@ -205,6 +205,10 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
             hasMore = found.hasMore;
             break;
           }
+          case 'azure': // azure-pending(2): the Azure DevOps repository listing (Task 6)
+            listed = [];
+            hasMore = false;
+            break;
           default:
             return assertNever(row.provider, 'provider');
         }

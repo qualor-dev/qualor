@@ -80,8 +80,8 @@ The whole report, as an example:
   },
   "reports30d": { "complianceReady": 4, "complianceFailed": 0, "sonarImport": 1 },
   "licensePolicyOrgs": 1,
-  "mergeRequests30d": { "gitlab": 120, "github": 0 },
-  "ci": { "gitlab": 300, "github": 0, "other": 10 }
+  "mergeRequests30d": { "gitlab": 120, "github": 0, "azure": 0 },
+  "ci": { "gitlab": 300, "github": 0, "azure": 0, "other": 10 }
 }
 ```
 
@@ -95,15 +95,15 @@ The whole report, as an example:
 | `counts` | how many organisations, users, projects, branches, quality gates, quality profiles and webhooks exist, and the analyses of the last 30 days |
 | `languages` | the languages of the analysed files |
 | `engines` | the built-in analyzers that ran successfully in the last 30 days, and `external` when a SARIF report from another tool was imported |
-| `scm` | `gitlab` and/or `github`, when a connection exists |
+| `scm` | `gitlab`, `github` and/or `azure` (Azure DevOps), when a connection exists |
 | `features` | whether single sign-on, SCIM, the AI assistant, AI review, automatic fix suggestions, MCP, chat notifications, e-mail and a dependency licence policy are set up or in use |
 | `aiReview` | how AI review is used, in counts and flags only: see the next table |
 | `autoFix30d` | the automatic fix suggestions made in the last 30 days, and those posted to the merge request |
 | `integrations` | MCP, chat and e-mail use: see the `integrations` table |
 | `reports30d` | the compliance exports that finished (`complianceReady`) or failed in the last 30 days, and the SonarQube status imports (counted from audit events, so it reads low once old events are purged) |
 | `licensePolicyOrgs` | how many organisations have a dependency licence policy. Never the licences in it |
-| `mergeRequests30d` | the analyses of merge requests (GitLab) and pull requests (GitHub) in the last 30 days |
-| `ci` | the analyses of the last 30 days that ran in GitLab CI, in GitHub Actions or elsewhere |
+| `mergeRequests30d` | the analyses of merge requests (GitLab) and pull requests (GitHub, Azure DevOps) in the last 30 days |
+| `ci` | the analyses of the last 30 days that ran in GitLab CI, in GitHub Actions, in Azure Pipelines or elsewhere |
 | `assistant30d` | the Explain, Suggest triage and Suggest a fix requests people made in the last 30 days. Automatic fix suggestions are not counted |
 
 | `aiReview` field | Meaning |

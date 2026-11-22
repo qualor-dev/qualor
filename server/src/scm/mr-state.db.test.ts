@@ -1,4 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  azureConnection,
+  mapToAzure,
+  recordingListener,
+  type RecordingListener,
+} from '../../test/azure-pending';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { mappedGitHubProject } from '../../test/github';
@@ -255,5 +261,41 @@ describe('readMergeRequestState (6I-3)', () => {
       await stateOf(githubProject, '2');
       expect(minted() - start).toBe(3);
     });
+  });
+});
+
+describe('readMergeRequestState on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
+  let h: IngestHarness;
+  let listener: RecordingListener;
+
+  beforeAll(async () => {
+    listener = await recordingListener();
+    h = await createIngestHarness({
+      config: { publicUrl: PUBLIC_URL, scmInternalHosts: parseInternalHosts(listener.host) },
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    await listener.close();
+  });
+
+  it('a pull request of an Azure DevOps repository is unknown (null), and nothing is asked', async () => {
+    const project = await h.project('mrs/azure');
+    const connection = await azureConnection(h.ctx.db, {
+      organizationId: h.organizationId,
+      baseUrl: `${listener.url}/DefaultCollection`,
+      secretKey: h.ctx.config.secretKey,
+    });
+    await mapToAzure(h.ctx.db, project.id, connection.id);
+    const scm = decorationDeps(h).scm;
+    expect(await readMergeRequestState({ db: h.ctx.db, scm }, project.id, '1')).toBeNull();
+    // Through the worker's runtime too: no slot is kept and the circuit hears nothing.
+    const runtime = createScmRuntime();
+    expect(await readMergeRequestState({ db: h.ctx.db, scm, runtime }, project.id, '1')).toBeNull();
+    for (let i = 0; i < MAX_DECORATIONS_PER_ORGANIZATION; i += 1) {
+      expect(runtime.slots.tryTake(h.organizationId)).toBe(true);
+    }
+    expect(runtime.circuit.inspect(connection.id).failures).toBe(0);
+    expect(listener.requests).toEqual([]);
   });
 });

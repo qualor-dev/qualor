@@ -25,6 +25,8 @@ export function providerName(connection: Pick<Connection, 'provider' | 'baseUrl'
       return 'GitLab';
     case 'github':
       return githubCloud(connection.baseUrl) ? 'GitHub' : 'GitHub Enterprise';
+    case 'azure':
+      return 'Azure DevOps';
     default:
       return assertNever(connection.provider, 'provider');
   }
@@ -65,6 +67,7 @@ export function mergeRequestNumber(url: string): string | null {
 export const MERGE_REQUEST_URL: Record<ScmProvider, { pattern: RegExp; prefix: string }> = {
   github: { pattern: /\/pull\/(\d+)\/?$/, prefix: '#' },
   gitlab: { pattern: /\/merge_requests\/(\d+)\/?$/, prefix: '!' },
+  azure: { pattern: /[^\s\S]/, prefix: '!' }, // azure-pending(7): an Azure DevOps pull request's address (this matches nothing)
 };
 
 /** A repository's path split for reading: the owner muted, the last segment set in bold. */

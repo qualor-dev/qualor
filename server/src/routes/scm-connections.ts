@@ -163,6 +163,8 @@ function connectionDto(
         ciSetupAllowed: row.ciSetupAllowed,
       };
       break;
+    case 'azure': // azure-pending(2): the Azure DevOps block of the connection (Task 6)
+      break;
     default:
       return assertNever(row.provider, 'provider');
   }
@@ -218,10 +220,12 @@ const notAField = (provider: string) =>
 const PROJECT_REF_TEXT: Record<ScmProvider, string> = {
   gitlab: 'Use the GitLab project id or its full path (group/project)',
   github: 'Use the GitHub repository as owner/repo',
+  azure: 'Mapping an Azure DevOps repository is not available yet', // azure-pending(2): the Azure DevOps repository id (Task 6)
 };
 const PROJECT_REF_PATTERN: Record<ScmProvider, RegExp> = {
   gitlab: SCM_PROJECT_REF_PATTERN,
   github: GITHUB_REPO_PATTERN,
+  azure: /[^\s\S]/, // azure-pending(2): the Azure DevOps repository id (Task 6); this matches nothing
 };
 /**
  * A project reference of either provider: a GitLab project id or path (scm.md §2.2), or a GitHub
@@ -265,12 +269,18 @@ interface ConnectionPatch {
 const FOREIGN_FIELDS: Record<ScmProvider, readonly (keyof ConnectionPatch)[]> = {
   github: ['token', 'ciSetupAllowed'],
   gitlab: ['appId', 'privateKey'],
+  azure: ['appId', 'privateKey', 'webhookSecret', 'ciSetupAllowed', 'fixMrsAllowed'], // azure-pending(2): the Azure DevOps fields of a PATCH (Task 6)
 };
-const PROVIDER_LABEL: Record<ScmProvider, string> = { github: 'GitHub', gitlab: 'GitLab' };
+const PROVIDER_LABEL: Record<ScmProvider, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  azure: 'Azure DevOps',
+};
 /** The credential field a move of the address must bring again. */
 const CREDENTIAL_FIELD: Record<ScmProvider, 'privateKey' | 'token'> = {
   github: 'privateKey',
   gitlab: 'token',
+  azure: 'token', // azure-pending(2): the credential of each Azure DevOps authentication kind (Task 6)
 };
 /**
  * Whether a lost race on the stored address is reported as a changed address whatever the request
@@ -279,6 +289,7 @@ const CREDENTIAL_FIELD: Record<ScmProvider, 'privateKey' | 'token'> = {
 const ADDRESS_CONFLICT_WHATEVER_NAMED: Record<ScmProvider, boolean> = {
   github: true,
   gitlab: false,
+  azure: false, // azure-pending(2): an Azure DevOps PATCH that lost a race (Task 6)
 };
 
 /** A 422 for each sent field the connection's provider does not have. */
@@ -307,6 +318,11 @@ function credentialNeeded(provider: ScmProvider): FieldError {
       return {
         path: 'body.token',
         message: 'Changing the base URL needs the token again, in the same request',
+      };
+    case 'azure': // azure-pending(2): the credential an Azure DevOps move needs (Task 6)
+      return {
+        path: 'body.token',
+        message: 'Changing the address needs the credential again, in the same request',
       };
     default:
       return assertNever(provider, 'provider');
@@ -739,6 +755,17 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           return testGitHubConnection(row, scmDeps, ref);
         case 'gitlab':
           return testConnection(row, scmDeps, ref);
+        case 'azure': // azure-pending(2): the Azure DevOps connection test (Task 6)
+          return {
+            ok: false,
+            user: null,
+            project: null,
+            problem: {
+              code: 'http_error' as const,
+              message: 'Testing an Azure DevOps connection is not available yet',
+            },
+            missingAccess: null,
+          };
         default:
           return assertNever(row.provider, 'provider');
       }

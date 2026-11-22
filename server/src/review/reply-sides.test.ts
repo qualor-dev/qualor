@@ -1,15 +1,22 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { AZURE_REPOSITORY, recordingListener } from '../../test/azure-pending';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
+import { encryptionKey, encryptSecret } from '../crypto/secrets';
+import { SCM_TOKEN_AAD } from '../scm/connections';
 import type { GitHubClient, GitHubComment } from '../scm/github/client';
 import { GitLabClient, GitLabError, type GitLabDiscussion } from '../scm/gitlab/client';
 import { issueMarker } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
+import { createScmRuntime } from '../scm/runtime';
+import { parseInternalHosts } from '../scm/url';
 import type { ReplyRow } from './replies';
 import {
   githubCommandSide,
   githubSide,
   gitlabCommandSide,
   gitlabSide,
+  providerClientOf,
   type ReplyInThread,
 } from './reply-sides';
 
@@ -549,5 +556,39 @@ describe('whether the author of a command on GitHub has the rights `qualor revie
     const downSide = side(down.stub);
     await downSide.read();
     await expect(downSide.mayReview()).rejects.toThrow('GitHub could not be reached');
+  });
+});
+
+describe('the side of a reply on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
+  it('has no client, so replies and commands there are unusable, and nothing is sent', async () => {
+    const listener = await recordingListener();
+    try {
+      const secretKey = 'reply-sides-test-key-of-at-least-32-characters';
+      const connection = {
+        id: randomUUID(),
+        organizationId: randomUUID(),
+        provider: 'azure' as const,
+        baseUrl: `${listener.url}/DefaultCollection`,
+        tokenEnc: encryptSecret(encryptionKey(secretKey), 'azure-pat-test', SCM_TOKEN_AAD),
+        appId: null,
+        webhookSecretEnc: null,
+        ciSetupAllowed: false,
+        fixMrsAllowed: false,
+        azureAuth: 'pat' as const,
+        azureTenantId: null,
+        azureClientId: null,
+        createdAt: new Date(),
+      };
+      const scm = { secretKey, internalHosts: parseInternalHosts(listener.host) };
+      const target = {
+        connection,
+        project: { scmProjectRef: AZURE_REPOSITORY },
+        branch: { name: '7' },
+      };
+      expect(providerClientOf({ scm, scmRuntime: createScmRuntime() }, target)).toBeNull();
+      expect(listener.requests).toEqual([]);
+    } finally {
+      await listener.close();
+    }
   });
 });

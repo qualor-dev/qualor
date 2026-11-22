@@ -131,6 +131,8 @@ export class RepositoriesPage {
         return $localize`:@@gitlab.githubRefPlaceholder:owner/repo`;
       case 'gitlab':
         return $localize`:@@gitlab.refPlaceholder:group/project`;
+      case 'azure': // azure-pending(2): an Azure DevOps repository's example (Task 7)
+        return '';
       default:
         return assertNever(provider, 'provider');
     }
@@ -146,6 +148,8 @@ export class RepositoriesPage {
         return $localize`:@@gitlab.optionGitHub:GitHub · ${connection.baseUrl}:url: (App ${connection.github?.appId ?? ''}:appId:)`;
       case 'gitlab':
         return $localize`:@@gitlab.optionGitLab:GitLab · ${connection.baseUrl}:url:`;
+      case 'azure': // azure-pending(2): an Azure DevOps connection's name in the list (Task 7)
+        return connection.baseUrl;
       default:
         return assertNever(connection.provider, 'provider');
     }
@@ -199,12 +203,14 @@ export class RepositoriesPage {
       return $localize`:@@gitlab.unmapped:Not decorated.`;
     }
     const provider = this.providerOf(project);
-    if (provider === null) return $localize`:@@gitlab.mappedAny:Decorated.`;
+    if (provider === null) return mappedAny();
     switch (provider) {
       case 'github':
         return $localize`:@@gitlab.mappedGitHub:Decorated in GitHub.`;
       case 'gitlab':
         return $localize`:@@gitlab.mapped:Decorated in GitLab.`;
+      case 'azure': // azure-pending(2): what a saved Azure DevOps mapping says (Task 7)
+        return mappedAny();
       default:
         return assertNever(provider, 'provider');
     }
@@ -293,6 +299,10 @@ function without<T>(all: Record<string, T>, id: string): Record<string, T> {
   return Object.fromEntries(Object.entries(all).filter(([key]) => key !== id));
 }
 
+function mappedAny(): string {
+  return $localize`:@@gitlab.mappedAny:Decorated.`;
+}
+
 function badRef(): string {
   return $localize`:@@gitlab.badRef:Use the GitLab project id or its full path, such as group/project.`;
 }
@@ -307,20 +317,26 @@ function testText(provider: ScmProvider, result: Parameters<typeof gitlabTestTex
       return githubTestText(result);
     case 'gitlab':
       return gitlabTestText(result);
+    case 'azure': // azure-pending(2): an Azure DevOps test's text (Task 7)
+      return $localize`:@@gitlab.problem.unknown:The test failed.`;
     default:
       return assertNever(provider, 'provider');
   }
 }
 
+function badAnyRef(): string {
+  return $localize`:@@gitlab.badAnyRef:Use the repository's id or full path.`;
+}
+
 function badRefOf(provider: ScmProvider | null): string {
-  if (provider === null) {
-    return $localize`:@@gitlab.badAnyRef:Use the repository's id or full path.`;
-  }
+  if (provider === null) return badAnyRef();
   switch (provider) {
     case 'github':
       return badGitHubRef();
     case 'gitlab':
       return badRef();
+    case 'azure': // azure-pending(2): the refusal of an Azure DevOps repository (Task 7)
+      return badAnyRef();
     default:
       return assertNever(provider, 'provider');
   }

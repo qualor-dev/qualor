@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { LLM_FEATURES } from '@qualor/shared';
+import { LLM_FEATURES, SCM_PROVIDERS } from '@qualor/shared';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
@@ -308,10 +308,9 @@ describe('review_replies and the columns beside it (6I-4, migration 0017_review_
   });
 
   it('a provider is gitlab, github or azure', async () => {
-    // `review_replies accepts provider azure` (migration 0034); the column's TypeScript type
-    // widens with the provider list in a later task, so the value goes in through `column`.
-    for (const provider of ['gitlab', 'github', 'azure']) {
-      expect(await tryReply(column('provider', provider)), provider).toBeNull();
+    // `review_replies accepts provider azure` (migration 0034).
+    for (const provider of SCM_PROVIDERS) {
+      expect(await tryReply({ provider }), provider).toBeNull();
     }
     for (const provider of ['bitbucket', 'GitLab', '']) {
       expect(await tryReply(column('provider', provider)), provider).toEqual(

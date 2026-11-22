@@ -455,6 +455,8 @@ describe('AiPanel (llm.md §18)', () => {
       reference: '#42',
     });
     expect(postTarget(branch('https://dev.azure.com/a/pullrequest/42'), 'gitlab')).toBeNull();
+    // Azure sub-plan 2, Task 2: no fix is posted to an Azure DevOps pull request yet.
+    expect(postTarget(branch(null), 'azure')).toBeNull();
   });
 
   it('offers Post for a merge request with no recorded URL, by the connection’s provider', async () => {

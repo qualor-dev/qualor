@@ -7,6 +7,7 @@ import { fixPreconditionText } from '../../fixes/fix-text';
 import { DateTimePipe } from '../../shared/date-time.pipe';
 import { inputValue, isChecked } from '../../shared/forms';
 import { Icon } from '../../shared/icon';
+import { assertNever, type ScmProvider } from '../../shared/scm-provider';
 import type { ProjectDto } from '../current-project';
 
 type Body = RequestBody<'/api/v0/projects/{id}/fixes/settings', 'put'>;
@@ -15,6 +16,20 @@ type MinSeverity = Body['autoCreate']['minSeverity'];
 /** The guide's section on the fix job; the CLI's messages link the same page. */
 const FIX_JOB_GUIDE = 'https://qualor.dev/docs/fix-merge-requests#the-fix-job';
 const MAX_OPEN_CHOICES = Array.from({ length: 20 }, (_, i) => i + 1);
+
+/** The provider whose token needs the panel names; none while it is not known. */
+function tokenNeedsOf(provider: ScmProvider | null): Exclude<ScmProvider, 'azure'> | null {
+  if (provider === null) return null;
+  switch (provider) {
+    case 'gitlab':
+    case 'github':
+      return provider;
+    case 'azure': // azure-pending(6): what an Azure DevOps connection needs for fix pull requests
+      return null;
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
 
 /** The select's text as a severity; anything else is Off. */
 function severityOf(value: string): MinSeverity {
@@ -81,7 +96,9 @@ export class ProjectFixesPanel {
     return c ? c.requested + c.preparing + c.committing + c.open : 0;
   });
   /** The permissions the connection's token needs, for the project's provider (none when unknown). */
-  protected readonly needs = computed(() => this.loaded()?.preconditions.provider ?? null);
+  protected readonly needs = computed(() =>
+    tokenNeedsOf(this.loaded()?.preconditions.provider ?? null),
+  );
 
   protected readonly body = computed<Body>(() => ({
     enabled: this.enabled(),

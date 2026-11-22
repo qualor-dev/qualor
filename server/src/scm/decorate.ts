@@ -7,6 +7,7 @@ import type { JobHandlers } from '../queue/worker';
 import { deleteBranchSnapshots, mergeRequestStateHandlers } from '../review/lifecycle';
 import { withMergeRequestHead, withUnplacedFindings } from '../review/render';
 import { queueGitLabAnswers, replyWindow } from '../review/reply-queue';
+import { AZURE_DECORATION_PENDING } from './azure/pending';
 import { gitlabClientFor, type ScmDeps } from './connections';
 import {
   branchUrl,
@@ -317,9 +318,10 @@ function decisiveError(errors: readonly ScmError[]): ScmError | null {
 }
 
 /** The display name of each provider, as the decoration's log lines and outcomes say it. */
-export const PROVIDER_LABEL: Record<ScmProvider, 'GitLab' | 'GitHub'> = {
+export const PROVIDER_LABEL: Record<ScmProvider, 'GitLab' | 'GitHub' | 'Azure DevOps'> = {
   gitlab: 'GitLab',
   github: 'GitHub',
+  azure: 'Azure DevOps',
 };
 
 /** The error of a decoration refused by the open circuit, in the provider's own error class. */
@@ -328,6 +330,8 @@ function circuitError(provider: ScmProvider, text: string): ScmError {
     case 'gitlab':
       return new GitLabError('transient', text);
     case 'github':
+      return new ScmError('transient', text);
+    case 'azure': // azure-pending(4): the circuit's error in the Azure DevOps client's own class
       return new ScmError('transient', text);
     default:
       return assertNever(provider, 'provider');
@@ -411,6 +415,8 @@ async function decorateThroughCircuit(
         return await decorateGitLab(deps, payload, loaded, failed);
       case 'github':
         return await decorateGitHub(deps, payload, loaded, failed);
+      case 'azure': // azure-pending(4): Azure DevOps pull request decoration (loadDecoration ends it first)
+        return { kind: 'nothing', reason: AZURE_DECORATION_PENDING };
       default:
         return assertNever(loaded.connection.provider, 'provider');
     }

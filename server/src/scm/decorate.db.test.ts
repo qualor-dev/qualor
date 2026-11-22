@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  azureConnection,
+  mapToAzure,
+  recordingListener,
+  type RecordingListener,
+} from '../../test/azure-pending';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { reportWith } from '../../test/reports';
@@ -20,7 +26,7 @@ import { branches, jobs, reviewFindings, reviewRuns, scmConnections } from '../d
 import type { Job } from '../queue/queue';
 import { SCM_TOKEN_AAD } from './connections';
 import { markerOf } from './markdown';
-import { scmHandlers } from './decorate';
+import { decorateAnalysis, scmHandlers } from './decorate';
 import {
   enqueueDecoration,
   inSeconds,
@@ -31,6 +37,7 @@ import {
 } from './queue';
 import { statusName } from './render';
 import { createScmRuntime, SCM_CIRCUIT_FAILURES } from './runtime';
+import { parseInternalHosts } from './url';
 
 const HEAD = '1'.repeat(40);
 
@@ -867,5 +874,49 @@ describe('GitLab decoration: commit status and summary (scm.md §4, §5.1–§5.
     fake.clearRequests();
     expect(await runDecorations(h, decorationDeps(h))).toBe(1);
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe('Azure DevOps decoration is not available yet (Azure sub-plan 2, Task 2)', () => {
+  let h: IngestHarness;
+  let listener: RecordingListener;
+
+  beforeAll(async () => {
+    listener = await recordingListener();
+    // The listener's host is allowed: a request the stub made would reach it.
+    h = await createIngestHarness({
+      config: { publicUrl: PUBLIC_URL, scmInternalHosts: parseInternalHosts(listener.host) },
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    await listener.close();
+  });
+
+  it('a decoration through an Azure DevOps connection ends with nothing, and sends nothing', async () => {
+    const project = await h.project('scm/azure');
+    const connection = await azureConnection(h.ctx.db, {
+      organizationId: h.organizationId,
+      baseUrl: `${listener.url}/DefaultCollection`,
+      secretKey: h.ctx.config.secretKey,
+    });
+    await mapToAzure(h.ctx.db, project.id, connection.id);
+    const report = mergeRequestReport(12, HEAD, { projectKey: project.key });
+    const analysisId = await project.ingestOk({
+      ...report,
+      scm: { ...report.scm, provider: 'azure' },
+    });
+    // The ingestion queued it (the report's provider is the connection's) ...
+    expect(await queuedDecorations(h)).toHaveLength(1);
+    // ... and it runs to its end, with no retry.
+    expect(await runDecorations(h, decorationDeps(h))).toBe(1);
+    expect(await queuedDecorations(h)).toHaveLength(0);
+    expect(
+      await decorateAnalysis(decorationDeps(h), { analysisId, attempt: 0, gitlab: null }),
+    ).toEqual({
+      kind: 'nothing',
+      reason: 'Azure DevOps pull request decoration is not available yet',
+    });
+    expect(listener.requests).toEqual([]);
   });
 });

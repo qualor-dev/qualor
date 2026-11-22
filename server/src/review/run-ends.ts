@@ -12,6 +12,7 @@ import {
   type ReviewSkipReason,
 } from '../db/schema';
 import type { WorkerLogger } from '../queue/worker';
+import { AZURE_NOT_DECORATED } from '../scm/azure/pending';
 import { readScmContext } from '../scm/context';
 import { enqueueLatestDecoration, lockBranchQueue } from '../scm/queue';
 
@@ -199,6 +200,9 @@ export async function decorateRun(db: Executor, run: RunRef, logger: Logger): Pr
       await enqueueLatestDecoration(db, { ...target, gitlab: null, github });
       return;
     }
+    case 'azure': // azure-pending(4): the decoration of an Azure DevOps pull request after a review
+      logger.warn(where, AZURE_NOT_DECORATED);
+      return;
     default:
       return assertNever(stored.context.provider, 'provider');
   }

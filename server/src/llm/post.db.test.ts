@@ -1,6 +1,12 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
+import {
+  azureConnection,
+  mapToAzure,
+  recordingListener,
+  type RecordingListener,
+} from '../../test/azure-pending';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createFakeLlm, type FakeLlm } from '../../test/fake-llm';
@@ -33,6 +39,8 @@ describe('posting a fix suggestion (llm.md §8)', () => {
   let llm: FakeLlm;
   let gitlab: FakeGitLab;
   let github: FakeGitHub;
+  /** Where the Azure DevOps connection points: nothing may reach it (Azure sub-plan 2, Task 2). */
+  let azure: RecordingListener;
   let h: IngestHarness;
   let nextGitLab = 500;
   let nextRepo = 9_000;
@@ -126,11 +134,12 @@ describe('posting a fix suggestion (llm.md §8)', () => {
     llm = await createFakeLlm();
     gitlab = await createFakeGitLab();
     github = await createFakeGitHub();
+    azure = await recordingListener();
     h = await createIngestHarness({
       config: {
         publicUrl: PUBLIC_URL,
         scmInternalHosts: parseInternalHosts(
-          `${new URL(gitlab.url).host},${new URL(github.url).host}`,
+          `${new URL(gitlab.url).host},${new URL(github.url).host},${azure.host}`,
         ),
         llmInternalHosts: parseInternalHosts(llm.host),
       },
@@ -141,7 +150,7 @@ describe('posting a fix suggestion (llm.md §8)', () => {
   });
   afterAll(async () => {
     await h.close();
-    await Promise.all([llm.close(), gitlab.close(), github.close()]);
+    await Promise.all([llm.close(), gitlab.close(), github.close(), azure.close()]);
   });
   beforeEach(() => {
     llm.requests.length = 0;
@@ -403,6 +412,34 @@ describe('posting a fix suggestion (llm.md §8)', () => {
     expect((await post(noContext.requestId)).json().detail).toBe('not_mapped');
     const missing = await post('01900000-0000-7000-8000-000000000000');
     expect(missing.statusCode).toBe(404);
+  });
+
+  it('refuses a post on a project mapped to Azure DevOps as not mapped, and sends nothing (Azure sub-plan 2, Task 2)', async () => {
+    const { project } = await gitlabCase('fix-azure');
+    const { requestId } = await suggestFix(project);
+    const deps = decorationDeps(h);
+    await runDecorations(h, deps);
+    // A post queued while the project was mapped to GitLab ...
+    expect((await post(requestId)).statusCode).toBe(202);
+    const connection = await azureConnection(h.ctx.db, {
+      organizationId: h.organizationId,
+      baseUrl: `${azure.url}/DefaultCollection`,
+      secretKey: h.ctx.config.secretKey,
+    });
+    await mapToAzure(h.ctx.db, project.id, connection.id);
+    // ... ends without a comment once it is mapped to Azure DevOps ...
+    await runDecorations(h, deps);
+    expect((await request(requestId)).post).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+    });
+    // ... and is refused as for a project that is not mapped.
+    const again = await post(requestId);
+    expect([again.statusCode, again.json()]).toMatchObject([
+      409,
+      { code: 'AI_POST_NOT_POSSIBLE', detail: 'not_mapped' },
+    ]);
+    expect(azure.requests).toEqual([]);
   });
 
   it('retries an unreachable GitLab as a decoration does, and never posts twice', async () => {

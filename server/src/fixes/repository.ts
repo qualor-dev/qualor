@@ -98,7 +98,11 @@ export type BranchDelete = 'deleted' | 'gone' | 'taken_over' | 'kept';
  * refused again.
  */
 const REFUSED_DELETE: Readonly<Record<FixRepository['provider'], readonly number[]>> =
-  Object.freeze({ github: [422], gitlab: [400, 403, 405, 422] });
+  Object.freeze({
+    github: [422],
+    gitlab: [400, 403, 405, 422],
+    azure: [], // azure-pending(6): the statuses with which Azure DevOps refuses a branch delete for good
+  });
 
 /**
  * The branch is deleted when its head is `expectedHead`, re-read right before (B10); `remove`
@@ -402,6 +406,8 @@ async function repositoryOf(
       return githubRepository(row.connection, bound, row.ref, row.mainBranch);
     case 'gitlab':
       return gitlabRepository(row.connection, bound, row.ref, row.mainBranch);
+    case 'azure': // azure-pending(6): fix pull requests on Azure DevOps (not allowed until then)
+      return { problem: 'fixes_disabled' };
     default:
       return assertNever(row.connection.provider, 'provider');
   }

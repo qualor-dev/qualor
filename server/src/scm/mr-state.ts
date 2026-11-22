@@ -165,6 +165,9 @@ export async function readMergeRequestState(
     case 'github':
       ask = githubAsk(connection, found.ref, mergeRequestId, scm, runtime ?? deps.tokens);
       break;
+    case 'azure': // azure-pending(4): the state of an Azure DevOps pull request
+      ask = null;
+      break;
     default:
       return assertNever(connection.provider, 'provider');
   }

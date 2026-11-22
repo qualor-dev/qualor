@@ -45,24 +45,31 @@ export function providerOfSnippet(snippet: string): Provider | null {
   return null;
 }
 
+/** The reason of a snippet whose provider is not known. */
+const otherReason = (): string =>
+  $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
+
 /** Where the address goes without a public URL: in GitHub's file, a variable on GitLab. */
 function noPublicUrlText(provider: Provider | null): string {
-  if (provider === null) {
-    return $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
-  }
+  if (provider === null) return otherReason();
   switch (provider) {
     case 'github':
       return $localize`:@@addRepos.reason.noPublicUrlGithub:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`;
     case 'gitlab':
       return $localize`:@@addRepos.reason.noPublicUrlGitlab:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.`;
+    case 'azure': // azure-pending(7): where the address goes in an Azure Pipelines setup
+      return otherReason();
     default:
       return assertNever(provider, 'provider');
   }
 }
 
+/** The token's texts while its provider is not known: none. */
+const NO_SECRET_TEXT = { title: '', intro: '', where: '' };
+
 /** What the token is called, and where it goes, for a provider (nothing while it is unknown). */
 function secretText(provider: Provider | null): { title: string; intro: string; where: string } {
-  if (provider === null) return { title: '', intro: '', where: '' };
+  if (provider === null) return NO_SECRET_TEXT;
   switch (provider) {
     case 'github':
       return {
@@ -76,6 +83,8 @@ function secretText(provider: Provider | null): { title: string; intro: string; 
         intro: $localize`:@@addRepos.secret.gitlabIntro:Add it to the project's CI/CD variables, masked.`,
         where: $localize`:@@addRepos.secret.gitlabWhere:On GitLab: the project's Settings, then CI/CD, Variables, Add variable. Add QUALOR_URL with this server's address too.`,
       };
+    case 'azure': // azure-pending(7): where the token goes in Azure Pipelines
+      return NO_SECRET_TEXT;
     default:
       return assertNever(provider, 'provider');
   }
@@ -149,6 +158,8 @@ export class SetupResult {
         return WORKFLOW_FILE;
       case 'gitlab':
         return GITLAB_CI_FILE;
+      case 'azure': // azure-pending(7): the file of an Azure Pipelines snippet
+        return '';
       default:
         return assertNever(provider, 'provider');
     }
@@ -179,7 +190,7 @@ export class SetupResult {
       case 'no_public_url':
         return noPublicUrlText(this.provider());
       default:
-        return $localize`:@@addRepos.reason.other:Qualor did not change the repository.`;
+        return otherReason();
     }
   });
 

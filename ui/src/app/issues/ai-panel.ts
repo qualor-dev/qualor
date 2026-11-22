@@ -69,13 +69,15 @@ export function postTarget(branch: Branch, provider: ScmProvider | null = null):
   return null;
 }
 
-function target(provider: ScmProvider, branch: Branch): PostTarget {
+function target(provider: ScmProvider, branch: Branch): PostTarget | null {
   switch (provider) {
     case 'github':
     case 'gitlab': {
       const { kind, prefix } = POST_TARGETS[provider];
       return { kind, reference: `${prefix}${branch.name}`, title: branch.mrTitle };
     }
+    case 'azure': // azure-pending(6): posting a fix to an Azure DevOps pull request
+      return null;
     default:
       return assertNever(provider, 'provider');
   }
@@ -94,6 +96,11 @@ const POST_TARGETS: Record<
   gitlab: {
     pattern: /^https?:\/\/[^/]+\/.+\/merge_requests\/\d+\/?$/,
     kind: 'merge_request',
+    prefix: '!',
+  },
+  azure: {
+    pattern: /[^\s\S]/, // azure-pending(6): an Azure DevOps pull request's address (this matches nothing)
+    kind: 'pull_request',
     prefix: '!',
   },
 };

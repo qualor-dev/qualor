@@ -116,6 +116,16 @@
                       Repository of {{ p.name }}
                     </label>
                   }
+                  @case ('azure') {
+                    <!-- azure-pending(2): the label of an Azure DevOps repository (Task 7) -->
+                    <label
+                      class="visually-hidden"
+                      [attr.for]="'ref-' + p.id"
+                      i18n="@@gitlab.anyRefOf"
+                    >
+                      Repository of {{ p.name }}
+                    </label>
+                  }
                   @default never;
                 }
                 <input
@@ -147,6 +157,10 @@
                     >
                   }
                   @case (null) {
+                    <span [id]="'ref-hint-' + p.id" class="hint"></span>
+                  }
+                  @case ('azure') {
+                    <!-- azure-pending(2): the hint of an Azure DevOps repository (Task 7) -->
                     <span [id]="'ref-hint-' + p.id" class="hint"></span>
                   }
                   @default never;

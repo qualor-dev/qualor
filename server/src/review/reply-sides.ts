@@ -161,6 +161,8 @@ export function providerClientOf(
         iid: branch.name,
       };
     }
+    case 'azure': // azure-pending(5): replies and commands in Azure DevOps pull request threads
+      return null;
     default:
       return assertNever(connection.provider, 'provider');
   }

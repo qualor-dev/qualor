@@ -333,8 +333,8 @@ describe('telemetry schema 3: feature use (telemetry.md, 0.13)', () => {
     await analysis({ provider: 'none', mergeRequestId: null, gitlab: null });
     await analysis(null);
     const p = await collect();
-    expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2 });
-    expect(p.ci).toEqual({ gitlab: 2, github: 2, other: 2 });
+    expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2, azure: 0 });
+    expect(p.ci).toEqual({ gitlab: 2, github: 2, azure: 0, other: 2 });
   });
 
   it('the telemetry usage report counts each provider of SCM_PROVIDERS and the rest as other', async () => {
@@ -344,7 +344,12 @@ describe('telemetry schema 3: feature use (telemetry.md, 0.13)', () => {
         INSERT INTO analyses (id, project_id, scm_context, queued_at)
         VALUES (${uuidv7()}, ${projectId}, ${ctx === null ? null : JSON.stringify(ctx)}::jsonb,
                 ${old ? OLD : sql`now()`})`);
-    const blocks: Record<string, object> = { gitlab: { projectId: '1' }, github: { runId: '2' } };
+    // Any block: the count reads only whether the provider's key holds one.
+    const blocks: Record<string, object> = {
+      gitlab: { projectId: '1' },
+      github: { runId: '2' },
+      azure: { runId: '3' },
+    };
     const context = (provider: string, mergeRequestId: string | null) => ({
       provider,
       mergeRequestId,
@@ -362,7 +367,7 @@ describe('telemetry schema 3: feature use (telemetry.md, 0.13)', () => {
     const p = await collect();
     expect(Object.keys(p.mergeRequests30d).sort()).toEqual([...SCM_PROVIDERS].sort());
     expect(Object.keys(p.ci).sort()).toEqual([...SCM_PROVIDERS, 'other'].sort());
-    expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2 });
-    expect(p.ci).toEqual({ gitlab: 2, github: 3, other: 2 });
+    expect(p.mergeRequests30d).toEqual({ gitlab: 1, github: 2, azure: 3 });
+    expect(p.ci).toEqual({ gitlab: 2, github: 3, azure: 4, other: 2 });
   });
 });

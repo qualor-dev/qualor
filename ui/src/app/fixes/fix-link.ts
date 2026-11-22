@@ -129,6 +129,8 @@ export class FixLinkView {
         return 'PR';
       case 'gitlab':
         return 'MR';
+      case 'azure': // azure-pending(6): what a fix pull request on Azure DevOps is called
+        return 'MR';
       default:
         return assertNever(provider, 'provider');
     }
@@ -153,6 +155,8 @@ export class FixLinkView {
       case 'github':
         return $localize`:@@fix.link.pr:PR #${number}:number:`;
       case 'gitlab':
+        return $localize`:@@fix.link.mr:MR !${number}:number:`;
+      case 'azure': // azure-pending(6): how a fix pull request on Azure DevOps is named
         return $localize`:@@fix.link.mr:MR !${number}:number:`;
       default:
         return assertNever(provider, 'provider');

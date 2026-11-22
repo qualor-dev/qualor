@@ -1,9 +1,12 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { azureConnection, mapToAzure, recordingListener } from '../../test/azure-pending';
 import { createTestDatabase, type TestDatabase } from '../../test/db';
 import { first } from '../db/rows';
-import { analyses, branches, organizations, projects, reviewRuns } from '../db/schema';
-import { endRun, writeRunSpend, type RunSpend } from './run-ends';
+import { analyses, branches, jobs, organizations, projects, reviewRuns } from '../db/schema';
+import type { WorkerLogger } from '../queue/worker';
+import { SCM_QUEUE } from '../scm/queue';
+import { decorateRun, endRun, writeRunSpend, type RunSpend } from './run-ends';
 
 const SPENT: RunSpend = {
   providerHost: 'llm.test',
@@ -18,12 +21,13 @@ const FAILED = { status: 'failed', reason: 'internal' } as const;
 
 describe('ending a run for the job that started it (R15)', () => {
   let t: TestDatabase;
+  let organizationId: string;
   let projectId: string;
   let counter = 0;
 
   beforeAll(async () => {
     t = await createTestDatabase();
-    const organizationId = first(
+    organizationId = first(
       await t.db.insert(organizations).values({ key: 'ends', name: 'Ends' }).returning(),
     ).id;
     projectId = first(
@@ -179,6 +183,47 @@ describe('ending a run for the job that started it (R15)', () => {
       const run = await runRow(made.id);
       await writeRunSpend(t.db, run.id, SPENT, run.startedAt);
       expect(await runRow(run.id)).toMatchObject({ modelCalls: 2 });
+    });
+  });
+
+  describe('decorateRun', () => {
+    it('does not decorate on Azure DevOps, and says it is not available yet (Azure sub-plan 2, Task 2)', async () => {
+      const listener = await recordingListener();
+      try {
+        const connection = await azureConnection(t.db, {
+          organizationId,
+          baseUrl: `${listener.url}/DefaultCollection`,
+          secretKey: 'run-ends-test-key-of-at-least-32-characters',
+        });
+        await mapToAzure(t.db, projectId, connection.id);
+        const run = await runningRun();
+        await t.db
+          .update(analyses)
+          .set({ scmContext: { provider: 'azure', mergeRequestId: '1', gitlab: null } })
+          .where(eq(analyses.id, run.analysisId));
+        await t.db
+          .update(branches)
+          .set({ lastAnalysisId: run.analysisId })
+          .where(eq(branches.id, run.branchId));
+        const warnings: { details: unknown; message: string }[] = [];
+        const logger = {
+          info: () => undefined,
+          warn: (details: unknown, message: string) => {
+            warnings.push({ details, message });
+          },
+        } as unknown as WorkerLogger;
+        await decorateRun(t.db, run, logger);
+        expect(warnings).toEqual([
+          {
+            details: { runId: run.id, analysisId: run.analysisId },
+            message: 'Azure DevOps decoration is not available yet',
+          },
+        ]);
+        expect(await t.db.select().from(jobs).where(eq(jobs.queue, SCM_QUEUE))).toEqual([]);
+        expect(listener.requests).toEqual([]);
+      } finally {
+        await listener.close();
+      }
     });
   });
 });

@@ -11280,7 +11280,7 @@ export interface paths {
                                 /** Format: uuid */
                                 organizationId: string;
                                 /** @enum {string} */
-                                provider: "gitlab" | "github";
+                                provider: "gitlab" | "github" | "azure";
                                 baseUrl: string;
                                 /** Format: date-time */
                                 createdAt: string;
@@ -11403,7 +11403,7 @@ export interface paths {
                             /** Format: uuid */
                             organizationId: string;
                             /** @enum {string} */
-                            provider: "gitlab" | "github";
+                            provider: "gitlab" | "github" | "azure";
                             baseUrl: string;
                             /** Format: date-time */
                             createdAt: string;
@@ -11598,7 +11598,7 @@ export interface paths {
                             /** Format: uuid */
                             organizationId: string;
                             /** @enum {string} */
-                            provider: "gitlab" | "github";
+                            provider: "gitlab" | "github" | "azure";
                             baseUrl: string;
                             /** Format: date-time */
                             createdAt: string;
@@ -16968,7 +16968,7 @@ export interface paths {
                             preconditions: {
                                 /** @description The project is mapped to a repository */
                                 scmBound: boolean;
-                                provider: ("gitlab" | "github") | null;
+                                provider: ("gitlab" | "github" | "azure") | null;
                                 /** @description An organisation admin allowed fix merge requests on the project's connection */
                                 fixMrsAllowed: boolean;
                                 monitoringOn: boolean;
@@ -17066,7 +17066,7 @@ export interface paths {
                             preconditions: {
                                 /** @description The project is mapped to a repository */
                                 scmBound: boolean;
-                                provider: ("gitlab" | "github") | null;
+                                provider: ("gitlab" | "github" | "azure") | null;
                                 /** @description An organisation admin allowed fix merge requests on the project's connection */
                                 fixMrsAllowed: boolean;
                                 monitoringOn: boolean;

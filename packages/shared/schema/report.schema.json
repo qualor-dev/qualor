@@ -59,6 +59,7 @@
           "enum": [
             "gitlab",
             "github",
+            "azure",
             "none"
           ]
         },

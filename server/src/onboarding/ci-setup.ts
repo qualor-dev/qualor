@@ -314,6 +314,7 @@ function gitlabDescription(i: CiSetupInput): string[] {
 const CHANGE_REQUEST_WORD: Record<ScmProvider, string> = {
   gitlab: 'merge request',
   github: 'pull request',
+  azure: 'pull request',
 };
 
 function providerDescription(i: CiSetupInput): string[] {
@@ -322,6 +323,8 @@ function providerDescription(i: CiSetupInput): string[] {
       return githubDescription(i);
     case 'gitlab':
       return gitlabDescription(i);
+    case 'azure': // azure-pending(7): what an Azure Pipelines CI setup adds
+      return [];
     default:
       return assertNever(i.provider, 'provider');
   }
@@ -449,6 +452,8 @@ export function planCiSetup(input: CiSetupInput): CiPlan {
       return planGithub(input);
     case 'gitlab':
       return planGitlab(input);
+    case 'azure': // azure-pending(7): the Azure Pipelines CI setup (no file Qualor could write yet)
+      return { kind: 'snippet', reason: 'yaml_unsupported', snippet: '' };
     default:
       return assertNever(input.provider, 'provider');
   }

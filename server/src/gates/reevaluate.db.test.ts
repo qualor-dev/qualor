@@ -1,6 +1,7 @@
 import type { Report } from '@qualor/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { azureConnection, mapToAzure, recordingListener } from '../../test/azure-pending';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { engine, file, finding, reportWith } from '../../test/reports';
@@ -415,6 +416,62 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
         },
       ]);
       expect(warnings[0]?.message).not.toContain('ingested before');
+    });
+
+    it('does not decorate again on Azure DevOps, and says it is not available yet (Azure sub-plan 2, Task 2)', async () => {
+      const listener = await recordingListener();
+      try {
+        const project = await h.project('reeval/azure');
+        const connection = await azureConnection(h.ctx.db, {
+          organizationId: h.organizationId,
+          baseUrl: `${listener.url}/DefaultCollection`,
+          secretKey: h.ctx.config.secretKey,
+        });
+        await mapToAzure(h.ctx.db, project.id, connection.id);
+        await project.ingestOk(withProvider(mainReport(project.key), 'azure'));
+        const main = await branchOf(project.id, 'branch');
+        const analysis = await latest(main.id);
+        await h.ctx.db.delete(jobs).where(eq(jobs.queue, SCM_QUEUE));
+        const warnings: { details: unknown; message: string }[] = [];
+        const logger = {
+          ...silentLogger,
+          warn: (details: unknown, message: string) => {
+            warnings.push({ details, message });
+          },
+        } as typeof silentLogger;
+        const where = { analysisId: analysis.id, branchId: main.id };
+        await transition(
+          (await openIssues(main.id)).map((i) => i.id),
+          'resolved',
+        );
+        await runGates(logger);
+        expect((await latest(main.id)).gateStatus).toBe('passed');
+        expect(await decorationsOf(analysis.id)).toEqual([]);
+        expect(warnings).toEqual([
+          { details: where, message: 'Azure DevOps decoration is not available yet' },
+        ]);
+        // Without a stored context too.
+        await h.ctx.db
+          .update(analyses)
+          .set({ scmContext: null })
+          .where(eq(analyses.id, analysis.id));
+        await transition(
+          (await h.ctx.db.select().from(issues).where(eq(issues.branchId, main.id))).map(
+            (i) => i.id,
+          ),
+          'open',
+        );
+        warnings.length = 0;
+        await runGates(logger);
+        expect((await latest(main.id)).gateStatus).toBe('failed');
+        expect(await decorationsOf(analysis.id)).toEqual([]);
+        expect(warnings).toEqual([
+          { details: where, message: 'Azure DevOps decoration is not available yet' },
+        ]);
+        expect(listener.requests).toEqual([]);
+      } finally {
+        await listener.close();
+      }
     });
 
     it('does not decorate again when the changed issue has no thread and the gate holds', async () => {

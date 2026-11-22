@@ -81,6 +81,8 @@ function statusOf(
         ? { available: true, reason: null, missing: [] }
         : { available: false, reason: 'missing_permissions', missing };
     }
+    case 'azure': // azure-pending(7): CI setup through an Azure DevOps connection
+      return { available: false, reason: 'not_allowed', missing: [] };
     default:
       return assertNever(row.provider, 'provider');
   }

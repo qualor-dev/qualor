@@ -125,6 +125,7 @@ const PERMISSION_TEXT = {
   read: 'The connection was refused access to the repository',
   github: 'The GitHub App needs Contents, Workflows and Secrets write',
   gitlab: 'The GitLab token needs the api scope and the Maintainer role',
+  azure: 'CI setup through Azure DevOps is not available yet', // azure-pending(7): what an Azure DevOps CI setup needs
 } as const;
 /** A refusal (`refused`) of a request that only reads, before CI setup changes anything. */
 const REFUSED_READ_TEXT = 'The provider refused a request to read the repository';
@@ -157,6 +158,8 @@ export function ciHostOf(row: { provider: ScmProvider; baseUrl: string }): 'clou
       return githubHostKind(row.baseUrl) === 'cloud' ? 'cloud' : 'self-hosted';
     case 'gitlab':
       return gitlabHostKind(row.baseUrl) === 'gitlab.com' ? 'cloud' : 'self-hosted';
+    case 'azure': // azure-pending(7): where an Azure Pipelines CI setup runs
+      return 'self-hosted';
     default:
       return assertNever(row.provider, 'provider');
   }
@@ -534,6 +537,8 @@ async function openRepository(
       if ('problem' in made) throw new UnusableConnection();
       return gitlabRepository(made.client, await made.client.project(ref));
     }
+    case 'azure': // azure-pending(7): adding Azure DevOps repositories (the connection is unusable here)
+      throw new UnusableConnection();
     default:
       return assertNever(connection.provider, 'provider');
   }

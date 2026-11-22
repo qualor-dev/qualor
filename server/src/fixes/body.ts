@@ -61,7 +61,7 @@ export const MAX_BODY_CHARS = 60_000;
 /** A version as a title or a body shows it, at most. */
 const VERSION_CHARS = 64;
 
-const CHANGE_WORD: Record<ScmProvider, 'MR' | 'PR'> = { gitlab: 'MR', github: 'PR' };
+const CHANGE_WORD: Record<ScmProvider, 'MR' | 'PR'> = { gitlab: 'MR', github: 'PR', azure: 'PR' };
 const changeWord = (provider: ScmProvider): string => CHANGE_WORD[provider];
 
 const version = (value: string): string => codeSpan(value, VERSION_CHARS);
@@ -89,6 +89,8 @@ function titleShower(provider: ScmProvider | undefined): (value: string, max: nu
     case 'gitlab':
       return titleSpan;
     case 'github':
+      return plain;
+    case 'azure': // azure-pending(6): how an Azure DevOps pull request's title shows a value
       return plain;
     default:
       return assertNever(provider, 'provider');

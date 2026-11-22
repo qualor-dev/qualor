@@ -20,6 +20,14 @@ interface Place {
   opens: (session: SessionStore, org: OrgContext) => boolean;
 }
 
+/** Settings → Repositories, where each project's connection is chosen. */
+const REPOSITORIES: Place = {
+  route: '/settings/repositories',
+  label: () => $localize`:@@requirement.repositories:Settings → Repositories`,
+  organization: true,
+  opens: (_, org) => org.can('org.scm.manage'),
+};
+
 const PLACES: Record<RequirementPlace, Place> = {
   'ai-provider': {
     route: '/settings/ai',
@@ -33,12 +41,7 @@ const PLACES: Record<RequirementPlace, Place> = {
     organization: true,
     opens: (_, org) => org.can('org.ai.manage'),
   },
-  repositories: {
-    route: '/settings/repositories',
-    label: () => $localize`:@@requirement.repositories:Settings → Repositories`,
-    organization: true,
-    opens: (_, org) => org.can('org.scm.manage'),
-  },
+  repositories: REPOSITORIES,
   gitlab: {
     route: '/settings/gitlab',
     label: () => $localize`:@@requirement.gitlab:Settings → GitLab`,
@@ -51,6 +54,7 @@ const PLACES: Record<RequirementPlace, Place> = {
     organization: true,
     opens: (_, org) => org.can('org.scm.manage'),
   },
+  azure: REPOSITORIES, // azure-pending(2): Settings → Azure DevOps (Task 7)
 };
 
 /** A place as a viewer sees it: its page, its name, and whether it is a link for them. */

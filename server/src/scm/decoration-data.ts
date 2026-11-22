@@ -34,6 +34,7 @@ import { reviewSummarySchema } from '../review/schemas';
 import type { ReviewSuggestion } from '../review/suggestion';
 import { AI_ENGINE } from '../rules/server-engines';
 import { instanceSetting } from '../settings';
+import { AZURE_DECORATION_PENDING } from './azure/pending';
 import { readScmContext } from './context';
 import { isFullSha } from './markdown';
 import { mergeRequestTitle, SUMMARY_TOP_ISSUES, type IssueLine, type SummaryInput } from './render';
@@ -71,11 +72,14 @@ export async function loadDecoration(db: Db, analysisId: string): Promise<Loaded
     return 'the analysis did not succeed';
   }
   if (!row.connection || row.project.scmProjectRef === null) return 'the project is not mapped';
-  if (
-    row.connection.provider !== 'gitlab' /* provider-guard: allowlist of supported connections */ &&
-    row.connection.provider !== 'github' /* provider-guard: allowlist of supported connections */
-  ) {
-    return 'the connection is not supported';
+  switch (row.connection.provider) {
+    case 'gitlab':
+    case 'github':
+      break;
+    case 'azure': // azure-pending(4): Azure DevOps pull request decoration
+      return AZURE_DECORATION_PENDING;
+    default:
+      return assertNever(row.connection.provider, 'provider');
   }
   // §4.1: a local scan never decorates (checked when enqueued; again here, from what was stored),
   // and a report decorates only through a connection of its own provider (github.md §5.1).

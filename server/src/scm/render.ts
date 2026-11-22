@@ -207,7 +207,7 @@ export interface SummaryInput {
   review?: ReviewSummaryState | null;
 }
 
-/** The words that differ between GitLab and GitHub (github.md §6.2). */
+/** The words that differ between the providers (github.md §6.2). */
 interface Words {
   request: string;
   placed: string;
@@ -220,6 +220,12 @@ const WORDS: Record<ScmProvider, Words> = {
     stale: 'Inline comments wait for the analysis of the merge request’s latest commit.',
   },
   github: {
+    request: 'pull request',
+    placed: 'commented inline',
+    stale: 'Inline comments wait for the analysis of the pull request’s latest commit.',
+  },
+  azure: {
+    // azure-pending(4): the words of an Azure DevOps pull request's summary
     request: 'pull request',
     placed: 'commented inline',
     stale: 'Inline comments wait for the analysis of the pull request’s latest commit.',

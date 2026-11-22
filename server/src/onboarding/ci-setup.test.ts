@@ -913,3 +913,15 @@ describe('every generated YAML parses', () => {
     expect(parseAllDocuments(snip.snippet)[0]?.errors).toEqual([]);
   });
 });
+
+describe('CI setup on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
+  it('plans no file, only an empty snippet, whatever the repository holds', () => {
+    for (const host of ['cloud', 'self-hosted'] as const) {
+      expect(planCiSetup(input({ provider: 'azure', host }))).toEqual({
+        kind: 'snippet',
+        reason: 'yaml_unsupported',
+        snippet: '',
+      });
+    }
+  });
+});

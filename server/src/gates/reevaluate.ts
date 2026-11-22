@@ -15,6 +15,7 @@ import type { NotifyDeps } from '../notifications/deps';
 import { notifyGateChangeSafely } from '../notifications/gate';
 import { enqueue } from '../queue/queue';
 import type { JobHandlers } from '../queue/worker';
+import { AZURE_NOT_DECORATED } from '../scm/azure/pending';
 import { readScmContext } from '../scm/context';
 import { enqueueDecoration } from '../scm/queue';
 import { createDeliveries, type NewDelivery } from '../webhooks/deliveries';
@@ -234,12 +235,14 @@ const UNREADABLE_CONTEXT: Record<'missing' | 'invalid', Record<ScmProvider, stri
       'quality gate re-evaluated but not decorated again on GitLab: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitLab CI is unknown',
     github:
       'quality gate re-evaluated but not decorated again on GitHub: the analysis has no stored SCM context (ingested before it was recorded), so whether it came from GitHub Actions is unknown',
+    azure: AZURE_NOT_DECORATED, // azure-pending(4): an Azure DevOps analysis without a stored context
   },
   invalid: {
     gitlab:
       'quality gate re-evaluated but not decorated again on GitLab: the stored SCM context of the analysis is not valid',
     github:
       'quality gate re-evaluated but not decorated again on GitHub: the stored SCM context of the analysis is not valid',
+    azure: AZURE_NOT_DECORATED, // azure-pending(4): an Azure DevOps analysis with a context not valid
   },
 };
 
@@ -298,6 +301,9 @@ async function decorateAgain(
       });
       return;
     }
+    case 'azure': // azure-pending(4): Azure DevOps pull request decoration after a re-evaluation
+      logger?.warn(where, AZURE_NOT_DECORATED);
+      return;
     default:
       return assertNever(connection.provider, 'provider');
   }
