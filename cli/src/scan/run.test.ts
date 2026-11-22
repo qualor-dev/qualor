@@ -26,7 +26,7 @@ import {
   dependencyScanningValidator,
   sastValidator,
 } from '../../test/gitlab-schema';
-import { commitAll, initRepo, SCAN_TEST_ENV } from '../../test/git';
+import { commitAll, gitSync, initRepo, SCAN_TEST_ENV } from '../../test/git';
 import { json, problem, useTestServers } from '../../test/http';
 import { captureIO } from '../../test/io';
 import { useTempDirs, writeTree } from '../../test/tmp';
@@ -83,6 +83,52 @@ describe('unnamedHead', () => {
     expect(unnamedHead(ci('azure'))).toBe(
       'SYSTEM_PULLREQUEST_SOURCECOMMITID is not a commit id and the merge commit has no second parent',
     );
+  });
+});
+
+describe('qualor scan --dry-run: Azure Pipelines head fallback', () => {
+  it('takes the pull request head from the merge commit when SYSTEM_PULLREQUEST_SOURCECOMMITID is missing', async () => {
+    const repo = path.join(tmp(), 'azure-repo');
+    mkdirSync(repo);
+    initRepo(repo);
+    writeTree(repo, { 'a.ts': 'export const a = 1;\n' });
+    const main = commitAll(repo, 'a');
+    gitSync(repo, 'checkout', '-q', '-b', 'feature');
+    writeTree(repo, { 'b.ts': 'export const b = 2;\n' });
+    const head = commitAll(repo, 'b');
+    gitSync(repo, 'checkout', '-q', 'main');
+    gitSync(repo, 'merge', '--no-ff', '-q', '-m', 'merge', 'feature');
+    const merge = gitSync(repo, 'rev-parse', 'HEAD');
+    gitSync(repo, 'update-ref', 'refs/remotes/origin/main', main);
+    // The pipeline's head checkout step: HEAD is the merge commit's second parent.
+    gitSync(repo, 'checkout', '-q', '--detach', head);
+    const env = {
+      ...SCAN_TEST_ENV,
+      TF_BUILD: 'True',
+      BUILD_REPOSITORY_PROVIDER: 'TfsGit',
+      BUILD_REASON: 'PullRequest',
+      BUILD_SOURCEVERSION: merge,
+      BUILD_SOURCEBRANCH: 'refs/pull/7/merge',
+      SYSTEM_PULLREQUEST_PULLREQUESTID: '7',
+      SYSTEM_PULLREQUEST_SOURCEBRANCH: 'refs/heads/feature',
+      SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main',
+    };
+    const c = captureIO({ cwd: repo, env });
+    const code = await runScan(
+      scanFlags(['--dry-run', '--output', 'out/r.json.gz', '--project-key', 'acme/azure']),
+      c.io,
+      silentLogger,
+      { analyzers: [] },
+    );
+    expect(code, c.stderr()).toBe(0);
+    const { scm } = readReport(path.join(repo, 'out', 'r.json.gz'));
+    // Without the fallback the revision would be the merge commit and there would be no checkout.
+    // The dry run exposes the report only (the review snapshot needs a server), so the wiring is
+    // shown by scm.revision and scm.azure.checkout.
+    expect(scm.provider).toBe('azure');
+    expect(scm.revision).toBe(head);
+    expect(scm.azure).toEqual({ checkout: 'head' });
+    expect(scm.mergeRequest).toMatchObject({ id: '7', targetBranch: 'main' });
   });
 });
 
