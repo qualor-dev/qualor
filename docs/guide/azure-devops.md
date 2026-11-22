@@ -138,6 +138,23 @@ is public, install it from the VSIX file attached to the release.
 
 The checkout step needs `fetchDepth: 0`. The task fails with that hint on a shallow clone.
 
+### Cache the vulnerability database
+
+On Azure DevOps Services, a cache step before the scan keeps the vulnerability database between
+builds. Add it after the checkout:
+
+```yaml
+  - script: mkdir -p "$(Build.SourcesDirectory)/.qualor/trivy"
+    displayName: Create the cache directory
+  - task: Cache@2
+    inputs:
+      key: 'qualor-trivy | "$(Build.BuildId)"'
+      restoreKeys: qualor-trivy
+      path: $(Build.SourcesDirectory)/.qualor/trivy
+```
+
+Azure DevOps Server has no pipeline caching: leave the step out there.
+
 ### Pull requests
 
 Azure Repos ignores `pr:` in the YAML. Add the pipeline as a Build validation policy under

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
+  BUILD_POLICY,
   answerOf,
   BuildSchema,
   buildLogs,
@@ -41,7 +42,6 @@ export const DRY_RUN = '--dry-run --output /src/.qualor/report.json';
 const EXTENSION = { publisher: 'qualor', id: 'qualor-dev' } as const;
 /** The Qualor@0 task's id (task.json), the same in the dev variant. */
 const QUALOR_TASK_ID = '86f47d06-36e4-4f79-9432-3ae5770d5288';
-const BUILD_POLICY = '0609b952-1397-4640-95ec-e00a01b2c241';
 const EXAMPLES = new URL('../../../integrations/azure-devops/', import.meta.url);
 
 export type Form = 'docker' | 'task';
@@ -82,22 +82,12 @@ const BENCH_SWAPS: Swap[] = [
 ];
 
 /**
- * Without the Cache@2 step: on Azure DevOps Server the job fails before its first step with
- * "TF400734: This service is only available in hosted Azure DevOps." (pipeline caching).
- */
-const NO_CACHE: Swap = [/^ {2}- task: Cache@2\n(?: {4}.*\n)+\n/m, () => ''];
-
-/** Bench options: `cache: false` drops the Cache@2 step (Azure DevOps Server). */
-export type BenchOptions = { cache: boolean };
-const benchSwaps = (o: BenchOptions): Swap[] => [...BENCH_SWAPS, ...(o.cache ? [] : [NO_CACHE])];
-
-/**
  * integrations/azure-devops/qualor-docker.yml as the bench runs it (ruling 3): the bench image,
  * `--dry-run --output` after `scan`, and the step that prints the report's `scm`.
  */
-export function benchDockerYaml(example: string, o: BenchOptions = { cache: true }): string {
+export function benchDockerYaml(example: string): string {
   return swapped('qualor-docker.yml', example, [
-    ...benchSwaps(o),
+    ...BENCH_SWAPS,
     [
       /^( {2}QUALOR_SCANNER_IMAGE: )qualor\/scanner:\S+$/m,
       (_m, key) => `${key}qualor/scanner:${BENCH_IMAGE_TAG}`,
@@ -107,9 +97,9 @@ export function benchDockerYaml(example: string, o: BenchOptions = { cache: true
 }
 
 /** integrations/azure-devops/qualor.yml as the bench runs it: the task's image tag and arguments. */
-export function benchTaskYaml(example: string, o: BenchOptions = { cache: true }): string {
+export function benchTaskYaml(example: string): string {
   return swapped('qualor.yml', example, [
-    ...benchSwaps(o),
+    ...BENCH_SWAPS,
     [
       /^ {2}- task: Qualor@0\n {4}displayName: Qualor scan\n/m,
       (m) => `${m}    inputs:\n      imageTag: ${BENCH_IMAGE_TAG}\n      arguments: ${DRY_RUN}\n`,
@@ -399,12 +389,13 @@ async function checkForm(
   let line: string | undefined;
   for (const [logId, lines] of logs) {
     const found = printedValues(lines, ['QUALOR_SCM'])['QUALOR_SCM'];
-    if (found !== undefined && line === undefined) {
+    if (found !== undefined) {
       line = found;
       await ctx.record(`build-log-${run.form}`, {
         logId,
         lines: keptLogLines(lines, ['QUALOR_SCM']),
       });
+      break;
     }
   }
   const records = await timeline(ctx, queued.id);
@@ -454,11 +445,9 @@ export const item: ProbeItem = {
     if (!base) throw new Error('no head on the default branch');
     const ext = await extensionInstalled(ctx);
     const forms: Form[] = ext.installed ? ['docker', 'task'] : ['docker'];
-    // Pipeline caching exists in Azure DevOps Services only (TF400734 on Server, NO_CACHE).
-    const options: BenchOptions = { cache: ctx.target === 'services' };
     const yaml: Record<Form, () => string> = {
-      docker: () => benchDockerYaml(example('qualor-docker.yml'), options),
-      task: () => benchTaskYaml(example('qualor.yml'), options),
+      docker: () => benchDockerYaml(example('qualor-docker.yml')),
+      task: () => benchTaskYaml(example('qualor.yml')),
     };
 
     const target = await createBranchAt(ctx, `probe/18-${ctx.stamp}-target`, base);
@@ -517,7 +506,7 @@ export const item: ProbeItem = {
     }
     const skipped = ext.installed ? [] : [`task form skipped: ${ext.why}`];
     const detail = [
-      `pull request ${pr.pullRequestId} into ${branchName(target)}; image qualor/scanner:${BENCH_IMAGE_TAG}; ${DRY_RUN}; ${options.cache ? 'Cache@2 step kept' : 'Cache@2 step removed (TF400734 on Azure DevOps Server)'}; ${authorized}; extension: ${ext.why}`,
+      `pull request ${pr.pullRequestId} into ${branchName(target)}; image qualor/scanner:${BENCH_IMAGE_TAG}; ${DRY_RUN}; ${authorized}; extension: ${ext.why}`,
       ...outcomes.map((o) => o.text),
       ...skipped,
     ].join('\n\n');

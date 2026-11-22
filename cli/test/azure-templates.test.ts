@@ -83,18 +83,9 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     expect(pipeline.steps[0]).toBe(checkouts[0]);
   });
 
-  it('caches the vulnerability database around the scan', () => {
-    const cache = pipeline.steps.find((s) => s.task === 'Cache@2');
-    expect(cache?.inputs).toEqual({
-      key: 'qualor-trivy | "$(Build.BuildId)"',
-      restoreKeys: 'qualor-trivy',
-      path: '$(Build.SourcesDirectory)/.qualor/trivy',
-    });
-    // Restored before any step that scans (the cache saves itself after the job).
-    const scanning = pipeline.steps.findIndex(
-      (s) => s.task === 'Qualor@0' || /scan|dotnet (begin|end)/.test(s.script ?? ''),
-    );
-    expect(pipeline.steps.indexOf(cache!)).toBeLessThan(scanning);
+  it('has no Cache@2 step (Azure DevOps Server has no pipeline caching)', () => {
+    expect(pipeline.steps.filter((s) => s.task === 'Cache@2')).toEqual([]);
+    expect(code).not.toContain('Cache@2');
   });
 
   it('maps the token only as an env: entry, never into a script or onto a command line', () => {

@@ -26,13 +26,6 @@ steps:
     fetchDepth: 0
     persistCredentials: false
 
-  - task: Cache@2
-    displayName: Cache the vulnerability database
-    inputs:
-      key: 'qualor-trivy | "$(Build.BuildId)"'
-      restoreKeys: qualor-trivy
-      path: $(Build.SourcesDirectory)/.qualor/trivy
-
   # If the project needs its dependencies installed before the scan (npm ci, pip install, ...),
   # add that step here.
 

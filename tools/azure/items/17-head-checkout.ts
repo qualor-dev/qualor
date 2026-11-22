@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  BUILD_POLICY,
   answerOf,
   authorizeQueue,
   BuildSchema,
@@ -29,7 +30,6 @@ import {
 } from './common.js';
 
 const YAML_PATH = '.azure-pipelines/qualor.yml';
-const BUILD_POLICY = '0609b952-1397-4640-95ec-e00a01b2c241';
 const NAMES = [
   'BUILD_SOURCEVERSION',
   'BUILD_SOURCEBRANCH',

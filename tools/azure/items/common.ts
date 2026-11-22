@@ -11,6 +11,9 @@ import { z } from 'zod';
 import type { AzureAuth, AzureClient, AzureResponse } from '../client.js';
 import { LISTED_KINDS, redact, type RedactionTable } from '../record.js';
 
+/** The policy type id of a Build validation branch policy. */
+export const BUILD_POLICY = '0609b952-1397-4640-95ec-e00a01b2c241';
+
 export type TargetName = 'services' | 'server';
 /** An item's answer; `interrupted`: stopped by Ctrl+C before it could answer. */
 export type Answer =
