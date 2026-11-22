@@ -1,4 +1,6 @@
 import {
+  AZURE_BUILD_ID,
+  AZURE_GUID,
   GITHUB_CHECKOUTS,
   GITHUB_ID,
   GITLAB_ID,
@@ -36,6 +38,16 @@ export const scmContextSchema = z.strictObject({
     })
     .nullable()
     .optional(),
+  /** `scm.azure`, or null for an Azure report without one; absent for every other provider. */
+  azure: z
+    .strictObject({
+      projectId: z.string().regex(AZURE_GUID).optional(),
+      repositoryId: z.string().regex(AZURE_GUID).optional(),
+      buildId: z.string().regex(AZURE_BUILD_ID).optional(),
+      checkout: z.enum(GITHUB_CHECKOUTS).optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export type ScmContext = z.infer<typeof scmContextSchema>;
 
@@ -62,6 +74,7 @@ export function scmContextOf(
     // Only for a GitHub report that has one: a GitLab or local analysis stores the 2A shape
     // unchanged, and an absent key reads as null (D2, ruling C1).
     ...(github === undefined ? {} : { github }),
+    ...(report.scm.provider === 'azure' ? { azure: report.scm.azure ?? null } : {}), // provider-guard: the azure key is stored for an Azure report only
   });
   if (parsed.success) return parsed.data;
   logger?.warn(

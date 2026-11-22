@@ -224,6 +224,30 @@
               ]
             }
           }
+        },
+        "azure": {
+          "type": "object",
+          "properties": {
+            "projectId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "repositoryId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "buildId": {
+              "type": "string",
+              "pattern": "^[0-9]{1,20}$"
+            },
+            "checkout": {
+              "type": "string",
+              "enum": [
+                "head",
+                "other"
+              ]
+            }
+          }
         }
       },
       "required": [

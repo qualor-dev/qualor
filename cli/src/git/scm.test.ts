@@ -9,7 +9,7 @@ import { createLogger, silentLogger, type Logger } from '../log';
 import type { BaselineWarning, NewCodeBaselineClient } from '../server/baseline-client';
 import { Warnings } from '../warnings';
 import { createGit, type Git } from './git';
-import { resolveScm, type ScmFlags } from './scm';
+import { azureHead, resolveScm, type ScmFlags } from './scm';
 
 const tmp = useTempDirs();
 const TEN = Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join('\n') + '\n';
@@ -571,6 +571,91 @@ describe('resolveScm: repository shape', () => {
     const { newLines, scm } = await resolve(path.join(root, 'app')).result;
     expect(scm.baseline.status).toBe('ok');
     expect(newLines('src/x.ts')).toEqual([[4, 4]]);
+  });
+});
+
+describe('Azure Pipelines: azureHead and scm.azure', () => {
+  const MERGE_GUID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+
+  /** main with a feature commit merged by a real merge commit; returns the commits. */
+  function mergedRepo(): { root: string; main: string; head: string; merge: string } {
+    const root = tmp();
+    initRepo(root);
+    writeTree(root, { 'a.ts': 'a\n' });
+    const main = commitAll(root, 'a');
+    gitSync(root, 'checkout', '-q', '-b', 'feature');
+    writeTree(root, { 'b.ts': 'b\n' });
+    const head = commitAll(root, 'b');
+    gitSync(root, 'checkout', '-q', 'main');
+    gitSync(root, 'merge', '--no-ff', '-q', '-m', 'merge', 'feature');
+    const merge = gitSync(root, 'rev-parse', 'HEAD');
+    gitSync(root, 'update-ref', 'refs/remotes/origin/main', main);
+    return { root, main, head, merge };
+  }
+
+  const azureCi = (merge: string | undefined, over: Partial<CiInfo> = {}): CiInfo => ({
+    ...detectCi({}),
+    provider: 'azure',
+    revision: merge ?? null,
+    mergeRequest: { id: '17', targetBranch: 'main', headSha: null, title: null, description: null },
+    azure: {
+      projectId: MERGE_GUID,
+      buildId: '42',
+      ...(merge === undefined ? {} : { mergeCommit: merge }),
+    },
+    ...over,
+  });
+  const gitOf = (root: string) => createGit(root, GIT_TEST_ENV);
+
+  it('azureHead takes the second parent of the merge commit when the head is not named', async () => {
+    const { root, head, merge } = mergedRepo();
+    const ci = await azureHead(gitOf(root), azureCi(merge));
+    expect(ci.pullRequestHead).toBe(head);
+    expect(ci.revision).toBe(head);
+    expect(ci.mergeRequest?.headSha).toBe(head);
+  });
+
+  it('azureHead leaves ci unchanged when the head is named, the commit is missing or has no second parent', async () => {
+    const { root, main, head, merge } = mergedRepo();
+    const named = azureCi(merge, { pullRequestHead: head });
+    expect(await azureHead(gitOf(root), named)).toBe(named);
+    const missing = azureCi('f'.repeat(40));
+    expect(await azureHead(gitOf(root), missing)).toBe(missing);
+    const plain = azureCi(main);
+    expect(await azureHead(gitOf(root), plain)).toBe(plain);
+    const branch = azureCi(merge, { mergeRequest: null });
+    expect(await azureHead(gitOf(root), branch)).toBe(branch);
+    const github = { ...azureCi(merge), provider: 'github' as const };
+    expect(await azureHead(gitOf(root), github)).toBe(github);
+  });
+
+  it('is checkout head when HEAD is the head, other when HEAD is the merge commit', async () => {
+    const { root, head, merge } = mergedRepo();
+    const ci = await azureHead(gitOf(root), azureCi(merge));
+    const atMerge = (await resolve(root, { ci }).result).scm;
+    expect(atMerge.azure).toEqual({ projectId: MERGE_GUID, buildId: '42', checkout: 'other' });
+    gitSync(root, 'checkout', '-q', '--detach', head);
+    const atHead = (await resolve(root, { ci }).result).scm;
+    expect(atHead.azure).toEqual({ projectId: MERGE_GUID, buildId: '42', checkout: 'head' });
+    expect(atHead.provider).toBe('azure');
+  });
+
+  it('has no checkout on a branch build, and no azure key when there is nothing to send', async () => {
+    const { root, merge } = mergedRepo();
+    const branch = azureCi(undefined, { mergeRequest: null, branch: 'main' });
+    expect((await resolve(root, { ci: branch }).result).scm.azure).toEqual({
+      projectId: MERGE_GUID,
+      buildId: '42',
+    });
+    const empty = azureCi(merge, { mergeRequest: null, azure: {} });
+    expect(await resolve(root, { ci: empty }).result).not.toHaveProperty('scm.azure');
+  });
+
+  it('adds no azure key for GitHub, GitLab or no CI', async () => {
+    const { root } = mergedRepo();
+    for (const ci of [detectCi({}), { ...detectCi({}), provider: 'gitlab' as const }]) {
+      expect((await resolve(root, { ci }).result).scm).not.toHaveProperty('azure');
+    }
   });
 });
 

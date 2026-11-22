@@ -77,6 +77,39 @@ describe('the GitHub context (github.md §3, D2)', () => {
     expect(read.kind === 'ok' && (read.context.github ?? null)).toBeNull();
   });
 
+  it('stores scm.azure for an Azure report only, null when the report has none', () => {
+    const report = sampleReport();
+    const azure = {
+      projectId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
+      buildId: '42',
+      checkout: 'head' as const,
+    };
+    report.scm.azure = azure;
+    for (const provider of ['gitlab', 'github', 'none'] as const) {
+      report.scm.provider = provider;
+      expect(scmContextOf(report)).not.toHaveProperty('azure');
+    }
+    report.scm.provider = 'azure';
+    const stored = scmContextOf(report);
+    expect(stored).toMatchObject({ provider: 'azure', azure });
+    expect(readScmContext(JSON.parse(JSON.stringify(stored)))).toEqual({
+      kind: 'ok',
+      context: stored,
+    });
+    delete report.scm.azure;
+    expect(scmContextOf(report)).toMatchObject({ azure: null });
+  });
+
+  it('reads an unknown Azure checkout as invalid', () => {
+    const row = {
+      provider: 'azure',
+      mergeRequestId: null,
+      gitlab: null,
+      azure: { checkout: 'x' },
+    };
+    expect(readScmContext(row)).toEqual({ kind: 'invalid' });
+  });
+
   it('reads an unknown checkout as invalid', () => {
     const row = {
       provider: 'github',

@@ -166,6 +166,34 @@ describe('analysis processing job', () => {
     });
   });
 
+  it('stores the Azure context of a pull request report in analyses.scm_context', async () => {
+    const report = sampleReport({
+      branch: 'feature/azure',
+      mergeRequest: { id: '17', targetBranch: 'main', sourceBranch: 'feature/azure' },
+    });
+    report.scm.provider = 'azure';
+    report.scm.azure = {
+      projectId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
+      buildId: '42',
+      checkout: 'head',
+    };
+    const id = await upload(report);
+    expect(await processAll()).toBe(1);
+    const [row] = await ctx.db
+      .select({ scmContext: analyses.scmContext })
+      .from(analyses)
+      .where(eq(analyses.id, id));
+    expect(row?.scmContext).toMatchObject({
+      provider: 'azure',
+      mergeRequestId: '17',
+      azure: {
+        projectId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d',
+        buildId: '42',
+        checkout: 'head',
+      },
+    });
+  });
+
   it('fails an invalid report with REPORT_INVALID and errors[].path (ruling R1)', async () => {
     const bad = sampleReport({ branch: 'invalid' });
     bad.findings[0]!.location = { path: 'src/missing.ts', startLine: 1 };

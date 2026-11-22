@@ -31,7 +31,7 @@ import { discoverFiles } from '../discovery/discover';
 import { detectDuplications } from '../duplication/detect';
 import { CliError, EXIT, type ExitCode } from '../errors';
 import { createGit, type Git } from '../git/git';
-import { fetchPolicy, resolveScm, scanTag } from '../git/scm';
+import { azureHead, fetchPolicy, resolveScm, scanTag } from '../git/scm';
 import { VERSION } from '../index';
 import type { CliIO } from '../io';
 import type { Logger } from '../log';
@@ -1066,6 +1066,17 @@ async function finishGate(
   return code;
 }
 
+/** An Azure pull request build the pipeline did not name the head of: the merge commit's second parent. */
+async function withAzureHead(
+  prepared: PreparedScan,
+  io: CliIO,
+  deps: ScanDeps,
+): Promise<PreparedScan> {
+  const { settings } = prepared;
+  const ci = await azureHead(deps.git ?? createGit(settings.root, io.env), settings.ci);
+  return ci === settings.ci ? prepared : { ...prepared, settings: { ...settings, ci } };
+}
+
 /**
  * `qualor scan` (config.md §5, §7). With `--dry-run` the report is written to `--output`.
  * Otherwise it is uploaded (ruling E5), and with `gate.wait` the gate verdict becomes the exit
@@ -1078,7 +1089,7 @@ export async function runScan(
   deps: ScanDeps = {},
 ): Promise<ExitCode> {
   log.info(`qualor ${VERSION} (${platformId()})`);
-  const prepared = prepareScan(flags, io, log, deps);
+  const prepared = await withAzureHead(prepareScan(flags, io, log, deps), io, deps);
   const { settings, analyzers, tag, endpoint, projectKey } = prepared;
   const external = readExternalSarif(settings, tag);
   const serverVersion = await askServerVersion(endpoint, deps, log);

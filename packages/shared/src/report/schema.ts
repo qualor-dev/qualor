@@ -193,6 +193,12 @@ export type GitHubCheckout = (typeof GITHUB_CHECKOUTS)[number];
 /** A GitHub numeric id (repository, workflow run), 1–20 digits (github.md §3). */
 export const GITHUB_ID = /^[0-9]{1,20}$/;
 
+/** An Azure DevOps project or repository id: a lower-case GUID (`SYSTEM_TEAMPROJECTID`). */
+export const AZURE_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** An Azure Pipelines build id (`BUILD_BUILDID`), 1-20 digits. */
+export const AZURE_BUILD_ID = /^[0-9]{1,20}$/;
+
 const scm = z.object({
   provider: z.enum([...SCM_PROVIDERS, 'none']),
   revision: gitRevision,
@@ -240,6 +246,19 @@ const scm = z.object({
     .object({
       repositoryId: z.string().regex(GITHUB_ID).optional(),
       runId: z.string().regex(GITHUB_ID).optional(),
+      checkout: z.enum(GITHUB_CHECKOUTS).optional(),
+    })
+    .optional(),
+  /**
+   * The Azure Pipelines context, only in Azure Pipelines; never trusted to choose a project or
+   * repository. Unknown keys are stripped; a malformed value of a known key is refused (as
+   * `scm.github`). `checkout` says whether the clone's HEAD is the pull request's head.
+   */
+  azure: z
+    .object({
+      projectId: z.string().regex(AZURE_GUID).optional(),
+      repositoryId: z.string().regex(AZURE_GUID).optional(),
+      buildId: z.string().regex(AZURE_BUILD_ID).optional(),
       checkout: z.enum(GITHUB_CHECKOUTS).optional(),
     })
     .optional(),

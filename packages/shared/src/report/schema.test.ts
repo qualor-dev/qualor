@@ -245,6 +245,36 @@ describe('reportSchema', () => {
   });
 });
 
+describe('scm.azure', () => {
+  const GUID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  const withAzure = (azure: unknown) => {
+    const report = structuredClone(base);
+    (report.scm as Record<string, unknown>).provider = 'azure';
+    (report.scm as Record<string, unknown>).azure = azure;
+    return reportSchema.safeParse(report);
+  };
+
+  it('accepts the four fields and drops unknown keys', () => {
+    const full = { projectId: GUID, repositoryId: GUID, buildId: '42', checkout: 'head' };
+    const parsed = withAzure({ ...full, token: 'x' });
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.scm.azure).toEqual(full);
+  });
+
+  it('refuses an upper-case GUID, a non-digit build id and an unknown checkout, naming the field', () => {
+    for (const [azure, path] of [
+      [{ projectId: GUID.toUpperCase() }, 'scm.azure.projectId'],
+      [{ repositoryId: 'not-a-guid' }, 'scm.azure.repositoryId'],
+      [{ buildId: '12a' }, 'scm.azure.buildId'],
+      [{ checkout: 'merge' }, 'scm.azure.checkout'],
+    ] as const) {
+      const parsed = withAzure(azure);
+      expect(parsed.success).toBe(false);
+      expect(parsed.error?.issues.map((i) => i.path.join('.'))).toContain(path);
+    }
+  });
+});
+
 describe('scm.github (github.md §3)', () => {
   const withGithub = (github: unknown) => {
     const report = structuredClone(base);

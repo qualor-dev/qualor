@@ -332,6 +332,8 @@ export async function resolveScm(o: ResolveScmOptions): Promise<ScmResolution> {
       ...gitlabContext(settings.ci),
       // github.md §3: only in GitHub Actions, and only with at least one well-formed value.
       ...githubContext(settings.ci, mergeRequest !== null, headSha),
+      // The Azure Pipelines ids, and whether HEAD is the pull request's head.
+      ...azureContext(settings.ci, mergeRequest !== null, headSha),
     },
     newLines: (p) => diff?.newLines(p),
   };
@@ -354,4 +356,47 @@ function githubContext(
       : {}),
   };
   return Object.keys(github).length === 0 ? {} : { github };
+}
+
+/**
+ * The head of an Azure pull request build whose `SYSTEM_PULLREQUEST_SOURCECOMMITID` is missing
+ * (Azure DevOps Server 2022 may not set it): the second parent of the merge commit Azure checks
+ * out. `ci` unchanged when the head is named, the build is not a pull request, or the commit has
+ * no second parent in the clone.
+ */
+export async function azureHead(git: Git, ci: CiInfo): Promise<CiInfo> {
+  const mergeCommit = ci.azure?.mergeCommit;
+  if (ci.provider !== 'azure' || ci.mergeRequest === null) return ci;
+  if (ci.pullRequestHead !== null || mergeCommit === undefined) return ci;
+  const r = await git(['rev-parse', '--verify', '--quiet', `${mergeCommit}^2^{commit}`]);
+  const head = r.stdout.trim();
+  if (r.code !== 0 || !REVISION.test(head)) return ci;
+  return {
+    ...ci,
+    revision: head,
+    pullRequestHead: head,
+    mergeRequest: { ...ci.mergeRequest, headSha: head },
+  };
+}
+
+/**
+ * `scm.azure`: the CI ids, plus `checkout` for a pull request whose head is known (`head` when
+ * HEAD is that commit, `other` for Azure's merge commit or anything else).
+ */
+export function azureContext(
+  ci: CiInfo,
+  isPullRequest: boolean,
+  headSha: string,
+): { azure?: NonNullable<Report['scm']['azure']> } {
+  if (ci.provider !== 'azure' || ci.azure === null) return {};
+  const { projectId, repositoryId, buildId } = ci.azure; // not mergeCommit: it stays in the CLI
+  const azure: NonNullable<Report['scm']['azure']> = {
+    ...(projectId === undefined ? {} : { projectId }),
+    ...(repositoryId === undefined ? {} : { repositoryId }),
+    ...(buildId === undefined ? {} : { buildId }),
+    ...(isPullRequest && ci.pullRequestHead !== null
+      ? { checkout: ci.pullRequestHead === headSha ? ('head' as const) : ('other' as const) }
+      : {}),
+  };
+  return Object.keys(azure).length === 0 ? {} : { azure };
 }
