@@ -473,6 +473,28 @@ describe('detectCi: Azure Pipelines (azure-devops.md §7.3)', () => {
     expect(detectCi({ TF_BUILD: 'True' }, noFile)).toEqual(none);
   });
 
+  it('leaves GitHub Actions and GitLab CI results unchanged when Azure variables are also set', () => {
+    const azure = { TF_BUILD: 'True', BUILD_REPOSITORY_PROVIDER: 'TfsGit' };
+    const github = { GITHUB_ACTIONS: 'true', GITHUB_SHA: sha, GITHUB_REF_NAME: 'main' };
+    const gitlab = { GITLAB_CI: 'true', CI_COMMIT_SHA: sha, CI_COMMIT_REF_NAME: 'main' };
+    for (const env of [github, gitlab]) {
+      expect(detectCi({ ...env, ...azure }, noFile)).toEqual(detectCi(env, noFile));
+    }
+    expect(detectCi({ ...github, ...azure }, noFile).provider).toBe('github');
+    expect(detectCi({ ...gitlab, ...azure }, noFile).provider).toBe('gitlab');
+  });
+
+  it('detects TF_BUILD=TRUE', () => {
+    expect(detectCi({ ...pr, TF_BUILD: 'TRUE' }, noFile).provider).toBe('azure');
+  });
+
+  it('is no pull request when the target is not a refs/heads ref', () => {
+    const ci = detectCi({ ...pr, SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/tags/x' }, noFile);
+    expect(ci.mergeRequest).toBeNull();
+    expect(ci.branch).toBeNull();
+    expect(ci.tag).toBeNull();
+  });
+
   it('detects TF_BUILD in any case', () => {
     expect(detectCi({ ...pr, TF_BUILD: 'true' }, noFile).provider).toBe('azure');
   });

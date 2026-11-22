@@ -63,7 +63,7 @@ export interface AzureCi {
   projectId?: string;
   repositoryId?: string;
   buildId?: string;
-  /**  (full SHA) of a pull request build: the merge commit Azure checks out. */
+  /** `BUILD_SOURCEVERSION` (full SHA) of a pull request build: the merge commit Azure checks out. */
   mergeCommit?: string;
 }
 
