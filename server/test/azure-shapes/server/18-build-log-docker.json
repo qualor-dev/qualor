@@ -1,0 +1,6 @@
+{
+  "logId": 8,
+  "lines": [
+    "2026-11-22T13:40:03.4312410Z QUALOR_SCM={\"provider\":\"azure\",\"revision\":\"2c95b81dcda8b8cce2bc162528fafed0cf06209d\",\"branch\":\"probe/18-20261122133826\",\"mainBranch\":\"main\",\"tag\":null,\"mergeRequest\":{\"id\":\"20\",\"targetBranch\":\"probe/18-20261122133826-target\",\"sourceBranch\":\"probe/18-20261122133826\"},\"baseline\":{\"revision\":\"dd50ae676c5e5551dd5d0630073bc38532442fe4\",\"kind\":\"merge_base\",\"status\":\"ok\"},\"renames\":[],\"azure\":{\"projectId\":\"828b9239-8828-4b4e-82e8-fa6e00000c8f\",\"repositoryId\":\"0c3c575c-2bee-44bc-8f5c-fa6e000067a9\",\"buildId\":\"14\",\"checkout\":\"head\"}}"
+  ]
+}

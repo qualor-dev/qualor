@@ -1,0 +1,16 @@
+{
+  "provider": "azure",
+  "revision": "2c95b81dcda8b8cce2bc162528fafed0cf06209d",
+  "branch": "probe/18-20261122133826",
+  "mergeRequest": {
+    "id": "20",
+    "targetBranch": "probe/18-20261122133826-target",
+    "sourceBranch": "probe/18-20261122133826"
+  },
+  "azure": {
+    "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+    "repositoryId": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+    "buildId": "15",
+    "checkout": "head"
+  }
+}
