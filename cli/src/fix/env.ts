@@ -8,15 +8,16 @@ import { FIX_SECRET_NAME, secretEnvValues } from '@qualor/shared/fix';
  * pass: the managers use the job's own configuration, as the customer's build does (§6.5).
  */
 export const FIX_DROPPED_ENV =
-  /^(QUALOR_.*|ACTIONS_.*|CI_JOB_TOKEN|GITHUB_TOKEN|CI_JOB_JWT.*|CI_REGISTRY_PASSWORD|CI_DEPENDENCY_PROXY_PASSWORD|CI_DEPLOY_PASSWORD)$/;
+  /^(QUALOR_.*|ACTIONS_.*|CI_JOB_TOKEN|GITHUB_TOKEN|CI_JOB_JWT.*|CI_REGISTRY_PASSWORD|CI_DEPENDENCY_PROXY_PASSWORD|CI_DEPLOY_PASSWORD|SYSTEM_ACCESSTOKEN|AZURE_DEVOPS_EXT_PAT|SECRET_.*)$/;
 
 /** Ruling T12b: a CI variable that holds a credential, whatever its exact name. */
-const CI_PREFIX = /^(CI|GITHUB|RUNNER)_/;
+const CI_PREFIX = /^(CI|GITHUB|RUNNER|SYSTEM|AGENT|BUILD|VSTS|ENDPOINT|AZURE_DEVOPS)_/;
 const CREDENTIAL_WORD = /TOKEN|PASSWORD|SECRET|JWT|KEY/;
 
 /**
- * Whether the tool environment drops the variable: {@link FIX_DROPPED_ENV}, or a `CI_`, `GITHUB_`
- * or `RUNNER_` name with `TOKEN`, `PASSWORD`, `SECRET`, `JWT` or `KEY` in it. Names are compared in
+ * Whether the tool environment drops the variable: {@link FIX_DROPPED_ENV}, or a `CI_`, `GITHUB_`,
+ * `RUNNER_`, `SYSTEM_`, `AGENT_`, `BUILD_`, `VSTS_`, `ENDPOINT_` or `AZURE_DEVOPS_` name with `TOKEN`,
+ * `PASSWORD`, `SECRET`, `JWT` or `KEY` in it. Names are compared in
  * upper case, since Windows reads `Qualor_Token` as `QUALOR_TOKEN`.
  */
 export function isFixDroppedEnv(name: string): boolean {

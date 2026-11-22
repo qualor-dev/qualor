@@ -275,6 +275,26 @@ describe('qualor fix: claiming', () => {
     expect(detached.claims).toEqual([]);
   });
 
+  it('takes an Azure Pipelines branch build’s branch and revision; an Azure tag build exits 2', async () => {
+    const { dir, head } = repo();
+    const azure = {
+      TF_BUILD: 'True',
+      BUILD_REPOSITORY_PROVIDER: 'TfsGit',
+      BUILD_SOURCEVERSION: head,
+    };
+    const branch = await qualor();
+    const r = await run(dir, branch, {
+      env: { ...azure, BUILD_SOURCEBRANCH: 'refs/heads/trunk' },
+    });
+    expect(r.code).toBe(EXIT.OK);
+    expect(branch.claims[0]).toMatchObject({ branch: 'trunk', revision: head });
+
+    const tag = await qualor();
+    const t = await run(dir, tag, { env: { ...azure, BUILD_SOURCEBRANCH: 'refs/tags/v1.0.0' } });
+    expect(t.code).toBe(EXIT.USAGE);
+    expect(tag.claims).toEqual([]);
+  });
+
   it('exits 5 when the token is refused and 4 when the server cannot be reached', async () => {
     const { dir } = repo();
     const refused = await qualor({ claims: [(res) => problem(res, 401, 'UNAUTHENTICATED')] });

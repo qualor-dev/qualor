@@ -146,3 +146,30 @@ describe('fixJobSecrets (B9, I1, ruling T12b)', () => {
     expect(credentials.toSorted()).toEqual([NPM_SECRET, TOKEN, 'registry-pw-1'].toSorted());
   });
 });
+
+describe('fixToolEnv and fixJobSecrets: the Azure Pipelines credentials', () => {
+  const TOKEN = ['qlr', 'prj', 'T0KEN', 'azure'].join('_');
+  const AZURE_SECRETS: Record<string, string> = {
+    SYSTEM_ACCESSTOKEN: ['sys', 'S3CR3T', 'v4lue', '1'].join('_'),
+    AZURE_DEVOPS_EXT_PAT: ['azd', 'S3CR3T', 'v4lue', '2'].join('_'),
+    SECRET_QUALOR_TOKEN: ['sec', 'S3CR3T', 'v4lue', '3'].join('_'),
+    AGENT_JOBACCESSTOKEN: ['agt', 'S3CR3T', 'v4lue', '4'].join('_'),
+    VSTS_AGENT_INPUT_TOKEN: ['vsts', 'S3CR3T', 'v4lue', '5'].join('_'),
+    ENDPOINT_AUTH_PARAMETER_X_PASSWORD: ['ep', 'S3CR3T', 'v4lue', '6'].join('_'),
+  };
+  const AZURE_KEPT: Record<string, string> = {
+    SYSTEM_TEAMPROJECT: 'acme',
+    BUILD_SOURCEBRANCH: 'refs/heads/main',
+    AGENT_TEMPDIRECTORY: '/agent/_temp',
+  };
+
+  it('drops each Azure credential variable and scrubs its value', () => {
+    const env = { ...AZURE_SECRETS, ...AZURE_KEPT };
+    const out = fixToolEnv(env);
+    for (const name of Object.keys(AZURE_SECRETS)) expect(out, name).not.toHaveProperty(name);
+    expect(out).toEqual(AZURE_KEPT);
+    const { scrub } = fixJobSecrets(env, TOKEN);
+    expect(scrub).toEqual(expect.arrayContaining(Object.values(AZURE_SECRETS)));
+    for (const value of Object.values(AZURE_KEPT)) expect(scrub).not.toContain(value);
+  });
+});
