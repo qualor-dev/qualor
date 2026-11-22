@@ -58,9 +58,21 @@ export function azureTestText(result: TestResult): string {
     return $localize`:@@azure.testOkRepository:Connected as ${name}:user:; the repository ${repository}:repository: is reachable.`;
   }
   if (result.visible) {
-    const repositories = result.visible.repositories;
-    const projects = result.visible.projects;
-    return $localize`:@@azure.testOkVisible:Connected as ${name}:user:; ${repositories}:repositories: repositories in ${projects}:projects: projects visible.`;
+    const repositories = countText(result.visible.repositories, 'repository');
+    const projects = countText(result.visible.projects, 'project');
+    return $localize`:@@azure.testOkVisible:Connected as ${name}:user:; ${repositories}:repositories: in ${projects}:projects: visible.`;
   }
   return $localize`:@@azure.testOk:Connected as ${name}:user:.`;
+}
+
+/** "1 repository", "12 repositories", "1 project", "3 projects". */
+function countText(count: number, noun: 'repository' | 'project'): string {
+  if (noun === 'repository') {
+    return count === 1
+      ? $localize`:@@azure.oneRepository:1 repository`
+      : $localize`:@@azure.manyRepositories:${count}:count: repositories`;
+  }
+  return count === 1
+    ? $localize`:@@azure.oneProject:1 project`
+    : $localize`:@@azure.manyProjects:${count}:count: projects`;
 }

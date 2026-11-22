@@ -125,6 +125,24 @@
                   @default never;
                 }
                 @if (provider === 'azure') {
+                  <label
+                    class="visually-hidden"
+                    [attr.for]="'search-' + p.id"
+                    i18n="@@azure.searchOf"
+                  >
+                    Search the repositories of {{ p.name }}
+                  </label>
+                  <input
+                    [id]="'search-' + p.id"
+                    type="search"
+                    maxlength="100"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Search project/repository"
+                    i18n-placeholder="@@azure.searchPlaceholder"
+                    [value]="search(p)"
+                    (change)="setSearch(p, $event)"
+                  />
                   <select
                     [id]="'ref-' + p.id"
                     [attr.aria-invalid]="refErrors()[p.id] ? true : null"

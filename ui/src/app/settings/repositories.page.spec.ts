@@ -484,4 +484,103 @@ describe('RepositoriesPage with Azure DevOps', () => {
       'The repositories could not be listed',
     );
   });
+
+  it('searches the list on the server and says when more remain than were listed', async () => {
+    const server = azureSetup();
+    let full = true;
+    server.on('GET', '/api/v0/scm-connections/a1/repositories', (request) => {
+      const filter = request.query.get('filter');
+      const page = Number(request.query.get('page'));
+      if (filter) {
+        return {
+          body: {
+            items: [
+              {
+                ref: GUID,
+                name: 'Shop/api',
+                defaultBranch: null,
+                language: null,
+                archived: false,
+                project: null,
+              },
+            ],
+            hasMore: false,
+          },
+        };
+      }
+      return {
+        body: {
+          items: [
+            {
+              ref: `id-${page}`,
+              name: `Shop/r${page}`,
+              defaultBranch: null,
+              language: null,
+              archived: false,
+              project: null,
+            },
+          ],
+          hasMore: full,
+        },
+      };
+    });
+    const { fixture, root } = await render();
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    expect(server.requestsTo('GET', '/api/v0/scm-connections/a1/repositories')).toHaveLength(10);
+    expect(root.querySelector('#ref-hint-p1')?.textContent).toContain('Showing the first 10');
+    full = false;
+    type(root, '#search-p1', 'api');
+    root.querySelector('#search-p1')!.dispatchEvent(new Event('change'));
+    await settle(fixture);
+    const requests = server.requests.filter((r) => r.query.get('filter') === 'api');
+    expect(requests).toHaveLength(1);
+    expect(
+      [...root.querySelectorAll<HTMLOptionElement>('select#ref-p1 option')].map((o) =>
+        o.textContent?.trim(),
+      ),
+    ).toEqual(['Choose a repository', 'Shop / api']);
+    expect(root.querySelector('#ref-hint-p1')?.textContent?.trim()).toBe('');
+  });
+
+  it('lists again after a failed list, when the connection is chosen again', async () => {
+    const server = azureSetup();
+    let failing = true;
+    server.on('GET', '/api/v0/scm-connections/a1/repositories', () =>
+      failing
+        ? { status: 502, body: problem(502, 'SCM_UNREACHABLE') }
+        : { body: { items: [], hasMore: false } },
+    );
+    const { fixture, root } = await render();
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    expect(root.querySelector('#ref-hint-p1')?.textContent).toContain('could not be listed');
+    failing = false;
+    choose(root, '#conn-p1', '');
+    await settle(fixture);
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    expect(server.requestsTo('GET', '/api/v0/scm-connections/a1/repositories')).toHaveLength(2);
+    expect(root.querySelector('#ref-hint-p1')?.textContent?.trim()).toBe('');
+  });
+
+  it('clears a reference of another provider when the connection changes provider', async () => {
+    azureSetup();
+    const { fixture, root } = await render();
+    choose(root, '#conn-p1', 'c1');
+    await settle(fixture);
+    type(root, '#ref-p1', 'acme/api');
+    choose(root, '#conn-p1', 'a1');
+    await settle(fixture);
+    const select = root.querySelector<HTMLSelectElement>('select#ref-p1')!;
+    expect([...select.options].map((o) => o.value)).not.toContain('acme/api');
+    expect(select.value).toBe('');
+    // Within one provider the reference stays.
+    choose(root, '#conn-p1', 'c1');
+    await settle(fixture);
+    type(root, '#ref-p1', 'acme/web');
+    choose(root, '#conn-p1', 'c1');
+    await settle(fixture);
+    expect(root.querySelector<HTMLInputElement>('input#ref-p1')?.value).toBe('acme/web');
+  });
 });

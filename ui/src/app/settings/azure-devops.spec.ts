@@ -374,6 +374,21 @@ describe('AzureDevOpsPage', () => {
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
   });
 
+  it('words the counts of a test in the singular and the plural', () => {
+    const text = (repositories: number, projects: number) =>
+      azureTestText({
+        ok: true,
+        user: { username: 'Bot' },
+        project: null,
+        problem: null,
+        missingAccess: null,
+        visible: { repositories, projects },
+      });
+    expect(text(1, 1)).toBe('Connected as Bot; 1 repository in 1 project visible.');
+    expect(text(0, 0)).toBe('Connected as Bot; 0 repositories in 0 projects visible.');
+    expect(text(12, 3)).toBe('Connected as Bot; 12 repositories in 3 projects visible.');
+  });
+
   it('words each problem code, and shows the server’s own text for a token endpoint refusal', () => {
     const codes = [
       'undecryptable',

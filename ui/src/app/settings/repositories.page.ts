@@ -30,6 +30,8 @@ type Project = ItemOf<'/api/v0/projects'>;
 /** An Azure DevOps connection's repositories, as its list shows them. */
 interface AzureList {
   state: 'loading' | 'loaded' | 'failed';
+  /** More repositories remain than the pages listed. */
+  more?: boolean;
   items: { ref: string; label: string }[];
 }
 
@@ -94,6 +96,8 @@ export class RepositoriesPage {
   /** The repositories of each Azure DevOps connection a mapping names, by connection id. */
   private readonly azureLists = signal<Record<string, AzureList>>({});
   private readonly azureRequested = new Set<string>();
+  /** What each project's repository list is searched for, by project id. */
+  protected readonly searches = signal<Record<string, string>>({});
   private readonly heading = viewChild.required<ElementRef<HTMLElement>>('heading');
   /** Counts organisation changes: an answer for an earlier organisation is dropped. */
   private orgGeneration = 0;
@@ -113,6 +117,7 @@ export class RepositoriesPage {
         this.connErrors.set({});
         this.azureLists.set({});
         this.azureRequested.clear();
+        this.searches.set({});
         if (organizationId && admin) {
           void this.connections.reset(organizationId);
           void this.projects.reset(organizationId);
@@ -123,39 +128,55 @@ export class RepositoriesPage {
     effect(() => {
       const wanted = this.projects
         .items()
-        .map((p) => this.draft(p).connectionId)
-        .filter((id) =>
+        .map((p) => ({ id: this.draft(p).connectionId, filter: this.search(p) }))
+        .filter(({ id }) =>
           this.connections.items().some((c) => c.id === id && c.provider === 'azure'),
         ); // provider-guard: only an Azure DevOps mapping lists repositories
       untracked(() => {
-        for (const id of new Set(wanted)) void this.loadAzureRepositories(id);
+        for (const { id, filter } of wanted) void this.loadAzureRepositories(id, filter);
       });
     });
   }
 
-  private async loadAzureRepositories(connectionId: string): Promise<void> {
-    if (this.azureRequested.has(connectionId)) return;
-    this.azureRequested.add(connectionId);
+  protected search(project: Project): string {
+    return this.searches()[project.id] ?? '';
+  }
+
+  protected setSearch(project: Project, event: Event): void {
+    this.searches.update((all) => ({ ...all, [project.id]: inputValue(event).trim() }));
+  }
+
+  private async loadAzureRepositories(connectionId: string, filter: string): Promise<void> {
+    const key = azureKey(connectionId, filter);
+    if (this.azureRequested.has(key)) return;
+    this.azureRequested.add(key);
     const generation = this.orgGeneration;
     const set = (list: AzureList) => {
       if (generation === this.orgGeneration) {
-        this.azureLists.update((all) => ({ ...all, [connectionId]: list }));
+        this.azureLists.update((all) => ({ ...all, [key]: list }));
       }
     };
     set({ state: 'loading', items: [] });
     const items: AzureList['items'] = [];
+    let more = false;
     try {
       for (let pageNumber = 1; pageNumber <= AZURE_LIST_PAGES; pageNumber++) {
         const answer = await ok(
           this.api.client.GET('/api/v0/scm-connections/{id}/repositories', {
-            params: { path: { id: connectionId }, query: { page: pageNumber } },
+            params: {
+              path: { id: connectionId },
+              query: { page: pageNumber, ...(filter ? { filter } : {}) },
+            },
           }),
         );
         for (const r of answer.items) items.push({ ref: r.ref, label: r.name.replace('/', ' / ') });
-        if (!answer.hasMore) break;
+        more = answer.hasMore;
+        if (!more) break;
       }
-      set({ state: 'loaded', items });
+      set({ state: 'loaded', items, more });
     } catch {
+      // Not remembered as asked: choosing the connection or searching again tries again.
+      this.azureRequested.delete(key);
       set({ state: 'failed', items: [] });
     }
   }
@@ -163,18 +184,27 @@ export class RepositoriesPage {
   /** The repositories a project's Azure DevOps mapping can pick, its saved one always among them. */
   protected azureOptions(project: Project): AzureList['items'] {
     const draft = this.draft(project);
-    const items = this.azureLists()[draft.connectionId]?.items ?? [];
+    const items =
+      this.azureLists()[azureKey(draft.connectionId, this.search(project))]?.items ?? [];
     if (draft.ref === '' || items.some((r) => r.ref === draft.ref)) return items;
     return [{ ref: draft.ref, label: draft.ref }, ...items];
   }
 
   /** What the list of an Azure DevOps mapping says while it loads or when it could not load. */
   protected azureHint(project: Project): string {
-    switch (this.azureLists()[this.draft(project).connectionId]?.state) {
+    const list =
+      this.azureLists()[azureKey(this.draft(project).connectionId, this.search(project))];
+    switch (list?.state) {
       case 'loading':
         return $localize`:@@azure.loadingRepositories:Loading the repositories…`;
       case 'failed':
         return $localize`:@@azure.repositoriesFailed:The repositories could not be listed. Test the connection under Azure DevOps.`;
+      case 'loaded': {
+        const shown = list.items.length;
+        return list.more
+          ? $localize`:@@azure.listTruncated:Showing the first ${shown}:count:; type to search.`
+          : '';
+      }
       default:
         return '';
     }
@@ -230,7 +260,12 @@ export class RepositoriesPage {
   }
 
   protected setConnection(project: Project, event: Event): void {
-    this.setDraft(project, { ...this.draft(project), connectionId: inputValue(event) });
+    const connectionId = inputValue(event);
+    const was = this.providerOf(project);
+    const draft = { ...this.draft(project), connectionId };
+    // A reference of another provider is no reference of the new connection's.
+    const now = this.connections.items().find((c) => c.id === connectionId)?.provider ?? null;
+    this.setDraft(project, now === was ? draft : { ...draft, ref: '' });
   }
 
   protected setRef(project: Project, event: Event): void {
@@ -367,6 +402,12 @@ export class RepositoriesPage {
       this.busy.set(false);
     }
   }
+}
+
+/** The key of one connection's list for one search text. */
+function azureKey(connectionId: string, filter: string): string {
+  return `${connectionId}
+${filter}`;
 }
 
 function without<T>(all: Record<string, T>, id: string): Record<string, T> {

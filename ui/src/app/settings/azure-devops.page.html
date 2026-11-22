@@ -51,7 +51,10 @@
     <div class="setting-text">
       <fieldset
         class="kind-group"
-        [attr.aria-describedby]="f.principals ? null : f.prefix + '-kind-hint'"
+        [attr.aria-describedby]="
+          (f.principals ? '' : f.prefix + '-kind-hint ') +
+            (f.errors.kind ? f.prefix + '-kind-error' : '') || null
+        "
       >
         <legend i18n="@@azure.authentication">Authentication</legend>
         <label class="row">
