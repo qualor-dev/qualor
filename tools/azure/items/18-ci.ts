@@ -96,13 +96,16 @@ export function benchDockerYaml(example: string): string {
   ]);
 }
 
-/** integrations/azure-devops/qualor.yml as the bench runs it: the task's image tag and arguments. */
+/**
+ * integrations/azure-devops/qualor.yml as the bench runs it: the bench image tag in place of the
+ * example's pin, and the arguments (a second `inputs:` block would not compile).
+ */
 export function benchTaskYaml(example: string): string {
   return swapped('qualor.yml', example, [
     ...BENCH_SWAPS,
     [
-      /^ {2}- task: Qualor@0\n {4}displayName: Qualor scan\n/m,
-      (m) => `${m}    inputs:\n      imageTag: ${BENCH_IMAGE_TAG}\n      arguments: ${DRY_RUN}\n`,
+      /^( {2}- task: Qualor@0\n {4}displayName: Qualor scan\n {4}inputs:\n) {6}imageTag: .+\n/m,
+      (_m, head) => `${head}      imageTag: ${BENCH_IMAGE_TAG}\n      arguments: ${DRY_RUN}\n`,
     ],
   ]);
 }
@@ -349,6 +352,24 @@ function failedSteps(records: TimelineRecord[], logs: Map<number, string[]>): st
     .join('; ');
 }
 
+/**
+ * The errors Azure DevOps found in a build's YAML. Such a build fails before any job: it has no
+ * timeline and no logs (both calls answer with an empty body).
+ */
+function validationErrors(json: unknown): string[] {
+  const parsed = z
+    .object({
+      validationResults: z
+        .array(z.object({ result: z.string().nullish(), message: z.string().nullish() }))
+        .nullish(),
+    })
+    .safeParse(json);
+  if (!parsed.success) return [];
+  return (parsed.data.validationResults ?? [])
+    .filter((v) => v.result === 'error')
+    .map((v) => (v.message ?? 'no message').slice(0, 300));
+}
+
 /** One form's build: waits for it, records it, and checks the printed `scm` block. */
 async function checkForm(
   ctx: ProbeContext,
@@ -381,6 +402,13 @@ async function checkForm(
     return {
       pass: false,
       text: `${run.form} form: build ${queued.id} did not complete within 30 minutes (${how})`,
+    };
+  }
+  const invalid = validationErrors(done.res.json);
+  if (invalid.length > 0) {
+    return {
+      pass: false,
+      text: `${run.form} form: build ${queued.id} has no logs: its YAML did not compile (${invalid.join('; ')})`,
     };
   }
   // The logs first: reading them adds the agent's name to the redaction table.
