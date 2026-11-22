@@ -72,8 +72,9 @@ describe('runMigrations / pendingMigrations', () => {
     // (0.16, the re-check an alert target's pairs were last read at, approved 2026-11-15),
     // 0031_sbom_versions (0.16, SBOM versions, source packages and the package search, approved
     // 2026-11-16), 0032_jira (0.16, Jira connections, mappings and links, approved 2026-11-17),
-    // 0033_fix_mrs (0.16, fix merge requests, approved 2026-11-18).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(34);
+    // 0033_fix_mrs (0.16, fix merge requests, approved 2026-11-18), 0034_azure_devops (Azure
+    // DevOps connections, approved 2026-11-21 with the Azure DevOps design).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(35);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -728,9 +729,17 @@ describe('runMigrations / pendingMigrations', () => {
 
     await runMigrations(db.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(db.db, MIGRATIONS_DIR)).toBe(0);
-    // Dropping and adding two checks changed no row, and the connections only gained their two flags (0019, 0033).
+    // Dropping and adding two checks changed no row, and the connections only gained their two flags (0019, 0033) and
+    // three NULL Azure columns (0034).
     expect(await rowsOf('scm_connections')).toEqual(
-      before.connections.map((c) => ({ ...c, ci_setup_allowed: false, fix_mrs_allowed: false })),
+      before.connections.map((c) => ({
+        ...c,
+        ci_setup_allowed: false,
+        fix_mrs_allowed: false,
+        azure_auth: null,
+        azure_tenant_id: null,
+        azure_client_id: null,
+      })),
     );
     expect(await rowsOf('llm_requests')).toEqual(before.requests);
     expect(await rowsOf('review_runs')).toEqual(

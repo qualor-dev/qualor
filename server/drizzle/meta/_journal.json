@@ -239,6 +239,13 @@
       "when": 1794981400501,
       "tag": "0033_fix_mrs",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1795328318421,
+      "tag": "0034_azure_devops",
+      "breakpoints": true
     }
   ]
 }

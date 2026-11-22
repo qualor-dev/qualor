@@ -307,9 +307,11 @@ describe('review_replies and the columns beside it (6I-4, migration 0017_review_
       .where(eq(reviewReplies.id, queued.id));
   });
 
-  it('a provider is gitlab or github', async () => {
-    for (const provider of ['gitlab', 'github'] as const) {
-      expect(await tryReply({ provider })).toBeNull();
+  it('a provider is gitlab, github or azure', async () => {
+    // `review_replies accepts provider azure` (migration 0034); the column's TypeScript type
+    // widens with the provider list in a later task, so the value goes in through `column`.
+    for (const provider of ['gitlab', 'github', 'azure']) {
+      expect(await tryReply(column('provider', provider)), provider).toBeNull();
     }
     for (const provider of ['bitbucket', 'GitLab', '']) {
       expect(await tryReply(column('provider', provider)), provider).toEqual(

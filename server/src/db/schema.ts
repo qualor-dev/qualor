@@ -7,6 +7,7 @@ import type {
 } from '@qualor/shared';
 import { FIX_FAMILIES, type FixFamily } from '@qualor/shared/fix';
 import { sql } from 'drizzle-orm';
+import type { AzureAuthKind } from '../scm/azure/auth-kinds';
 import {
   type AnyPgColumn,
   bigint,
@@ -252,15 +253,29 @@ export const scmConnections = pgTable(
     ciSetupAllowed: boolean('ci_setup_allowed').notNull().default(false),
     /** Fix MRs (migration 0033): whether Qualor may open fix merge requests; an org admin sets it. */
     fixMrsAllowed: boolean('fix_mrs_allowed').notNull().default(false),
+    /** Azure DevOps (migration 0034): how the connection authenticates; NULL for GitLab and GitHub. */
+    azureAuth: text('azure_auth').$type<AzureAuthKind>(),
+    /** Azure DevOps (migration 0034): the Entra tenant and application of a service principal; NULL for a PAT. */
+    azureTenantId: text('azure_tenant_id'),
+    azureClientId: text('azure_client_id'),
     createdAt: createdAt(),
   },
   (t) => [
     index('scm_connections_organization_idx').on(t.organizationId),
-    check('scm_connections_provider_check', sql`provider IN ('gitlab','github')`), // provider-guard: SQL CHECK, widened by migration
+    check('scm_connections_provider_check', sql`provider IN ('gitlab','github','azure')`), // provider-guard: SQL CHECK, widened by migration
     // A NULL app_id would make the regex test NULL, which a CHECK lets through: hence IS NOT NULL.
     check(
       'scm_connections_github_app_check',
-      sql`(provider = 'gitlab' AND app_id IS NULL) OR (provider = 'github' AND app_id IS NOT NULL AND app_id ~ '^[0-9]{1,20}$')`,
+      sql`(provider = 'gitlab' AND app_id IS NULL) OR (provider = 'github' AND app_id IS NOT NULL AND app_id ~ '^[0-9]{1,20}$') OR (provider = 'azure' AND app_id IS NULL)`,
+    ),
+    check(
+      'scm_connections_azure_auth_check',
+      sql`(provider = 'azure') = (azure_auth IS NOT NULL) AND (azure_auth IS NULL OR azure_auth IN ('pat','service_principal_secret','service_principal_certificate'))`,
+    ),
+    // COALESCE: a NULL azure_auth must read as "not a service principal", not as NULL (a CHECK lets NULL through).
+    check(
+      'scm_connections_azure_principal_check',
+      sql`COALESCE(azure_auth IN ('service_principal_secret','service_principal_certificate'), false) = (azure_tenant_id IS NOT NULL AND azure_client_id IS NOT NULL) AND (azure_tenant_id IS NULL) = (azure_client_id IS NULL) AND (azure_tenant_id IS NULL OR azure_tenant_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') AND (azure_client_id IS NULL OR azure_client_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')`,
     ),
   ],
 );
@@ -2890,7 +2905,7 @@ export const reviewReplies = pgTable(
     index('review_replies_active_idx')
       .on(t.status)
       .where(sql`status IN ('queued','running')`),
-    check('review_replies_provider_check', sql`provider IN ('gitlab','github')`), // provider-guard: SQL CHECK, widened by migration
+    check('review_replies_provider_check', sql`provider IN ('gitlab','github','azure')`), // provider-guard: SQL CHECK, widened by migration
     check('review_replies_kind_check', sql`kind IN ('reply','command')`),
     check('review_replies_command_check', sql`command IN ('review','fix','stop')`),
     // `kind` is never NULL and neither is `IS NOT NULL`: a NULL result would pass a CHECK.
