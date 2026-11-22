@@ -162,9 +162,10 @@ With `dotnet: true` the build runs inside the `qualor/scanner-dotnet` container.
 
 - The build sees `.git` read-only. A tool that writes into `.git`, such as GitVersion, must run in
   an earlier step.
-- The container gets neither the agent's NuGet credential provider nor the `VSS_NUGET_*` variables.
-  For a private feed, restore the packages in an earlier step on the agent. The build then finds
-  them in the sources.
+- The container has no Azure Artifacts credential provider and no `VSS_NUGET_*` variables, so the
+  build restores only from feeds it can reach without them. For a private feed, use the docker
+  example and give the build step the feed's credentials yourself, for example in an `-e` variable
+  that your `nuget.config` reads.
 
 ## Roles and audit
 
