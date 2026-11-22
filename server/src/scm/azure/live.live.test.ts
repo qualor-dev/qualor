@@ -18,8 +18,8 @@ import { testAzureConnection } from './connections';
  * - Services: SERVICES_URL with SERVICES_PAT (a personal access token); TENANT_ID and CLIENT_ID
  *   with CLIENT_SECRET (a secret) or CLIENT_CERT_FILE and CLIENT_KEY_FILE (a certificate and its
  *   unencrypted key, as files).
- * - Server (optional): SERVER_URL with SERVER_PAT. Skipped when SERVER_CA_FILE is set, because the
- *   connection client has no private CA.
+ * - Server (optional): SERVER_URL with SERVER_PAT. With a private CA (SERVER_CA_FILE set), start the
+ *   run with `NODE_EXTRA_CA_CERTS=<that file>`; without it the Server case is skipped.
  *
  * It builds the rows the connection routes would store and asserts on fields only: no credential,
  * row or environment value is ever printed or put in an assertion message.
@@ -109,8 +109,11 @@ describe.skipIf(files === '')('Azure DevOps connections against a real organisat
   const serverUrl = process.env['AZURE_PROBE_SERVER_URL'] ?? '';
   const serverPat = process.env['AZURE_PROBE_SERVER_PAT'] ?? '';
   const serverCa = process.env['AZURE_PROBE_SERVER_CA_FILE'] ?? '';
-  it.skipIf(serverUrl === '' || serverPat === '' || serverCa !== '')(
-    'Server, personal access token',
+  const caMissing = serverCa !== '' && (process.env['NODE_EXTRA_CA_CERTS'] ?? '') === '';
+  it.skipIf(serverUrl === '' || serverPat === '' || caMissing)(
+    caMissing
+      ? 'Server, personal access token (skipped: private CA needs NODE_EXTRA_CA_CERTS)'
+      : 'Server, personal access token',
     async () => {
       const url = new URL(serverUrl);
       await check(rowOf(serverUrl, 'pat', serverPat, null), parseInternalHosts(url.host));

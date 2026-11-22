@@ -445,7 +445,7 @@ goes into a `postgres://` URL.
 | `QUALOR_VULNDB_INTERNAL_HOSTS` | none | the mirror of the [vulnerability database](./vulnerability-database.md) on your internal network that Qualor may call, a list of its own, comma-separated, each with an optional port (`registry.corp:5000`). It lifts the check for private addresses only; the registry must still use HTTPS |
 | `QUALOR_VULNDB_UPLOAD_MAX_BYTES` | 1 GiB | the largest `db.tar.gz` the vulnerability database page accepts |
 | `QUALOR_VULNDB_MAX_DOWNLOADS` | 4 | how many scanners may download the [vulnerability database](./vulnerability-database.md#scanners) at once, 1 to 64. More get `503 DOWNLOADS_BUSY` and use their cached copy or image |
-| `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, Jira Data Center, webhook receivers, SMTP server or vulnerability database mirror use a private CA. Mount the file into the container |
+| `NODE_EXTRA_CA_CERTS` | none | a PEM bundle, when your GitLab, GitHub Enterprise, Azure DevOps Server, Jira Data Center, webhook receivers, SMTP server or vulnerability database mirror use a private CA. Mount the file into the container |
 | `QUALOR_LICENSE` | none | an [enterprise licence](./enterprise.md) key. Not together with `QUALOR_LICENSE_FILE` |
 | `QUALOR_LICENSE_FILE` | none | the path of a file holding the licence key, such as a Docker or Kubernetes secret, read at start: UTF-8, or UTF-16 with a byte-order mark. A file that cannot be read stops the start |
 

@@ -62,6 +62,9 @@ Create the token in Azure DevOps under **User settings → Personal access token
 **Code: Read**. It sees what its owner sees, and it stops working when it expires or its owner
 loses access.
 
+If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
+`NODE_EXTRA_CA_CERTS`.
+
 ## Test the connection
 
 Press **Test** on the connection. A passing test shows who connected and how much that identity

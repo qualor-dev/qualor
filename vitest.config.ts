@@ -52,7 +52,7 @@ const liveJira = process.argv.some(
 );
 
 /**
- * Azure DevOps connection (sub-plan 2): the opt-in check against a real organisation
+ * Azure DevOps connection: the opt-in check against a real organisation
  * (`pnpm azure:live`). Never part of `pnpm test` or CI: the unit project excludes
  * `*.live.test.ts`, and the project exists only when `QUALOR_LIVE_AZURE_ENV_FILES` is set and the
  * command line names it. The file loads the env files itself.
