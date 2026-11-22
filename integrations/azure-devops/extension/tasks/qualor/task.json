@@ -1,0 +1,60 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "86f47d06-36e4-4f79-9432-3ae5770d5288",
+  "name": "Qualor",
+  "friendlyName": "Qualor scan",
+  "description": "Scan the repository with the Qualor scanner image and upload the report to your Qualor server.",
+  "helpMarkDown": "Needs a Linux agent with Docker and the pipeline variables QUALOR_URL and QUALOR_TOKEN (a secret). [Guide](https://qualor.dev/docs/azure-devops)",
+  "category": "Build",
+  "author": "Qualor",
+  "version": {
+    "Major": 0,
+    "Minor": 16,
+    "Patch": 0
+  },
+  "minimumAgentVersion": "3.218.0",
+  "instanceNameFormat": "Qualor scan",
+  "inputs": [
+    {
+      "name": "dotnet",
+      "type": "boolean",
+      "label": "Analyse .NET with the MSBuild integration",
+      "defaultValue": "false",
+      "required": false,
+      "helpMarkDown": "Runs `qualor dotnet begin`, the build command and `qualor dotnet end` in the `qualor/scanner-dotnet` image. The build gets neither QUALOR_URL nor QUALOR_TOKEN."
+    },
+    {
+      "name": "dotnetBuild",
+      "type": "string",
+      "label": "Build command",
+      "defaultValue": "dotnet build --no-incremental",
+      "required": false,
+      "visibleRule": "dotnet = true",
+      "helpMarkDown": "The shell command that builds the solution inside the `qualor/scanner-dotnet` image."
+    },
+    {
+      "name": "imageTag",
+      "type": "string",
+      "label": "Scanner image tag",
+      "defaultValue": "0.16.0",
+      "required": false,
+      "helpMarkDown": "The tag of `qualor/scanner` (or `qualor/scanner-dotnet`) to run. The default is the extension's version."
+    },
+    {
+      "name": "arguments",
+      "type": "string",
+      "label": "Arguments",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "Extra arguments of `qualor scan` (or `qualor dotnet end`), for example `--no-wait`."
+    }
+  ],
+  "execution": {
+    "Node24": {
+      "target": "index.js"
+    },
+    "Node20_1": {
+      "target": "index.js"
+    }
+  }
+}

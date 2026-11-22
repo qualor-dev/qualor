@@ -1,0 +1,9 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "../../../node_modules/.cache/tsc/azure-devops-extension",
+    "rootDir": "."
+  },
+  "include": ["tasks", "scripts"],
+  "references": [{ "path": "../../../cli" }]
+}

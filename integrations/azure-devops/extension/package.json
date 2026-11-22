@@ -1,0 +1,17 @@
+{
+  "name": "@qualor/azure-devops-extension",
+  "private": true,
+  "license": "MIT",
+  "type": "commonjs",
+  "description": "The Qualor extension for Azure Pipelines: the Qualor@0 task runs the scanner image with Docker.",
+  "scripts": {
+    "build": "tsx scripts/build.ts"
+  },
+  "dependencies": {
+    "azure-pipelines-task-lib": "5.283.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "tfx-cli": "0.24.2"
+  }
+}

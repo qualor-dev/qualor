@@ -5,6 +5,7 @@
     { "path": "cli" },
     { "path": "server" },
     { "path": "tools" },
-    { "path": "enterprise" }
+    { "path": "enterprise" },
+    { "path": "integrations/azure-devops/extension" }
   ]
 }

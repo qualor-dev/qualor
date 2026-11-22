@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "id": "qualor",
+  "publisher": "qualor",
+  "version": "0.16.0",
+  "name": "Qualor",
+  "description": "Scan every pull request and branch with Qualor, the self-hosted code quality and security server.",
+  "categories": ["Azure Pipelines"],
+  "targets": [{ "id": "Microsoft.VisualStudio.Services" }],
+  "icons": { "default": "images/icon.png" },
+  "tags": ["code quality", "static analysis", "security", "SAST", "SCA"],
+  "content": { "details": { "path": "overview.md" } },
+  "links": {
+    "getstarted": { "uri": "https://qualor.dev/docs/azure-devops" },
+    "learn": { "uri": "https://qualor.dev/docs" },
+    "license": { "uri": "https://github.com/qualor-dev/qualor/blob/main/LICENSE" },
+    "support": { "uri": "https://github.com/qualor-dev/qualor/issues" }
+  },
+  "repository": { "type": "git", "uri": "https://github.com/qualor-dev/qualor" },
+  "files": [{ "path": "tasks/qualor" }],
+  "contributions": [
+    {
+      "id": "qualor-task",
+      "type": "ms.vss-distributed-task.task",
+      "targets": ["ms.vss-distributed-task.tasks"],
+      "properties": { "name": "tasks/qualor" }
+    }
+  ]
+}
