@@ -39,16 +39,20 @@ describe('azureBaseUrlProblem', () => {
     'http://acme.visualstudio.com',
     'https://.visualstudio.com',
     'https://a.b.visualstudio.com',
+    'https://dev.azure.com//acme',
+    'https://dev.azure.com/acme//x',
   ])('refuses %s with the Services hint', (url) => {
     expect(azureBaseUrlProblem(url)).toBe(SERVICES_HINT);
   });
 
-  it.each(['https://ado.example.com', 'https://ado.example.com:8443'])(
-    'refuses %s with the Server hint',
-    (url) => {
-      expect(azureBaseUrlProblem(url)).toBe(SERVER_HINT);
-    },
-  );
+  it.each([
+    'https://ado.example.com',
+    'https://ado.example.com:8443',
+    'https://ado.example.com/tfs//Coll',
+    'https://ado.example.com//Coll',
+  ])('refuses %s with the Server hint', (url) => {
+    expect(azureBaseUrlProblem(url)).toBe(SERVER_HINT);
+  });
 
   it('compares hosts case-insensitively', () => {
     expect(azureBaseUrlProblem('https://DEV.AZURE.COM/acme')).toBeNull();
@@ -65,6 +69,9 @@ describe('azureDeployment', () => {
     ['https://ado.example.com/tfs/DefaultCollection', 'server'],
     ['https://notvisualstudio.com/x', 'server'],
     ['https://dev.azure.com.evil.example/acme', 'server'],
+    ['https://evil-visualstudio.com/x', 'server'],
+    ['https://xvisualstudio.com/x', 'server'],
+    ['https://dev.azure.com./acme', 'server'],
   ])('%s is %s', (url, kind) => {
     expect(azureDeployment(url)).toBe(kind);
   });

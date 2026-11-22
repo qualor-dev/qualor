@@ -31,10 +31,12 @@ export function azureDeployment(normalisedBaseUrl: string): AzureDeployment {
 export function azureBaseUrlProblem(normalised: string): string | null {
   const url = new URL(normalised);
   const host = url.hostname.toLowerCase();
-  const segments = url.pathname.split('/').filter((part) => part !== '');
-  if (!isServicesHost(host)) return segments.length > 0 ? null : SERVER_HINT;
+  const path = url.pathname.replace(/\/+$/, '');
+  const segments = path === '' ? [] : path.slice(1).split('/');
+  const emptySegment = segments.includes('');
+  if (!isServicesHost(host)) return segments.length > 0 && !emptySegment ? null : SERVER_HINT;
   const plain = url.protocol === 'https:' && url.port === '' && url.search === '';
-  if (!plain) return SERVICES_HINT;
+  if (!plain || emptySegment) return SERVICES_HINT;
   if (host === 'dev.azure.com') {
     const [organization] = segments;
     return segments.length === 1 && organization !== undefined && ORGANIZATION.test(organization)
