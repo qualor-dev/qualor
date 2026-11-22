@@ -1,0 +1,13 @@
+{
+  "status": 403,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "Pull request status rejected by status policy. Policy configuration requires status to be posted on iteration",
+    "typeName": "Microsoft.TeamFoundation.Git.Server.GitPullRequestStatusRejectedByPolicyException, Microsoft.TeamFoundation.Git.Server",
+    "typeKey": "GitPullRequestStatusRejectedByPolicyException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

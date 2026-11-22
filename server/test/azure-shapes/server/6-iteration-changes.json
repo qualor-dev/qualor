@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "changeEntries": [
+      {
+        "changeTrackingId": 1,
+        "changeId": 1,
+        "item": {
+          "objectId": "DAEE56AF6C0E9678DDFA284358B82EE257A271A6",
+          "path": "/probe/item-6-20261121075828.ts"
+        },
+        "changeType": "add"
+      }
+    ]
+  }
+}

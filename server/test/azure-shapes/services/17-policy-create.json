@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        }
+      },
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "createdDate": "2026-11-22T04:38:50.9472385",
+    "isEnabled": true,
+    "isBlocking": true,
+    "isDeleted": false,
+    "settings": {
+      "buildDefinitionId": 3,
+      "queueOnSourceUpdateOnly": false,
+      "manualQueueOnly": false,
+      "displayName": "Qualor probe item 17",
+      "validDuration": 0,
+      "scope": [
+        {
+          "refName": "refs/heads/probe/17-20261122043847-target",
+          "matchKind": "Exact",
+          "repositoryId": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+        }
+      ]
+    },
+    "isEnterpriseManaged": false,
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/2"
+      },
+      "policyType": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+      }
+    },
+    "revision": 1,
+    "id": 2,
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/2",
+    "type": {
+      "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+      "displayName": "Build"
+    }
+  }
+}

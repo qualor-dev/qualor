@@ -1,0 +1,76 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": null,
+        "id": 3,
+        "publishedDate": "2026-11-22T04:33:43.807Z",
+        "lastUpdatedDate": "2026-11-22T04:33:43.807Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "Qualor probe item 3",
+            "publishedDate": "2026-11-22T04:33:43.807Z",
+            "lastUpdatedDate": "2026-11-22T04:33:43.807Z",
+            "lastContentUpdatedDate": "2026-11-22T04:33:43.807Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/2/threads/3/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/2/threads/3"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/2"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": null,
+        "properties": {
+          "Qualor.Marker": {
+            "$type": "System.String",
+            "$value": "issue 1"
+          },
+          "Qualor.ResolvedBy": {
+            "$type": "System.String",
+            "$value": "qualor"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/2/threads/3"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      }
+    ],
+    "count": 1
+  }
+}

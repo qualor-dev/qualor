@@ -1,0 +1,149 @@
+{
+  "authorization": "Basic, password matches",
+  "body": {
+    "subscriptionId": "0324b470-3e0e-4194-8138-fa6e00003bc6",
+    "notificationId": 3,
+    "id": "32f9e5d8-65e5-44f3-82c6-fa6e0000d66a",
+    "eventType": "ms.vss-code.git-pullrequest-comment-event",
+    "publisherId": "tfs",
+    "message": {
+      "text": "Probe User has replied to a pull request comment",
+      "html": "Probe User has <a href=\"https://dev.azure.com/probe-org/probe-org/_git/probe/pullrequest/11?discussionId=59\">replied</a> to a pull request comment",
+      "markdown": "Probe User has [replied](https://dev.azure.com/probe-org/probe-org/_git/probe/pullrequest/11?discussionId=59) to a pull request comment"
+    },
+    "detailedMessage": {
+      "text": "Probe User has replied to a pull request comment\r\nQualor probe item 9: a reply\r\n",
+      "html": "Probe User has <a href=\"https://dev.azure.com/probe-org/probe-org/_git/probe/pullrequest/11?discussionId=59\">replied</a> to a pull request comment<p>Qualor probe item 9: a reply</p>",
+      "markdown": "Probe User has [replied](https://dev.azure.com/probe-org/probe-org/_git/probe/pullrequest/11?discussionId=59) to a pull request comment\r\nQualor probe item 9: a reply\r\n"
+    },
+    "resource": {
+      "comment": {
+        "id": 2,
+        "parentCommentId": 1,
+        "author": {
+          "displayName": "Probe User",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+            }
+          },
+          "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+          "uniqueName": "user@example.invalid",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+          "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+        },
+        "content": "Qualor probe item 9: a reply",
+        "publishedDate": "2026-11-22T04:37:57.757Z",
+        "lastUpdatedDate": "2026-11-22T04:37:57.757Z",
+        "lastContentUpdatedDate": "2026-11-22T04:37:57.757Z",
+        "commentType": "text",
+        "usersLiked": [],
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/11/threads/59/comments/2"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          },
+          "threads": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/11/threads/59"
+          },
+          "pullRequests": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/11"
+          }
+        }
+      },
+      "pullRequest": {
+        "repository": {
+          "id": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+          "name": "probe",
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+          "project": {
+            "id": "a1532079-a512-4327-8d28-fa6e00004469",
+            "name": "probe-org",
+            "description": "Qualor probe bench (Agile)",
+            "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+            "state": "wellFormed",
+            "revision": 19,
+            "visibility": "private",
+            "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+          },
+          "size": 956,
+          "remoteUrl": "https://user@example.invalid/probe-org/probe-org/_git/probe",
+          "sshUrl": "user@example.invalid:v3/probe-org/probe-org/probe",
+          "webUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe",
+          "isDisabled": false,
+          "isInMaintenance": false
+        },
+        "pullRequestId": 11,
+        "codeReviewId": 11,
+        "status": "active",
+        "createdBy": {
+          "displayName": "Probe User",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            }
+          },
+          "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+          "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+          "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+          "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        },
+        "creationDate": "2026-11-22T04:37:47.0045871Z",
+        "title": "Qualor probe item 9 (20261122043740)",
+        "description": "Opened by the Qualor Azure DevOps probe, item 9.",
+        "sourceRefName": "refs/heads/probe/9-20261122043740",
+        "targetRefName": "refs/heads/main",
+        "mergeStatus": "succeeded",
+        "isDraft": false,
+        "mergeId": "9ca5c925-3967-4a2a-880d-fa6e00003f9b",
+        "lastMergeSourceCommit": {
+          "commitId": "0aa9d6008b89952e98f1aa375431cec10ca417c3",
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/0aa9d6008b89952e98f1aa375431cec10ca417c3"
+        },
+        "lastMergeTargetCommit": {
+          "commitId": "b86695d64dc5eef48d5f13437024a72d0f6c8e28",
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/b86695d64dc5eef48d5f13437024a72d0f6c8e28"
+        },
+        "lastMergeCommit": {
+          "commitId": "bfc93038032d28ad2c84d67526fb97e1db925c64",
+          "author": {
+            "name": "Probe User",
+            "email": "Probe User",
+            "date": "2026-11-22T04:37:58Z"
+          },
+          "committer": {
+            "name": "Probe User",
+            "email": "Probe User",
+            "date": "2026-11-22T04:37:58Z"
+          },
+          "comment": "Merge pull request 11 from probe/9-20261122043740 into main",
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/bfc93038032d28ad2c84d67526fb97e1db925c64"
+        },
+        "reviewers": [],
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/11",
+        "supportsIterations": true,
+        "artifactId": "vstfs:///Git/PullRequestId/a1532079-a512-4327-8d28-fa6e00004469%2f4427c1df-aedf-4e1f-8447-fa6e0000ecd2%2f11"
+      }
+    },
+    "resourceVersion": "2.0",
+    "resourceContainers": {
+      "collection": {
+        "id": "0137513c-6b56-4c44-8089-fa6e0000763a",
+        "baseUrl": "https://dev.azure.com/probe-org/"
+      },
+      "account": {
+        "id": "40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f",
+        "baseUrl": "https://dev.azure.com/probe-org/"
+      },
+      "project": {
+        "id": "a1532079-a512-4327-8d28-fa6e00004469",
+        "baseUrl": "https://dev.azure.com/probe-org/"
+      }
+    },
+    "createdDate": "2026-11-22T04:38:04.1835718Z"
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/Builds/4"
+      },
+      "web": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_build/results?buildId=4"
+      },
+      "sourceVersionDisplayUri": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/builds/4/sources"
+      },
+      "timeline": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/builds/4/Timeline"
+      },
+      "badge": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/status/3"
+      }
+    },
+    "properties": {},
+    "tags": [],
+    "validationResults": [],
+    "plans": [
+      {
+        "planId": "b6656a70-edaa-4b41-8854-fa6e0000faf4"
+      }
+    ],
+    "triggerInfo": {
+      "pr.number": "12",
+      "pr.isFork": "False",
+      "pr.triggerRepository": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+      "pr.triggerRepository.Type": "TfsGit"
+    },
+    "id": 4,
+    "buildNumber": "20261122.1",
+    "status": "completed",
+    "result": "succeeded",
+    "queueTime": "2026-11-22T04:38:51.5642523Z",
+    "startTime": "2026-11-22T04:38:54.0628005Z",
+    "finishTime": "2026-11-22T04:39:14.825136Z",
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/Builds/4",
+    "definition": {
+      "drafts": [],
+      "id": 3,
+      "name": "Qualor probe item 17 20261122043847",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/Definitions/3?revision=1",
+      "uri": "vstfs:///Build/Definition/3",
+      "path": "\\",
+      "type": "build",
+      "queueStatus": "enabled",
+      "revision": 1,
+      "project": {
+        "id": "a1532079-a512-4327-8d28-fa6e00004469",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+        "state": "wellFormed",
+        "revision": 19,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+      }
+    },
+    "buildNumberRevision": 1,
+    "project": {
+      "id": "a1532079-a512-4327-8d28-fa6e00004469",
+      "name": "probe-org",
+      "description": "Qualor probe bench (Agile)",
+      "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+      "state": "wellFormed",
+      "revision": 19,
+      "visibility": "private",
+      "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+    },
+    "uri": "vstfs:///Build/Build/4",
+    "sourceBranch": "refs/pull/12/merge",
+    "sourceVersion": "0c0c1ee832693331e839c0a9d005e458da9039b0",
+    "queue": {
+      "id": 11,
+      "name": "Default",
+      "pool": {
+        "id": 1,
+        "name": "Default"
+      }
+    },
+    "priority": "normal",
+    "reason": "pullRequest",
+    "requestedFor": {
+      "displayName": "Probe User",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        }
+      },
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "requestedBy": {
+      "displayName": "Microsoft.VisualStudio.Services.TFS",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000002-0000-8888-8000-000000000000",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+        }
+      },
+      "id": "00000002-0000-8888-8000-000000000000",
+      "uniqueName": "00000002-0000-8888-8000-000000000000@ea6ed10d-ae4b-4165-83a7-fa6e00004a41",
+      "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+      "descriptor": "s2s.<secret>"
+    },
+    "lastChangedDate": "2026-11-22T04:39:15.023Z",
+    "lastChangedBy": {
+      "displayName": "Microsoft.VisualStudio.Services.TFS",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000002-0000-8888-8000-000000000000",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+        }
+      },
+      "id": "00000002-0000-8888-8000-000000000000",
+      "uniqueName": "00000002-0000-8888-8000-000000000000@ea6ed10d-ae4b-4165-83a7-fa6e00004a41",
+      "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+      "descriptor": "s2s.<secret>"
+    },
+    "parameters": "{\"system.pullRequest.pullRequestId\":\"12\",\"system.pullRequest.sourceBranch\":\"refs/heads/probe/17-20261122043847\",\"system.pullRequest.targetBranch\":\"refs/heads/probe/17-20261122043847-target\",\"system.pullRequest.targetBranchName\":\"probe/17-20261122043847-target\",\"system.pullRequest.sourceCommitId\":\"760edf14eb7bbc9948fb40097e8294cc8a3eceb3\",\"system.pullRequest.sourceRepositoryUri\":\"https://user@example.invalid/probe-org/probe-org/_git/probe\",\"system.pullRequest.pullRequestIteration\":\"1\"}",
+    "orchestrationPlan": {
+      "planId": "b6656a70-edaa-4b41-8854-fa6e0000faf4"
+    },
+    "logs": {
+      "id": 0,
+      "type": "Container",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/build/builds/4/logs"
+    },
+    "repository": {
+      "id": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+      "type": "TfsGit",
+      "name": "probe",
+      "url": "https://dev.azure.com/probe-org/probe-org/_git/probe",
+      "clean": null,
+      "checkoutSubmodules": false
+    },
+    "retainedByRelease": false,
+    "triggeredByBuild": null,
+    "appendCommitMessageToRunName": true
+  }
+}

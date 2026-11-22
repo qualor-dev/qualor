@@ -1,0 +1,45 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "authenticatedUser": {
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "descriptor": "Microsoft.VisualStudio.Services.Claims.AadServicePrincipal;00000000-0000-0000-0000-00000000000t\\Probe User",
+      "subjectDescriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+      "providerDisplayName": "Probe User",
+      "isActive": true,
+      "properties": {
+        "Account": {
+          "$type": "System.String",
+          "$value": "Probe User"
+        }
+      },
+      "resourceVersion": 2,
+      "metaTypeId": 5
+    },
+    "authorizedUser": {
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "descriptor": "Microsoft.VisualStudio.Services.Claims.AadServicePrincipal;00000000-0000-0000-0000-00000000000t\\Probe User",
+      "subjectDescriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+      "providerDisplayName": "Probe User",
+      "isActive": true,
+      "properties": {
+        "Account": {
+          "$type": "System.String",
+          "$value": "Probe User"
+        }
+      },
+      "resourceVersion": 2,
+      "metaTypeId": 5
+    },
+    "instanceId": "0137513c-6b56-4c44-8089-fa6e0000763a",
+    "deploymentId": "8c37afbb-0aa3-454d-82df-fa6e000083af",
+    "deploymentType": "hosted",
+    "locationServiceData": {
+      "serviceOwner": "00025394-6065-48ca-87d9-7f5672854ef7",
+      "defaultAccessMappingMoniker": "PublicAccessMapping",
+      "lastChangeId": 166539280,
+      "lastChangeId64": 166539280
+    }
+  }
+}

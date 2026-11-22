@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "Comment thread properties cannot be updated.\r\nParameter name: Properties",
+    "typeName": "System.ArgumentException, mscorlib",
+    "typeKey": "ArgumentException",
+    "errorCode": 0,
+    "eventId": 0
+  }
+}

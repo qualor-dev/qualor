@@ -1,0 +1,66 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "pullRequestThreadContext": null,
+    "id": 4,
+    "publishedDate": "2026-11-21T07:58:07.767Z",
+    "lastUpdatedDate": "2026-11-21T07:58:07.817Z",
+    "comments": [
+      {
+        "id": 1,
+        "parentCommentId": 0,
+        "author": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "content": "Qualor probe item 4",
+        "publishedDate": "2026-11-21T07:58:07.767Z",
+        "lastUpdatedDate": "2026-11-21T07:58:07.767Z",
+        "lastContentUpdatedDate": "2026-11-21T07:58:07.767Z",
+        "commentType": "text",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/2/threads/4/comments/1"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          },
+          "threads": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/2/threads/4"
+          },
+          "pullRequests": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/2"
+          }
+        }
+      }
+    ],
+    "status": "fixed",
+    "threadContext": null,
+    "properties": {
+      "Qualor.Marker": {
+        "$type": "System.String",
+        "$value": "issue 4"
+      }
+    },
+    "identities": null,
+    "isDeleted": false,
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/2/threads/4"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+      }
+    }
+  }
+}

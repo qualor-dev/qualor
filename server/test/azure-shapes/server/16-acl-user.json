@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "inheritPermissions": true,
+        "token": "repoV2/828b9239-8828-4b4e-82e8-fa6e00000c8f/0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+        "acesDictionary": {
+          "System.Security.Principal.WindowsIdentity;S-1-5-21-0-0-0-1004": {
+            "descriptor": "System.Security.Principal.WindowsIdentity;S-1-5-21-0-0-0-1004",
+            "allow": 0,
+            "deny": 0,
+            "extendedInfo": {
+              "effectiveAllow": 82038
+            }
+          }
+        },
+        "includeExtendedInfo": true
+      }
+    ]
+  }
+}

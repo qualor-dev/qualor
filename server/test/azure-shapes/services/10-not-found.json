@@ -1,0 +1,13 @@
+{
+  "status": 404,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "TF401019: The Git repository with name or identifier f9780ce0-a046-43d9-8688-fa6e0000546b does not exist or you do not have permissions for the operation you are attempting.",
+    "typeName": "Microsoft.TeamFoundation.Git.Server.GitRepositoryNotFoundException, Microsoft.TeamFoundation.Git.Server",
+    "typeKey": "GitRepositoryNotFoundException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

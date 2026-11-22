@@ -1,0 +1,8 @@
+{
+  "status": 401,
+  "contentType": null,
+  "wwwAuthenticate": "Basic realm=\"https://ado.example.invalid/\", NTLM",
+  "location": null,
+  "tfsServiceError": null,
+  "first200": ""
+}

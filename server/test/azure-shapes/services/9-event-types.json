@@ -1,0 +1,21 @@
+{
+  "status": 200,
+  "pullRequestEvents": [
+    {
+      "id": "ms.vss-code.git-pullrequest-comment-event",
+      "supportedResourceVersions": ["2.0", "1.0", "1.0-preview.1"]
+    },
+    {
+      "id": "git.pullrequest.created",
+      "supportedResourceVersions": ["1.0", "1.0-preview.1"]
+    },
+    {
+      "id": "git.pullrequest.updated",
+      "supportedResourceVersions": ["1.0", "1.0-preview.1"]
+    },
+    {
+      "id": "git.pullrequest.merged",
+      "supportedResourceVersions": ["1.0", "1.0-preview.1"]
+    }
+  ]
+}

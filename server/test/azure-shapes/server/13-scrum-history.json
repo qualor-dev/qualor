@@ -1,0 +1,96 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 3,
+    "rev": 2,
+    "fields": {
+      "System.AreaPath": "probe-scrum",
+      "System.TeamProject": "probe-scrum",
+      "System.IterationPath": "probe-scrum",
+      "System.WorkItemType": "Bug",
+      "System.State": "New",
+      "System.Reason": "New defect reported",
+      "System.CreatedDate": "2026-11-21T07:59:08.8Z",
+      "System.CreatedBy": {
+        "displayName": "Probe User",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "_links": {
+          "avatar": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+          }
+        },
+        "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "uniqueName": "ado.example.invalid\\Probe User",
+        "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+        "descriptor": "win.<sid>"
+      },
+      "System.ChangedDate": "2026-11-21T07:59:08.93Z",
+      "System.ChangedBy": {
+        "displayName": "Probe User",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "_links": {
+          "avatar": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+          }
+        },
+        "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "uniqueName": "ado.example.invalid\\Probe User",
+        "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+        "descriptor": "win.<sid>"
+      },
+      "System.CommentCount": 1,
+      "System.Title": "Qualor probe item 13 (20261121075846)",
+      "Microsoft.VSTS.Common.StateChangeDate": "2026-11-21T07:59:08.8Z",
+      "Microsoft.VSTS.Common.Priority": 2,
+      "Microsoft.VSTS.Common.Severity": "3 - Medium",
+      "Microsoft.VSTS.Common.ValueArea": "Business",
+      "System.Description": "<p>Qualor probe: description. </p>",
+      "System.History": "<p>Qualor probe: a note. </p>",
+      "Microsoft.VSTS.TCM.ReproSteps": "<p>Qualor probe: repro steps. </p>",
+      "System.Tags": "probe13; qualor"
+    },
+    "relations": [
+      {
+        "rel": "Hyperlink",
+        "url": "https://qualor.example.invalid/issues/probe-13",
+        "attributes": {
+          "authorizedDate": "2026-11-21T07:59:08.8Z",
+          "id": 3,
+          "resourceCreatedDate": "2026-11-21T07:59:08.8Z",
+          "resourceModifiedDate": "2026-11-21T07:59:08.8Z",
+          "revisedDate": "9999-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "commentVersionRef": {
+      "commentId": 3,
+      "version": 1,
+      "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3/comments/3/versions/1"
+    },
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3"
+      },
+      "workItemUpdates": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3/updates"
+      },
+      "workItemRevisions": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3/revisions"
+      },
+      "workItemComments": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3/comments"
+      },
+      "html": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_workitems/edit/3"
+      },
+      "workItemType": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Bug"
+      },
+      "fields": {
+        "href": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/fields"
+      }
+    },
+    "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItems/3"
+  }
+}

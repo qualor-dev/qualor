@@ -1,0 +1,48 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.3",
+  "body": {
+    "totalCount": 1,
+    "count": 1,
+    "comments": [
+      {
+        "mentions": [],
+        "workItemId": 1,
+        "id": 1,
+        "version": 1,
+        "text": "<p>Qualor probe: a note. </p>",
+        "createdBy": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "createdDate": "2026-11-21T07:59:05.717Z",
+        "modifiedBy": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "modifiedDate": "2026-11-21T07:59:05.717Z",
+        "format": "html",
+        "renderedText": "<p>Qualor probe: a note. </p>",
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItems/1/comments/1"
+      }
+    ]
+  }
+}

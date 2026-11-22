@@ -1,0 +1,62 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": "3db3c82d-214e-4426-8a83-fa6e0000615d",
+    "url": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/3db3c82d-214e-4426-8a83-fa6e0000615d",
+    "status": "enabled",
+    "publisherId": "tfs",
+    "eventType": "git.pullrequest.updated",
+    "subscriber": null,
+    "resourceVersion": "1.0",
+    "eventDescription": "Repository probe",
+    "consumerId": "webHooks",
+    "consumerActionId": "httpRequest",
+    "actionDescription": "To host ado.example.invalid",
+    "createdBy": {
+      "displayName": "Probe User",
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "descriptor": "win.<sid>"
+    },
+    "createdDate": "2026-11-21T08:10:22.75Z",
+    "modifiedBy": {
+      "displayName": "Probe User",
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "descriptor": "win.<sid>"
+    },
+    "modifiedDate": "2026-11-21T08:10:22.75Z",
+    "lastProbationRetryDate": "0001-01-01T00:00:00",
+    "publisherInputs": {
+      "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+      "repository": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+      "tfsSubscriptionId": "b3c22095-1353-4683-8ef0-fa6e0000d8b7"
+    },
+    "consumerInputs": {
+      "basicAuthUsername": "qualor",
+      "detailedMessagesToSend": "all",
+      "messagesToSend": "all",
+      "resourceDetailsToSend": "all",
+      "url": "https://ado.example.invalid/hooks/server-9-20261121081021-updated",
+      "basicAuthPassword": "********"
+    },
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/3db3c82d-214e-4426-8a83-fa6e0000615d"
+      },
+      "consumer": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks"
+      },
+      "actions": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks/actions"
+      },
+      "notifications": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/3db3c82d-214e-4426-8a83-fa6e0000615d/notifications"
+      },
+      "publisher": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/publishers/tfs"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "status": 401,
+  "contentType": null,
+  "wwwAuthenticate": "Basic realm=\"https://tfsprodneu2.visualstudio.com/\"",
+  "location": null,
+  "tfsServiceError": null,
+  "first200": ""
+}

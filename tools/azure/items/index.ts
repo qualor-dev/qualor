@@ -1,0 +1,37 @@
+import type { ProbeItem } from './common.js';
+import { item as identity } from './01-identity.js';
+import { item as markers } from './02-markers.js';
+import { item as threadProperties } from './03-thread-properties.js';
+import { item as statusPatch } from './04-status-patch.js';
+import { item as suggestion } from './05-suggestion.js';
+import { item as threadContext } from './06-thread-context.js';
+import { item as statuses } from './07-statuses.js';
+import { item as pipeline } from './08-pipeline.js';
+import { item as serviceHooks } from './09-service-hooks.js';
+import { item as badCredential } from './10-bad-credential.js';
+import { item as markdownCorpus } from './11-markdown-corpus.js';
+import { item as scopeAndLink } from './12-scope-and-link.js';
+import { item as boards } from './13-boards.js';
+import { item as threadIds } from './15-thread-ids.js';
+import { item as acl } from './16-acl.js';
+import { item as headCheckout } from './17-head-checkout.js';
+
+/** The probe items, by number (14, the Marketplace publisher verification, is done by hand). */
+export const ITEMS: readonly ProbeItem[] = [
+  identity,
+  markers,
+  threadProperties,
+  statusPatch,
+  suggestion,
+  threadContext,
+  statuses,
+  pipeline,
+  serviceHooks,
+  badCredential,
+  markdownCorpus,
+  scopeAndLink,
+  boards,
+  threadIds,
+  acl,
+  headCheckout,
+];

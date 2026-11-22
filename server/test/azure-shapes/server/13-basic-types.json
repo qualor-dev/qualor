@@ -1,0 +1,1719 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 12,
+    "value": [
+      {
+        "name": "Issue",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.Issue",
+        "states": [
+          {
+            "name": "To Do",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Doing",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Done",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Issues track suggested improvements, changes or questions related to the project. Issues can also be used to break down an Epic into smaller chunks of work.",
+        "color": "339947",
+        "icon": {
+          "id": "icon_clipboard_issue",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_clipboard_issue?color=339947&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Description of work that must be done for this issue to be considered complete",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Issue",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Description of work that must be done for this issue to be considered complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Epic",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.Epic",
+        "states": [
+          {
+            "name": "To Do",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Doing",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Done",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Epics can be defined as a large piece of work that has one common objective. Use an Epic to track the progress of complex features.",
+        "color": "E06C00",
+        "icon": {
+          "id": "icon_crown",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_crown?color=E06C00&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Description or acceptance criteria for this epic to be considered complete",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "defaultValue": "2",
+            "helpText": "Level of importance. 1 = High Priority, 4 = Low Priority.",
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.Common.Priority",
+            "name": "Priority",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Common.Priority"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Epic",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Description or acceptance criteria for this epic to be considered complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.Common.Priority",
+            "name": "Priority",
+            "alwaysRequired": true,
+            "defaultValue": "2",
+            "helpText": "Level of importance. 1 = High Priority, 4 = Low Priority.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Common.Priority"
+          }
+        ]
+      },
+      {
+        "name": "Task",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.Task",
+        "states": [
+          {
+            "name": "To Do",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Doing",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Done",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Tasks track the actual work that needs to be done.",
+        "color": "A4880A",
+        "icon": {
+          "id": "icon_check_box",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_check_box?color=A4880A&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Description of work that must be done for this task to be considered complete",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Task",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "What the user will be able to do when this is implemented",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "To Do",
+            "helpText": "To Do = not started yet; Doing = work in progress; Done = work is complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Description of work that must be done for this task to be considered complete",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Test Case",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.TestCase",
+        "states": [
+          {
+            "name": "Design",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Ready",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Closed",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Server-side data for a set of steps to be tested.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_test_case",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_test_case?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Short description of the test case used to differentiate it in a list or report",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Design",
+            "helpText": "The workflow state of the test case",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Purpose of this test; requirement tested",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Test%20Case",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Short description of the test case used to differentiate it in a list or report",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Design",
+            "helpText": "The workflow state of the test case",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Purpose of this test; requirement tested",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Test Plan",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.TestPlan",
+        "states": [
+          {
+            "name": "Active",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Inactive",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Tracks test activities for a specific milestone or release.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_test_plan",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_test_plan?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Short description of the test plan.",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Active",
+            "helpText": "Workflow status.  Active = tests in this test plan must be run; Inactive = tests in this test plan no longer need to be run",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Purpose of this test plan",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Test%20Plan",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Short description of the test plan.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Active",
+            "helpText": "Workflow status.  Active = tests in this test plan must be run; Inactive = tests in this test plan no longer need to be run",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Purpose of this test plan",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Test Suite",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.TestSuite",
+        "states": [
+          {
+            "name": "In Planning",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "In Progress",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Completed",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Tracks test activites for a specific feature, requirement, or user story.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_test_suite",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_test_suite?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Short description of the test suite.",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "In Progress",
+            "helpText": "The workflow state of the test suite.",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Purpose of this test suite",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "defaultValue": "1",
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.TCM.TestSuiteTypeId",
+            "name": "Test Suite Type Id",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.TCM.TestSuiteTypeId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Specifies the category of the test suite.",
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.TCM.TestSuiteType",
+            "name": "Test Suite Type",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.TCM.TestSuiteType"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Test%20Suite",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Short description of the test suite.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "In Progress",
+            "helpText": "The workflow state of the test suite.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Purpose of this test suite",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.TCM.TestSuiteTypeId",
+            "name": "Test Suite Type Id",
+            "alwaysRequired": true,
+            "defaultValue": "1",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.TCM.TestSuiteTypeId"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.TCM.TestSuiteType",
+            "name": "Test Suite Type",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Specifies the category of the test suite.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.TCM.TestSuiteType"
+          }
+        ]
+      },
+      {
+        "name": "Shared Steps",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.SharedStep",
+        "states": [
+          {
+            "name": "Active",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Closed",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Server-side data for reusable set of test steps.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_test_step",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_test_step?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Short description of the shared step used to differentiate it in a list or report",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Active",
+            "helpText": "The workflow state of the shared step",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread and other historical information",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "defaultValue": "No",
+            "helpText": "Used to highlight the shared step, e.g., to mark it as an issue.",
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.Common.Issue",
+            "name": "Issue",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Common.Issue"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Shared%20Steps",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Short description of the shared step used to differentiate it in a list or report",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Active",
+            "helpText": "The workflow state of the shared step",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread and other historical information",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.Common.Issue",
+            "name": "Issue",
+            "alwaysRequired": true,
+            "defaultValue": "No",
+            "helpText": "Used to highlight the shared step, e.g., to mark it as an issue.",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Common.Issue"
+          }
+        ]
+      },
+      {
+        "name": "Shared Parameter",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.SharedParameter",
+        "states": [
+          {
+            "name": "Active",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Inactive",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Server-side data for reusable set of parameter.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_test_parameter",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_test_parameter?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Short description of the shared parameter used to differentiate it in a list or report",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Active",
+            "helpText": "The workflow state of the shared parameter",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Shared%20Parameter",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "Short description of the shared parameter used to differentiate it in a list or report",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Active",
+            "helpText": "The workflow state of the shared parameter",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Code Review Request",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.CodeReviewRequest",
+        "states": [
+          {
+            "name": "Requested",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Closed",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "Represents the master work item for a code review. Child work items should be created of the type Code Review Response.",
+        "color": "B4009E",
+        "icon": {
+          "id": "icon_code_review",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_code_review?color=B4009E&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Requested",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.CodeReview.Context",
+            "name": "Associated Context",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.CodeReview.Context"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Code%20Review%20Request",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Requested",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.CodeReview.Context",
+            "name": "Associated Context",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.CodeReview.Context"
+          }
+        ]
+      },
+      {
+        "name": "Code Review Response",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.CodeReviewResponse",
+        "states": [
+          {
+            "name": "Requested",
+            "category": "Proposed",
+            "color": "b2b2b2"
+          },
+          {
+            "name": "Accepted",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Closed",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "This is a child work item that should be parented to a Code Review Request work item. It is assigned to the reviewer and contains the current state of the review for this reviewer.",
+        "color": "B4009E",
+        "icon": {
+          "id": "icon_code_response",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_code_response?color=B4009E&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Requested",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Code%20Review%20Response",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Requested",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      },
+      {
+        "name": "Feedback Request",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.FeedbackRequest",
+        "states": [
+          {
+            "name": "Doing",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Done",
+            "category": "Completed",
+            "color": "339933"
+          },
+          {
+            "name": "Removed",
+            "category": "Removed",
+            "color": "ffffff"
+          }
+        ],
+        "description": "Represents the master work item for a feedback session. Child work items should be created of the type Feedback Response.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_review",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_review?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "One line summary of the feedback being requested",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Doing",
+            "helpText": "Current status of the feedback request",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Guidance on what areas of the product that feedback should be scoped to",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "The type of application on which to give feedback",
+            "alwaysRequired": true,
+            "referenceName": "Microsoft.VSTS.Feedback.ApplicationType",
+            "name": "Application Type",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Feedback.ApplicationType"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Feedback%20Request",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "One line summary of the feedback being requested",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Doing",
+            "helpText": "Current status of the feedback request",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Guidance on what areas of the product that feedback should be scoped to",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          },
+          {
+            "referenceName": "Microsoft.VSTS.Feedback.ApplicationType",
+            "name": "Application Type",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "The type of application on which to give feedback",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/Microsoft.VSTS.Feedback.ApplicationType"
+          }
+        ]
+      },
+      {
+        "name": "Feedback Response",
+        "referenceName": "Microsoft.VSTS.WorkItemTypes.FeedbackResponse",
+        "states": [
+          {
+            "name": "Doing",
+            "category": "InProgress",
+            "color": "007acc"
+          },
+          {
+            "name": "Done",
+            "category": "Completed",
+            "color": "339933"
+          }
+        ],
+        "description": "This is a child work item that should be parented to a Feedback Request work item. It is assigned to the reviewer and contains the current state of the review for this reviewer.",
+        "color": "004B50",
+        "icon": {
+          "id": "icon_response",
+          "url": "https://ado.example.invalid/_apis/wit/workItemIcons/icon_response?color=004B50&v=2"
+        },
+        "isDisabled": false,
+        "fieldInstances": [
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": true,
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "One line summary of the feedback response",
+            "alwaysRequired": true,
+            "referenceName": "System.Title",
+            "name": "Title",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "defaultValue": "Doing",
+            "helpText": "Current status of the feedback response",
+            "alwaysRequired": true,
+            "referenceName": "System.State",
+            "name": "State",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Feedback response from the stakeholder",
+            "alwaysRequired": false,
+            "referenceName": "System.Description",
+            "name": "Description",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "alwaysRequired": false,
+            "referenceName": "System.History",
+            "name": "History",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "defaultValue": null,
+            "alwaysRequired": false,
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/workItemTypes/Feedback%20Response",
+        "fields": [
+          {
+            "referenceName": "System.IterationId",
+            "name": "Iteration ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.IterationId"
+          },
+          {
+            "referenceName": "System.AreaId",
+            "name": "Area ID",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.AreaId"
+          },
+          {
+            "referenceName": "System.Title",
+            "name": "Title",
+            "alwaysRequired": true,
+            "defaultValue": null,
+            "helpText": "One line summary of the feedback response",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Title"
+          },
+          {
+            "referenceName": "System.State",
+            "name": "State",
+            "alwaysRequired": true,
+            "defaultValue": "Doing",
+            "helpText": "Current status of the feedback response",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.State"
+          },
+          {
+            "referenceName": "System.Description",
+            "name": "Description",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Feedback response from the stakeholder",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Description"
+          },
+          {
+            "referenceName": "System.History",
+            "name": "History",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "helpText": "Discussion thread plus automatic record of changes",
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.History"
+          },
+          {
+            "referenceName": "System.Tags",
+            "name": "Tags",
+            "alwaysRequired": false,
+            "defaultValue": null,
+            "url": "https://ado.example.invalid/DefaultCollection/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0/_apis/wit/fields/System.Tags"
+          }
+        ]
+      }
+    ],
+    "_probeNote": "trimmed by the probe: xmlForm, transitions, _links, and unused fields and fieldInstances left out"
+  }
+}

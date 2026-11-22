@@ -1,0 +1,8 @@
+{
+  "method": "GET",
+  "status": 200,
+  "contentType": "text/html; charset=utf-8",
+  "location": null,
+  "first200": "<!DOCTYPE html>\r\n<html xmlns=\"http://www.w3.org/1999/xhtml\" dir=\"ltr\"  lang=\"en-US\" >\r\n\r\n<head>\r\n    <meta charset=\"utf-8\" />\r\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" /",
+  "carriesTitle": true
+}

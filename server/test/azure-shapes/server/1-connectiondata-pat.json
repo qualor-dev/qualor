@@ -1,0 +1,46 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "authenticatedUser": {
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "System.Security.Principal.WindowsIdentity;S-1-5-21-0-0-0-1003",
+      "subjectDescriptor": "win.<sid>",
+      "providerDisplayName": "Probe User",
+      "isActive": true,
+      "properties": {
+        "Account": {
+          "$type": "System.String",
+          "$value": "Probe User"
+        }
+      },
+      "resourceVersion": 2,
+      "metaTypeId": 255
+    },
+    "authorizedUser": {
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "System.Security.Principal.WindowsIdentity;S-1-5-21-0-0-0-1003",
+      "subjectDescriptor": "win.<sid>",
+      "providerDisplayName": "Probe User",
+      "isActive": true,
+      "properties": {
+        "Account": {
+          "$type": "System.String",
+          "$value": "Probe User"
+        }
+      },
+      "resourceVersion": 2,
+      "metaTypeId": 255
+    },
+    "instanceId": "81bfa905-59e0-4803-8435-fa6e0000c305",
+    "deploymentId": "f373876b-d7ee-414e-832a-fa6e0000ce91",
+    "deploymentType": "onPremises",
+    "locationServiceData": {
+      "clientCacheTimeToLive": 86400,
+      "defaultAccessMappingMoniker": "PublicAccessMapping",
+      "lastChangeId": 24577,
+      "lastChangeId64": 24577
+    },
+    "webApplicationRelativeDirectory": "DefaultCollection/"
+  }
+}

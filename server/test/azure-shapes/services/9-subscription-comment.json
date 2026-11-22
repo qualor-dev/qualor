@@ -1,0 +1,63 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": "0324b470-3e0e-4194-8138-fa6e00003bc6",
+    "url": "https://dev.azure.com/probe-org/_apis/hooks/subscriptions/0324b470-3e0e-4194-8138-fa6e00003bc6",
+    "status": "enabled",
+    "publisherId": "tfs",
+    "eventType": "ms.vss-code.git-pullrequest-comment-event",
+    "subscriber": null,
+    "resourceVersion": "2.0",
+    "eventDescription": "Repository probe",
+    "consumerId": "webHooks",
+    "consumerActionId": "httpRequest",
+    "actionDescription": "To host ado.example.invalid",
+    "createdBy": {
+      "displayName": "Probe User",
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "createdDate": "2026-11-22T04:37:45.823Z",
+    "modifiedBy": {
+      "displayName": "Probe User",
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "modifiedDate": "2026-11-22T04:37:45.823Z",
+    "lastProbationRetryDate": "0001-01-01T00:00:00",
+    "publisherInputs": {
+      "projectId": "a1532079-a512-4327-8d28-fa6e00004469",
+      "repository": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+      "tfsSubscriptionId": "e5e5b67d-3ac6-4e63-8a5b-fa6e00009014"
+    },
+    "consumerInputs": {
+      "basicAuthUsername": "qualor",
+      "detailedMessagesToSend": "all",
+      "messagesToSend": "all",
+      "resourceDetailsToSend": "all",
+      "url": "https://ado.example.invalid/hooks/services-9-20261122043740-comment",
+      "basicAuthPassword": "********"
+    },
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/_apis/hooks/subscriptions/0324b470-3e0e-4194-8138-fa6e00003bc6"
+      },
+      "consumer": {
+        "href": "https://dev.azure.com/probe-org/_apis/hooks/consumers/webHooks"
+      },
+      "actions": {
+        "href": "https://dev.azure.com/probe-org/_apis/hooks/consumers/webHooks/actions"
+      },
+      "notifications": {
+        "href": "https://dev.azure.com/probe-org/_apis/hooks/subscriptions/0324b470-3e0e-4194-8138-fa6e00003bc6/notifications"
+      },
+      "publisher": {
+        "href": "https://dev.azure.com/probe-org/_apis/hooks/publishers/tfs"
+      }
+    },
+    "lastSuccessfulAttemptDate": null
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "authorization": "Basic, password matches",
+  "body": {
+    "subscriptionId": "c5a1e693-55aa-48c5-8407-fa6e000038a6",
+    "notificationId": 1,
+    "id": "764e536f-e957-45a6-8798-fa6e00001503",
+    "eventType": "ms.vss-code.git-pullrequest-comment-event",
+    "publisherId": "tfs",
+    "message": {
+      "text": "Probe User has commented on a pull request",
+      "html": "Probe User has <a href=\"https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/pullrequest/13?discussionId=69\">commented</a> on a pull request",
+      "markdown": "Probe User has [commented](https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/pullrequest/13?discussionId=69) on a pull request"
+    },
+    "detailedMessage": {
+      "text": "Probe User has commented on a pull request\r\nQualor probe item 9: a comment\r\n",
+      "html": "Probe User has <a href=\"https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/pullrequest/13?discussionId=69\">commented</a> on a pull request<p>Qualor probe item 9: a comment</p>",
+      "markdown": "Probe User has [commented](https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/pullrequest/13?discussionId=69) on a pull request\r\nQualor probe item 9: a comment\r\n"
+    },
+    "resource": {
+      "comment": {
+        "id": 1,
+        "parentCommentId": 0,
+        "author": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/f62329bc-174c-4a93-8562-fa6e00009803",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "f62329bc-174c-4a93-8562-fa6e00009803",
+          "uniqueName": "",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "content": "Qualor probe item 9: a comment",
+        "publishedDate": "2026-11-21T08:10:23.47Z",
+        "lastUpdatedDate": "2026-11-21T08:10:23.47Z",
+        "lastContentUpdatedDate": "2026-11-21T08:10:23.47Z",
+        "commentType": "text",
+        "usersLiked": [],
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/13/threads/69/comments/1"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          },
+          "threads": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/13/threads/69"
+          },
+          "pullRequests": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/13"
+          }
+        }
+      },
+      "pullRequest": {
+        "repository": {
+          "id": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+          "name": "probe",
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+          "project": {
+            "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+            "name": "probe-org",
+            "description": "Qualor probe bench (Agile)",
+            "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+            "state": "wellFormed",
+            "revision": 8,
+            "visibility": "private",
+            "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+          },
+          "size": 1389,
+          "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe",
+          "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe",
+          "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe",
+          "isDisabled": false,
+          "isInMaintenance": false
+        },
+        "pullRequestId": 13,
+        "codeReviewId": 13,
+        "status": "active",
+        "createdBy": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "descriptor": "win.<sid>"
+        },
+        "creationDate": "2026-11-21T08:10:23.3537151Z",
+        "title": "Qualor probe item 9 (20261121081021)",
+        "description": "Opened by the Qualor Azure DevOps probe, item 9.",
+        "sourceRefName": "refs/heads/probe/9-20261121081021",
+        "targetRefName": "refs/heads/main",
+        "mergeStatus": "succeeded",
+        "isDraft": false,
+        "mergeId": "e9aa3f86-c483-45c2-8a38-fa6e000009aa",
+        "lastMergeSourceCommit": {
+          "commitId": "605b131a5889794143c89c304967c88e4a0d4c9d",
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/605b131a5889794143c89c304967c88e4a0d4c9d"
+        },
+        "lastMergeTargetCommit": {
+          "commitId": "dd50ae676c5e5551dd5d0630073bc38532442fe4",
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/dd50ae676c5e5551dd5d0630073bc38532442fe4"
+        },
+        "lastMergeCommit": {
+          "commitId": "6e58668b0664b7db17ff5f06201d86fa649999e8",
+          "author": {
+            "name": "Probe User",
+            "email": "Probe User",
+            "date": "2026-11-21T08:10:23Z"
+          },
+          "committer": {
+            "name": "Probe User",
+            "email": "Probe User",
+            "date": "2026-11-21T08:10:23Z"
+          },
+          "comment": "Merge pull request 13 from probe/9-20261121081021 into main",
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/6e58668b0664b7db17ff5f06201d86fa649999e8"
+        },
+        "reviewers": [],
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/13",
+        "supportsIterations": true,
+        "artifactId": "vstfs:///Git/PullRequestId/828b9239-8828-4b4e-82e8-fa6e00000c8f%2f0c3c575c-2bee-44bc-8f5c-fa6e000067a9%2f13"
+      }
+    },
+    "resourceVersion": "2.0",
+    "resourceContainers": {
+      "collection": {
+        "id": "81bfa905-59e0-4803-8435-fa6e0000c305",
+        "baseUrl": "https://ado.example.invalid/DefaultCollection/"
+      },
+      "server": {
+        "id": "f373876b-d7ee-414e-832a-fa6e0000ce91",
+        "baseUrl": "https://ado.example.invalid/"
+      },
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "baseUrl": "https://ado.example.invalid/DefaultCollection/"
+      }
+    },
+    "createdDate": "2026-11-21T08:10:30.4322859Z"
+  }
+}
