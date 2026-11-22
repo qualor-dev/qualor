@@ -52,6 +52,20 @@ const liveJira = process.argv.some(
 );
 
 /**
+ * Azure DevOps connection (sub-plan 2): the opt-in check against a real organisation
+ * (`pnpm azure:live`). Never part of `pnpm test` or CI: the unit project excludes
+ * `*.live.test.ts`, and the project exists only when `QUALOR_LIVE_AZURE_ENV_FILES` is set and the
+ * command line names it. The file loads the env files itself.
+ */
+const AZURE_LIVE_FILE = 'server/src/scm/azure/live.live.test.ts';
+const liveAzure =
+  (process.env.QUALOR_LIVE_AZURE_ENV_FILES ?? '') !== '' &&
+  process.argv.some(
+    (arg, i, all) =>
+      arg === '--project=azure-live' || (arg === '--project' && all[i + 1] === 'azure-live'),
+  );
+
+/**
  * 0.16 fix MRs (spec §9, R26): the opt-in live checks of the fix adapters (`pnpm fix:live`), which
  * run the real package managers against the public registries. Never part of `pnpm test` or CI:
  * the unit project excludes `*.live.test.ts`, and the project exists only when the command line
@@ -216,6 +230,18 @@ export default defineConfig({
                 include: [JIRA_LIVE_FILE],
                 testTimeout: 300_000,
                 hookTimeout: 120_000,
+              },
+            },
+          ]
+        : []),
+      ...(liveAzure
+        ? [
+            {
+              test: {
+                name: 'azure-live',
+                include: [AZURE_LIVE_FILE],
+                // Entra token requests and a few Azure DevOps calls per credential.
+                testTimeout: 120_000,
               },
             },
           ]

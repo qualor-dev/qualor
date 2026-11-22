@@ -26,49 +26,50 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
    tokens CI uses.
 4. [GitLab](./gitlab.md): the CI/CD component, merge request comments and replies.
 5. [GitHub](./github.md): the Actions workflow and the GitHub App for check runs and comments.
-6. [Other CI systems and local scans](./other-ci.md): Jenkins, Bitbucket, any other CI, or a
+6. [Azure DevOps](./azure-devops.md): connect Services or Server and map repositories.
+7. [Other CI systems and local scans](./other-ci.md): Jenkins, Bitbucket, any other CI, or a
    laptop.
-7. [Languages and analyzers](./languages-and-analyzers.md): what runs for each language, plus
+8. [Languages and analyzers](./languages-and-analyzers.md): what runs for each language, plus
    secrets, dependencies, SARIF files and coverage.
-8. [Dependency licences](./dependency-licenses.md): each project's dependencies and their licences,
+9. [Dependency licences](./dependency-licenses.md): each project's dependencies and their licences,
    and a licence policy (Business and Enterprise).
-9. [Releases and versions](./releases.md): a version for each release tag, with its dependencies,
+10. [Releases and versions](./releases.md): a version for each release tag, with its dependencies,
    and which versions are tracked.
-10. [Dependency vulnerabilities](./dependency-vulnerabilities.md): the Vulnerabilities tab, what is
+11. [Dependency vulnerabilities](./dependency-vulnerabilities.md): the Vulnerabilities tab, what is
     new, and triage with reasons.
-11. [SBOM upload](./sbom-upload.md): CycloneDX and SPDX files, such as an image's SBOM, as tracked
+12. [SBOM upload](./sbom-upload.md): CycloneDX and SPDX files, such as an image's SBOM, as tracked
     versions.
-12. [The vulnerability database](./vulnerability-database.md): the server's copy of Trivy's
+13. [The vulnerability database](./vulnerability-database.md): the server's copy of Trivy's
     database, its source, states and re-checks.
-13. [Configuration reference](./configuration.md): `qualor.yml` and environment variables.
-14. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, profiles and
+14. [Configuration reference](./configuration.md): `qualor.yml` and environment variables.
+15. [Quality gates, profiles and issues](./quality-gates.md): metrics, new code, gates, profiles and
     issue statuses.
-15. [AI assistant](./ai-assistant.md): explain an issue, suggest triage or a fix, with your own
+16. [AI assistant](./ai-assistant.md): explain an issue, suggest triage or a fix, with your own
     model.
-16. [AI review](./ai-review.md): a model reviews merge requests and answers replies.
-17. [Email](./email.md): the SMTP server, account emails, notifications and alerts.
-18. [CLI reference](./cli.md): commands, options and exit codes.
-19. [Migrating from SonarQube](./migrate-from-sonarqube.md): `qualor import sonarqube`.
-20. [Migrating from Dependency-Track](./migrate-from-dependency-track.md): move SBOM uploads to
+17. [AI review](./ai-review.md): a model reviews merge requests and answers replies.
+18. [Email](./email.md): the SMTP server, account emails, notifications and alerts.
+19. [CLI reference](./cli.md): commands, options and exit codes.
+20. [Migrating from SonarQube](./migrate-from-sonarqube.md): `qualor import sonarqube`.
+21. [Migrating from Dependency-Track](./migrate-from-dependency-track.md): move SBOM uploads to
     `qualor upload-sbom`.
-21. [Webhooks and REST API](./webhooks-and-api.md): events, signatures and the main endpoints.
-22. [Enterprise](./enterprise.md): what a licence key adds, and how to apply it.
-23. [Roles and the audit log](./roles-and-audit.md): roles, project access and the audit log.
-24. [Single sign-on and SCIM](./sso-and-scim.md): OIDC, SAML, group mapping and SCIM.
-25. [Compliance reports](./compliance-reports.md): OWASP Top 10, CWE Top 25, OWASP ASVS and PCI DSS
+22. [Webhooks and REST API](./webhooks-and-api.md): events, signatures and the main endpoints.
+23. [Enterprise](./enterprise.md): what a licence key adds, and how to apply it.
+24. [Roles and the audit log](./roles-and-audit.md): roles, project access and the audit log.
+25. [Single sign-on and SCIM](./sso-and-scim.md): OIDC, SAML, group mapping and SCIM.
+26. [Compliance reports](./compliance-reports.md): OWASP Top 10, CWE Top 25, OWASP ASVS and PCI DSS
     reports.
-26. [Portfolio reports](./portfolio.md): every project's quality and trends in one view.
-27. [Troubleshooting](./troubleshooting.md): common errors and their fixes.
-28. [AI prompts](./ai-prompts.md): prompts that let an AI agent roll Qualor out.
-29. [Telemetry](./telemetry.md): what the server sends, and how to turn it off.
-30. [The support bundle](./support-bundle.md): one zip of diagnostics, without secrets, for a
+27. [Portfolio reports](./portfolio.md): every project's quality and trends in one view.
+28. [Troubleshooting](./troubleshooting.md): common errors and their fixes.
+29. [AI prompts](./ai-prompts.md): prompts that let an AI agent roll Qualor out.
+30. [Telemetry](./telemetry.md): what the server sends, and how to turn it off.
+31. [The support bundle](./support-bundle.md): one zip of diagnostics, without secrets, for a
     support request.
-31. [MCP server for AI agents](./mcp.md): Claude Code, Cursor and other agents read the gate and
+32. [MCP server for AI agents](./mcp.md): Claude Code, Cursor and other agents read the gate and
     the issues.
-32. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
+33. [Slack and Microsoft Teams](./chat-notifications.md): gate failures and a weekly security
     digest in a channel.
-33. [Jira](./jira.md): create Jira issues from findings, with their status and fix comments.
-34. [Fix merge requests](./fix-merge-requests.md): Qualor opens a merge request that bumps a
+34. [Jira](./jira.md): create Jira issues from findings, with their status and fix comments.
+35. [Fix merge requests](./fix-merge-requests.md): Qualor opens a merge request that bumps a
     vulnerable dependency, with the lockfile regenerated by your package manager.
 
 ## How Qualor works

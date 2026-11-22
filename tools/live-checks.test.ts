@@ -24,6 +24,7 @@ const VARS = [
   'QUALOR_LIVE_JIRA_SITE_URL',
   'QUALOR_LIVE_JIRA_TOKEN',
   'QUALOR_LIVE_JIRA_PROJECT',
+  'QUALOR_LIVE_AZURE_ENV_FILES',
   'QUALOR_RELEASE_TOOLS',
 ];
 
@@ -386,6 +387,60 @@ describe('the live fix adapter checks are never collected by pnpm test or CI', (
     for (const file of ci) {
       const text = readFileSync(file, 'utf8');
       expect(text, file).not.toMatch(/fix-live|fix:live/);
+    }
+  });
+});
+
+/**
+ * Azure DevOps connection: the live check reads a real organisation with real credentials, so
+ * `pnpm test` and CI must never collect it, even with its variable set. Its project exists only
+ * when the variable is set and the command line names it (`pnpm azure:live`).
+ */
+describe('the live Azure DevOps check is never collected by pnpm test or CI', () => {
+  const AZURE_LIVE_FILE = 'server/src/scm/azure/live.live.test.ts';
+  const SET = { QUALOR_LIVE_AZURE_ENV_FILES: 'a.env;b.env' };
+  const NAMED = ['run', '--project', 'azure-live'];
+
+  it('is a project only with the variable set and the command line naming it', async () => {
+    const names = (ps: Project[]) => ps.map((p) => p.test.name);
+    expect(names(await projects({}))).not.toContain('azure-live');
+    expect(names(await projects(SET))).not.toContain('azure-live');
+    expect(names(await projects(SET, []))).not.toContain('azure-live');
+    expect(names(await projects(SET, ['run']))).not.toContain('azure-live');
+    expect(names(await projects(SET, ['run', 'azure-live']))).not.toContain('azure-live');
+    expect(names(await projects({}, NAMED))).not.toContain('azure-live');
+    for (const args of [NAMED, ['run', '--project=azure-live']]) {
+      const on = await projects(SET, args);
+      expect(on.find((p) => p.test.name === 'azure-live')?.test.include).toEqual([AZURE_LIVE_FILE]);
+    }
+  });
+
+  it('is excluded from the unit project, and no other pattern reaches it', async () => {
+    expect(AZURE_LIVE_FILE.endsWith('.live.test.ts')).toBe(true);
+    for (const p of await projects(SET, ['run'])) {
+      const include = p.test.include ?? [];
+      if (include.includes('**/*.test.ts')) expect(p.test.exclude).toContain('**/*.live.test.ts');
+      else for (const pattern of include) expect(pattern).not.toContain('live');
+    }
+  });
+
+  it('runs only through pnpm azure:live, which no CI job calls', () => {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['azure:live']).toBe('vitest run --project azure-live');
+    for (const [name, script] of Object.entries(pkg.scripts)) {
+      if (name !== 'azure:live') expect(script, name).not.toMatch(/azure-live|azure:live/);
+    }
+    const ci = [
+      path.join(root, '.gitlab-ci.yml'),
+      ...readdirSync(path.join(root, '.github', 'workflows')).map((f) =>
+        path.join(root, '.github', 'workflows', f),
+      ),
+    ];
+    for (const file of ci) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/QUALOR_LIVE_AZURE|azure-live|azure:live/);
     }
   });
 });
