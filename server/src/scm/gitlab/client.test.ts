@@ -20,7 +20,6 @@ import {
   GitLabError,
   gitlabRoute,
   MAX_GITLAB_RESPONSE_BYTES,
-  retryAfterSeconds,
 } from './client';
 
 const SHAPES_DIR = path.resolve(
@@ -205,15 +204,6 @@ describe('GitLab client (scm.md §4.3) against the fake GitLab', () => {
       kind: 'refused',
       message: 'GitLab answered HTTP 302',
     });
-  });
-
-  it('reads RateLimit-Reset when there is no Retry-After, and clamps both', () => {
-    const now = Date.UTC(2026, 8, 25, 9, 0, 0);
-    expect(retryAfterSeconds({ 'ratelimit-reset': String(now / 1000 + 30) }, now)).toBe(30);
-    expect(retryAfterSeconds({ 'retry-after': '0' }, now)).toBe(1);
-    expect(retryAfterSeconds({ 'retry-after': '86400' }, now)).toBe(900);
-    expect(retryAfterSeconds({ 'retry-after': new Date(now + 5_000).toUTCString() }, now)).toBe(5);
-    expect(retryAfterSeconds({}, now)).toBeNull();
   });
 
   it('gives up on a GitLab that never answers, with a fixed text', async () => {

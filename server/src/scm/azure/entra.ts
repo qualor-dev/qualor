@@ -8,8 +8,8 @@ import {
 } from '../../http/outbound';
 import { VERSION } from '../../index';
 import { rs256Jwt } from '../github/app-auth';
-import { retryAfterSeconds } from '../gitlab/client';
 import { ScmError } from '../provider';
+import { retryAfterSeconds } from '../retry-after';
 import type { ParsedCertificate } from './certificate';
 
 /**

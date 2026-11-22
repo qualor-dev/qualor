@@ -4,7 +4,7 @@ import type { JiraDeployment, JiraStatusCategory } from '../db/schema';
 import { outboundRequest, type OutboundFailed, type Resolver } from '../http/outbound';
 import { VERSION } from '../index';
 import { JIRA_ISSUE_KEY_PATTERN } from '../patterns';
-import { retryAfterSeconds } from '../scm/gitlab/client';
+import { retryAfterSeconds } from '../scm/retry-after';
 import { scmRefusedAddress } from '../scm/url';
 
 /** spec §6.7: every request has 10 s in all (3 s of it to connect, http/outbound.ts) ... */

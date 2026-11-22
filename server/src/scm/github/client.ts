@@ -3,8 +3,8 @@ import type { IncomingHttpHeaders } from 'node:http';
 import { z } from 'zod';
 import { outboundRequest, type OutboundResult, type Resolver } from '../../http/outbound';
 import { VERSION } from '../../index';
-import { MAX_RETRY_AFTER_SECONDS } from '../gitlab/client';
 import { namedRequest, ScmError, type Paged } from '../provider';
+import { MAX_RETRY_AFTER_SECONDS } from '../retry-after';
 import { scmRefusedAddress } from '../url';
 import {
   appJwt,

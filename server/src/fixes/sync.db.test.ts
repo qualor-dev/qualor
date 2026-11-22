@@ -34,7 +34,7 @@ import {
 } from '../db/schema';
 import { communityLimits } from '../limits';
 import { runUntilIdle, type WorkerLogger } from '../queue/worker';
-import { MAX_RETRY_AFTER_SECONDS } from '../scm/gitlab/client';
+import { MAX_RETRY_AFTER_SECONDS } from '../scm/retry-after';
 import { createScmRuntime } from '../scm/runtime';
 import { goneComment } from './body';
 import { FIX_QUEUE, FIX_SYNC_INTERVAL_SECONDS, fixSyncKey, scheduleFixSync } from './jobs';

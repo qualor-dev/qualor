@@ -9,6 +9,7 @@ import {
   type ScmErrorKind,
   type ScmErrorReason,
 } from '../provider';
+import { retryAfterSeconds } from '../retry-after';
 import { scmRefusedAddress } from '../url';
 
 /** scm.md §4.3: every request has 10 s in all ... */
@@ -19,8 +20,6 @@ export const MAX_GITLAB_RESPONSE_BYTES = 8 * 1024 * 1024;
 export const GITLAB_PAGE_SIZE = 100;
 /** ... and one job makes at most this many requests. */
 export const MAX_GITLAB_REQUESTS = 400;
-/** A `Retry-After` (or `RateLimit-Reset`) is clamped to 1 s – 15 min. */
-export const MAX_RETRY_AFTER_SECONDS = 15 * 60;
 /**
  * What a 403 means per request: the token is valid (that is a 401), but its user may not do this.
  * A commit status on a protected branch needs the Maintainer role; a Developer may post one only
@@ -366,23 +365,6 @@ export interface GitLabClientOptions {
    * not sent (0.16 fix MRs, ruling T9k: the upload check's read deadline).
    */
   signal?: AbortSignal;
-}
-
-/** Seconds from `Retry-After` (seconds or an HTTP date), else `RateLimit-Reset` (epoch seconds). */
-export function retryAfterSeconds(headers: IncomingHttpHeaders, nowMs = Date.now()): number | null {
-  const clamp = (s: number) => Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(s)));
-  const retryAfter = headers['retry-after'];
-  if (typeof retryAfter === 'string' && retryAfter.trim() !== '') {
-    const seconds = Number(retryAfter);
-    if (Number.isFinite(seconds) && seconds >= 0) return clamp(seconds);
-    const date = Date.parse(retryAfter);
-    if (!Number.isNaN(date)) return clamp((date - nowMs) / 1000);
-  }
-  const reset = headers['ratelimit-reset'];
-  if (typeof reset === 'string' && /^\d{1,12}$/.test(reset)) {
-    return clamp(Number(reset) - nowMs / 1000);
-  }
-  return null;
 }
 
 /**
