@@ -1,0 +1,47 @@
+# Qualor for a C# project in Azure Pipelines, with the Qualor@0 task. Copy this file to
+# azure-pipelines.yml.
+#
+# Set two pipeline variables (Pipelines, Edit, Variables):
+#   - QUALOR_URL: your Qualor server;
+#   - QUALOR_TOKEN: a project analysis token of the Qualor project, marked as a secret.
+# The job needs a Linux agent with Docker.
+# Azure Repos ignores `pr:`. Pull requests run through a Build validation branch policy on the
+# target branch (Repos, Branches, Branch policies, Build validation): add this pipeline there.
+# The checkout fetches the full history (the new-code baseline) and does not leave the build's
+# token in .git/config, where the analysed code could read it.
+# The pipeline also runs on tags. There the scan records a version: the release's dependency
+# list, with no analyzer and no quality gate.
+# The task runs begin, the build, end, and abort when a step fails. Replace dotnetBuild with the
+# project's own build. The token reaches only the end step: the build runs the repository's code.
+# Its documentation: https://qualor.dev/docs/azure-devops
+trigger:
+  branches:
+    include: ['*']
+  tags:
+    include: ['*']
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    persistCredentials: false
+
+  - task: Cache@2
+    displayName: Cache the vulnerability database
+    inputs:
+      key: 'qualor-trivy | "$(Build.BuildId)"'
+      restoreKeys: qualor-trivy
+      path: $(Build.SourcesDirectory)/.qualor/trivy
+
+  # If the project needs its dependencies installed before the scan (npm ci, pip install, ...),
+  # add that step here.
+
+  - task: Qualor@0
+    displayName: Qualor scan
+    inputs:
+      dotnet: true
+      dotnetBuild: dotnet build --no-incremental
+    env:
+      QUALOR_TOKEN: $(QUALOR_TOKEN)

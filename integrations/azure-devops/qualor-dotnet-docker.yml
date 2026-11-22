@@ -1,0 +1,120 @@
+# Qualor in Azure Pipelines for a C# project (docker run, no extension). Copy this file to azure-pipelines.yml.
+#
+# Set two pipeline variables (Pipelines, Edit, Variables):
+#   - QUALOR_URL: your Qualor server;
+#   - QUALOR_TOKEN: a project analysis token of the Qualor project, marked as a secret.
+# The job needs a Linux agent with Docker.
+# Azure Repos ignores `pr:`. Pull requests run through a Build validation branch policy on the
+# target branch (Repos, Branches, Branch policies, Build validation): add this pipeline there.
+# The checkout fetches the full history (the new-code baseline) and does not leave the build's
+# token in .git/config, where the analysed code could read it.
+# The pipeline also runs on tags. There the scan records a version: the release's dependency
+# list, with no analyzer and no quality gate.
+# Four steps: begin, the build, end, and abort when a step fails. Replace the build command with
+# the project's own. The token is in the end step's environment only: the build runs the
+# repository's code (MSBuild targets, source generators), so it gets no QUALOR_ variable and sees
+# .git read-only.
+# The image tag is fixed: nothing floats. QUALOR_TOKEN reaches docker through the step's
+# environment (-e QUALOR_TOKEN) and is never written into a script.
+trigger:
+  branches:
+    include: ['*']
+  tags:
+    include: ['*']
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  QUALOR_SCANNER_IMAGE: qualor/scanner-dotnet:0.16
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    persistCredentials: false
+
+  - task: Cache@2
+    displayName: Cache the vulnerability database
+    inputs:
+      key: 'qualor-trivy | "$(Build.BuildId)"'
+      restoreKeys: qualor-trivy
+      path: $(Build.SourcesDirectory)/.qualor/trivy
+
+  # If the project needs its dependencies installed before the scan (npm ci, pip install, ...),
+  # add that step here.
+
+  - script: |
+      # The pull request head, not Azure's merge commit.
+      git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+      full() { printf %s "$1" | tr A-F a-f | grep -E '^([0-9a-f]{40}|[0-9a-f]{64})$' || true; }
+      if [ "${BUILD_REASON:-}" = PullRequest ]; then
+        named=$(full "${SYSTEM_PULLREQUEST_SOURCECOMMITID:-}")
+        merge=$(full "${BUILD_SOURCEVERSION:-}")
+        if [ -n "$named" ]; then wanted="$named^{commit}"; else wanted="${merge:-HEAD}^2^{commit}"; fi
+        head=$(git rev-parse --verify --quiet "$wanted") || {
+          echo "The pull request head is not in the clone. Set fetchDepth: 0 on the checkout step." >&2
+          exit 1
+        }
+        [ "$(git rev-parse HEAD)" = "$head" ] || git checkout --detach "$head"
+      fi
+      mkdir -p "$(Agent.TempDirectory)/qualor-home"
+      docker run --rm --user "$(id -u):$(id -g)" \
+        -v "$(Build.SourcesDirectory):/src" -w /src \
+        -v "$(Agent.TempDirectory)/qualor-home:/qualor-home" -e HOME=/qualor-home \
+        -e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy \
+        -e TF_BUILD -e BUILD_REPOSITORY_PROVIDER -e BUILD_REASON \
+        -e BUILD_SOURCEBRANCH -e BUILD_SOURCEVERSION -e BUILD_BUILDID \
+        -e BUILD_REPOSITORY_ID -e BUILD_REPOSITORY_NAME -e SYSTEM_TEAMPROJECT \
+        -e SYSTEM_TEAMPROJECTID -e SYSTEM_COLLECTIONURI -e SYSTEM_PULLREQUEST_PULLREQUESTID \
+        -e SYSTEM_PULLREQUEST_SOURCEBRANCH -e SYSTEM_PULLREQUEST_TARGETBRANCH \
+        -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
+        $(QUALOR_SCANNER_IMAGE) dotnet begin
+    displayName: Qualor begin
+
+  - script: |
+      docker run --rm --user "$(id -u):$(id -g)" \
+        -v "$(Build.SourcesDirectory):/src" \
+        --mount type=bind,source=$(Build.SourcesDirectory)/.git,target=/src/.git,readonly -w /src \
+        -v "$(Agent.TempDirectory)/qualor-home:/qualor-home" -e HOME=/qualor-home \
+        -e TF_BUILD -e BUILD_REPOSITORY_PROVIDER -e BUILD_REASON \
+        -e BUILD_SOURCEBRANCH -e BUILD_SOURCEVERSION -e BUILD_BUILDID \
+        -e BUILD_REPOSITORY_ID -e BUILD_REPOSITORY_NAME -e SYSTEM_TEAMPROJECT \
+        -e SYSTEM_TEAMPROJECTID -e SYSTEM_COLLECTIONURI -e SYSTEM_PULLREQUEST_PULLREQUESTID \
+        -e SYSTEM_PULLREQUEST_SOURCEBRANCH -e SYSTEM_PULLREQUEST_TARGETBRANCH \
+        -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
+        --entrypoint sh $(QUALOR_SCANNER_IMAGE) -c "dotnet build --no-incremental"
+    displayName: Build
+
+  - script: |
+      docker run --rm --user "$(id -u):$(id -g)" \
+        -v "$(Build.SourcesDirectory):/src" -w /src \
+        -v "$(Agent.TempDirectory)/qualor-home:/qualor-home" -e HOME=/qualor-home \
+        -e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy \
+        -e GIT_CONFIG_GLOBAL=/dev/null -e PYTHONNOUSERSITE=1 \
+        -e TF_BUILD -e BUILD_REPOSITORY_PROVIDER -e BUILD_REASON \
+        -e BUILD_SOURCEBRANCH -e BUILD_SOURCEVERSION -e BUILD_BUILDID \
+        -e BUILD_REPOSITORY_ID -e BUILD_REPOSITORY_NAME -e SYSTEM_TEAMPROJECT \
+        -e SYSTEM_TEAMPROJECTID -e SYSTEM_COLLECTIONURI -e SYSTEM_PULLREQUEST_PULLREQUESTID \
+        -e SYSTEM_PULLREQUEST_SOURCEBRANCH -e SYSTEM_PULLREQUEST_TARGETBRANCH \
+        -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
+        -e QUALOR_URL -e QUALOR_TOKEN \
+        $(QUALOR_SCANNER_IMAGE) dotnet end
+    displayName: Qualor end
+    env:
+      QUALOR_TOKEN: $(QUALOR_TOKEN)
+
+  - script: |
+      docker run --rm --user "$(id -u):$(id -g)" \
+        -v "$(Build.SourcesDirectory):/src" -w /src \
+        -v "$(Agent.TempDirectory)/qualor-home:/qualor-home" -e HOME=/qualor-home \
+        -e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy \
+        -e GIT_CONFIG_GLOBAL=/dev/null -e PYTHONNOUSERSITE=1 \
+        -e TF_BUILD -e BUILD_REPOSITORY_PROVIDER -e BUILD_REASON \
+        -e BUILD_SOURCEBRANCH -e BUILD_SOURCEVERSION -e BUILD_BUILDID \
+        -e BUILD_REPOSITORY_ID -e BUILD_REPOSITORY_NAME -e SYSTEM_TEAMPROJECT \
+        -e SYSTEM_TEAMPROJECTID -e SYSTEM_COLLECTIONURI -e SYSTEM_PULLREQUEST_PULLREQUESTID \
+        -e SYSTEM_PULLREQUEST_SOURCEBRANCH -e SYSTEM_PULLREQUEST_TARGETBRANCH \
+        -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
+        $(QUALOR_SCANNER_IMAGE) dotnet abort
+    displayName: Qualor abort
+    condition: failure()
