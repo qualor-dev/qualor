@@ -1,12 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:http';
 import { connect, createServer as createTcpServer, type Socket } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import pg from 'pg';
+import { createFakeAzureDevOps } from '../../test/fake-azure-devops';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createFakeJira, defaultIssueTypes } from '../../test/fake-jira';
 import {
@@ -20,6 +22,7 @@ import {
 } from '../../test/fake-llm';
 import { BUSINESS_FEATURES, ENTERPRISE_FEATURES, signTest, testPayload } from '../../test/license';
 import { E2E_SIGNER, signCurrent } from '../../test/license-e2e-key';
+import { TEST_CA_PEM } from '../../test/tls';
 import { databaseUrl } from '../../test/urls';
 import { decryptSecret, encryptionKey } from '../../src/crypto/secrets';
 import type { EncryptedValue } from '../../src/db/schema';
@@ -31,6 +34,7 @@ import {
   seedDemo,
   seedEnterprise,
   seedGitHubApp,
+  seedAzure,
   seedMail,
   seedRoles,
   seedSso,
@@ -79,6 +83,12 @@ import { sweepE2eDatabases } from './sweep';
  * contacts a real Jira.
  */
 const MAIN = fileURLToPath(new URL('../../.tmp/e2e-main.js', import.meta.url));
+
+/** What the fake Azure DevOps lists (ui/e2e/seed-data.ts AZURE names them). */
+const AZURE_REPOSITORIES = [
+  { id: 'a2e00000-0000-4000-8000-000000000001', name: 'storefront', projectName: 'Shop' },
+  { id: 'a2e00000-0000-4000-8000-000000000002', name: 'ledger', projectName: 'Billing' },
+];
 
 /** The fake GitLab project Payments API is mapped to, and its merge request !42 (seed.ts). */
 const GITLAB_PROJECT = { id: 4711, path: 'acme/payments-api' };
@@ -252,10 +262,25 @@ async function main(): Promise<void> {
     port: jiraPort,
     debugRoutes: true,
   });
+  // Azure DevOps Services (ruling 5: connections store https://dev.azure.com/<org>; the server sends
+  // the requests here). The fake Entra is https on the test CA, which the servers are made to trust.
+  const azure = await createFakeAzureDevOps({
+    deployment: 'services',
+    principal: {
+      tenantId: env('QUALOR_E2E_AZURE_TENANT'),
+      clientId: env('QUALOR_E2E_AZURE_CLIENT'),
+      secret: env('QUALOR_E2E_AZURE_SECRET'),
+    },
+    repositories: AZURE_REPOSITORIES,
+  });
+  const azureCaDir = mkdtempSync(path.join(tmpdir(), 'qualor-e2e-azure-'));
+  const azureCaFile = path.join(azureCaDir, 'test-ca.pem');
+  writeFileSync(azureCaFile, TEST_CA_PEM);
   // Bug, which Qualor can create; Story, whose required Components it cannot fill.
   jira.addProject({ id: '10000', key: 'QUAL', name: 'Quality', issueTypes: defaultIssueTypes() });
   const closeFakes = async (): Promise<void> => {
-    await Promise.all([llm.close(), gitlab.close(), jira.close()]);
+    await Promise.all([llm.close(), gitlab.close(), jira.close(), azure.close()]);
+    rmSync(azureCaDir, { recursive: true, force: true });
   };
 
   let container: StartedPostgreSqlContainer | undefined;
@@ -291,7 +316,12 @@ async function main(): Promise<void> {
     QUALOR_LOG_LEVEL: 'info',
     HOST: '127.0.0.1',
     QUALOR_LLM_INTERNAL_HOSTS: llm.host,
-    QUALOR_SCM_INTERNAL_HOSTS: new URL(gitlab.url).host,
+    QUALOR_SCM_INTERNAL_HOSTS: [gitlab.url, azure.url].map((u) => new URL(u).host).join(','),
+    // The only seams of the server that read NODE_ENV: the Azure DevOps fakes (config.ts).
+    NODE_ENV: 'test',
+    QUALOR_AZURE_TEST_ORIGIN: new URL(azure.url).origin,
+    QUALOR_AZURE_TOKEN_ORIGIN: new URL(azure.tokenUrl(env('QUALOR_E2E_AZURE_TENANT'))).origin,
+    NODE_EXTRA_CA_CERTS: azureCaFile,
     QUALOR_JIRA_INTERNAL_HOSTS: new URL(jira.url).host,
   };
   const start = (extra: Record<string, string>) =>
@@ -320,6 +350,7 @@ async function main(): Promise<void> {
       gitlabProjectRef: GITLAB_PROJECT.path,
     });
     await seedMail(seedUrl, credentials);
+    await seedAzure(seedUrl, credentials, azure.pat);
   } finally {
     await stop(seeding);
   }

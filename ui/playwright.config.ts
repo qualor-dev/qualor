@@ -3,6 +3,7 @@ import { defineConfig, devices } from '@playwright/test';
 import {
   ADMIN,
   ALICE,
+  AZURE,
   BUSINESS_PORT,
   BUSINESS_URL,
   CHAT_PORT,
@@ -124,6 +125,9 @@ export default defineConfig({
       QUALOR_E2E_CHAT_PORT: String(CHAT_PORT),
       QUALOR_E2E_JIRA_PORT: String(JIRA_PORT),
       QUALOR_E2E_JIRA_TOKEN: JIRA_TOKEN,
+      QUALOR_E2E_AZURE_TENANT: AZURE.tenant,
+      QUALOR_E2E_AZURE_CLIENT: AZURE.client,
+      QUALOR_E2E_AZURE_SECRET: AZURE.secret,
       // Built by the command above (`pnpm --filter @qualor/enterprise build`).
       QUALOR_E2E_ENTERPRISE_PLUGIN: fileURLToPath(
         new URL('../enterprise/dist/plugin.js', import.meta.url),

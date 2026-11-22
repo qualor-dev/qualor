@@ -12,7 +12,9 @@ async function csrfToken(page: Page): Promise<string> {
  * The seed's GitLab connection to the fake GitLab on loopback (server/scripts/e2e/serve.ts), which
  * the AI tests (ai.spec.ts) post through: never deleted here, so the files pass in any order.
  */
-function seededFake(connection: { baseUrl?: string }): boolean {
+function seededFake(connection: { provider?: string; baseUrl?: string }): boolean {
+  // The seed's Azure DevOps connection (azure-devops.spec.ts) keeps its real address.
+  if (connection.provider === 'azure') return true;
   return connection.baseUrl !== undefined && new URL(connection.baseUrl).hostname === '127.0.0.1';
 }
 

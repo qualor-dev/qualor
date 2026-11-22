@@ -111,6 +111,18 @@ export const CHAT_URL = `http://127.0.0.1:${CHAT_PORT}`;
  * playwright.config.ts) and the one project serve.ts gives it, with the fake's default issue
  * types: Bug (`bug`, its id), and Story, whose required Components Qualor cannot fill.
  */
+/**
+ * The fake Azure DevOps of server/scripts/e2e/serve.ts and its service principal (passed to it by
+ * playwright.config.ts). The seed holds a PAT connection to ${address}; a test adds one with the
+ * principal's secret.
+ */
+export const AZURE = {
+  address: 'https://dev.azure.com/probe-org',
+  tenant: 'a2e00000-0000-4000-8000-0000000000a1',
+  client: 'a2e00000-0000-4000-8000-0000000000b2',
+  secret: 'e2e-azure-client-secret',
+  repository: { id: 'a2e00000-0000-4000-8000-000000000001', label: 'Shop / storefront' },
+} as const;
 export const JIRA_PORT = E2E_PORT + 6;
 export const JIRA_URL = `http://127.0.0.1:${JIRA_PORT}`;
 export const JIRA_TOKEN = 'e2e-jira-pat';

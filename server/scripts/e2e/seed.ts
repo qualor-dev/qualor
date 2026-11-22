@@ -955,6 +955,29 @@ export async function seedAi(
 }
 
 /**
+ * An Azure DevOps connection with a personal access token to the fake Azure DevOps (Azure DevOps
+ * sub-plan 2): its address is the real one of the organisation the fake stands for (serve.ts sends
+ * the requests to the fake through QUALOR_AZURE_TEST_ORIGIN). Not mapped to any project.
+ */
+export async function seedAzure(
+  base: string,
+  credentials: SeedCredentials,
+  pat: string,
+): Promise<void> {
+  const admin = new Client(base);
+  await admin.login(credentials.adminUsername, credentials.adminPassword);
+  const [org] = (await admin.json<Page<{ id: string }>>('GET', '/api/v0/organizations')).items;
+  if (!org) throw new Error('no default organization');
+  await admin.json('POST', '/api/v0/scm-connections', {
+    organizationId: org.id,
+    provider: 'azure',
+    baseUrl: 'https://dev.azure.com/probe-org',
+    azureAuth: 'pat',
+    token: pat,
+  });
+}
+
+/**
  * Plan 2a: vulnerability monitoring off, first thing on every e2e database, through the settings
  * API. The first check of the Trivy database is due a minute after a server starts: with the
  * switch on, every e2e server would download it from ghcr.io. No e2e test needs it on (the
