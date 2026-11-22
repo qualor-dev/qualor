@@ -38,20 +38,25 @@ function licenseField(pkg: { license?: unknown; licenses?: unknown }): string {
 
 /** The packages esbuild bundled (from its metafile `inputs`), with licence name and LICENSE text. */
 export function bundledPackages(inputs: readonly string[], workingDir: string): Bundled[] {
+  // Keyed by directory: pnpm gives every installed version of a package its own directory, so two
+  // bundled versions of one name both get their notice.
   const dirs = new Map<string, string>();
   for (const input of inputs) {
     const root = packageRootOf(input);
-    if (root) dirs.set(root.name, path.resolve(workingDir, root.dir));
+    if (root) dirs.set(path.resolve(workingDir, root.dir), root.name);
   }
   const out: Bundled[] = [];
-  for (const [name, dir] of [...dirs].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [dir, name] of [...dirs].sort(([, a], [, b]) => a.localeCompare(b))) {
     const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as {
       version?: string;
       license?: unknown;
       licenses?: unknown;
     };
     const file = readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.|$)/i.test(f));
-    const text = file ? readFileSync(path.join(dir, file), 'utf8').trim() : '';
+    if (file === undefined) {
+      throw new Error(`${name} is bundled into the task but ships no licence file (${dir})`);
+    }
+    const text = readFileSync(path.join(dir, file), 'utf8').trim();
     out.push({ name, version: pkg.version ?? '', license: licenseField(pkg), text });
   }
   return out;
@@ -62,8 +67,7 @@ export function noticesText(packages: readonly Bundled[]): string {
     'Third-party software bundled into tasks/qualor/index.js\n' +
     'The Qualor task contains the following packages. Their licence notices follow.\n';
   const body = packages.map((p) => {
-    const text = p.text === '' ? '(the package ships no licence file)' : p.text;
-    return `${'='.repeat(72)}\n${p.name} ${p.version} (${p.license})\n${'='.repeat(72)}\n\n${text}\n`;
+    return `${'='.repeat(72)}\n${p.name} ${p.version} (${p.license})\n${'='.repeat(72)}\n\n${p.text}\n`;
   });
   return `${head}\n${body.join('\n')}`;
 }

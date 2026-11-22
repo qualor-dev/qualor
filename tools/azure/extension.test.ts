@@ -7,6 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { REPO_ROOT } from '../deploy/stack';
 import { VERSION } from '../../server/src/index';
 
+/** The manifest holds numbers only: a pre-release VERSION packs as its x.y.z. */
+const PACKED = VERSION.split('-')[0] ?? VERSION;
 const EXTENSION = path.join(REPO_ROOT, 'integrations', 'azure-devops', 'extension');
 
 /** The entries of a zip, read through its central directory (no zip dependency in the repo). */
@@ -66,7 +68,7 @@ describe('the extension package (VSIX)', () => {
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   it('is named after the extension id and the Qualor version', () => {
-    expect(path.basename(vsix)).toBe(`qualor.qualor-${VERSION}.vsix`);
+    expect(path.basename(vsix)).toBe(`qualor.qualor-${PACKED}.vsix`);
   });
 
   it('holds the manifests, the task and the icon', () => {
@@ -86,14 +88,14 @@ describe('the extension package (VSIX)', () => {
     const entries = zipEntries(vsix);
     const manifest = text(entries, 'extension.vsixmanifest');
     expect(manifest).toMatch(
-      new RegExp(`<Identity [^>]*Id="qualor" Publisher="qualor" Version="${VERSION}"`),
+      new RegExp(`<Identity [^>]*Id="qualor" Publisher="qualor" Version="${PACKED}"`),
     );
     expect(manifest).toContain('<InstallationTarget Id="Microsoft.VisualStudio.Services"/>');
     expect(manifest).toContain('<Categories>Azure Pipelines</Categories>');
     const task = JSON.parse(text(entries, 'tasks/qualor/task.json')) as {
       version: { Major: number; Minor: number; Patch: number };
     };
-    const [major, minor, patch] = (VERSION.split('-')[0] ?? '').split('.').map(Number);
+    const [major, minor, patch] = PACKED.split('.').map(Number);
     expect(task.version).toEqual({ Major: major, Minor: minor, Patch: patch });
   });
 
@@ -101,12 +103,15 @@ describe('the extension package (VSIX)', () => {
     const notices = text(zipEntries(vsix), 'tasks/qualor/THIRD-PARTY-NOTICES');
     expect(notices).toContain('azure-pipelines-task-lib');
     expect(notices).toMatch(/Permission is hereby granted/);
+    expect(notices).toMatch(/minimatch \S+ \(ISC\)/);
+    expect(notices).toMatch(/semver \S+ \(ISC\)/);
+    expect(notices).toMatch(/Permission to use, copy, modify, and\/or distribute this software/);
   });
 
   it('builds a dev variant under another id for a bench install', () => {
-    expect(path.basename(dev)).toBe(`qualor.qualor-dev-${VERSION}.vsix`);
+    expect(path.basename(dev)).toBe(`qualor.qualor-dev-${PACKED}.vsix`);
     const manifest = text(zipEntries(dev), 'extension.vsixmanifest');
-    expect(manifest).toContain(`Id="qualor-dev" Publisher="qualor" Version="${VERSION}"`);
+    expect(manifest).toContain(`Id="qualor-dev" Publisher="qualor" Version="${PACKED}"`);
     expect(manifest).toContain('<DisplayName>Qualor (dev)</DisplayName>');
     expect(manifest).not.toContain('Microsoft.VisualStudio.Services.Public');
   });
