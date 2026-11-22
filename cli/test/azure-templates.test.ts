@@ -145,14 +145,14 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     }
   });
 
-  it('puts the pull request head checkout and the home directory before the first docker run', () => {
+  it('prepares the clone and the home directory in a first step of its own, without the token', () => {
     const first = scripts[0]!.script!;
+    expect(scripts[0]!.env).toBeUndefined();
+    expect(first).not.toContain('docker run');
     const head = first.indexOf('SYSTEM_PULLREQUEST_SOURCECOMMITID');
     const home = first.indexOf('mkdir -p "$(Agent.TempDirectory)/qualor-home"');
-    const run = first.indexOf('docker run');
     expect(head).toBeGreaterThan(-1);
     expect(head).toBeLessThan(home);
-    expect(home).toBeLessThan(run);
     for (const part of [
       'tr A-F a-f',
       '${BUILD_REASON:-}" = PullRequest',
@@ -160,11 +160,17 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
       'git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }',
       'git checkout --detach "$head"',
       'Set fetchDepth: 0 on the checkout step.',
+      'Could not read the pull request head from the clone:',
+      '"$status" -eq 1',
     ]) {
       expect(first).toContain(part);
     }
     // Only the first script prepares the clone.
     for (const s of scripts.slice(1)) expect(s.script).not.toContain('rev-parse');
+  });
+
+  it('stops a script at its first failing command', () => {
+    for (const s of scripts) expect(s.script).toMatch(/^set -euo pipefail\n/);
   });
 
   it('runs begin, the build, end and abort as four docker runs (the task test compares their flags)', () => {
@@ -198,7 +204,7 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     const at = ['dotnet begin', '--entrypoint sh', 'dotnet end', 'dotnet abort'].map((p) =>
       steps.findIndex((s) => s.includes(p)),
     );
-    expect(at).toEqual([0, 1, 2, 3]);
+    expect(at).toEqual([1, 2, 3, 4]);
     expect(text).toMatch(/# .*[Rr]eplace.*build/);
   });
 

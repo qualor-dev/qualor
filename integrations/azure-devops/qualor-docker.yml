@@ -10,6 +10,7 @@
 # token in .git/config, where the analysed code could read it.
 # The pipeline also runs on tags. There the scan records a version: the release's dependency
 # list, with no analyzer and no quality gate.
+# Its documentation: https://qualor.dev/docs/azure-devops
 # The image tag is fixed: nothing floats. QUALOR_TOKEN reaches docker through the step's
 # environment (-e QUALOR_TOKEN) and is never written into a script.
 trigger:
@@ -40,6 +41,7 @@ steps:
   # add that step here.
 
   - script: |
+      set -euo pipefail
       # The pull request head, not Azure's merge commit.
       git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
       full() { printf %s "$1" | tr A-F a-f | grep -E '^([0-9a-f]{40}|[0-9a-f]{64})$' || true; }
@@ -47,13 +49,22 @@ steps:
         named=$(full "${SYSTEM_PULLREQUEST_SOURCECOMMITID:-}")
         merge=$(full "${BUILD_SOURCEVERSION:-}")
         if [ -n "$named" ]; then wanted="$named^{commit}"; else wanted="${merge:-HEAD}^2^{commit}"; fi
-        head=$(git rev-parse --verify --quiet "$wanted") || {
+        status=0
+        head=$(git rev-parse --verify --quiet "$wanted" 2>&1) || status=$?
+        if [ "$status" -eq 1 ]; then
           echo "The pull request head is not in the clone. Set fetchDepth: 0 on the checkout step." >&2
           exit 1
-        }
+        elif [ "$status" -ne 0 ]; then
+          echo "Could not read the pull request head from the clone: $(printf %s "$head" | head -n 1)" >&2
+          exit 1
+        fi
         [ "$(git rev-parse HEAD)" = "$head" ] || git checkout --detach "$head"
       fi
       mkdir -p "$(Agent.TempDirectory)/qualor-home"
+    displayName: Check out the pull request head
+
+  - script: |
+      set -euo pipefail
       docker run --rm --user "$(id -u):$(id -g)" \
         -v "$(Build.SourcesDirectory):/src" -w /src \
         -v "$(Agent.TempDirectory)/qualor-home:/qualor-home" -e HOME=/qualor-home \
