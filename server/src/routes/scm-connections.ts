@@ -1,5 +1,5 @@
 import { assertNever, SCM_PROVIDERS, type ScmProvider } from '@qualor/shared';
-import { and, asc, count, eq, gt, isNull } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, type AnyColumn } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -34,18 +34,30 @@ import {
   type FieldError,
 } from '../http/problem';
 import { idParams, iso, noContent, noNul, timestamp } from '../http/schemas';
-import { SCM_PROJECT_REF_PATTERN } from '../patterns';
 import { queueSnapshotPurge } from '../review/jobs';
+import { AZURE_AUTH_KINDS } from '../scm/azure/auth-kinds';
+import { MAX_AZURE_CERTIFICATE_BYTES } from '../scm/azure/certificate';
+import {
+  azureCreate,
+  azureCredentialField,
+  azureMoveNeeds,
+  azurePatch,
+  azureViewOf,
+  testAzureConnection,
+} from '../scm/azure/connections';
+import { AZURE_REPOSITORY_ID, azureBaseUrlProblem } from '../scm/azure/url';
 import {
   forgetForeignMergeRequestUrls,
   MAX_SCM_CONNECTIONS_PER_ORGANIZATION,
   MISSING_ACCESS,
   SCM_TOKEN_AAD,
   SCM_TOKEN_PATTERN,
+  scmDepsOf,
   TEST_PROBLEM_CODES,
   testConnection,
   type ScmConnectionRow,
 } from '../scm/connections';
+import { notAFieldText, PROVIDER, type ConnectionPatch } from '../scm/providers';
 import {
   GITHUB_APP_ID,
   isGitHubAppId,
@@ -66,7 +78,7 @@ import {
   encryptWebhookSecret,
 } from '../scm/github/credentials';
 import { CI_SETUP_MISSING, createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
-import { GITHUB_REPO_PATTERN, githubBaseUrlProblem } from '../scm/github/url';
+import { githubBaseUrlProblem } from '../scm/github/url';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
 const githubSchema = z.object({
@@ -87,6 +99,19 @@ const gitlabSchema = z.object({
   webhookUrl: z.string().nullable(),
   /** Whether Qualor may open CI-setup merge requests in this connection's repositories. */
   ciSetupAllowed: z.boolean(),
+});
+
+const azureSchema = z.object({
+  /** From the host alone: dev.azure.com and *.visualstudio.com are Services. */
+  deployment: z.enum(['services', 'server']),
+  auth: z.enum(AZURE_AUTH_KINDS),
+  /** A service principal's directory (tenant) and application (client) ids; null for a PAT. */
+  tenantId: z.string().nullable(),
+  clientId: z.string().nullable(),
+  /** False when the stored credential no longer decrypts (QUALOR_SECRET_KEY changed) or parses. */
+  credentialReadable: z.boolean(),
+  /** The certificate kind's: SHA-1 thumbprint (upper-case hex, as Entra shows it) and expiry. */
+  certificate: z.object({ thumbprint: z.string(), notAfter: timestamp }).nullable(),
 });
 
 const ciSetupSchema = z.object({
@@ -111,6 +136,8 @@ const connectionSchema = z.object({
   github: githubSchema.nullable(),
   /** What GitLab's webhook needs (6I-4); null for GitHub. Never the secret. */
   gitlab: gitlabSchema.nullable(),
+  /** The Azure DevOps side (design §7.1); null for GitLab and GitHub. Never the credential. */
+  azure: azureSchema.nullable(),
   /** Whether Qualor can open CI-setup pull or merge requests through this connection. */
   ciSetup: ciSetupSchema,
   /** Whether Qualor may open fix merge or pull requests in this connection's repositories. */
@@ -122,7 +149,9 @@ const testResultSchema = z.object({
   user: z.object({ username: z.string() }).nullable(),
   project: z
     .object({
-      id: z.number().int(),
+      /** GitLab's and GitHub's numeric id; Azure DevOps' repository id (a GUID). */
+      id: z.union([z.number().int(), z.string()]),
+      /** Azure DevOps: `<project>/<repository>`. */
       pathWithNamespace: z.string(),
       /** GitLab: the token's access level in the project (40 = Maintainer); null if unknown. */
       accessLevel: z.number().int().nullable(),
@@ -133,6 +162,13 @@ const testResultSchema = z.object({
     description:
       "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository, and when the test failed.",
   }),
+  visible: z
+    .object({ repositories: z.number().int(), projects: z.number().int() })
+    .nullable()
+    .meta({
+      description:
+        'Azure DevOps: the repositories the identity sees, and the projects that hold them. Null for GitLab and GitHub, and when the test failed.',
+    }),
 });
 
 function connectionDto(
@@ -145,6 +181,7 @@ function connectionDto(
   const secretReadable = secretSet && decryptWebhookSecret(key, row.webhookSecretEnc) !== null;
   let github: z.infer<typeof githubSchema> | null = null;
   let gitlab: z.infer<typeof gitlabSchema> | null = null;
+  let azure: z.infer<typeof azureSchema> | null = null;
   switch (row.provider) {
     case 'github':
       github = {
@@ -163,8 +200,17 @@ function connectionDto(
         ciSetupAllowed: row.ciSetupAllowed,
       };
       break;
-    case 'azure': // azure-pending(2): the Azure DevOps block of the connection (Task 6)
+    case 'azure': {
+      const view = azureViewOf(row, key);
+      azure = {
+        ...view,
+        certificate: view.certificate && {
+          ...view.certificate,
+          notAfter: iso(view.certificate.notAfter),
+        },
+      };
       break;
+    }
     default:
       return assertNever(row.provider, 'provider');
   }
@@ -176,6 +222,7 @@ function connectionDto(
     createdAt: iso(row.createdAt),
     github,
     gitlab,
+    azure,
     ciSetup,
     fixMrsAllowed: row.fixMrsAllowed,
   };
@@ -210,39 +257,28 @@ const privateKey = noNul(z.string().min(1).max(MAX_PRIVATE_KEY_BYTES));
 const webhookSecret = z.string().regex(WEBHOOK_SECRET_PATTERN, {
   message: 'Use 16-256 printable ASCII characters without spaces',
 });
-/** A field of the other provider: refused with its own path. */
-const notAField = (provider: string) =>
+/** A field of another provider: refused with its own path. */
+const notAField = (provider: ScmProvider) =>
   z
-    .never({ message: `Not a field of a ${provider} connection` })
-    .meta({ description: `Not a field of a ${provider} connection: sending it is a 422` })
+    .never({ message: notAFieldText(provider) })
+    .meta({ description: `${notAFieldText(provider)}: sending it is a 422` })
     .optional();
-
-const PROJECT_REF_TEXT: Record<ScmProvider, string> = {
-  gitlab: 'Use the GitLab project id or its full path (group/project)',
-  github: 'Use the GitHub repository as owner/repo',
-  azure: 'Mapping an Azure DevOps repository is not available yet', // azure-pending(2): the Azure DevOps repository id (Task 6)
-};
-const PROJECT_REF_PATTERN: Record<ScmProvider, RegExp> = {
-  gitlab: SCM_PROJECT_REF_PATTERN,
-  github: GITHUB_REPO_PATTERN,
-  azure: /[^\s\S]/, // azure-pending(2): the Azure DevOps repository id (Task 6); this matches nothing
-};
+/** Azure DevOps (design §7.1): a service principal's tenant or client id, a GUID in any case. */
+const azureId = (name: string) =>
+  z.string().regex(AZURE_REPOSITORY_ID, { message: `Use the ${name}, a GUID` });
 /**
- * A project reference of either provider: a GitLab project id or path (scm.md §2.2), or a GitHub
- * `owner/repo` (github.md §2.3). Where the connection is known, it is checked against its own
- * provider's pattern ({@link projectRefProblem}).
+ * Azure DevOps: the certificate of a service principal and its private key (RSA ≥ 2 048 bits,
+ * unencrypted), one PEM text, checked in the handler. Stored encrypted as sent, never echoed or
+ * logged.
  */
-export const scmProjectRef = z
-  .string()
-  .max(255)
-  .regex(new RegExp(`${SCM_PROJECT_REF_PATTERN.source}|${GITHUB_REPO_PATTERN.source}`), {
-    message: 'Use the GitLab project id or its full path (group/project), or GitHub owner/repo',
-  });
+const certificate = noNul(z.string().min(1).max(MAX_AZURE_CERTIFICATE_BYTES));
 
-/** Why `ref` is not a project reference of `provider`, or null. */
-export function projectRefProblem(provider: ScmProvider, ref: string): string | null {
-  return PROJECT_REF_PATTERN[provider].test(ref) ? null : PROJECT_REF_TEXT[provider];
-}
+/**
+ * A project reference: a GitLab project id or path (scm.md §2.2), a GitHub `owner/repo`
+ * (github.md §2.3) or an Azure DevOps repository id (design §7.2), checked against the mapped
+ * connection's provider (`PROVIDER[provider].projectRefProblem`).
+ */
+export const scmProjectRef = z.string().min(1).max(255);
 
 /** The canonical PKCS#8 PEM of an App private key, or a 422 on `body.privateKey`. */
 function checkedPrivateKey(raw: string): string {
@@ -255,79 +291,92 @@ function checkedPrivateKey(raw: string): string {
   return parsed.pkcs8;
 }
 
-/** The fields an SCM connection PATCH may send. */
-interface ConnectionPatch {
-  baseUrl?: string;
-  token?: string;
-  appId?: string;
-  privateKey?: string;
-  webhookSecret?: string | null;
-  ciSetupAllowed?: boolean;
-  fixMrsAllowed?: boolean;
-}
-
-const FOREIGN_FIELDS: Record<ScmProvider, readonly (keyof ConnectionPatch)[]> = {
-  github: ['token', 'ciSetupAllowed'],
-  gitlab: ['appId', 'privateKey'],
-  azure: ['appId', 'privateKey', 'webhookSecret', 'ciSetupAllowed', 'fixMrsAllowed'], // azure-pending(2): the Azure DevOps fields of a PATCH (Task 6)
-};
-const PROVIDER_LABEL: Record<ScmProvider, string> = {
-  github: 'GitHub',
-  gitlab: 'GitLab',
-  azure: 'Azure DevOps',
-};
-/** The credential field a move of the address must bring again. */
-const CREDENTIAL_FIELD: Record<ScmProvider, 'privateKey' | 'token'> = {
-  github: 'privateKey',
-  gitlab: 'token',
-  azure: 'token', // azure-pending(2): the credential of each Azure DevOps authentication kind (Task 6)
-};
 /**
  * Whether a lost race on the stored address is reported as a changed address whatever the request
- * names (GitHub), or only when it names no address and brings no credential (GitLab).
+ * names (GitHub, Azure DevOps, where the kind or ids may have changed instead), or only when it
+ * names no address and brings no credential (GitLab).
  */
 const ADDRESS_CONFLICT_WHATEVER_NAMED: Record<ScmProvider, boolean> = {
   github: true,
   gitlab: false,
-  azure: false, // azure-pending(2): an Azure DevOps PATCH that lost a race (Task 6)
+  azure: true,
+};
+/** The shape of an address beyond the common rules (scm/url.ts), or null. */
+const ADDRESS_SHAPE_PROBLEM: Record<ScmProvider, (normalised: string) => string | null> = {
+  gitlab: () => null,
+  github: githubBaseUrlProblem,
+  azure: azureBaseUrlProblem,
 };
 
 /** A 422 for each sent field the connection's provider does not have. */
 function checkProviderFields(body: ConnectionPatch, provider: ScmProvider): void {
-  const foreign = FOREIGN_FIELDS[provider];
-  const wrong = foreign.filter((f) => body[f] !== undefined);
+  const wrong = PROVIDER[provider].foreignFields.filter((f) => body[f] !== undefined);
   if (wrong.length > 0) {
     throw validationFailed(
-      wrong.map((f) => ({
-        path: `body.${f}`,
-        message: `Not a field of a ${PROVIDER_LABEL[provider]} connection`,
-      })),
+      wrong.map((f) => ({ path: `body.${f}`, message: notAFieldText(provider) })),
     );
   }
 }
 
-/** The 422 of a move of the address without the provider's credential. */
-function credentialNeeded(provider: ScmProvider): FieldError {
-  switch (provider) {
+/**
+ * The credential field a move of the address must bring again (on Azure DevOps that of the kind
+ * the connection is or becomes), and the 422 without it.
+ */
+function moveCredential(
+  row: ScmConnectionRow,
+  body: ConnectionPatch,
+): { field: 'privateKey' | 'token' | 'certificate'; needed: FieldError } {
+  switch (row.provider) {
     case 'github':
       return {
-        path: 'body.privateKey',
-        message: 'Changing the address needs the private key again, in the same request',
+        field: 'privateKey',
+        needed: {
+          path: 'body.privateKey',
+          message: 'Changing the address needs the private key again, in the same request',
+        },
       };
     case 'gitlab':
       return {
-        path: 'body.token',
-        message: 'Changing the base URL needs the token again, in the same request',
+        field: 'token',
+        needed: {
+          path: 'body.token',
+          message: 'Changing the base URL needs the token again, in the same request',
+        },
       };
-    case 'azure': // azure-pending(2): the credential an Azure DevOps move needs (Task 6)
-      return {
-        path: 'body.token',
-        message: 'Changing the address needs the credential again, in the same request',
-      };
+    case 'azure': {
+      // The CHECK of migration 0034 sets the kind of every Azure DevOps row.
+      const kind = body.azureAuth ?? row.azureAuth ?? 'pat';
+      return { field: azureCredentialField(kind), needed: azureMoveNeeds(kind) };
+    }
     default:
-      return assertNever(provider, 'provider');
+      return assertNever(row.provider, 'provider');
   }
 }
+
+/**
+ * The provider's own checks of a PATCH whose address becomes `baseUrl`, and the columns they
+ * set: Azure DevOps' kind and ids (azure/connections.ts); nothing for GitLab and GitHub.
+ */
+function providerChanges(
+  row: ScmConnectionRow,
+  body: ConnectionPatch,
+  baseUrl: string,
+  moves: boolean,
+): { columns: Partial<typeof scmConnections.$inferInsert> } | { problems: FieldError[] } {
+  switch (row.provider) {
+    case 'github':
+    case 'gitlab':
+      return { columns: {} };
+    case 'azure':
+      return azurePatch(row, body, baseUrl, moves);
+    default:
+      return assertNever(row.provider, 'provider');
+  }
+}
+
+/** `column` holds `value`, NULL included. */
+const holds = (column: AnyColumn, value: string | null) =>
+  value === null ? isNull(column) : eq(column, value);
 
 /**
  * What a move of the address lacks: the credential (`missingCredential`, when it was not sent)
@@ -357,6 +406,10 @@ function addFieldChanges(
   key: Buffer,
 ): void {
   if (body.token !== undefined) changes.tokenEnc = encryptSecret(key, body.token, SCM_TOKEN_AAD);
+  // Azure DevOps: the certificate with its key as sent, once azurePatch accepted it.
+  if (body.certificate !== undefined) {
+    changes.tokenEnc = encryptSecret(key, body.certificate, SCM_TOKEN_AAD);
+  }
   if (body.appId !== undefined) changes.appId = body.appId;
   if (body.privateKey !== undefined) {
     changes.tokenEnc = encryptPrivateKey(key, checkedPrivateKey(body.privateKey));
@@ -420,10 +473,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     } as AuditEventInput;
     await deps.audit.record(tx, actorOf(request), [event]);
   };
-  const scmDeps = {
-    secretKey: deps.config.secretKey,
-    internalHosts: deps.config.scmInternalHosts,
-  };
+  const scmDeps = scmDepsOf(deps.config);
   const ciSetupOf = createCiSetupStatus({
     deps: scmDeps,
     publicUrl,
@@ -435,8 +485,8 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     const problem = scmBaseUrlProblem(raw, deps.config.scmInternalHosts);
     if (problem) throw validationFailed([{ path: 'body.baseUrl', message: problem }]);
     const url = normalBaseUrl(raw);
-    const githubProblem = provider === 'github' ? githubBaseUrlProblem(url) : null; // provider-guard: only GitHub has an address-shape check
-    if (githubProblem) throw validationFailed([{ path: 'body.baseUrl', message: githubProblem }]);
+    const shape = ADDRESS_SHAPE_PROBLEM[provider](url);
+    if (shape) throw validationFailed([{ path: 'body.baseUrl', message: shape }]);
     return url;
   };
 
@@ -480,15 +530,15 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       schema: {
         tags: ['scm'],
         summary:
-          'Connect an organisation to GitLab (token, optional webhook secret) or GitHub App (App id, private key, webhook secret)',
+          'Connect an organisation to GitLab (token, optional webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (a service principal with a client secret or a certificate, or a PAT)',
         body: z.discriminatedUnion('provider', [
           z.strictObject({
             organizationId: z.uuid(),
             provider: z.literal('gitlab'),
             baseUrl,
             token,
-            appId: notAField('GitLab'),
-            privateKey: notAField('GitLab'),
+            appId: notAField('gitlab'),
+            privateKey: notAField('gitlab'),
             webhookSecret: webhookSecret.optional(),
             ciSetupAllowed: z.boolean().optional(),
             fixMrsAllowed: z.boolean().optional(),
@@ -500,9 +550,27 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             appId,
             privateKey,
             webhookSecret: webhookSecret.optional(),
-            token: notAField('GitHub'),
-            ciSetupAllowed: notAField('GitHub'),
+            token: notAField('github'),
+            ciSetupAllowed: notAField('github'),
             fixMrsAllowed: z.boolean().optional(),
+          }),
+          z.strictObject({
+            organizationId: z.uuid(),
+            provider: z.literal('azure'),
+            baseUrl,
+            azureAuth: z.enum(AZURE_AUTH_KINDS).meta({
+              description:
+                '`service_principal_secret` (`tenantId`, `clientId`, the client secret in `token`) and `service_principal_certificate` (`tenantId`, `clientId`, `certificate`) on Azure DevOps Services only; `pat` (`token`) on both',
+            }),
+            token: token.optional(),
+            tenantId: azureId('directory (tenant) id').optional(),
+            clientId: azureId('application (client) id').optional(),
+            certificate: certificate.optional(),
+            appId: notAField('azure'),
+            privateKey: notAField('azure'),
+            webhookSecret: notAField('azure'),
+            ciSetupAllowed: notAField('azure'),
+            fixMrsAllowed: notAField('azure'),
           }),
         ]),
         response: { 201: connectionSchema },
@@ -546,6 +614,19 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             fixMrsAllowed: body.fixMrsAllowed ?? false,
           };
           break;
+        case 'azure': {
+          // The CHECKs of migration 0034 back the kind and id rules; the API refuses first.
+          const azure = azureCreate(body, url);
+          if ('problems' in azure) throw validationFailed(azure.problems);
+          values = {
+            organizationId: body.organizationId,
+            provider: 'azure',
+            baseUrl: url,
+            ...azure.columns,
+            tokenEnc: encryptSecret(key, azure.credential, SCM_TOKEN_AAD),
+          };
+          break;
+        }
         default:
           return assertNever(body, 'provider');
       }
@@ -591,7 +672,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       schema: {
         tags: ['scm'],
         summary:
-          'Change an SCM connection: GitLab (token, webhook secret) or GitHub App (App id, private key, webhook secret); each field on its own, a new base URL with the credentials again',
+          'Change an SCM connection: GitLab (token, webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (authentication kind, ids, credential); each field on its own, a new base URL with the credentials again, a new Azure DevOps kind or id with its credential',
         params: idParams,
         body: z
           .strictObject({
@@ -602,6 +683,10 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             webhookSecret: webhookSecret.nullable().optional(),
             ciSetupAllowed: z.boolean().optional(),
             fixMrsAllowed: z.boolean().optional(),
+            azureAuth: z.enum(AZURE_AUTH_KINDS).optional(),
+            tenantId: azureId('directory (tenant) id').optional(),
+            clientId: azureId('application (client) id').optional(),
+            certificate: certificate.optional(),
           })
           .refine((b) => Object.keys(b).length > 0, { message: 'At least one field is required' }),
         response: { 200: connectionSchema },
@@ -615,27 +700,32 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       // scm.md §2.1, github.md §2.2: stored credentials only ever serve the address they were
       // saved for. A new origin or path needs them in the same request, so no admin can redirect a
       // token or a key they were never shown (one an instance admin set up, say) to a host of
-      // their choosing.
-      const credential = CREDENTIAL_FIELD[row.provider];
+      // their choosing. On Azure DevOps the same holds for the kind and the ids (azurePatch).
+      const { field: credential, needed: needsCredential } = moveCredential(row, body);
       const bringsCredential = body[credential] !== undefined;
-      const needsCredential = credentialNeeded(row.provider);
       const changes: Partial<typeof scmConnections.$inferInsert> = {};
       let moves = false;
+      let next = row.baseUrl;
       if (body.baseUrl !== undefined) {
-        const next = checkedBaseUrl(body.baseUrl, row.provider);
+        next = checkedBaseUrl(body.baseUrl, row.provider);
         moves = next !== row.baseUrl;
-        if (moves) {
-          const missing = moveProblems(body, row, bringsCredential ? null : needsCredential);
-          if (missing.length > 0) throw validationFailed(missing);
-        }
         changes.baseUrl = next;
       }
+      const missing = moves
+        ? moveProblems(body, row, bringsCredential ? null : needsCredential)
+        : [];
+      const own = providerChanges(row, body, next, moves);
+      if ('problems' in own || missing.length > 0) {
+        throw validationFailed([...missing, ...('problems' in own ? own.problems : [])]);
+      }
+      Object.assign(changes, own.columns);
       addFieldChanges(changes, body, key);
       const updated = await deps.db.transaction(async (tx) => {
         // The checks above hold only for the row they read: the write is conditional on the
-        // stored address, so an address changed by a concurrent request (with its own
-        // credentials) is never paired with this request's, or kept with this request's address.
-        // A move that keeps the webhook secret untouched also needs it to be still unset.
+        // stored address (and Azure DevOps kind and ids), so an address changed by a concurrent
+        // request (with its own credentials) is never paired with this request's, or kept with
+        // this request's address. A move that keeps the webhook secret untouched also needs it
+        // to be still unset.
         const [written] = await tx
           .update(scmConnections)
           .set(changes)
@@ -643,6 +733,9 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             and(
               eq(scmConnections.id, row.id),
               eq(scmConnections.baseUrl, row.baseUrl),
+              holds(scmConnections.azureAuth, row.azureAuth),
+              holds(scmConnections.azureTenantId, row.azureTenantId),
+              holds(scmConnections.azureClientId, row.azureClientId),
               moves && body.webhookSecret === undefined
                 ? isNull(scmConnections.webhookSecretEnc)
                 : undefined,
@@ -685,6 +778,9 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         const changed = SCM_CONNECTION_CHANGED_FIELDS.filter((field) => {
           if (field === 'baseUrl') return written.baseUrl !== row.baseUrl;
           if (field === 'appId') return written.appId !== row.appId;
+          if (field === 'azureAuth') return written.azureAuth !== row.azureAuth;
+          if (field === 'tenantId') return written.azureTenantId !== row.azureTenantId;
+          if (field === 'clientId') return written.azureClientId !== row.azureClientId;
           if (field === 'webhookSecret') {
             return (
               body.webhookSecret !== undefined &&
@@ -739,7 +835,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       schema: {
         tags: ['scm'],
         summary:
-          'Check the connection (and a GitLab project or GitHub owner/repo) with the stored credentials',
+          'Check the connection (and a GitLab project, GitHub owner/repo or Azure DevOps repository id) with the stored credentials',
         params: idParams,
         body: z.strictObject({ projectRef: scmProjectRef.optional() }),
         response: { 200: testResultSchema },
@@ -748,24 +844,15 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     async (request) => {
       const row = await connectionFor(accessOf(deps), requireUser(request), request.params.id);
       const ref = request.body.projectRef ?? null;
-      const problem = ref === null ? null : projectRefProblem(row.provider, ref);
+      const problem = ref === null ? null : PROVIDER[row.provider].projectRefProblem(ref);
       if (problem) throw validationFailed([{ path: 'body.projectRef', message: problem }]);
       switch (row.provider) {
         case 'github':
           return testGitHubConnection(row, scmDeps, ref);
         case 'gitlab':
           return testConnection(row, scmDeps, ref);
-        case 'azure': // azure-pending(2): the Azure DevOps connection test (Task 6)
-          return {
-            ok: false,
-            user: null,
-            project: null,
-            problem: {
-              code: 'http_error' as const,
-              message: 'Testing an Azure DevOps connection is not available yet',
-            },
-            missingAccess: null,
-          };
+        case 'azure':
+          return testAzureConnection(row, scmDeps, ref);
         default:
           return assertNever(row.provider, 'provider');
       }

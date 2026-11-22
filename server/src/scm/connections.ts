@@ -1,7 +1,9 @@
 import { sql, type SQL } from 'drizzle-orm';
+import type { Config } from '../config';
 import { decryptSecret, encryptionKey } from '../crypto/secrets';
 import type { Executor } from '../db/client';
 import type { scmConnections } from '../db/schema';
+import type { AzureClientOptions } from './azure/client';
 import type { GitHubClientOptions } from './github/client';
 import {
   accessLevelOf,
@@ -31,6 +33,24 @@ export interface ScmDeps {
   clientOptions?: GitLabClientOptions;
   /** The same for GitHub clients (github/connections.ts). */
   githubClientOptions?: GitHubClientOptions;
+  /** The same for Azure DevOps clients (azure/connections.ts). */
+  azureClientOptions?: AzureClientOptions;
+  /** Tests only: `Config.azureTokenUrl`, the fake Entra's origin (Azure DevOps ruling 1). */
+  azureTokenUrl?: string | null;
+  /** Tests only: `Config.azureTestOrigin`, the fake Services organisation's origin (ruling 5). */
+  azureTestOrigin?: string | null;
+}
+
+/** The connections' dependencies from the server's configuration. */
+export function scmDepsOf(
+  config: Pick<Config, 'secretKey' | 'scmInternalHosts' | 'azureTokenUrl' | 'azureTestOrigin'>,
+): ScmDeps {
+  return {
+    secretKey: config.secretKey,
+    internalHosts: config.scmInternalHosts,
+    azureTokenUrl: config.azureTokenUrl,
+    azureTestOrigin: config.azureTestOrigin,
+  };
 }
 
 /**
@@ -72,6 +92,11 @@ export const TEST_PROBLEM_CODES = [
   'bad_answer',
   'not_installed',
   'permission_missing',
+  // Azure DevOps design §7.1: TF401444 (the organisation has not added the identity, or it has
+  // no access level), a sign-in page instead of an answer, and Entra refusing the client.
+  'sign_in_required',
+  'html_answer',
+  'token_endpoint',
 ] as const;
 export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
 
@@ -96,10 +121,11 @@ export interface ConnectionTest {
   ok: boolean;
   user: { username: string } | null;
   /**
-   * `accessLevel`: the token user's GitLab access level in the project (30 Developer, 40
-   * Maintainer), or null when GitLab does not say, and always for GitHub.
+   * `id`: GitLab's and GitHub's numeric id, Azure DevOps' repository GUID. `accessLevel`: the
+   * token user's GitLab access level in the project (30 Developer, 40 Maintainer), or null when
+   * GitLab does not say, and always for GitHub and Azure DevOps.
    */
-  project: { id: number; pathWithNamespace: string; accessLevel: number | null } | null;
+  project: { id: number | string; pathWithNamespace: string; accessLevel: number | null } | null;
   /** One of scm.md §4.4's fixed texts with its code; never GitLab's own words. */
   problem: { code: TestProblemCode; message: string } | null;
   /**
@@ -107,6 +133,11 @@ export interface ConnectionTest {
    * nothing. Null for GitLab, without a repository, and when the test failed.
    */
   missingAccess: MissingAccess[] | null;
+  /**
+   * Azure DevOps (design §7.1): the repositories the identity sees and the projects that hold
+   * them. Null for GitLab and GitHub, and when the test failed.
+   */
+  visible: { repositories: number; projects: number } | null;
 }
 
 function problemCode(err: GitLabError): TestProblemCode {
@@ -152,6 +183,7 @@ export async function testConnection(
     project: null,
     problem: { code, message },
     missingAccess: null,
+    visible: null,
   });
   const found = gitlabClientFor(row, deps);
   if ('problem' in found) {
@@ -175,6 +207,7 @@ export async function testConnection(
         : null,
       problem: null,
       missingAccess: null,
+      visible: null,
     };
   } catch (err) {
     if (err instanceof GitLabError) return failed(problemCode(err), err.message);
@@ -184,8 +217,9 @@ export async function testConnection(
 
 /**
  * github.md §10: where a connection's merge request links live, in SQL (the twin of
- * `githubWebBase`, tested against it): the base URL for GitLab, the web base for GitHub. `c` is
- * the alias of `scm_connections` in the query (a fixed identifier, never user input).
+ * `githubWebBase`, tested against it): the base URL for GitLab and Azure DevOps (`azureWebBase`:
+ * web and API share it), the web base for GitHub. `c` is the alias of `scm_connections` in the
+ * query (a fixed identifier, never user input).
  */
 export function webBaseSql(c: string): SQL {
   const col = sql.raw(`${c}.base_url`);
@@ -195,7 +229,8 @@ export function webBaseSql(c: string): SQL {
     WHEN ${col} ~ '^https://api\\.[a-z0-9-]+\\.ghe\\.com$' THEN 'https://' || substr(${col}, 13)
     WHEN right(${col}, 7) = '/api/v3' THEN left(${col}, length(${col}) - 7)
     ELSE ${col} END`;
-  return sql`CASE ${provider} WHEN 'gitlab' THEN ${col} WHEN 'github' THEN ${github} END`;
+  return sql`CASE ${provider} WHEN 'gitlab' THEN ${col} WHEN 'github' THEN ${github}
+    WHEN 'azure' THEN ${col} END`;
 }
 
 /**

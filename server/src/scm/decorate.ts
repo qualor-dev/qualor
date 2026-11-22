@@ -32,6 +32,7 @@ import {
 import { MAX_DISCUSSION_PAGES, reconcileInline } from './inline';
 import { markerOf } from './markdown';
 import { ScmError } from './provider';
+import { PROVIDER } from './providers';
 import {
   decorationPayload,
   decorationRetryDelaySeconds,
@@ -69,8 +70,8 @@ export type DecorationOutcome =
   | { kind: 'busy'; branchId: string }
   | {
       kind: 'failed';
-      /** Whose decoration failed, for the log lines. */
-      provider: (typeof PROVIDER_LABEL)[ScmProvider];
+      /** Whose decoration failed, for the log lines (the provider's label). */
+      provider: string;
       connectionId: string;
       branchId: string;
       error: ScmError;
@@ -317,13 +318,6 @@ function decisiveError(errors: readonly ScmError[]): ScmError | null {
   return errors.find((e) => e.kind === 'budget') ?? errors.find(retryable) ?? errors[0] ?? null;
 }
 
-/** The display name of each provider, as the decoration's log lines and outcomes say it. */
-export const PROVIDER_LABEL: Record<ScmProvider, 'GitLab' | 'GitHub' | 'Azure DevOps'> = {
-  gitlab: 'GitLab',
-  github: 'GitHub',
-  azure: 'Azure DevOps',
-};
-
 /** The error of a decoration refused by the open circuit, in the provider's own error class. */
 function circuitError(provider: ScmProvider, text: string): ScmError {
   switch (provider) {
@@ -352,7 +346,7 @@ export async function decorateAnalysis(
   const loaded = await loadDecoration(deps.db, payload.analysisId);
   if (typeof loaded === 'string') return { kind: 'nothing', reason: loaded };
   const { connection, branch } = loaded;
-  const provider = PROVIDER_LABEL[connection.provider];
+  const provider = PROVIDER[connection.provider].label;
   const failed = (error: ScmError, circuit = false): DecorationOutcome => ({
     kind: 'failed',
     provider,

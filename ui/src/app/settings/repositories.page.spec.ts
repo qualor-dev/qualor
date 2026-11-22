@@ -28,6 +28,7 @@ const CONNECTION: Connection = {
     webhookUrl: null,
     ciSetupAllowed: false,
   },
+  azure: null,
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
 };
@@ -46,6 +47,7 @@ const GITHUB: Connection = {
     webhookUrl: null,
   },
   gitlab: null,
+  azure: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
   fixMrsAllowed: false,
 };

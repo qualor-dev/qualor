@@ -112,6 +112,12 @@ export const SCM_CONNECTION_CHANGED_FIELDS = [
   'webhookSecret',
   'ciSetupAllowed',
   'fixMrsAllowed',
+  // Azure DevOps (design §7.11): the authentication kind, the service principal's ids, and a
+  // certificate sent (its value never recorded).
+  'azureAuth',
+  'tenantId',
+  'clientId',
+  'certificate',
 ] as const;
 /** 0.16 Jira §6.10: the names `jira_connection.updated` may list (names only, never the email or the token). */
 export const JIRA_CONNECTION_CHANGED_FIELDS = [

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
+import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub, type FakeRepository } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
@@ -525,5 +526,168 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
         missing: ['workflows_write', 'secrets_write'],
       });
     });
+  });
+});
+
+describe('Listing an Azure DevOps connection’s repositories (Azure DevOps design §7.2)', () => {
+  let h: IngestHarness;
+  let fake: FakeAzureDevOps;
+  let many: FakeAzureDevOps;
+  const listed = (id: string, query = '') =>
+    h.ctx.app.inject({
+      method: 'GET',
+      url: `/api/v0/scm-connections/${id}/repositories${query}`,
+      headers: h.orgAdmin.headers,
+    });
+  const items = async (id: string, query = ''): Promise<Listing> => {
+    const res = await listed(id, query);
+    expect(res.statusCode, res.body).toBe(200);
+    return res.json() as Listing;
+  };
+  const connect = async (on: FakeAzureDevOps, token = on.pat): Promise<string> => {
+    const res = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: on.url,
+        azureAuth: 'pat',
+        token,
+      },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    return res.json().id as string;
+  };
+
+  beforeAll(async () => {
+    // Azure DevOps Server collections, reached at their own addresses.
+    fake = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: [
+        { name: 'web', projectName: 'Payments', defaultBranch: 'develop' },
+        { name: 'api', projectName: 'Payments' },
+        { name: 'empty', projectName: 'Platform', defaultBranch: null },
+        { name: 'archive', projectName: 'Platform', isDisabled: true },
+      ],
+    });
+    many = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: Array.from({ length: 105 }, (_, i) => ({
+        name: `r${String(i).padStart(3, '0')}`,
+        projectName: i % 2 === 0 ? 'Even' : 'Odd',
+      })),
+    });
+    h = await createIngestHarness({
+      config: {
+        scmInternalHosts: new Set([new URL(fake.url).host, new URL(many.url).host]),
+      },
+    });
+  });
+  afterEach(async () => {
+    await h.ctx.db.delete(scmConnections);
+  });
+  afterAll(async () => {
+    await h.close();
+    await fake.close();
+    await many.close();
+  });
+
+  it('lists every repository as <project>/<repository>, its id the ref, with its project state', async () => {
+    const id = await connect(fake);
+    const [web, api, empty, archive] = fake.repositories;
+    // Mapped by the id, sent in any case; adoptable by the key the repository would get.
+    const mapped = await h.project('az-api');
+    const res = await h.ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/v0/projects/${mapped.id}`,
+      headers: h.orgAdmin.headers,
+      payload: { scmConnectionId: id, scmProjectRef: api!.id.toUpperCase() },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const adoptable = await h.project('Payments/web');
+
+    const { items: rows, hasMore } = await items(id);
+
+    expect(hasMore).toBe(false);
+    // In name order, whatever order Azure DevOps lists them in.
+    expect(rows).toEqual([
+      {
+        ref: api!.id,
+        name: 'Payments/api',
+        defaultBranch: 'main',
+        language: null,
+        archived: false,
+        project: { id: mapped.id, key: 'az-api', state: 'mapped' },
+      },
+      {
+        ref: web!.id,
+        name: 'Payments/web',
+        defaultBranch: 'develop',
+        language: null,
+        archived: false,
+        project: { id: adoptable.id, key: 'Payments/web', state: 'adoptable' },
+      },
+      {
+        ref: archive!.id,
+        name: 'Platform/archive',
+        defaultBranch: 'main',
+        language: null,
+        archived: true,
+        project: null,
+      },
+      {
+        ref: empty!.id,
+        name: 'Platform/empty',
+        defaultBranch: null,
+        language: null,
+        archived: false,
+        project: null,
+      },
+    ]);
+    expect(fake.requests.map((r) => r.path)).toContain('/_apis/git/repositories');
+  });
+
+  it('filters on <project>/<repository> without case, and pages by 100', async () => {
+    const id = await connect(fake);
+    expect((await items(id, '?filter=PAYMENTS/')).items.map((r) => r.name)).toEqual([
+      'Payments/api',
+      'Payments/web',
+    ]);
+    expect((await items(id, '?filter=form/E')).items.map((r) => r.name)).toEqual([
+      'Platform/empty',
+    ]);
+    const all = await connect(many);
+    const first = await items(all);
+    const second = await items(all, '?page=2');
+    expect([first.items.length, first.hasMore, second.items.length, second.hasMore]).toEqual([
+      100,
+      true,
+      5,
+      false,
+    ]);
+    const names = [...first.items, ...second.items].map((r) => r.name);
+    expect(new Set(names).size).toBe(105);
+    expect([names[0], names[100]]).toEqual(['Even/r000', 'Odd/r095']);
+    const filtered = await items(all, '?filter=odd/r1&page=1');
+    expect([filtered.items.length, filtered.hasMore]).toEqual([2, false]);
+  });
+
+  it('answers 502 when Azure DevOps fails or refuses the credential, without its words', async () => {
+    const id = await connect(fake);
+    fake.inject('GET', /^\/_apis\/git\/repositories$/, {
+      status: 500,
+      body: { message: 'secret-detail' },
+    });
+    const failed = await listed(id);
+    expect([failed.statusCode, failed.json().code]).toEqual([502, 'SCM_UNAVAILABLE']);
+    expect(failed.body).not.toContain('secret-detail');
+    const refused = await listed(await connect(fake, 'wrong-pat'));
+    expect([refused.statusCode, refused.json().detail]).toEqual([
+      502,
+      'Azure DevOps refused the credential (HTTP 401)',
+    ]);
+    expect(refused.body).not.toContain('wrong-pat');
   });
 });

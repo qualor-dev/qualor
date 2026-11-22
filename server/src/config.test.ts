@@ -59,7 +59,34 @@ describe('loadConfig', () => {
       updateCheck: {
         url: 'https://hub.docker.com/v2/namespaces/qualor/repositories/server/tags?page_size=100&ordering=last_updated',
       },
+      azureTokenUrl: null,
+      azureTestOrigin: null,
     });
+  });
+
+  it('reads the Azure DevOps test stand-ins only when NODE_ENV is test (sub-plan 2 rulings 1, 5)', () => {
+    const env = {
+      ...base,
+      QUALOR_AZURE_TOKEN_URL: 'https://127.0.0.1:4443/',
+      QUALOR_AZURE_TEST_ORIGIN: 'http://127.0.0.1:4080',
+    };
+    expect(loadConfig({ ...env, NODE_ENV: 'test' })).toMatchObject({
+      azureTokenUrl: 'https://127.0.0.1:4443',
+      azureTestOrigin: 'http://127.0.0.1:4080',
+    });
+    for (const nodeEnv of [undefined, 'production', 'development']) {
+      expect(loadConfig({ ...env, NODE_ENV: nodeEnv }), String(nodeEnv)).toMatchObject({
+        azureTokenUrl: null,
+        azureTestOrigin: null,
+      });
+    }
+    // Under test an origin it cannot use stops the boot; elsewhere it is not read at all.
+    for (const bad of ['ftp://127.0.0.1', 'http://127.0.0.1:4080/path', 'not a url']) {
+      expect(problems({ ...base, NODE_ENV: 'test', QUALOR_AZURE_TEST_ORIGIN: bad }), bad).toEqual([
+        'QUALOR_AZURE_TEST_ORIGIN: must be an http or https origin',
+      ]);
+      expect(problems({ ...base, QUALOR_AZURE_TEST_ORIGIN: bad })).toEqual([]);
+    }
   });
 
   it('QUALOR_TELEMETRY: on by default, off with false/0/off/no, anything else stops the boot', () => {

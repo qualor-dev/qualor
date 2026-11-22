@@ -62,6 +62,7 @@ import { createProjectToken } from '../projects/tokens';
 import { queueRemapPurgeIfCopies, queueSnapshotPurge } from '../review/jobs';
 import { projectAiReview } from '../review/settings';
 import { forgetForeignMergeRequestUrls } from '../scm/connections';
+import { anyProjectRefProblem, PROVIDER } from '../scm/providers';
 import { projectAutoFixSchema } from './auto-fix';
 import { vulnerabilitySettingsOf } from '../versions/settings';
 import { mainOpenCounts, portfolioVulnerabilityFacts } from '../vulnerabilities/portfolio';
@@ -69,7 +70,7 @@ import { newVulnerabilityMarkers } from '../vulnerabilities/summary';
 import { enqueueRecheck } from '../vulnerabilities/recheck';
 import { readVulndbSettings } from '../vulndb/settings';
 import { projectAiReviewSchema } from './review';
-import { projectRefProblem, scmProjectRef } from './scm-connections';
+import { scmProjectRef } from './scm-connections';
 
 export const newCodeDefinitionSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('days'), value: z.number().int().min(1).max(3_650) }),
@@ -347,30 +348,36 @@ async function lockConnection(
 }
 
 /**
- * scm.md §2.2, github.md §2.3: the reference is the mapped connection's own kind (a GitLab
- * project id or path, a GitHub owner/repo), checked whenever either changes. `provider` is the
- * sent connection's, when one was sent.
+ * scm.md §2.2, github.md §2.3, Azure DevOps design §7.2: the reference is the mapped connection's
+ * own kind (a GitLab project id or path, a GitHub owner/repo, an Azure DevOps repository id),
+ * checked whenever either changes; without a connection, one some provider takes. `provider` is
+ * the sent connection's, when one was sent. Answers the reference to store, in the provider's own
+ * form (an Azure DevOps id in lower case), or undefined when the PATCH changes neither.
  */
-async function checkScmProjectRef(
+async function checkedScmProjectRef(
   tx: Executor,
   body: ProjectPatch,
   locked: ProjectRow,
   provider: ScmProvider | null,
-): Promise<void> {
-  if (body.scmConnectionId === undefined && body.scmProjectRef === undefined) return;
+): Promise<string | null | undefined> {
+  if (body.scmConnectionId === undefined && body.scmProjectRef === undefined) return undefined;
   const connectionId =
     body.scmConnectionId !== undefined ? body.scmConnectionId : locked.scmConnectionId;
   const ref = body.scmProjectRef !== undefined ? body.scmProjectRef : locked.scmProjectRef;
+  if (ref === null) return null;
   let kind = provider;
-  if (kind === null && connectionId !== null && ref !== null) {
+  if (kind === null && connectionId !== null) {
     const [current] = await tx
       .select({ provider: scmConnections.provider })
       .from(scmConnections)
       .where(eq(scmConnections.id, connectionId));
     kind = current?.provider ?? null;
   }
-  const problem = kind === null || ref === null ? null : projectRefProblem(kind, ref);
+  let problem: string | null = null;
+  if (kind !== null) problem = PROVIDER[kind].projectRefProblem(ref);
+  else if (body.scmProjectRef !== undefined) problem = anyProjectRefProblem(ref);
   if (problem) throw validationFailed([{ path: 'body.scmProjectRef', message: problem }]);
+  return kind === null ? ref : PROVIDER[kind].storedRef(ref);
 }
 
 /** The columns a PATCH sets from its body, besides the main branch. */
@@ -613,7 +620,7 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       schema: {
         tags: ['projects'],
         summary:
-          'Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project or GitHub owner/repo; the mapping needs an organization admin)',
+          'Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin)',
         params: idParams,
         body: z
           .strictObject({
@@ -684,9 +691,10 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
               .where(eq(projects.id, project.id))
               .for('no key update'),
           );
-          await checkScmProjectRef(tx, body, locked, provider);
+          const ref = await checkedScmProjectRef(tx, body, locked, provider);
           let mainSwitched = false;
           const changes = patchedColumns(body);
+          if (ref !== undefined) changes.scmProjectRef = ref;
           if (body.mainBranchName !== undefined && body.mainBranchName !== locked.mainBranchName) {
             changes.mainBranchName = body.mainBranchName;
             await switchMainBranch(tx, locked.id, body.mainBranchName);

@@ -25,6 +25,34 @@ export function azureTestConfig(fake: FakeAzureDevOps): Partial<Config> {
   return { scmInternalHosts: new Set([new URL(fake.url).host]) as ReadonlySet<string> };
 }
 
+/**
+ * A Services fake's organisation as a connection stores it (ruling 5): the real host with the
+ * fake's organisation, so the deployment and the address rules are those of production.
+ */
+export function servicesUrlOf(fake: FakeAzureDevOps): string {
+  return `https://dev.azure.com${new URL(fake.url).pathname}`;
+}
+
+/**
+ * A server that reaches the fakes: their hosts listed in `QUALOR_SCM_INTERNAL_HOSTS`, a Services
+ * organisation's requests sent to the Services fake (`azureTestOrigin`, ruling 5) and Entra's to
+ * its token endpoint (`azureTokenUrl`, ruling 1). A Server fake is reached at its own address.
+ */
+export function azureServerConfig(
+  services: FakeAzureDevOps,
+  ...others: FakeAzureDevOps[]
+): Partial<Config> {
+  const hosts = [services, ...others].map((fake) => new URL(fake.url).host);
+  return {
+    scmInternalHosts: new Set(hosts) as ReadonlySet<string>,
+    azureTestOrigin: new URL(services.url).origin,
+    azureTokenUrl:
+      services.principalUser === null
+        ? null
+        : new URL(services.tokenUrl(AZURE_TEST_PRINCIPAL.tenantId)).origin,
+  };
+}
+
 /** `entraToken`'s options for the fake's token endpoint (https on loopback). */
 export function fakeEntraOptions(fake: FakeAzureDevOps): EntraOptions {
   return { tokenUrl: (tenantId) => fake.tokenUrl(tenantId), allowInternalHosts: true };

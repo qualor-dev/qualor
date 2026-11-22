@@ -486,6 +486,18 @@ export interface Config {
   smtp: SmtpConfig | null;
   /** telemetry.md "Update check": QUALOR_UPDATE_CHECK_URL; runs only while telemetry is enabled. */
   updateCheck: { url: string };
+  /**
+   * Tests only (Azure DevOps sub-plan 2, ruling 1): QUALOR_AZURE_TOKEN_URL, the origin that stands
+   * in for https://login.microsoftonline.com (a fake Entra token endpoint), read only when
+   * NODE_ENV is `test`; else null, and Entra's own endpoint is used.
+   */
+  azureTokenUrl: string | null;
+  /**
+   * Tests only (ruling 5): QUALOR_AZURE_TEST_ORIGIN, the origin a Services connection's requests
+   * go to instead of its own (a fake Azure DevOps), with the stored address's path; read only when
+   * NODE_ENV is `test`; else null.
+   */
+  azureTestOrigin: string | null;
 }
 
 /** The problems as an indented list, one per line. */
@@ -503,12 +515,47 @@ export class ConfigError extends Error {
   }
 }
 
+/**
+ * Azure DevOps sub-plan 2, rulings 1 and 5: the stand-ins of the tests' fakes, read only when
+ * NODE_ENV is `test`, so a production server never sends a credential anywhere but Microsoft's
+ * and the connection's own hosts. Each is an http(s) origin; another value stops the boot.
+ */
+function azureTestStandIns(
+  env: Record<string, string | undefined>,
+): Pick<Config, 'azureTokenUrl' | 'azureTestOrigin'> {
+  if (env.NODE_ENV !== 'test') return { azureTokenUrl: null, azureTestOrigin: null };
+  const problems: string[] = [];
+  const origin = (name: 'QUALOR_AZURE_TOKEN_URL' | 'QUALOR_AZURE_TEST_ORIGIN'): string | null => {
+    const raw = env[name]?.trim() ?? '';
+    if (raw === '') return null;
+    let url: URL | null;
+    try {
+      url = new URL(raw);
+    } catch {
+      url = null;
+    }
+    const web = url !== null && (url.protocol === 'https:' || url.protocol === 'http:');
+    if (url === null || !web || url.href !== `${url.origin}/`) {
+      problems.push(`${name}: must be an http or https origin`);
+      return null;
+    }
+    return url.origin;
+  };
+  const standIns = {
+    azureTokenUrl: origin('QUALOR_AZURE_TOKEN_URL'),
+    azureTestOrigin: origin('QUALOR_AZURE_TEST_ORIGIN'),
+  };
+  if (problems.length > 0) throw new ConfigError(problems);
+  return standIns;
+}
+
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const parsed = envSchema.safeParse(env);
   if (!parsed.success) {
     throw new ConfigError(parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`));
   }
   const e = parsed.data;
+  const azure = azureTestStandIns(env);
   return {
     databaseUrl: e.DATABASE_URL ?? null,
     embedded: {
@@ -570,5 +617,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
             replyTo: e.QUALOR_SMTP_REPLY_TO,
           },
     updateCheck: { url: e.QUALOR_UPDATE_CHECK_URL },
+    ...azure,
   };
 }

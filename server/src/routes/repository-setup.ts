@@ -28,22 +28,30 @@ import {
 } from '../onboarding/setup-run';
 import { enqueue } from '../queue/queue';
 import { createCiSetupStatus, type CiSetupReason } from '../scm/ci-setup-status';
-import { gitlabClientFor } from '../scm/connections';
+import { listAzureRepositories } from '../scm/azure/connections';
+import { gitlabClientFor, scmDepsOf } from '../scm/connections';
 import { listInstallationRepositories } from '../scm/github/installations';
 import { ScmError } from '../scm/provider';
-import { projectRefProblem, scmProjectRef } from './scm-connections';
+import { PROVIDER } from '../scm/providers';
+import { scmProjectRef } from './scm-connections';
 
-/** Repositories to a page: what both providers list at most. */
+/** Repositories to a page: what GitLab and GitHub list at most, and Azure DevOps' pages here. */
 const PAGE_SIZE = 100;
 
 const optionSchema = z.object({
   ref: z.string().meta({
-    description: 'What a project maps to: the GitLab project id, or the GitHub owner/repo',
+    description:
+      'What a project maps to: the GitLab project id, the GitHub owner/repo, or the Azure DevOps repository id',
   }),
-  name: z.string().meta({ description: 'owner/repo (GitHub) or the full path (GitLab)' }),
+  name: z.string().meta({
+    description: 'owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps)',
+  }),
   defaultBranch: z.string().nullable(),
-  language: z.string().nullable().meta({ description: 'GitHub only; null for GitLab' }),
-  archived: z.boolean(),
+  language: z
+    .string()
+    .nullable()
+    .meta({ description: 'GitHub only; null for GitLab and Azure DevOps' }),
+  archived: z.boolean().meta({ description: 'Archived; on Azure DevOps, disabled' }),
   project: z
     .object({
       id: z.uuid(),
@@ -115,10 +123,7 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
   app,
   { deps },
 ) => {
-  const scmDeps = {
-    secretKey: deps.config.secretKey,
-    internalHosts: deps.config.scmInternalHosts,
-  };
+  const scmDeps = scmDepsOf(deps.config);
   const key = encryptionKey(deps.config.secretKey);
   const ciSetupOf = createCiSetupStatus({
     deps: scmDeps,
@@ -139,7 +144,7 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
           page: z.coerce.number().int().min(1).max(10_000).default(1),
           filter: noNul(z.string().max(255)).optional().meta({
             description:
-              'Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here',
+              'Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here; Azure DevOps lists every repository at once, filtered and paged here',
           }),
         }),
         response: { 200: z.object({ items: z.array(optionSchema), hasMore: z.boolean() }) },
@@ -205,10 +210,16 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
             hasMore = found.hasMore;
             break;
           }
-          case 'azure': // azure-pending(2): the Azure DevOps repository listing (Task 6)
-            listed = [];
-            hasMore = false;
+          case 'azure': {
+            const found = await listAzureRepositories(row, scmDeps, {
+              page,
+              perPage: PAGE_SIZE,
+              filter,
+            });
+            listed = found.repositories.map((r) => ({ ...r, language: null }));
+            hasMore = found.hasMore;
             break;
+          }
           default:
             return assertNever(row.provider, 'provider');
         }
@@ -233,7 +244,8 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
         .where(
           and(eq(projects.organizationId, row.organizationId), isNull(projects.scmConnectionId)),
         );
-      // GitHub names and GitLab paths compare without case; a GitLab id compares as written.
+      // GitHub names and GitLab paths compare without case; a GitLab id compares as written, an
+      // Azure DevOps id is stored in lower case.
       const mapped = new Map<string, { id: string; key: string }>();
       for (const p of mappedRows) if (p.ref !== null) mapped.set(p.ref.toLowerCase(), p);
       // Keys are case-sensitive: an unmapped project is adoptable only by the exact name.
@@ -301,7 +313,7 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
         throw validationFailed([{ path: 'body.connectionId', message: 'Unknown SCM connection' }]);
       }
       const problems = body.repositories.flatMap((ref, i) => {
-        const problem = projectRefProblem(connection.provider, ref);
+        const problem = PROVIDER[connection.provider].projectRefProblem(ref);
         return problem === null ? [] : [{ path: `body.repositories.${i}`, message: problem }];
       });
       if (problems.length > 0) throw validationFailed(problems);

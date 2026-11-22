@@ -60,6 +60,8 @@ export async function openApiDocument(plugins?: OpenApiPlugins): Promise<unknown
     telemetry: { enabled: false, url: DEFAULT_TELEMETRY_URL },
     smtp: null,
     updateCheck: { url: DEFAULT_UPDATE_CHECK_URL },
+    azureTokenUrl: null,
+    azureTestOrigin: null,
   };
   const loaded = plugins ? await plugins(database.db, config) : {};
   const app = await buildApp({

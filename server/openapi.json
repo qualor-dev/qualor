@@ -6607,7 +6607,7 @@
         }
       },
       "patch": {
-        "summary": "Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project or GitHub owner/repo; the mapping needs an organization admin)",
+        "summary": "Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin)",
         "tags": [
           "projects"
         ],
@@ -6724,8 +6724,8 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "maxLength": 255,
-                        "pattern": "^(?!(?:.*\\/)?\\.{1,2}(?:\\/|$))(?:[0-9]{1,20}|[A-Za-z0-9_.][A-Za-z0-9_.-]*(?:\\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+)$|^[A-Za-z0-9][A-Za-z0-9-]{0,38}\\/(?!\\.{1,2}$)[A-Za-z0-9._-]{1,100}$"
+                        "minLength": 1,
+                        "maxLength": 255
                       },
                       {
                         "type": "null"
@@ -24903,6 +24903,82 @@
                               }
                             ]
                           },
+                          "azure": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "deployment": {
+                                    "type": "string",
+                                    "enum": [
+                                      "services",
+                                      "server"
+                                    ]
+                                  },
+                                  "auth": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pat",
+                                      "service_principal_secret",
+                                      "service_principal_certificate"
+                                    ]
+                                  },
+                                  "tenantId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "clientId": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "credentialReadable": {
+                                    "type": "boolean"
+                                  },
+                                  "certificate": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "thumbprint": {
+                                            "type": "string"
+                                          },
+                                          "notAfter": {
+                                            "type": "string",
+                                            "format": "date-time",
+                                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                          }
+                                        },
+                                        "required": [
+                                          "thumbprint",
+                                          "notAfter"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "deployment",
+                                  "auth",
+                                  "tenantId",
+                                  "clientId",
+                                  "credentialReadable",
+                                  "certificate"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "ciSetup": {
                             "type": "object",
                             "properties": {
@@ -24957,6 +25033,7 @@
                           "createdAt",
                           "github",
                           "gitlab",
+                          "azure",
                           "ciSetup",
                           "fixMrsAllowed"
                         ],
@@ -25022,7 +25099,7 @@
         }
       },
       "post": {
-        "summary": "Connect an organisation to GitLab (token, optional webhook secret) or GitHub App (App id, private key, webhook secret)",
+        "summary": "Connect an organisation to GitLab (token, optional webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (a service principal with a client secret or a certificate, or a PAT)",
         "tags": [
           "scm"
         ],
@@ -25132,6 +25209,80 @@
                       "baseUrl",
                       "appId",
                       "privateKey"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "organizationId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "azure"
+                        ]
+                      },
+                      "baseUrl": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048
+                      },
+                      "azureAuth": {
+                        "type": "string",
+                        "enum": [
+                          "pat",
+                          "service_principal_secret",
+                          "service_principal_certificate"
+                        ],
+                        "description": "`service_principal_secret` (`tenantId`, `clientId`, the client secret in `token`) and `service_principal_certificate` (`tenantId`, `clientId`, `certificate`) on Azure DevOps Services only; `pat` (`token`) on both"
+                      },
+                      "token": {
+                        "type": "string",
+                        "pattern": "^[\\x21-\\x7e]{1,1024}$"
+                      },
+                      "tenantId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                      },
+                      "clientId": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                      },
+                      "certificate": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16384
+                      },
+                      "appId": {
+                        "not": {},
+                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                      },
+                      "privateKey": {
+                        "not": {},
+                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                      },
+                      "webhookSecret": {
+                        "not": {},
+                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                      },
+                      "ciSetupAllowed": {
+                        "not": {},
+                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                      },
+                      "fixMrsAllowed": {
+                        "not": {},
+                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                      }
+                    },
+                    "required": [
+                      "organizationId",
+                      "provider",
+                      "baseUrl",
+                      "azureAuth"
                     ],
                     "additionalProperties": false
                   }
@@ -25246,6 +25397,82 @@
                         }
                       ]
                     },
+                    "azure": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "deployment": {
+                              "type": "string",
+                              "enum": [
+                                "services",
+                                "server"
+                              ]
+                            },
+                            "auth": {
+                              "type": "string",
+                              "enum": [
+                                "pat",
+                                "service_principal_secret",
+                                "service_principal_certificate"
+                              ]
+                            },
+                            "tenantId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "clientId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "credentialReadable": {
+                              "type": "boolean"
+                            },
+                            "certificate": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "thumbprint": {
+                                      "type": "string"
+                                    },
+                                    "notAfter": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "thumbprint",
+                                    "notAfter"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "deployment",
+                            "auth",
+                            "tenantId",
+                            "clientId",
+                            "credentialReadable",
+                            "certificate"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ciSetup": {
                       "type": "object",
                       "properties": {
@@ -25300,6 +25527,7 @@
                     "createdAt",
                     "github",
                     "gitlab",
+                    "azure",
                     "ciSetup",
                     "fixMrsAllowed"
                   ],
@@ -25363,7 +25591,7 @@
     },
     "/api/v0/scm-connections/{id}": {
       "patch": {
-        "summary": "Change an SCM connection: GitLab (token, webhook secret) or GitHub App (App id, private key, webhook secret); each field on its own, a new base URL with the credentials again",
+        "summary": "Change an SCM connection: GitLab (token, webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (authentication kind, ids, credential); each field on its own, a new base URL with the credentials again, a new Azure DevOps kind or id with its credential",
         "tags": [
           "scm"
         ],
@@ -25408,6 +25636,27 @@
                   },
                   "fixMrsAllowed": {
                     "type": "boolean"
+                  },
+                  "azureAuth": {
+                    "type": "string",
+                    "enum": [
+                      "pat",
+                      "service_principal_secret",
+                      "service_principal_certificate"
+                    ]
+                  },
+                  "tenantId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                  },
+                  "certificate": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
                   }
                 },
                 "additionalProperties": false
@@ -25533,6 +25782,82 @@
                         }
                       ]
                     },
+                    "azure": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "deployment": {
+                              "type": "string",
+                              "enum": [
+                                "services",
+                                "server"
+                              ]
+                            },
+                            "auth": {
+                              "type": "string",
+                              "enum": [
+                                "pat",
+                                "service_principal_secret",
+                                "service_principal_certificate"
+                              ]
+                            },
+                            "tenantId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "clientId": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "credentialReadable": {
+                              "type": "boolean"
+                            },
+                            "certificate": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "thumbprint": {
+                                      "type": "string"
+                                    },
+                                    "notAfter": {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    }
+                                  },
+                                  "required": [
+                                    "thumbprint",
+                                    "notAfter"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "deployment",
+                            "auth",
+                            "tenantId",
+                            "clientId",
+                            "credentialReadable",
+                            "certificate"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "ciSetup": {
                       "type": "object",
                       "properties": {
@@ -25587,6 +25912,7 @@
                     "createdAt",
                     "github",
                     "gitlab",
+                    "azure",
                     "ciSetup",
                     "fixMrsAllowed"
                   ],
@@ -25733,7 +26059,7 @@
     },
     "/api/v0/scm-connections/{id}/test": {
       "post": {
-        "summary": "Check the connection (and a GitLab project or GitHub owner/repo) with the stored credentials",
+        "summary": "Check the connection (and a GitLab project, GitHub owner/repo or Azure DevOps repository id) with the stored credentials",
         "tags": [
           "scm"
         ],
@@ -25746,8 +26072,8 @@
                 "properties": {
                   "projectRef": {
                     "type": "string",
-                    "maxLength": 255,
-                    "pattern": "^(?!(?:.*\\/)?\\.{1,2}(?:\\/|$))(?:[0-9]{1,20}|[A-Za-z0-9_.][A-Za-z0-9_.-]*(?:\\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+)$|^[A-Za-z0-9][A-Za-z0-9-]{0,38}\\/(?!\\.{1,2}$)[A-Za-z0-9._-]{1,100}$"
+                    "minLength": 1,
+                    "maxLength": 255
                   }
                 },
                 "additionalProperties": false
@@ -25803,9 +26129,16 @@
                           "type": "object",
                           "properties": {
                             "id": {
-                              "type": "integer",
-                              "minimum": -9007199254740991,
-                              "maximum": 9007199254740991
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "string"
+                                }
+                              ]
                             },
                             "pathWithNamespace": {
                               "type": "string"
@@ -25854,7 +26187,10 @@
                                 "http_error",
                                 "bad_answer",
                                 "not_installed",
-                                "permission_missing"
+                                "permission_missing",
+                                "sign_in_required",
+                                "html_answer",
+                                "token_endpoint"
                               ]
                             },
                             "message": {
@@ -25892,6 +26228,34 @@
                         }
                       ],
                       "description": "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository, and when the test failed."
+                    },
+                    "visible": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "repositories": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "projects": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "repositories",
+                            "projects"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Azure DevOps: the repositories the identity sees, and the projects that hold them. Null for GitLab and GitHub, and when the test failed."
                     }
                   },
                   "required": [
@@ -25899,7 +26263,8 @@
                     "user",
                     "project",
                     "problem",
-                    "missingAccess"
+                    "missingAccess",
+                    "visible"
                   ],
                   "additionalProperties": false
                 }
@@ -25975,7 +26340,7 @@
             "in": "query",
             "name": "filter",
             "required": false,
-            "description": "Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here"
+            "description": "Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here; Azure DevOps lists every repository at once, filtered and paged here"
           },
           {
             "schema": {
@@ -26003,11 +26368,11 @@
                         "properties": {
                           "ref": {
                             "type": "string",
-                            "description": "What a project maps to: the GitLab project id, or the GitHub owner/repo"
+                            "description": "What a project maps to: the GitLab project id, the GitHub owner/repo, or the Azure DevOps repository id"
                           },
                           "name": {
                             "type": "string",
-                            "description": "owner/repo (GitHub) or the full path (GitLab)"
+                            "description": "owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps)"
                           },
                           "defaultBranch": {
                             "type": [
@@ -26016,14 +26381,15 @@
                             ]
                           },
                           "language": {
-                            "description": "GitHub only; null for GitLab",
+                            "description": "GitHub only; null for GitLab and Azure DevOps",
                             "type": [
                               "string",
                               "null"
                             ]
                           },
                           "archived": {
-                            "type": "boolean"
+                            "type": "boolean",
+                            "description": "Archived; on Azure DevOps, disabled"
                           },
                           "project": {
                             "anyOf": [
@@ -26166,8 +26532,8 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "maxLength": 255,
-                      "pattern": "^(?!(?:.*\\/)?\\.{1,2}(?:\\/|$))(?:[0-9]{1,20}|[A-Za-z0-9_.][A-Za-z0-9_.-]*(?:\\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+)$|^[A-Za-z0-9][A-Za-z0-9-]{0,38}\\/(?!\\.{1,2}$)[A-Za-z0-9._-]{1,100}$"
+                      "minLength": 1,
+                      "maxLength": 255
                     },
                     "description": "Refs as `GET /scm-connections/{id}/repositories` lists them, 1 to 50; one the provider does not know fails in the run"
                   },

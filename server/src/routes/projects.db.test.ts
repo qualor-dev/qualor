@@ -573,4 +573,64 @@ describe('projects', () => {
     ).toBe(200);
     await ctx.db.delete(scmConnections).where(eq(scmConnections.organizationId, defaultOrg));
   });
+
+  it('maps a project to an Azure DevOps repository by its id alone, kept lower-cased (Azure DevOps design §7.2)', async () => {
+    const tokenEnc = encryptSecret(encryptionKey(ctx.config.secretKey), 'x', SCM_TOKEN_AAD);
+    const [azure, gitlab] = await ctx.db
+      .insert(scmConnections)
+      .values([
+        {
+          organizationId: defaultOrg,
+          provider: 'azure',
+          baseUrl: 'https://dev.azure.com/acme',
+          tokenEnc,
+          azureAuth: 'pat',
+        },
+        {
+          organizationId: defaultOrg,
+          provider: 'gitlab',
+          baseUrl: 'https://gitlab.example.com',
+          tokenEnc,
+        },
+      ])
+      .returning();
+    const p = await createProject(ctx, orgAdmin, { organizationId: defaultOrg, key: 'scm/azure' });
+    const map = (payload: object) => call('PATCH', `/projects/${p.id}`, orgAdmin.headers, payload);
+    const repository = '0F6C1A5E-3B0D-4C39-9A51-FA6E000000A1';
+    const mapped = await map({ scmConnectionId: azure!.id, scmProjectRef: repository });
+    expect([mapped.statusCode, mapped.json().scmProjectRef], mapped.body).toEqual([
+      200,
+      repository.toLowerCase(),
+    ]);
+    // A GitLab project or a GitHub owner/repo is no Azure DevOps repository.
+    for (const bad of ['acme/api', 'Payments/api', '7', `{${repository}}`, `${repository}0`]) {
+      const res = await map({ scmProjectRef: bad });
+      expect([res.statusCode, res.json().errors], bad).toEqual([
+        422,
+        [
+          {
+            path: 'body.scmProjectRef',
+            message: 'Use the Azure DevOps repository id (pick it from the list)',
+          },
+        ],
+      ]);
+    }
+    // A GitLab connection with the repository id kept: no GitLab project.
+    const kept = await map({ scmConnectionId: gitlab!.id });
+    expect([kept.statusCode, paths(kept)]).toEqual([422, ['body.scmProjectRef']]);
+    expect((await map({ scmConnectionId: gitlab!.id, scmProjectRef: '7' })).statusCode).toBe(200);
+    const back = await map({ scmConnectionId: azure!.id });
+    expect([back.statusCode, paths(back)]).toEqual([422, ['body.scmProjectRef']]);
+    // Without a connection, a reference some provider takes: an Azure DevOps id as sent.
+    expect((await map({ scmConnectionId: null, scmProjectRef: 'acme' })).statusCode).toBe(422);
+    const unmapped = await map({ scmConnectionId: null, scmProjectRef: repository });
+    expect([unmapped.statusCode, unmapped.json().scmProjectRef]).toEqual([200, repository]);
+    // Mapped again with the id kept: in Azure DevOps' form.
+    const remapped = await map({ scmConnectionId: azure!.id });
+    expect([remapped.statusCode, remapped.json().scmProjectRef]).toEqual([
+      200,
+      repository.toLowerCase(),
+    ]);
+    await ctx.db.delete(scmConnections).where(eq(scmConnections.organizationId, defaultOrg));
+  });
 });

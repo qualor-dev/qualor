@@ -119,6 +119,7 @@ export async function testGitHubConnection(
     project: null,
     problem: { code, message },
     missingAccess: null,
+    visible: null,
   });
   const found = githubClientFor(row, deps);
   if ('problem' in found) {
@@ -145,6 +146,7 @@ export async function testGitHubConnection(
       project,
       problem: null,
       missingAccess: missing,
+      visible: null,
     };
   } catch (err) {
     if (err instanceof ScmError) return failed(problemCode(err), err.message);

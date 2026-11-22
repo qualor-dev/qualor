@@ -55,9 +55,15 @@ export interface EntraOptions {
   allowInternalHosts?: boolean;
 }
 
-/** The tenant's OAuth 2.0 token endpoint (v2.0) of Microsoft Entra ID. */
-export function entraTokenUrl(tenantId: string): string {
-  return `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+/** Microsoft Entra ID's sign-in host, where service principals get their tokens. */
+export const ENTRA_ORIGIN = 'https://login.microsoftonline.com';
+
+/**
+ * The tenant's OAuth 2.0 token endpoint (v2.0) of Microsoft Entra ID, or of the tests' stand-in
+ * at `origin` (`Config.azureTokenUrl`).
+ */
+export function entraTokenUrl(tenantId: string, origin: string = ENTRA_ORIGIN): string {
+  return `${origin}/${tenantId}/oauth2/v2.0/token`;
 }
 
 /** RFC 6749 §5.1; `expires_in` is a number, or (older endpoints) a numeric string. */

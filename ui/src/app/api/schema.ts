@@ -3565,7 +3565,7 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project or GitHub owner/repo; the mapping needs an organization admin) */
+        /** Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin) */
         patch: {
             parameters: {
                 query?: never;
@@ -11297,6 +11297,20 @@ export interface paths {
                                     webhookUrl: string | null;
                                     ciSetupAllowed: boolean;
                                 } | null;
+                                azure: {
+                                    /** @enum {string} */
+                                    deployment: "services" | "server";
+                                    /** @enum {string} */
+                                    auth: "pat" | "service_principal_secret" | "service_principal_certificate";
+                                    tenantId: string | null;
+                                    clientId: string | null;
+                                    credentialReadable: boolean;
+                                    certificate: {
+                                        thumbprint: string;
+                                        /** Format: date-time */
+                                        notAfter: string;
+                                    } | null;
+                                } | null;
                                 ciSetup: {
                                     available: boolean;
                                     /** @description Why CI setup is not available, the first that applies: `no_public_url` (the server has no QUALOR_PUBLIC_URL), `not_allowed` (GitLab: the connection does not allow it) or `missing_permissions` (GitHub: no installation grants Contents, Workflows and Secrets, read and write, or they could not be read). */
@@ -11349,7 +11363,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Connect an organisation to GitLab (token, optional webhook secret) or GitHub App (App id, private key, webhook secret) */
+        /** Connect an organisation to GitLab (token, optional webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (a service principal with a client secret or a certificate, or a PAT) */
         post: {
             parameters: {
                 query?: never;
@@ -11387,6 +11401,31 @@ export interface paths {
                         /** @description Not a field of a GitHub connection: sending it is a 422 */
                         ciSetupAllowed?: unknown;
                         fixMrsAllowed?: boolean;
+                    } | {
+                        /** Format: uuid */
+                        organizationId: string;
+                        /** @enum {string} */
+                        provider: "azure";
+                        baseUrl: string;
+                        /**
+                         * @description `service_principal_secret` (`tenantId`, `clientId`, the client secret in `token`) and `service_principal_certificate` (`tenantId`, `clientId`, `certificate`) on Azure DevOps Services only; `pat` (`token`) on both
+                         * @enum {string}
+                         */
+                        azureAuth: "pat" | "service_principal_secret" | "service_principal_certificate";
+                        token?: string;
+                        tenantId?: string;
+                        clientId?: string;
+                        certificate?: string;
+                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
+                        appId?: unknown;
+                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
+                        privateKey?: unknown;
+                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
+                        webhookSecret?: unknown;
+                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
+                        ciSetupAllowed?: unknown;
+                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
+                        fixMrsAllowed?: unknown;
                     };
                 };
             };
@@ -11419,6 +11458,20 @@ export interface paths {
                                 webhookSecretReadable: boolean;
                                 webhookUrl: string | null;
                                 ciSetupAllowed: boolean;
+                            } | null;
+                            azure: {
+                                /** @enum {string} */
+                                deployment: "services" | "server";
+                                /** @enum {string} */
+                                auth: "pat" | "service_principal_secret" | "service_principal_certificate";
+                                tenantId: string | null;
+                                clientId: string | null;
+                                credentialReadable: boolean;
+                                certificate: {
+                                    thumbprint: string;
+                                    /** Format: date-time */
+                                    notAfter: string;
+                                } | null;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11562,7 +11615,7 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Change an SCM connection: GitLab (token, webhook secret) or GitHub App (App id, private key, webhook secret); each field on its own, a new base URL with the credentials again */
+        /** Change an SCM connection: GitLab (token, webhook secret), GitHub App (App id, private key, webhook secret) or Azure DevOps (authentication kind, ids, credential); each field on its own, a new base URL with the credentials again, a new Azure DevOps kind or id with its credential */
         patch: {
             parameters: {
                 query?: never;
@@ -11582,6 +11635,11 @@ export interface paths {
                         webhookSecret?: string | null;
                         ciSetupAllowed?: boolean;
                         fixMrsAllowed?: boolean;
+                        /** @enum {string} */
+                        azureAuth?: "pat" | "service_principal_secret" | "service_principal_certificate";
+                        tenantId?: string;
+                        clientId?: string;
+                        certificate?: string;
                     };
                 };
             };
@@ -11614,6 +11672,20 @@ export interface paths {
                                 webhookSecretReadable: boolean;
                                 webhookUrl: string | null;
                                 ciSetupAllowed: boolean;
+                            } | null;
+                            azure: {
+                                /** @enum {string} */
+                                deployment: "services" | "server";
+                                /** @enum {string} */
+                                auth: "pat" | "service_principal_secret" | "service_principal_certificate";
+                                tenantId: string | null;
+                                clientId: string | null;
+                                credentialReadable: boolean;
+                                certificate: {
+                                    thumbprint: string;
+                                    /** Format: date-time */
+                                    notAfter: string;
+                                } | null;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11693,7 +11765,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Check the connection (and a GitLab project or GitHub owner/repo) with the stored credentials */
+        /** Check the connection (and a GitLab project, GitHub owner/repo or Azure DevOps repository id) with the stored credentials */
         post: {
             parameters: {
                 query?: never;
@@ -11723,17 +11795,22 @@ export interface paths {
                                 username: string;
                             } | null;
                             project: {
-                                id: number;
+                                id: number | string;
                                 pathWithNamespace: string;
                                 accessLevel: number | null;
                             } | null;
                             problem: {
                                 /** @enum {string} */
-                                code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing";
+                                code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint";
                                 message: string;
                             } | null;
                             /** @description GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository, and when the test failed. */
                             missingAccess: ("contents_write" | "issues_read" | "event_check_run" | "event_issue_comment" | "event_pull_request_review_comment")[] | null;
+                            /** @description Azure DevOps: the repositories the identity sees, and the projects that hold them. Null for GitLab and GitHub, and when the test failed. */
+                            visible: {
+                                repositories: number;
+                                projects: number;
+                            } | null;
                         };
                     };
                 };
@@ -11793,7 +11870,7 @@ export interface paths {
             parameters: {
                 query?: {
                     page?: number;
-                    /** @description Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here */
+                    /** @description Case-insensitive part of the repository name. GitLab searches on its side; GitHub has no search over an installation’s repositories, so the listed page is filtered here; Azure DevOps lists every repository at once, filtered and paged here */
                     filter?: string;
                 };
                 header?: never;
@@ -11812,13 +11889,14 @@ export interface paths {
                     content: {
                         "application/json": {
                             items: {
-                                /** @description What a project maps to: the GitLab project id, or the GitHub owner/repo */
+                                /** @description What a project maps to: the GitLab project id, the GitHub owner/repo, or the Azure DevOps repository id */
                                 ref: string;
-                                /** @description owner/repo (GitHub) or the full path (GitLab) */
+                                /** @description owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps) */
                                 name: string;
                                 defaultBranch: string | null;
-                                /** @description GitHub only; null for GitLab */
+                                /** @description GitHub only; null for GitLab and Azure DevOps */
                                 language: string | null;
+                                /** @description Archived; on Azure DevOps, disabled */
                                 archived: boolean;
                                 project: {
                                     /** Format: uuid */

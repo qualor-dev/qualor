@@ -34,6 +34,7 @@ const GITHUB: Connection = {
     webhookUrl: 'https://q.example/api/v0/github/webhooks/g1',
   },
   gitlab: null,
+  azure: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
   fixMrsAllowed: false,
 };
@@ -124,6 +125,7 @@ describe('GitHubPage (github.md §2)', () => {
         project: { id: 424242, pathWithNamespace: 'acme/api', accessLevel: null },
         problem: null,
         missingAccess,
+        visible: null,
       },
     });
     const test = async (
@@ -233,6 +235,7 @@ describe('GitHubPage (github.md §2)', () => {
           project: null,
           problem: { code: 'not_installed', message: 'x' },
           missingAccess: null,
+          visible: null,
         },
       };
       await test(root, fixture);

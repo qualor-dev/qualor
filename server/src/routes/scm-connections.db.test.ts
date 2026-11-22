@@ -1,13 +1,23 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { createHash, X509Certificate } from 'node:crypto';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_PASSWORD, addMember, createUser, login, type Session } from '../../test/app';
+import { AZURE_TEST_PRINCIPAL, azureServerConfig, servicesUrlOf } from '../../test/azure';
 import { waitForLockWaiters } from '../../test/db';
+import {
+  createFakeAzureDevOps,
+  recordedAnswer,
+  type FakeAzureDevOps,
+  type FakeAzureRepository,
+} from '../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub, type FakeRepository } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { githubTestConfig, WEBHOOK_SECRET } from '../../test/github';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
+import { TEST_IDP, TEST_SP } from '../../test/saml';
 import { GITLAB_WEBHOOK_SECRET, PUBLIC_URL, scmTestConfig } from '../../test/scm';
+import { trustTestCa } from '../../test/tls';
 import { decryptSecret, encryptionKey, encryptSecret } from '../crypto/secrets';
 import {
   auditEvents,
@@ -18,12 +28,16 @@ import {
   projects,
   scmConnections,
 } from '../db/schema';
+import { AZURE_CERTIFICATE_PROBLEM_TEXT } from '../scm/azure/certificate';
+import { azureClientFor, testAzureConnection } from '../scm/azure/connections';
 import {
   MAX_SCM_CONNECTIONS_PER_ORGANIZATION,
   SCM_TOKEN_AAD,
+  scmDepsOf,
   testConnection,
   webBaseSql,
 } from '../scm/connections';
+import { InstallationTokenCache } from '../scm/github/app-auth';
 import {
   decryptPrivateKey,
   decryptWebhookSecret,
@@ -134,6 +148,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         webhookUrl: null,
         ciSetupAllowed: false,
       },
+      azure: null,
       ciSetup: { available: false, reason: 'no_public_url', missing: [] },
       fixMrsAllowed: false,
     });
@@ -248,6 +263,8 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       problem: null,
       // A GitHub App's alone.
       missingAccess: null,
+      // An Azure DevOps connection's alone.
+      visible: null,
     });
     const missing = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
       projectRef: 'acme/nope',
@@ -293,6 +310,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       project: null,
       problem: { code: 'token_refused', message: 'GitLab refused the token (HTTP 401)' },
       missingAccess: null,
+      visible: null,
     });
     // A token encrypted under another key (QUALOR_SECRET_KEY rotated) is named, not sent.
     await h.ctx.db
@@ -460,6 +478,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         project: null,
         problem: { code: 'http_error', message: `GitLab answered HTTP ${status}` },
         missingAccess: null,
+        visible: null,
       });
       expect(res.body).not.toContain('glpat-echoed');
       expect(res.body).not.toContain('script');
@@ -975,6 +994,7 @@ describe('GitHub App connections (github.md §2.2, §2.5, D1)', () => {
       problem: null,
       // The documented App lacks nothing.
       missingAccess: [],
+      visible: null,
     });
     expect((await test('acme/bare')).json()).toMatchObject({
       problem: { code: 'not_installed' },
@@ -1089,6 +1109,11 @@ describe('GitHub App connections (github.md §2.2, §2.5, D1)', () => {
       expected: 'https://gitlab.example.com',
     },
     { provider: 'github', baseUrl: 'https://api.github.com', expected: 'https://github.com' },
+    {
+      provider: 'azure',
+      baseUrl: 'https://dev.azure.com/acme',
+      expected: 'https://dev.azure.com/acme',
+    },
     { provider: 'bitbucket', baseUrl: 'https://x', expected: null },
   ])(
     'webBaseSql for provider $provider gives $expected',
@@ -1527,5 +1552,760 @@ describe('SCM connections: fix merge requests (0.16 fix MRs B2)', () => {
     expect(res.statusCode).toBe(403);
     const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
     expect(row!.fixMrsAllowed).toBe(false);
+  });
+});
+
+describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
+  const NOW = new Date('2027-01-01T00:00:00Z');
+  const { tenantId, clientId, secret: SECRET, certificatePem: CERTIFICATE } = AZURE_TEST_PRINCIPAL;
+  const OTHER_ID = 'a1b2c3d4-0000-4000-8000-00000000beef';
+  const SERVER_TAKES_PAT = 'Azure DevOps Server takes a personal access token';
+  const REPOSITORY_ID_TEXT = 'Use the Azure DevOps repository id (pick it from the list)';
+  /** A line of the certificate's private key: no answer, row, audit entry or log line holds it. */
+  const KEY_LINE = TEST_IDP.keyPem.split('\n')[1]!;
+  const certificateOf = (pem: string) => {
+    const certificate = new X509Certificate(pem);
+    return {
+      thumbprint: createHash('sha1').update(certificate.raw).digest('hex').toUpperCase(),
+      notAfter: new Date(certificate.validTo).toISOString(),
+    };
+  };
+  const SP_SECRET = { azureAuth: 'service_principal_secret', token: SECRET, tenantId, clientId };
+  const SP_CERTIFICATE = {
+    azureAuth: 'service_principal_certificate',
+    certificate: CERTIFICATE,
+    tenantId,
+    clientId,
+  };
+
+  interface AzureConnection {
+    id: string;
+    baseUrl: string;
+    azure: Record<string, unknown> | null;
+  }
+
+  let h: IngestHarness;
+  let services: FakeAzureDevOps;
+  let server: FakeAzureDevOps;
+  let untrust: () => void;
+  /** The Services organisation as stored: `https://dev.azure.com/probe-org` (ruling 5). */
+  let SERVICES: string;
+  let api: FakeAzureRepository;
+  /** Every answer of the API in this block, for the check that none holds a credential. */
+  const answers: string[] = [];
+
+  const inject = async (method: 'POST' | 'PATCH' | 'GET', url: string, payload?: object) => {
+    const res = await h.ctx.app.inject({
+      method,
+      url: `/api/v0${url}`,
+      headers: h.orgAdmin.headers,
+      ...(payload === undefined ? {} : { payload }),
+    });
+    answers.push(res.body);
+    return res;
+  };
+  const post = (payload: Record<string, unknown>) =>
+    inject('POST', '/scm-connections', {
+      organizationId: h.organizationId,
+      provider: 'azure',
+      baseUrl: SERVICES,
+      ...payload,
+    });
+  const created = async (payload: Record<string, unknown>): Promise<AzureConnection> => {
+    const res = await post(payload);
+    expect(res.statusCode, res.body).toBe(201);
+    return res.json() as AzureConnection;
+  };
+  const patch = (id: string, payload: Record<string, unknown>) =>
+    inject('PATCH', `/scm-connections/${id}`, payload);
+  const test = (id: string, projectRef?: string) =>
+    inject('POST', `/scm-connections/${id}/test`, projectRef === undefined ? {} : { projectRef });
+  const rowOf = async (id: string) =>
+    (await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id)))[0]!;
+  const storedCredential = async (id: string) =>
+    decryptSecret(encryptionKey(h.ctx.config.secretKey), (await rowOf(id)).tokenEnc, SCM_TOKEN_AAD);
+  const errorPaths = (body: string) =>
+    (JSON.parse(body) as { errors?: { path: string }[] }).errors?.map((e) => e.path).sort();
+  const auditOf = async (action: string, id?: string) =>
+    (
+      await h.ctx.db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.action, action), id ? eq(auditEvents.targetId, id) : undefined))
+        .orderBy(asc(auditEvents.seq))
+    ).map((e) => e.details);
+  /** No credential in `texts`, nor in any answer, audit entry or log line so far. */
+  const expectNoCredential = async (...texts: string[]) => {
+    const audit = await h.ctx.db.select().from(auditEvents);
+    const all = [...texts, ...answers, JSON.stringify(audit), h.ctx.logs.join('\n')];
+    // A PEM block's header line (the fixed problem texts name `BEGIN PRIVATE KEY`, without dashes).
+    const secrets = [services.pat, server.pat, SECRET, KEY_LINE, 'PRIVATE KEY-----', 'wrong-'];
+    for (const secret of [...secrets, 'rotated-secret', 'secret-of-other-tenant']) {
+      for (const text of all) expect(text).not.toContain(secret);
+    }
+  };
+
+  beforeAll(async () => {
+    untrust = trustTestCa();
+    services = await createFakeAzureDevOps({
+      deployment: 'services',
+      principal: AZURE_TEST_PRINCIPAL,
+      repositories: [
+        { name: 'api', projectName: 'Payments' },
+        { name: 'web', projectName: 'Payments' },
+        { name: 'docs', projectName: 'Platform' },
+      ],
+    });
+    api = services.repositories[0]!;
+    server = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: [{ name: 'probe', projectName: 'probe-org' }],
+    });
+    SERVICES = servicesUrlOf(services);
+    h = await createIngestHarness({
+      config: azureServerConfig(services, server),
+      pluginsFor: rbacPlugins({ now: () => NOW }),
+    });
+  });
+  afterAll(async () => {
+    await h.close();
+    await services.close();
+    await server.close();
+    untrust();
+  });
+  afterEach(async () => {
+    await h.ctx.db.delete(scmConnections);
+    services.identityAdded = true;
+    services.clearRequests();
+    server.clearRequests();
+  });
+
+  it('creates a connection with each authentication kind; the credential is stored encrypted and never shown', async () => {
+    const pat = await created({ azureAuth: 'pat', token: services.pat });
+    expect(pat).toEqual({
+      id: expect.any(String),
+      organizationId: h.organizationId,
+      provider: 'azure',
+      baseUrl: SERVICES,
+      createdAt: expect.any(String),
+      github: null,
+      gitlab: null,
+      azure: {
+        deployment: 'services',
+        auth: 'pat',
+        tenantId: null,
+        clientId: null,
+        credentialReadable: true,
+        certificate: null,
+      },
+      ciSetup: { available: false, reason: 'not_allowed', missing: [] },
+      fixMrsAllowed: false,
+    });
+    // The ids arrive in any case and are kept lower-cased.
+    const secret = await created({
+      ...SP_SECRET,
+      tenantId: tenantId.toUpperCase(),
+      clientId: clientId.toUpperCase(),
+    });
+    expect(secret.azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_secret',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: null,
+    });
+    const certificate = await created(SP_CERTIFICATE);
+    expect(certificate.azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_certificate',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: certificateOf(TEST_IDP.certPem),
+    });
+    const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
+    expect([onServer.baseUrl, onServer.azure]).toEqual([
+      server.url,
+      expect.objectContaining({ deployment: 'server', auth: 'pat', tenantId: null }),
+    ]);
+    // One column holds the PAT, the client secret or the certificate with its key, encrypted.
+    for (const [connection, plain] of [
+      [pat, services.pat],
+      [secret, SECRET],
+      [certificate, CERTIFICATE],
+      [onServer, server.pat],
+    ] as const) {
+      expect(await storedCredential(connection.id)).toBe(plain);
+    }
+    expect(await rowOf(secret.id)).toMatchObject({
+      azureAuth: 'service_principal_secret',
+      azureTenantId: tenantId,
+      azureClientId: clientId,
+      appId: null,
+      webhookSecretEnc: null,
+    });
+    expect(await rowOf(pat.id)).toMatchObject({ azureTenantId: null, azureClientId: null });
+    await inject('GET', `/scm-connections?organizationId=${h.organizationId}`);
+    expect(await auditOf('scm_connection.created')).toContainEqual({
+      provider: 'azure',
+      baseUrl: SERVICES,
+    });
+    // Creating a connection asks Azure DevOps and Entra nothing.
+    expect([services.requests, services.tokenRequests, server.requests]).toEqual([[], [], []]);
+    const rows = await h.ctx.db.select().from(scmConnections);
+    await expectNoCredential(JSON.stringify(rows));
+  });
+
+  it('derives the deployment from the host alone: a service principal only on Services', async () => {
+    const legacy = await created({
+      baseUrl: 'https://Acme.VisualStudio.com/',
+      azureAuth: 'pat',
+      token: 'x',
+    });
+    expect([legacy.baseUrl, legacy.azure?.deployment]).toEqual([
+      'https://acme.visualstudio.com',
+      'services',
+    ]);
+    // A host that only looks like Services is a Server, which takes a PAT only.
+    for (const baseUrl of [
+      server.url,
+      'https://dev.azure.com.example.net/acme',
+      'https://ado.example.com/tfs/DefaultCollection',
+    ]) {
+      for (const kind of [SP_SECRET, SP_CERTIFICATE]) {
+        const res = await post({ ...kind, baseUrl });
+        expect([res.statusCode, res.json().errors], baseUrl).toEqual([
+          422,
+          [{ path: 'body.azureAuth', message: SERVER_TAKES_PAT }],
+        ]);
+      }
+    }
+    const lookalike = await created({
+      baseUrl: 'https://dev.azure.com.example.net/acme',
+      azureAuth: 'pat',
+      token: 'x',
+    });
+    expect(lookalike.azure?.deployment).toBe('server');
+    await expectNoCredential();
+  });
+
+  it.each([
+    ['a PAT without it', { azureAuth: 'pat' }, ['body.token']],
+    [
+      'a PAT with ids',
+      { azureAuth: 'pat', token: 'x', tenantId, clientId },
+      ['body.clientId', 'body.tenantId'],
+    ],
+    [
+      'a PAT with a certificate',
+      { azureAuth: 'pat', token: 'x', certificate: CERTIFICATE },
+      ['body.certificate'],
+    ],
+    ['a client secret without it', { ...SP_SECRET, token: undefined }, ['body.token']],
+    [
+      'a client secret without the ids',
+      { azureAuth: 'service_principal_secret', token: 'x' },
+      ['body.clientId', 'body.tenantId'],
+    ],
+    [
+      'a client secret with a certificate',
+      { ...SP_SECRET, certificate: CERTIFICATE },
+      ['body.certificate'],
+    ],
+    [
+      'a certificate without it',
+      { ...SP_CERTIFICATE, certificate: undefined },
+      ['body.certificate'],
+    ],
+    ['a certificate with a token', { ...SP_CERTIFICATE, token: 'x' }, ['body.token']],
+    [
+      'a certificate without the tenant',
+      { ...SP_CERTIFICATE, tenantId: undefined },
+      ['body.tenantId'],
+    ],
+    ['an id that is no GUID', { ...SP_SECRET, clientId: 'qualor-app' }, ['body.clientId']],
+    ['no kind', { token: 'x' }, ['body.azureAuth']],
+    ['an unknown kind', { azureAuth: 'oauth', token: 'x' }, ['body.azureAuth']],
+    [
+      'a PAT that is not header-safe',
+      { azureAuth: 'pat', token: 'pat with space' },
+      ['body.token'],
+    ],
+    [
+      "GitLab's and GitHub's fields",
+      {
+        azureAuth: 'pat',
+        token: 'x',
+        appId: '1',
+        privateKey: 'x',
+        webhookSecret: 'w'.repeat(20),
+        ciSetupAllowed: false,
+        fixMrsAllowed: false,
+      },
+      [
+        'body.appId',
+        'body.ciSetupAllowed',
+        'body.fixMrsAllowed',
+        'body.privateKey',
+        'body.webhookSecret',
+      ],
+    ],
+    [
+      'dev.azure.com alone',
+      { azureAuth: 'pat', token: 'x', baseUrl: 'https://dev.azure.com' },
+      ['body.baseUrl'],
+    ],
+    [
+      'an organisation with a path',
+      { azureAuth: 'pat', token: 'x', baseUrl: 'https://dev.azure.com/acme/project' },
+      ['body.baseUrl'],
+    ],
+    [
+      'an organisation with a port',
+      { azureAuth: 'pat', token: 'x', baseUrl: 'https://dev.azure.com:8443/acme' },
+      ['body.baseUrl'],
+    ],
+    [
+      'a Server without its collection',
+      { azureAuth: 'pat', token: 'x', baseUrl: 'https://ado.example.com' },
+      ['body.baseUrl'],
+    ],
+  ])('refuses %s', async (_, payload, paths) => {
+    const res = await post(payload);
+    expect([res.statusCode, errorPaths(res.body)], res.body).toEqual([422, paths]);
+    expect(res.body).not.toContain('pat with space');
+    await expectNoCredential();
+  });
+
+  it('says what is wrong with the address and the certificate, in fixed texts', async () => {
+    const problems = async (payload: Record<string, unknown>) =>
+      ((await post(payload)).json() as { errors: unknown[] }).errors;
+    expect(
+      await problems({ azureAuth: 'pat', token: 'x', baseUrl: 'https://dev.azure.com' }),
+    ).toEqual([{ path: 'body.baseUrl', message: 'Use https://dev.azure.com/<organization>' }]);
+    expect(
+      await problems({ azureAuth: 'pat', token: 'x', baseUrl: new URL(server.url).origin }),
+    ).toEqual([
+      {
+        path: 'body.baseUrl',
+        message: 'Use the collection URL, e.g. https://ado.example.com/DefaultCollection',
+      },
+    ]);
+    for (const [certificate, problem] of [
+      ['not a certificate', 'no_certificate'],
+      [TEST_IDP.certPem, 'no_key'],
+      [`${TEST_SP.certPem}${TEST_IDP.keyPem}`, 'mismatch'],
+    ] as const) {
+      expect(await problems({ ...SP_CERTIFICATE, certificate }), problem).toEqual([
+        { path: 'body.certificate', message: AZURE_CERTIFICATE_PROBLEM_TEXT[problem] },
+      ]);
+    }
+    await expectNoCredential();
+  });
+
+  it('needs the credential of the resulting kind again for a new address, kind or ids', async () => {
+    const { id } = await created(SP_SECRET);
+    const before = await rowOf(id);
+    const refused = async (payload: Record<string, unknown>, paths: string[]) => {
+      const res = await patch(id, payload);
+      expect([res.statusCode, errorPaths(res.body)], JSON.stringify(payload)).toEqual([422, paths]);
+      return res.json() as { errors: { path: string; message: string }[] };
+    };
+    // A new address, tenant or client would send the stored client secret elsewhere.
+    expect(
+      (await refused({ baseUrl: 'https://dev.azure.com/other-org' }, ['body.token'])).errors,
+    ).toEqual([
+      {
+        path: 'body.token',
+        message: 'Changing the address needs the client secret again, in the same request',
+      },
+    ]);
+    await refused({ tenantId: OTHER_ID }, ['body.token']);
+    await refused({ clientId: OTHER_ID }, ['body.token']);
+    // Another kind needs its own credential and ids, in the same request.
+    expect(
+      (
+        await refused({ azureAuth: 'service_principal_certificate' }, [
+          'body.certificate',
+          'body.clientId',
+          'body.tenantId',
+        ])
+      ).errors,
+    ).toContainEqual({
+      path: 'body.certificate',
+      message: 'Changing the authentication kind needs the certificate, in the same request',
+    });
+    await refused({ azureAuth: 'service_principal_certificate', certificate: CERTIFICATE }, [
+      'body.clientId',
+      'body.tenantId',
+    ]);
+    await refused({ ...SP_CERTIFICATE, token: SECRET }, ['body.token']);
+    await refused({ azureAuth: 'pat' }, ['body.token']);
+    await refused({ azureAuth: 'pat', token: services.pat, tenantId }, ['body.tenantId']);
+    await refused({ certificate: CERTIFICATE }, ['body.certificate']);
+    await refused({ ...SP_CERTIFICATE, certificate: 'not a certificate' }, ['body.certificate']);
+    expect(await rowOf(id)).toEqual(before);
+    // The same address however spelled, the same kind and ids in any case: nothing again.
+    const same = await patch(id, {
+      baseUrl: `${SERVICES.replace('https://dev.azure.com', 'https://DEV.Azure.com')}/`,
+      azureAuth: 'service_principal_secret',
+      tenantId: tenantId.toUpperCase(),
+      clientId,
+    });
+    expect(same.statusCode, same.body).toBe(200);
+    expect(await rowOf(id)).toEqual(before);
+    // The secret alone, and a new address with it.
+    expect((await patch(id, { token: 'rotated-secret' })).statusCode).toBe(200);
+    const moved = await patch(id, { baseUrl: 'https://dev.azure.com/other-org', token: SECRET });
+    expect(moved.json()).toMatchObject({
+      baseUrl: 'https://dev.azure.com/other-org',
+      azure: { deployment: 'services', auth: 'service_principal_secret' },
+    });
+    // A certificate instead of the secret, with the ids; then a new certificate alone.
+    const toCertificate = await patch(id, { ...SP_CERTIFICATE, tenantId: tenantId.toUpperCase() });
+    expect(toCertificate.json().azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_certificate',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: certificateOf(TEST_IDP.certPem),
+    });
+    expect(await storedCredential(id)).toBe(CERTIFICATE);
+    expect((await patch(id, { certificate: CERTIFICATE })).statusCode).toBe(200);
+    // A PAT instead: the ids go with the service principal.
+    const toPat = await patch(id, { azureAuth: 'pat', token: services.pat });
+    expect(toPat.json().azure).toEqual({
+      deployment: 'services',
+      auth: 'pat',
+      tenantId: null,
+      clientId: null,
+      credentialReadable: true,
+      certificate: null,
+    });
+    expect(await rowOf(id)).toMatchObject({
+      azureAuth: 'pat',
+      azureTenantId: null,
+      azureClientId: null,
+    });
+    expect(await storedCredential(id)).toBe(services.pat);
+    // Back to a service principal: its ids again.
+    await refused({ azureAuth: 'service_principal_secret', token: SECRET, tenantId }, [
+      'body.clientId',
+    ]);
+    // Names only, in the catalogue's order.
+    expect(await auditOf('scm_connection.updated', id)).toEqual([
+      { changed: ['token'] },
+      { changed: ['baseUrl', 'token'] },
+      { changed: ['azureAuth', 'certificate'] },
+      { changed: ['certificate'] },
+      { changed: ['token', 'azureAuth', 'tenantId', 'clientId'] },
+    ]);
+    expect([services.requests, services.tokenRequests]).toEqual([[], []]);
+    await expectNoCredential();
+  });
+
+  it('keeps a service principal off a Server address, also when the address moves', async () => {
+    const { id } = await created(SP_SECRET);
+    const refused = await patch(id, { baseUrl: server.url, token: SECRET });
+    expect([refused.statusCode, refused.json().errors]).toEqual([
+      422,
+      [{ path: 'body.azureAuth', message: SERVER_TAKES_PAT }],
+    ]);
+    expect((await rowOf(id)).baseUrl).toBe(SERVICES);
+    const moved = await patch(id, { baseUrl: server.url, azureAuth: 'pat', token: server.pat });
+    expect(moved.json()).toMatchObject({
+      baseUrl: server.url,
+      azure: { deployment: 'server', auth: 'pat', tenantId: null, clientId: null },
+    });
+    const toPrincipal = await patch(id, SP_SECRET);
+    expect([toPrincipal.statusCode, toPrincipal.json().errors]).toEqual([
+      422,
+      [{ path: 'body.azureAuth', message: SERVER_TAKES_PAT }],
+    ]);
+    expect(await rowOf(id)).toMatchObject({ azureAuth: 'pat', baseUrl: server.url });
+    await expectNoCredential();
+  });
+
+  it("takes none of GitLab's or GitHub's fields, and they take none of its own", async () => {
+    const { id } = await created({ azureAuth: 'pat', token: 'x' });
+    const own = await patch(id, {
+      appId: '1',
+      privateKey: 'x',
+      webhookSecret: null,
+      ciSetupAllowed: true,
+      fixMrsAllowed: true,
+    });
+    expect([own.statusCode, errorPaths(own.body)]).toEqual([
+      422,
+      [
+        'body.appId',
+        'body.ciSetupAllowed',
+        'body.fixMrsAllowed',
+        'body.privateKey',
+        'body.webhookSecret',
+      ],
+    ]);
+    expect(own.json().errors[0].message).toBe('Not a field of an Azure DevOps connection');
+    const tokenEnc = encryptSecret(encryptionKey(h.ctx.config.secretKey), 'x', SCM_TOKEN_AAD);
+    const others = await h.ctx.db
+      .insert(scmConnections)
+      .values([
+        {
+          organizationId: h.organizationId,
+          provider: 'gitlab',
+          baseUrl: 'https://gitlab.example.com',
+          tokenEnc,
+        },
+        {
+          organizationId: h.organizationId,
+          provider: 'github',
+          baseUrl: 'https://api.github.com',
+          appId: '1',
+          tokenEnc,
+        },
+      ])
+      .returning();
+    for (const other of others) {
+      const res = await patch(other.id, {
+        azureAuth: 'pat',
+        tenantId,
+        clientId,
+        certificate: CERTIFICATE,
+      });
+      expect([res.statusCode, errorPaths(res.body)], other.provider).toEqual([
+        422,
+        ['body.azureAuth', 'body.certificate', 'body.clientId', 'body.tenantId'],
+      ]);
+      const post = await inject('POST', '/scm-connections', {
+        organizationId: h.organizationId,
+        provider: other.provider,
+        baseUrl: other.baseUrl,
+        ...(other.provider === 'github' ? { appId: '1', privateKey: 'x' } : { token: 'x' }),
+        azureAuth: 'pat',
+      });
+      expect(post.statusCode, other.provider).toBe(422);
+    }
+  });
+
+  it('never pairs a credential with a kind changed meanwhile', async () => {
+    const { id } = await created(SP_SECRET);
+    // Both read the client secret connection; the change to a PAT writes first.
+    const [toPat, rotate] = await raceConnectionPatches(
+      h,
+      id,
+      { azureAuth: 'pat', token: services.pat },
+      { token: 'rotated-secret' },
+    );
+    expect(toPat.statusCode, toPat.body).toBe(200);
+    expect(rotate.statusCode, rotate.body).toBe(503);
+    expect(rotate.json()).toMatchObject({ code: 'CONCURRENCY_CONFLICT' });
+    expect((await rowOf(id)).azureAuth).toBe('pat');
+    expect(await storedCredential(id)).toBe(services.pat);
+    // A request that names the old tenant without the secret never undoes a new tenant's.
+    const other = await created(SP_SECRET);
+    const [retenant, stale] = await raceConnectionPatches(
+      h,
+      other.id,
+      { tenantId: OTHER_ID, token: 'secret-of-other-tenant' },
+      { tenantId },
+    );
+    expect(retenant.statusCode, retenant.body).toBe(200);
+    expect(stale.statusCode, stale.body).toBe(503);
+    expect((await rowOf(other.id)).azureTenantId).toBe(OTHER_ID);
+  });
+
+  it('tests each kind: who Qualor acts as, and how many repositories and projects it sees', async () => {
+    const pat = await created({ azureAuth: 'pat', token: services.pat });
+    const secret = await created(SP_SECRET);
+    const certificate = await created(SP_CERTIFICATE);
+    const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
+    for (const [connection, who] of [
+      [pat, services.patUser],
+      [secret, services.principalUser!],
+      [certificate, services.principalUser!],
+    ] as const) {
+      expect((await test(connection.id)).json(), connection.azure?.auth as string).toEqual({
+        ok: true,
+        user: { username: who.displayName },
+        project: null,
+        problem: null,
+        missingAccess: null,
+        visible: { repositories: 3, projects: 2 },
+      });
+    }
+    expect((await test(onServer.id)).json()).toEqual({
+      ok: true,
+      user: { username: server.patUser.displayName },
+      project: null,
+      problem: null,
+      missingAccess: null,
+      visible: { repositories: 1, projects: 1 },
+    });
+    // The stored organisation's routes, at design §7.9's versions; one Entra token per test.
+    const asked = services.requests.map(
+      (r) => `${r.path}?${new URLSearchParams(r.query).get('api-version')}`,
+    );
+    expect(new Set(asked)).toEqual(
+      new Set(['/_apis/connectionData?7.0-preview', '/_apis/git/repositories?7.0']),
+    );
+    expect(services.tokenRequests).toHaveLength(2);
+    // A repository by its id, in any case: `<project>/<repository>`.
+    expect((await test(pat.id, api.id.toUpperCase())).json()).toEqual({
+      ok: true,
+      user: { username: services.patUser.displayName },
+      project: { id: api.id, pathWithNamespace: 'Payments/api', accessLevel: null },
+      problem: null,
+      missingAccess: null,
+      visible: { repositories: 3, projects: 2 },
+    });
+    expect((await test(secret.id, OTHER_ID)).json()).toMatchObject({
+      ok: false,
+      user: null,
+      problem: { code: 'not_found' },
+      visible: null,
+    });
+    for (const bad of ['Payments/api', '42', `{${api.id}}`]) {
+      const res = await test(pat.id, bad);
+      expect([res.statusCode, res.json().errors], bad).toEqual([
+        422,
+        [{ path: 'body.projectRef', message: REPOSITORY_ID_TEXT }],
+      ]);
+    }
+    await expectNoCredential();
+  });
+
+  it('names each refusal with its code, in fixed texts', async () => {
+    const secret = await created(SP_SECRET);
+    const problemOf = async (id: string) => {
+      const result = (await test(id)).json() as Record<string, unknown>;
+      expect(result).toMatchObject({ ok: false, user: null, project: null, visible: null });
+      return result.problem;
+    };
+    // TF401444: the organisation has not added the service principal.
+    services.identityAdded = false;
+    expect(await problemOf(secret.id)).toEqual({
+      code: 'sign_in_required',
+      message: 'The identity is not a member of this organization or has no access level',
+    });
+    services.identityAdded = true;
+    // The recorded 302 to the sign-in page, and a sign-in page answered with 200.
+    const connectionData = /^\/_apis\/connectionData$/;
+    services.inject('GET', connectionData, recordedAnswer('services', '10-no-credential'));
+    services.inject('GET', connectionData, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+      body: '<html><title>Sign in to your account</title></html>',
+    });
+    for (let i = 0; i < 2; i++) {
+      expect(await problemOf(secret.id)).toEqual({
+        code: 'html_answer',
+        message: 'Azure DevOps answered with a sign-in page; check the credential',
+      });
+    }
+    // A PAT Azure DevOps refuses (recorded 401), and a client secret Entra refuses.
+    const wrongPat = await created({ azureAuth: 'pat', token: 'wrong-pat' });
+    expect(await problemOf(wrongPat.id)).toEqual({
+      code: 'token_refused',
+      message: 'Azure DevOps refused the credential (HTTP 401)',
+    });
+    const wrongSecret = await created({ ...SP_SECRET, token: 'wrong-secret' });
+    services.clearRequests();
+    expect(await problemOf(wrongSecret.id)).toEqual({
+      code: 'token_endpoint',
+      message: 'Microsoft Entra refused the service principal',
+    });
+    expect(services.requests).toHaveLength(0);
+    // A credential encrypted under another key is named, and nothing is sent.
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ tokenEnc: encryptSecret(encryptionKey('z'.repeat(32)), 'x', SCM_TOKEN_AAD) })
+      .where(eq(scmConnections.id, secret.id));
+    services.clearRequests();
+    expect(await problemOf(secret.id)).toEqual({
+      code: 'undecryptable',
+      message: expect.stringMatching(/cannot be decrypted/),
+    });
+    expect([services.requests, services.tokenRequests]).toEqual([[], []]);
+    const listed = await inject('GET', `/scm-connections?organizationId=${h.organizationId}`);
+    expect(
+      (listed.json().items as AzureConnection[]).find((c) => c.id === secret.id)?.azure,
+    ).toMatchObject({ credentialReadable: false });
+    for (const text of answers) {
+      for (const words of ['TF401444', 'Object moved', 'AADSTS', 'Sign in to your account']) {
+        expect(text).not.toContain(words);
+      }
+    }
+    await expectNoCredential();
+  });
+
+  it('sends nothing to an address the operator no longer lists or the Azure DevOps rules refuse', async () => {
+    const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
+    const row = await rowOf(onServer.id);
+    const deps = (hosts: string[]) => ({
+      secretKey: h.ctx.config.secretKey,
+      internalHosts: new Set(hosts) as ReadonlySet<string>,
+    });
+    const listed = [new URL(server.url).host];
+    expect(await testAzureConnection(row, deps([]), null)).toMatchObject({
+      ok: false,
+      problem: {
+        code: 'url_not_allowed',
+        message: expect.stringMatching(/QUALOR_SCM_INTERNAL_HOSTS/),
+      },
+    });
+    // A row the API would refuse: no collection, or a service principal on a Server.
+    expect(
+      await testAzureConnection(
+        { ...row, baseUrl: new URL(server.url).origin },
+        deps(listed),
+        null,
+      ),
+    ).toMatchObject({ ok: false, problem: { code: 'url_not_allowed' } });
+    expect(
+      await testAzureConnection(
+        {
+          ...row,
+          azureAuth: 'service_principal_secret',
+          azureTenantId: tenantId,
+          azureClientId: clientId,
+        },
+        deps(listed),
+        null,
+      ),
+    ).toMatchObject({ ok: false, problem: { code: 'url_not_allowed', message: SERVER_TAKES_PAT } });
+    expect(server.requests).toHaveLength(0);
+    // The same row, listed: it reaches the fake.
+    expect(await testAzureConnection(row, deps(listed), null)).toMatchObject({ ok: true });
+  });
+
+  it("keeps a service principal's token in a job's cache across clients, never for another credential", async () => {
+    const row = await rowOf((await created(SP_SECRET)).id);
+    const deps = scmDepsOf(h.ctx.config);
+    const clientOf = (r: typeof row, runtime?: { azureTokens: InstallationTokenCache }) => {
+      const made = azureClientFor(r, deps, runtime);
+      if ('problem' in made) throw new Error(made.problem);
+      return made.client;
+    };
+    const runtime = { azureTokens: new InstallationTokenCache() };
+    await clientOf(row, runtime).connectionData();
+    await clientOf(row, runtime).repositories();
+    expect([services.tokenRequests.length, runtime.azureTokens.size]).toEqual([1, 1]);
+    // Without a job's cache, a client asks Entra once for all its requests.
+    const alone = clientOf(row);
+    await alone.connectionData();
+    await alone.repositories();
+    expect(services.tokenRequests).toHaveLength(2);
+    // Another secret is another key: Entra is asked, and refuses it.
+    const replaced = {
+      ...row,
+      tokenEnc: encryptSecret(encryptionKey(h.ctx.config.secretKey), 'wrong-secret', SCM_TOKEN_AAD),
+    };
+    await expect(clientOf(replaced, runtime).connectionData()).rejects.toMatchObject({
+      kind: 'auth',
+      reason: 'token_endpoint',
+    });
+    expect(services.tokenRequests).toHaveLength(3);
   });
 });

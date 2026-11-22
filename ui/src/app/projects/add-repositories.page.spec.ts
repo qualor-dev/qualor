@@ -54,6 +54,7 @@ function connection(
             ciSetupAllowed: ciSetup.available,
           }
         : null,
+    azure: null,
     ciSetup,
     fixMrsAllowed: false,
   };
