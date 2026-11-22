@@ -73,6 +73,7 @@
     "jira:live": "vitest run --project jira-live",
     "fix:live": "vitest run --project fix-live",
     "azure:live": "vitest run --project azure-live",
+    "extension:package": "pnpm --filter @qualor/azure-devops-extension build && pnpm --filter @qualor/azure-devops-extension package",
     "sso:keycloak": "vitest run --project keycloak",
     "bench": "pnpm --filter @qualor/cli bench",
     "openapi": "pnpm --filter @qualor/server openapi",

@@ -97,6 +97,9 @@ export const CONSTANT_FILES = [
   'cli/src/index.ts',
   'packages/shared/src/index.ts',
 ];
+/** The Azure Pipelines extension: its manifest version and its task (version triple, imageTag default). */
+export const EXTENSION_FILE = 'integrations/azure-devops/extension/vss-extension.json';
+export const TASK_FILE = 'integrations/azure-devops/extension/tasks/qualor/task.json';
 export const CHART_FILE = 'deploy/helm/qualor/Chart.yaml';
 /** The committed OpenAPI document carries VERSION in `info.version` (openapi.test.ts compares). */
 export const OPENAPI_FILE = 'server/openapi.json';
@@ -112,12 +115,29 @@ const CHART_APP_VERSION = /^(appVersion: (?:'(?=[^']*'$)|"(?=[^"]*"$)))([^"']*)(
 /** The first "version" inside the top-level "info" object, as serializeOpenApi writes it. */
 const OPENAPI_INFO_VERSION = /^( {2}"info": \{\n(?: {4}.*\n)*? {4}"version": ")([^"]*)(")/m;
 
+/** task.json: "version": { "Major": 0, "Minor": 16, "Patch": 0 }, as the file is formatted. */
+const TASK_TRIPLE = /("Major":\s*)(\d+)(,\s*"Minor":\s*)(\d+)(,\s*"Patch":\s*)(\d+)/;
+/** The default of the task's imageTag input (the task falls back to its own version when empty). */
+const TASK_IMAGE_TAG = /("name":\s*"imageTag"[^}]*?"defaultValue":\s*")([^"]*)(")/;
+
 const read = (root: string, file: string): string => readFileSync(path.join(root, file), 'utf8');
 
 export function readVersions(root = REPO_ROOT): Record<string, string> {
   const out: Record<string, string> = {};
   for (const f of PACKAGE_FILES) out[f] = PACKAGE_VERSION.exec(read(root, f))?.[2] ?? '(none)';
   for (const f of CONSTANT_FILES) out[f] = CONSTANT.exec(read(root, f))?.[2] ?? '(none)';
+  // A Marketplace version and a task version hold numbers only: for a pre-release VERSION they
+  // carry its x.y.z, which is reported as the full version while the numbers agree.
+  const core = (out[CONSTANT_FILES[0] ?? ''] ?? '').replace(/-.*$/, '');
+  const full = (numbers: string | undefined): string =>
+    numbers !== undefined && numbers === core
+      ? (out[CONSTANT_FILES[0] ?? ''] ?? numbers)
+      : (numbers ?? '(none)');
+  out[EXTENSION_FILE] = full(PACKAGE_VERSION.exec(read(root, EXTENSION_FILE))?.[2]);
+  const task = read(root, TASK_FILE);
+  const triple = TASK_TRIPLE.exec(task);
+  out[`${TASK_FILE} version`] = full(triple ? `${triple[2]}.${triple[4]}.${triple[6]}` : undefined);
+  out[`${TASK_FILE} imageTag`] = TASK_IMAGE_TAG.exec(task)?.[2] ?? '(none)';
   out[OPENAPI_FILE] = OPENAPI_INFO_VERSION.exec(read(root, OPENAPI_FILE))?.[2] ?? '(none)';
   // Required (ruling RE6): a checkout without the chart fails here, naming the file.
   const chart = read(root, CHART_FILE);
@@ -149,8 +169,29 @@ function replaced(root: string, file: string, patterns: RegExp[], v: Version): s
   return text;
 }
 
+/** vss-extension.json's version: the first "version" line. */
+const EXTENSION_VERSION = PACKAGE_VERSION;
+const core = (v: Version): Version => ({ ...v, text: `${v.major}.${v.minor}.${v.patch}` });
+
+function taskText(root: string, v: Version): string {
+  let text = read(root, TASK_FILE);
+  if (!TASK_TRIPLE.test(text))
+    throw new Error(`${TASK_FILE}: no version found (Major/Minor/Patch)`);
+  if (!TASK_IMAGE_TAG.test(text))
+    throw new Error(`${TASK_FILE}: no version found (imageTag default)`);
+  text = text.replace(
+    TASK_TRIPLE,
+    (_m, a: string, _1: string, b: string, _2: string, c: string) =>
+      `${a}${v.major}${b}${v.minor}${c}${v.patch}`,
+  );
+  return text.replace(
+    TASK_IMAGE_TAG,
+    (_m, a: string, _old: string, b: string) => `${a}${v.text}${b}`,
+  );
+}
+
 /**
- * Sets every location of release.md §2, and `info.version` of server/openapi.json; returns the
+ * Sets every location of release.md §2, the extension manifest and task.json (version, imageTag), and `info.version` of server/openapi.json; returns the
  * files changed. Atomic in effect: every file is read and checked before the first is written,
  * so a file without its version changes nothing.
  */
@@ -161,7 +202,11 @@ export function setVersion(root: string, v: Version): string[] {
     [OPENAPI_FILE, [OPENAPI_INFO_VERSION]],
     [CHART_FILE, [CHART_VERSION, CHART_APP_VERSION]],
   ];
-  const texts = plan.map(([f, patterns]) => [f, replaced(root, f, patterns, v)] as const);
+  const texts = [
+    ...plan.map(([f, patterns]) => [f, replaced(root, f, patterns, v)] as const),
+    [EXTENSION_FILE, replaced(root, EXTENSION_FILE, [EXTENSION_VERSION], core(v))] as const,
+    [TASK_FILE, taskText(root, v)] as const,
+  ];
   for (const [f, text] of texts) writeFileSync(path.join(root, f), text);
   return texts.map(([f]) => f);
 }

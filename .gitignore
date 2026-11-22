@@ -17,3 +17,4 @@ tools/analyzers/sonarjs/categories.json
 # the whole drop directory is ignored except its README.
 /tools/analyzers/qualor-rules/*
 !/tools/analyzers/qualor-rules/README.md
+dist-ext/

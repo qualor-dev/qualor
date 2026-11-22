@@ -1,10 +1,11 @@
-import { copyFileSync, rmSync } from 'node:fs';
+import { copyFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+import { bundledPackages, noticesText } from './notices';
 
 /**
  * Builds the task into dist/: tasks/qualor/index.js (src/index.ts with azure-pipelines-task-lib
- * bundled in, so the task needs no node_modules), its task.json and its icon. The agent runs it
+ * bundled in, so the task needs no node_modules), its task.json, its icon and THIRD-PARTY-NOTICES (the licence of every bundled package). The agent runs it
  * with Node 24 or Node 20 (task.json `execution`).
  */
 const root = path.resolve(__dirname, '..');
@@ -12,7 +13,7 @@ const task = path.join(root, 'dist', 'tasks', 'qualor');
 
 async function main(): Promise<void> {
   rmSync(path.join(root, 'dist'), { recursive: true, force: true });
-  await build({
+  const result = await build({
     absWorkingDir: root,
     entryPoints: ['tasks/qualor/src/index.ts'],
     outfile: path.join(task, 'index.js'),
@@ -21,8 +22,12 @@ async function main(): Promise<void> {
     target: 'node20',
     format: 'cjs',
     minify: false,
+    metafile: true,
     logLevel: 'warning',
   });
+  // MIT and ISC require the notice in every distributed copy: list what went into index.js.
+  const packages = bundledPackages(Object.keys(result.metafile.inputs), root);
+  writeFileSync(path.join(task, 'THIRD-PARTY-NOTICES'), noticesText(packages));
   copyFileSync(path.join(root, 'tasks', 'qualor', 'task.json'), path.join(task, 'task.json'));
   copyFileSync(path.join(root, 'images', 'icon.png'), path.join(task, 'icon.png'));
   process.stdout.write('built dist/tasks/qualor\n');

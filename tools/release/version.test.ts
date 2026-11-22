@@ -10,6 +10,7 @@ import {
   compareVersions,
   CONSTANT_FILES,
   currentVersion,
+  EXTENSION_FILE,
   gitTag,
   imageTags,
   OPENAPI_FILE,
@@ -18,11 +19,19 @@ import {
   readVersions,
   releasedVersions,
   setVersion,
+  TASK_FILE,
   versionArgument,
   versionProblems,
 } from './version';
 
-const ALL_FILES = [...PACKAGE_FILES, ...CONSTANT_FILES, OPENAPI_FILE, CHART_FILE];
+const ALL_FILES = [
+  ...PACKAGE_FILES,
+  ...CONSTANT_FILES,
+  OPENAPI_FILE,
+  CHART_FILE,
+  EXTENSION_FILE,
+  TASK_FILE,
+];
 
 describe('versions (release.md §2)', () => {
   it('parses SemVer with an optional pre-release, and nothing else', () => {
@@ -67,7 +76,7 @@ describe('versions (release.md §2)', () => {
 
   it('finds one version everywhere in this repository', () => {
     const versions = readVersions();
-    for (const f of ALL_FILES.filter((x) => x !== CHART_FILE)) {
+    for (const f of ALL_FILES.filter((x) => x !== CHART_FILE && x !== TASK_FILE)) {
       expect(versions, f).toHaveProperty(f);
     }
     expect(versionProblems(versions)).toEqual([]);
@@ -125,6 +134,68 @@ describe('setVersion', () => {
     expect(() => setVersion(dir, parseVersion('0.1.0'))).toThrow(
       /server\/src\/index\.ts: no version found/,
     );
+    expect(ALL_FILES.map((f) => readFileSync(path.join(dir, f), 'utf8'))).toEqual(before);
+  });
+});
+
+describe('the Azure Pipelines extension follows VERSION', () => {
+  let dir = '';
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const copy = (): void => {
+    dir = mkdtempSync(path.join(tmpdir(), 'qualor-version-'));
+    for (const f of ALL_FILES) {
+      mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      cpSync(f, path.join(dir, f));
+    }
+  };
+  const edit = (file: string, from: RegExp, to: string): void => {
+    const p = path.join(dir, file);
+    writeFileSync(p, readFileSync(p, 'utf8').replace(from, to));
+  };
+
+  it('rewrites the manifest version, the task version and the imageTag default', () => {
+    copy();
+    setVersion(dir, parseVersion('1.4.2'));
+    const manifest = JSON.parse(readFileSync(path.join(dir, EXTENSION_FILE), 'utf8')) as {
+      version: string;
+    };
+    const task = JSON.parse(readFileSync(path.join(dir, TASK_FILE), 'utf8')) as {
+      version: unknown;
+      inputs: { name: string; defaultValue: string }[];
+    };
+    expect(manifest.version).toBe('1.4.2');
+    expect(task.version).toEqual({ Major: 1, Minor: 4, Patch: 2 });
+    expect(task.inputs.find((i) => i.name === 'imageTag')?.defaultValue).toBe('1.4.2');
+    expect(versionProblems(readVersions(dir))).toEqual([]);
+  });
+
+  it('reports a manifest version, a task version or an imageTag that differs', () => {
+    copy();
+    edit(EXTENSION_FILE, /"version": "[^"]*"/, '"version": "9.9.9"');
+    expect(versionProblems(readVersions(dir))[0]).toContain(`${EXTENSION_FILE} 9.9.9`);
+    copy();
+    edit(TASK_FILE, /"Patch": \d+/, '"Patch": 99');
+    expect(versionProblems(readVersions(dir))[0]).toMatch(/task\.json version \d+\.\d+\.99/);
+    copy();
+    edit(TASK_FILE, /("name": "imageTag"[^}]*?"defaultValue": ")[^"]*/, '$19.9.9');
+    expect(versionProblems(readVersions(dir))[0]).toContain('task.json imageTag 9.9.9');
+  });
+
+  it('keeps a pre-release in step: numbers in the files, the full version in the image tag', () => {
+    copy();
+    setVersion(dir, parseVersion('1.5.0-rc.1'));
+    expect(versionProblems(readVersions(dir))).toEqual([]);
+    const manifest = JSON.parse(readFileSync(path.join(dir, EXTENSION_FILE), 'utf8')) as {
+      version: string;
+    };
+    expect(manifest.version).toBe('1.5.0');
+  });
+
+  it('changes nothing when task.json has no imageTag default', () => {
+    copy();
+    edit(TASK_FILE, /"imageTag"/, '"imageTagX"');
+    const before = ALL_FILES.map((f) => readFileSync(path.join(dir, f), 'utf8'));
+    expect(() => setVersion(dir, parseVersion('0.1.0'))).toThrow(/task\.json: no version found/);
     expect(ALL_FILES.map((f) => readFileSync(path.join(dir, f), 'utf8'))).toEqual(before);
   });
 });

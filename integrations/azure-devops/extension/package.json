@@ -5,7 +5,8 @@
   "type": "commonjs",
   "description": "The Qualor extension for Azure Pipelines: the Qualor@0 task runs the scanner image with Docker.",
   "scripts": {
-    "build": "tsx scripts/build.ts"
+    "build": "tsx scripts/build.ts",
+    "package": "tsx scripts/package.ts"
   },
   "dependencies": {
     "azure-pipelines-task-lib": "5.283.3"
