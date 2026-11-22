@@ -20,6 +20,36 @@ function section(page: Page, kind: string) {
     .filter({ has: page.locator('dl.app-facts', { hasText: kind }) });
 }
 
+/** Whatever a failed step or an earlier attempt left: no Azure connection but the seed's PAT one, and Legacy Billing unmapped. */
+test.afterEach(async ({ page }) => {
+  const headers = { 'x-qualor-csrf': await csrfToken(page) };
+  const orgs = (await (await page.request.get('/api/v0/organizations?limit=100')).json()) as {
+    items: { id: string }[];
+  };
+  for (const org of orgs.items) {
+    const listed = (await (
+      await page.request.get(`/api/v0/scm-connections?organizationId=${org.id}&limit=100`)
+    ).json()) as { items?: { id: string; provider: string; azure?: { auth: string } }[] };
+    for (const c of listed.items ?? []) {
+      if (c.provider === 'azure' && c.azure?.auth !== 'pat') {
+        const deleted = await page.request.delete(`/api/v0/scm-connections/${c.id}`, { headers });
+        expect(deleted.status()).toBe(204);
+      }
+    }
+  }
+  const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
+    items: { id: string; key: string; scmProjectRef: string | null }[];
+  };
+  const legacy = projects.items.find((p) => p.key === LEGACY.key);
+  if (legacy?.scmProjectRef) {
+    const cleared = await page.request.patch(`/api/v0/projects/${legacy.id}`, {
+      headers,
+      data: { scmConnectionId: null, scmProjectRef: null },
+    });
+    expect(cleared.status()).toBe(200);
+  }
+});
+
 test('the seeded Azure DevOps connection is listed and tested', async ({ page }) => {
   await page.goto('/settings/azure-devops');
   await expect(page).toHaveTitle('Azure DevOps · Qualor');
@@ -89,15 +119,8 @@ test('a project is mapped to a repository listed by Azure DevOps', async ({ page
   );
   await expectAccessible(page);
 
-  // Unmap it again: later tests start from the seed.
   const projects = (await (await page.request.get('/api/v0/projects?limit=100')).json()) as {
-    items: { id: string; key: string; scmProjectRef: string | null }[];
+    items: { key: string; scmProjectRef: string | null }[];
   };
-  const legacy = projects.items.find((p) => p.key === LEGACY.key);
-  expect(legacy?.scmProjectRef).toBe(AZURE.repository.id);
-  const cleared = await page.request.patch(`/api/v0/projects/${legacy?.id}`, {
-    headers: { 'x-qualor-csrf': await csrfToken(page) },
-    data: { scmConnectionId: null, scmProjectRef: null },
-  });
-  expect(cleared.status()).toBe(200);
+  expect(projects.items.find((p) => p.key === LEGACY.key)?.scmProjectRef).toBe(AZURE.repository.id);
 });

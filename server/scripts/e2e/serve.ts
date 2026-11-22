@@ -33,8 +33,8 @@ import {
   seedAiFinding,
   seedDemo,
   seedEnterprise,
-  seedGitHubApp,
   seedAzure,
+  seedGitHubApp,
   seedMail,
   seedRoles,
   seedSso,
@@ -279,8 +279,11 @@ async function main(): Promise<void> {
   // Bug, which Qualor can create; Story, whose required Components it cannot fill.
   jira.addProject({ id: '10000', key: 'QUAL', name: 'Quality', issueTypes: defaultIssueTypes() });
   const closeFakes = async (): Promise<void> => {
-    await Promise.all([llm.close(), gitlab.close(), jira.close(), azure.close()]);
-    rmSync(azureCaDir, { recursive: true, force: true });
+    try {
+      await Promise.all([llm.close(), gitlab.close(), jira.close(), azure.close()]);
+    } finally {
+      rmSync(azureCaDir, { recursive: true, force: true });
+    }
   };
 
   let container: StartedPostgreSqlContainer | undefined;
