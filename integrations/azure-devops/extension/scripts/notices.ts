@@ -46,13 +46,15 @@ export function bundledPackages(inputs: readonly string[], workingDir: string): 
     if (root) dirs.set(path.resolve(workingDir, root.dir), root.name);
   }
   const out: Bundled[] = [];
-  for (const [dir, name] of [...dirs].sort(([, a], [, b]) => a.localeCompare(b))) {
+  for (const [dir, name] of [...dirs].sort(
+    ([da, a], [db, b]) => a.localeCompare(b) || da.localeCompare(db),
+  )) {
     const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')) as {
       version?: string;
       license?: unknown;
       licenses?: unknown;
     };
-    const file = readdirSync(dir).find((f) => /^(licen[cs]e|copying)(\.|$)/i.test(f));
+    const file = readdirSync(dir).find((f) => /^(licen[cs]e|copying)\b/i.test(f));
     if (file === undefined) {
       throw new Error(`${name} is bundled into the task but ships no licence file (${dir})`);
     }
