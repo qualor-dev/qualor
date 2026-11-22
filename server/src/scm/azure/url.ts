@@ -1,0 +1,56 @@
+/**
+ * Azure DevOps address rules: which deployment a base URL is, whether its shape is right, and the
+ * web URLs. Pure helpers, no I/O.
+ *
+ * Inputs are base URLs already normalised by `normalBaseUrl` (`new URL(raw).href` without trailing
+ * slashes), which lower-cases the host and keeps the scheme, port and path; `baseUrlProblem` has
+ * already refused queries, fragments and credentials. The host is still compared case-insensitively
+ * here so these helpers do not depend on that.
+ */
+
+export type AzureDeployment = 'services' | 'server';
+
+/** An Azure DevOps repository id (a GUID). */
+export const AZURE_REPOSITORY_ID =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+const ORGANIZATION = /^[A-Za-z0-9][A-Za-z0-9-]{0,48}[A-Za-z0-9]$|^[A-Za-z0-9]$/;
+const SERVICES_HINT = 'Use https://dev.azure.com/<organization>';
+const SERVER_HINT = 'Use the collection URL, e.g. https://ado.example.com/DefaultCollection';
+
+function isServicesHost(host: string): boolean {
+  return host === 'dev.azure.com' || host.endsWith('.visualstudio.com');
+}
+
+/** Services (dev.azure.com, *.visualstudio.com) or Server, from the host alone. */
+export function azureDeployment(normalisedBaseUrl: string): AzureDeployment {
+  return isServicesHost(new URL(normalisedBaseUrl).hostname.toLowerCase()) ? 'services' : 'server';
+}
+
+/** What is wrong with the shape of a normalised base URL, or null. */
+export function azureBaseUrlProblem(normalised: string): string | null {
+  const url = new URL(normalised);
+  const host = url.hostname.toLowerCase();
+  const segments = url.pathname.split('/').filter((part) => part !== '');
+  if (!isServicesHost(host)) return segments.length > 0 ? null : SERVER_HINT;
+  const plain = url.protocol === 'https:' && url.port === '' && url.search === '';
+  if (!plain) return SERVICES_HINT;
+  if (host === 'dev.azure.com') {
+    const [organization] = segments;
+    return segments.length === 1 && organization !== undefined && ORGANIZATION.test(organization)
+      ? null
+      : SERVICES_HINT;
+  }
+  const label = host.slice(0, -'.visualstudio.com'.length);
+  return segments.length === 0 && ORGANIZATION.test(label) ? null : SERVICES_HINT;
+}
+
+/** Web and API share one base URL on both deployments. */
+export function azureWebBase(normalisedBaseUrl: string): string {
+  return normalisedBaseUrl;
+}
+
+/** A pull request's web URL, from the repository's `webUrl`. */
+export function azurePullRequestWebUrl(repositoryWebUrl: string, id: number): string {
+  return `${repositoryWebUrl}/pullrequest/${id}`;
+}
