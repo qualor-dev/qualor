@@ -60,7 +60,7 @@ export const ENTRA_ORIGIN = 'https://login.microsoftonline.com';
 
 /**
  * The tenant's OAuth 2.0 token endpoint (v2.0) of Microsoft Entra ID, or of the tests' stand-in
- * at `origin` (`Config.azureTokenUrl`).
+ * at `origin` (`Config.azureTokenOrigin`).
  */
 export function entraTokenUrl(tenantId: string, origin: string = ENTRA_ORIGIN): string {
   return `${origin}/${tenantId}/oauth2/v2.0/token`;

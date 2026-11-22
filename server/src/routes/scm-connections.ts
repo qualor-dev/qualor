@@ -292,14 +292,15 @@ function checkedPrivateKey(raw: string): string {
 }
 
 /**
- * Whether a lost race on the stored address is reported as a changed address whatever the request
- * names (GitHub, Azure DevOps, where the kind or ids may have changed instead), or only when it
- * names no address and brings no credential (GitLab).
+ * How a PATCH that lost a race on the stored row is told: `address`, the address changed whatever
+ * it names, unless it brings the credential (GitHub); `unnamed-address`, so only when it names no
+ * address and brings no credential, else that a move needs the credential (GitLab); `connection`,
+ * the connection changed (Azure DevOps, where the kind or the ids may have changed instead).
  */
-const ADDRESS_CONFLICT_WHATEVER_NAMED: Record<ScmProvider, boolean> = {
-  github: true,
-  gitlab: false,
-  azure: true,
+const LOST_RACE: Record<ScmProvider, 'address' | 'unnamed-address' | 'connection'> = {
+  github: 'address',
+  gitlab: 'unnamed-address',
+  azure: 'connection',
 };
 /** The shape of an address beyond the common rules (scm/url.ts), or null. */
 const ADDRESS_SHAPE_PROBLEM: Record<ScmProvider, (normalised: string) => string | null> = {
@@ -748,13 +749,16 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             .from(scmConnections)
             .where(eq(scmConnections.id, row.id));
           if (!now) throw notFound('SCM connection');
-          // The stored address is no longer the one this request named: a change of address.
-          // A change without the credential that names no address (the GitHub App id or either
-          // provider's secret alone) did not ask for a move, so it is told the address changed,
-          // not that a move needs the credential. A GitHub change is told so whatever it names.
+          // GitLab and GitHub: the stored address is no longer the one this request named, a
+          // change of address. A change without the credential that names no address (the GitHub
+          // App id or either provider's secret alone) did not ask for a move, so it is told the
+          // address changed, not that a move needs the credential. A GitHub change is told so
+          // whatever it names. Azure DevOps: the address, the kind or the ids changed.
+          const lost = LOST_RACE[row.provider];
           if (
+            lost !== 'connection' &&
             !bringsCredential &&
-            (ADDRESS_CONFLICT_WHATEVER_NAMED[row.provider] || body.baseUrl === undefined)
+            (lost === 'address' || body.baseUrl === undefined)
           ) {
             throw new ProblemError(
               503,
@@ -763,7 +767,9 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
               { headers: { 'retry-after': '1' } },
             );
           }
-          if (!bringsCredential) throw validationFailed([needsCredential]);
+          if (lost !== 'connection' && !bringsCredential) {
+            throw validationFailed([needsCredential]);
+          }
           throw new ProblemError(
             503,
             'CONCURRENCY_CONFLICT',

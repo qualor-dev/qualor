@@ -42,7 +42,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     telemetry: { enabled: false, url: 'http://127.0.0.1:9/telemetry' },
     smtp: null,
     updateCheck: { url: 'http://127.0.0.1:9/tags' },
-    azureTokenUrl: null,
+    azureTokenOrigin: null,
     azureTestOrigin: null,
     ...overrides,
   };

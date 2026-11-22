@@ -487,11 +487,11 @@ export interface Config {
   /** telemetry.md "Update check": QUALOR_UPDATE_CHECK_URL; runs only while telemetry is enabled. */
   updateCheck: { url: string };
   /**
-   * Tests only (Azure DevOps sub-plan 2, ruling 1): QUALOR_AZURE_TOKEN_URL, the origin that stands
-   * in for https://login.microsoftonline.com (a fake Entra token endpoint), read only when
+   * Tests only (Azure DevOps sub-plan 2, ruling 1): QUALOR_AZURE_TOKEN_ORIGIN, the origin that
+   * stands in for https://login.microsoftonline.com (a fake Entra token endpoint), read only when
    * NODE_ENV is `test`; else null, and Entra's own endpoint is used.
    */
-  azureTokenUrl: string | null;
+  azureTokenOrigin: string | null;
   /**
    * Tests only (ruling 5): QUALOR_AZURE_TEST_ORIGIN, the origin a Services connection's requests
    * go to instead of its own (a fake Azure DevOps), with the stored address's path; read only when
@@ -522,10 +522,12 @@ export class ConfigError extends Error {
  */
 function azureTestStandIns(
   env: Record<string, string | undefined>,
-): Pick<Config, 'azureTokenUrl' | 'azureTestOrigin'> {
-  if (env.NODE_ENV !== 'test') return { azureTokenUrl: null, azureTestOrigin: null };
+): Pick<Config, 'azureTokenOrigin' | 'azureTestOrigin'> {
+  if (env.NODE_ENV !== 'test') return { azureTokenOrigin: null, azureTestOrigin: null };
   const problems: string[] = [];
-  const origin = (name: 'QUALOR_AZURE_TOKEN_URL' | 'QUALOR_AZURE_TEST_ORIGIN'): string | null => {
+  const origin = (
+    name: 'QUALOR_AZURE_TOKEN_ORIGIN' | 'QUALOR_AZURE_TEST_ORIGIN',
+  ): string | null => {
     const raw = env[name]?.trim() ?? '';
     if (raw === '') return null;
     let url: URL | null;
@@ -542,7 +544,7 @@ function azureTestStandIns(
     return url.origin;
   };
   const standIns = {
-    azureTokenUrl: origin('QUALOR_AZURE_TOKEN_URL'),
+    azureTokenOrigin: origin('QUALOR_AZURE_TOKEN_ORIGIN'),
     azureTestOrigin: origin('QUALOR_AZURE_TEST_ORIGIN'),
   };
   if (problems.length > 0) throw new ConfigError(problems);

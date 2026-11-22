@@ -36,7 +36,7 @@ export function servicesUrlOf(fake: FakeAzureDevOps): string {
 /**
  * A server that reaches the fakes: their hosts listed in `QUALOR_SCM_INTERNAL_HOSTS`, a Services
  * organisation's requests sent to the Services fake (`azureTestOrigin`, ruling 5) and Entra's to
- * its token endpoint (`azureTokenUrl`, ruling 1). A Server fake is reached at its own address.
+ * its token endpoint (`azureTokenOrigin`, ruling 1). A Server fake is reached at its own address.
  */
 export function azureServerConfig(
   services: FakeAzureDevOps,
@@ -46,7 +46,7 @@ export function azureServerConfig(
   return {
     scmInternalHosts: new Set(hosts) as ReadonlySet<string>,
     azureTestOrigin: new URL(services.url).origin,
-    azureTokenUrl:
+    azureTokenOrigin:
       services.principalUser === null
         ? null
         : new URL(services.tokenUrl(AZURE_TEST_PRINCIPAL.tenantId)).origin,

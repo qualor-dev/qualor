@@ -59,7 +59,7 @@ describe('loadConfig', () => {
       updateCheck: {
         url: 'https://hub.docker.com/v2/namespaces/qualor/repositories/server/tags?page_size=100&ordering=last_updated',
       },
-      azureTokenUrl: null,
+      azureTokenOrigin: null,
       azureTestOrigin: null,
     });
   });
@@ -67,26 +67,41 @@ describe('loadConfig', () => {
   it('reads the Azure DevOps test stand-ins only when NODE_ENV is test (sub-plan 2 rulings 1, 5)', () => {
     const env = {
       ...base,
-      QUALOR_AZURE_TOKEN_URL: 'https://127.0.0.1:4443/',
+      QUALOR_AZURE_TOKEN_ORIGIN: 'https://127.0.0.1:4443/',
       QUALOR_AZURE_TEST_ORIGIN: 'http://127.0.0.1:4080',
     };
     expect(loadConfig({ ...env, NODE_ENV: 'test' })).toMatchObject({
-      azureTokenUrl: 'https://127.0.0.1:4443',
+      azureTokenOrigin: 'https://127.0.0.1:4443',
       azureTestOrigin: 'http://127.0.0.1:4080',
     });
     for (const nodeEnv of [undefined, 'production', 'development']) {
       expect(loadConfig({ ...env, NODE_ENV: nodeEnv }), String(nodeEnv)).toMatchObject({
-        azureTokenUrl: null,
+        azureTokenOrigin: null,
         azureTestOrigin: null,
       });
     }
     // Under test an origin it cannot use stops the boot; elsewhere it is not read at all.
-    for (const bad of ['ftp://127.0.0.1', 'http://127.0.0.1:4080/path', 'not a url']) {
-      expect(problems({ ...base, NODE_ENV: 'test', QUALOR_AZURE_TEST_ORIGIN: bad }), bad).toEqual([
-        'QUALOR_AZURE_TEST_ORIGIN: must be an http or https origin',
-      ]);
-      expect(problems({ ...base, QUALOR_AZURE_TEST_ORIGIN: bad })).toEqual([]);
+    const bads = ['ftp://127.0.0.1', 'http://127.0.0.1:4080/path', 'https://h/?q=1', 'not a url'];
+    for (const name of ['QUALOR_AZURE_TOKEN_ORIGIN', 'QUALOR_AZURE_TEST_ORIGIN']) {
+      for (const bad of bads) {
+        expect(problems({ ...base, NODE_ENV: 'test', [name]: bad }), `${name}=${bad}`).toEqual([
+          `${name}: must be an http or https origin`,
+        ]);
+        expect(problems({ ...base, [name]: bad })).toEqual([]);
+      }
     }
+    // Both wrong: both named.
+    expect(
+      problems({
+        ...base,
+        NODE_ENV: 'test',
+        QUALOR_AZURE_TOKEN_ORIGIN: 'x',
+        QUALOR_AZURE_TEST_ORIGIN: 'y',
+      }),
+    ).toEqual([
+      'QUALOR_AZURE_TOKEN_ORIGIN: must be an http or https origin',
+      'QUALOR_AZURE_TEST_ORIGIN: must be an http or https origin',
+    ]);
   });
 
   it('QUALOR_TELEMETRY: on by default, off with false/0/off/no, anything else stops the boot', () => {

@@ -1,4 +1,4 @@
-import { createHash, X509Certificate } from 'node:crypto';
+import { createHash, generateKeyPairSync, X509Certificate } from 'node:crypto';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ADMIN_PASSWORD, addMember, createUser, login, type Session } from '../../test/app';
@@ -18,6 +18,7 @@ import { rbacPlugins } from '../../test/rbac';
 import { TEST_IDP, TEST_SP } from '../../test/saml';
 import { GITLAB_WEBHOOK_SECRET, PUBLIC_URL, scmTestConfig } from '../../test/scm';
 import { trustTestCa } from '../../test/tls';
+import { selfSignedRsaCertificate } from '../../test/x509';
 import { decryptSecret, encryptionKey, encryptSecret } from '../crypto/secrets';
 import {
   auditEvents,
@@ -2006,6 +2007,114 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     await expectNoCredential();
   });
 
+  it('moves a PAT to a certificate and a certificate to a client secret, each with its credential and ids', async () => {
+    const { id } = await created({ azureAuth: 'pat', token: services.pat });
+    const refused = async (payload: Record<string, unknown>, paths: string[]) => {
+      const res = await patch(id, payload);
+      expect([res.statusCode, errorPaths(res.body)], JSON.stringify(payload)).toEqual([422, paths]);
+    };
+    const toCertificate = 'service_principal_certificate';
+    await refused({ azureAuth: toCertificate }, [
+      'body.certificate',
+      'body.clientId',
+      'body.tenantId',
+    ]);
+    await refused({ azureAuth: toCertificate, certificate: CERTIFICATE }, [
+      'body.clientId',
+      'body.tenantId',
+    ]);
+    await refused({ azureAuth: toCertificate, token: services.pat, tenantId, clientId }, [
+      'body.certificate',
+      'body.token',
+    ]);
+    expect(await rowOf(id)).toMatchObject({ azureAuth: 'pat', azureTenantId: null });
+    const certificate = await patch(id, SP_CERTIFICATE);
+    expect(certificate.json().azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_certificate',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: certificateOf(TEST_IDP.certPem),
+    });
+    expect(await storedCredential(id)).toBe(CERTIFICATE);
+    expect((await test(id)).json()).toMatchObject({
+      ok: true,
+      user: { username: services.principalUser!.displayName },
+    });
+    const toSecret = 'service_principal_secret';
+    await refused({ azureAuth: toSecret }, ['body.clientId', 'body.tenantId', 'body.token']);
+    await refused({ azureAuth: toSecret, token: SECRET }, ['body.clientId', 'body.tenantId']);
+    await refused({ ...SP_SECRET, certificate: CERTIFICATE }, ['body.certificate']);
+    expect((await rowOf(id)).azureAuth).toBe(toCertificate);
+    const secret = await patch(id, SP_SECRET);
+    expect(secret.json().azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_secret',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: null,
+    });
+    expect(await storedCredential(id)).toBe(SECRET);
+    expect((await test(id)).json()).toMatchObject({ ok: true });
+    expect(await auditOf('scm_connection.updated', id)).toEqual([
+      { changed: ['azureAuth', 'tenantId', 'clientId', 'certificate'] },
+      { changed: ['token', 'azureAuth'] },
+    ]);
+    await expectNoCredential();
+  });
+
+  it('shows a stored certificate that has expired, and tests it without asking Entra or Azure DevOps', async () => {
+    // A key made here, never written anywhere; its certificate ran out on 2001-01-01.
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const expiredCertificate = selfSignedRsaCertificate(privateKey, {
+      notBefore: '000101000000Z',
+      notAfter: '010101000000Z',
+    });
+    const expired = `${expiredCertificate}${privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()}`;
+    // The API takes no expired certificate, so this one expired after it was saved.
+    const refused = await post({ ...SP_CERTIFICATE, certificate: expired });
+    expect([refused.statusCode, refused.json().errors]).toEqual([
+      422,
+      [{ path: 'body.certificate', message: AZURE_CERTIFICATE_PROBLEM_TEXT.expired }],
+    ]);
+    const { id } = await created(SP_CERTIFICATE);
+    await h.ctx.db
+      .update(scmConnections)
+      .set({
+        tokenEnc: encryptSecret(encryptionKey(h.ctx.config.secretKey), expired, SCM_TOKEN_AAD),
+      })
+      .where(eq(scmConnections.id, id));
+    const listed = await inject('GET', `/scm-connections?organizationId=${h.organizationId}`);
+    expect((listed.json().items as AzureConnection[]).find((c) => c.id === id)?.azure).toEqual({
+      deployment: 'services',
+      auth: 'service_principal_certificate',
+      tenantId,
+      clientId,
+      credentialReadable: true,
+      certificate: { ...certificateOf(expiredCertificate), notAfter: '2001-01-01T00:00:00.000Z' },
+    });
+    services.clearRequests();
+    expect((await test(id)).json()).toEqual({
+      ok: false,
+      user: null,
+      project: null,
+      problem: {
+        code: 'token_endpoint',
+        message: 'The stored certificate has expired; upload a new one',
+      },
+      missingAccess: null,
+      visible: null,
+    });
+    expect([services.requests, services.tokenRequests]).toEqual([[], []]);
+    // A new certificate alone replaces it.
+    const renewed = await patch(id, { certificate: CERTIFICATE });
+    expect(renewed.json().azure.certificate).toEqual(certificateOf(TEST_IDP.certPem));
+    expect((await test(id)).json()).toMatchObject({ ok: true });
+    await expectNoCredential();
+  });
+
   it('keeps a service principal off a Server address, also when the address moves', async () => {
     const { id } = await created(SP_SECRET);
     const refused = await patch(id, { baseUrl: server.url, token: SECRET });
@@ -2089,7 +2198,16 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     }
   });
 
-  it('never pairs a credential with a kind changed meanwhile', async () => {
+  it('never pairs a credential with a kind, ids or address changed meanwhile, and says the connection changed', async () => {
+    /** The answer of a PATCH that lost the race: whatever changed, the same neutral words. */
+    const changedMeanwhile = {
+      code: 'CONCURRENCY_CONFLICT',
+      title: 'The connection changed while this request was handled; reload it and try again',
+    };
+    const lost = (res: Awaited<ReturnType<typeof patch>>) => {
+      expect([res.statusCode, res.headers['retry-after']], res.body).toEqual([503, '1']);
+      expect(res.json()).toMatchObject(changedMeanwhile);
+    };
     const { id } = await created(SP_SECRET);
     // Both read the client secret connection; the change to a PAT writes first.
     const [toPat, rotate] = await raceConnectionPatches(
@@ -2099,8 +2217,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       { token: 'rotated-secret' },
     );
     expect(toPat.statusCode, toPat.body).toBe(200);
-    expect(rotate.statusCode, rotate.body).toBe(503);
-    expect(rotate.json()).toMatchObject({ code: 'CONCURRENCY_CONFLICT' });
+    lost(rotate);
     expect((await rowOf(id)).azureAuth).toBe('pat');
     expect(await storedCredential(id)).toBe(services.pat);
     // A request that names the old tenant without the secret never undoes a new tenant's.
@@ -2112,8 +2229,19 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       { tenantId },
     );
     expect(retenant.statusCode, retenant.body).toBe(200);
-    expect(stale.statusCode, stale.body).toBe(503);
+    lost(stale);
     expect((await rowOf(other.id)).azureTenantId).toBe(OTHER_ID);
+    // One that names the old address without the secret is told the same, not to bring it.
+    const third = await created(SP_SECRET);
+    const [move, named] = await raceConnectionPatches(
+      h,
+      third.id,
+      { baseUrl: 'https://dev.azure.com/other-org', token: SECRET },
+      { baseUrl: SERVICES },
+    );
+    expect(move.statusCode, move.body).toBe(200);
+    lost(named);
+    expect((await rowOf(third.id)).baseUrl).toBe('https://dev.azure.com/other-org');
   });
 
   it('tests each kind: who Qualor acts as, and how many repositories and projects it sees', async () => {

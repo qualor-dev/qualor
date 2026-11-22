@@ -275,7 +275,7 @@ function bearer(
   tokens: InstallationTokenCache,
 ): () => Promise<string> {
   const key = entraCacheKey(connectionId, entra);
-  const origin = deps.azureTokenUrl ?? null;
+  const origin = deps.azureTokenOrigin ?? null;
   // Ruling 1: only a test's fake Entra (on loopback) stands in for Microsoft's endpoint.
   const options: EntraOptions =
     origin === null
