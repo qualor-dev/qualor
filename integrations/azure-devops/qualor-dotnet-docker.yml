@@ -46,13 +46,15 @@ steps:
         named=$(full "${SYSTEM_PULLREQUEST_SOURCECOMMITID:-}")
         merge=$(full "${BUILD_SOURCEVERSION:-}")
         if [ -n "$named" ]; then wanted="$named^{commit}"; else wanted="${merge:-HEAD}^2^{commit}"; fi
+        err=$(mktemp)
+        trap 'rm -f "$err"' EXIT
         status=0
-        head=$(git rev-parse --verify --quiet "$wanted" 2>&1) || status=$?
+        head=$(git rev-parse --verify --quiet "$wanted" 2>"$err") || status=$?
         if [ "$status" -eq 1 ]; then
           echo "The pull request head is not in the clone. Set fetchDepth: 0 on the checkout step." >&2
           exit 1
         elif [ "$status" -ne 0 ]; then
-          echo "Could not read the pull request head from the clone: $(printf %s "$head" | head -n 1)" >&2
+          echo "Could not read the pull request head from the clone: $(head -n 1 "$err")" >&2
           exit 1
         fi
         [ "$(git rev-parse HEAD)" = "$head" ] || git checkout --detach "$head"
@@ -103,7 +105,7 @@ steps:
         -e SYSTEM_TEAMPROJECTID -e SYSTEM_COLLECTIONURI -e SYSTEM_PULLREQUEST_PULLREQUESTID \
         -e SYSTEM_PULLREQUEST_SOURCEBRANCH -e SYSTEM_PULLREQUEST_TARGETBRANCH \
         -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
-        -e QUALOR_URL -e QUALOR_TOKEN \
+        -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY \
         $(QUALOR_SCANNER_IMAGE) dotnet end
     displayName: Qualor end
     env:

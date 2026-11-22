@@ -13,6 +13,8 @@
 # list, with no analyzer and no quality gate.
 # The task runs begin, the build, end, and abort when a step fails. Replace dotnetBuild with the
 # project's own build. The token reaches only the end step: the build runs the repository's code.
+# imageTag pins the scanner to your Qualor server's release line: the extension updates itself on
+# Azure DevOps Services, so the default (the extension's version) would move the scanner.
 # Its documentation: https://qualor.dev/docs/azure-devops
 trigger:
   branches:
@@ -34,6 +36,7 @@ steps:
   - task: Qualor@0
     displayName: Qualor scan
     inputs:
+      imageTag: '0.16'
       dotnet: true
       dotnetBuild: dotnet build --no-incremental
     env:

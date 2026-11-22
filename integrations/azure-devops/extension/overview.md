@@ -7,6 +7,7 @@ request build it scans the pull request's head commit, not the merge commit.
 steps:
   - checkout: self
     fetchDepth: 0
+    persistCredentials: false
   - task: Qualor@0
 ```
 

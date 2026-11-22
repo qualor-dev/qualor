@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { AZURE_PIPELINES_ENV } from '../../../../../../cli/src/config/ci';
+import { EXIT } from '../../../../../../cli/src/errors';
 import {
   planRun,
+  stepFailure,
   stepProcessEnv,
   TASK_FORWARDED_ENV,
   withoutQualor,
@@ -352,5 +354,41 @@ describe('the environment of the docker client and of git on the agent', () => {
 describe('TASK_FORWARDED_ENV', () => {
   it('is the list of CI variables the CLI reads (AZURE_PIPELINES_ENV)', () => {
     expect(TASK_FORWARDED_ENV).toEqual(AZURE_PIPELINES_ENV);
+  });
+});
+
+describe('stepFailure', () => {
+  const runner = (code: number): string =>
+    `The process '/usr/bin/docker' failed with exit code ${code}`;
+
+  it("says a failed quality gate for the scanner's exit code 1 of scan and end", () => {
+    expect(EXIT.GATE_FAILED).toBe(1);
+    for (const name of ['scan', 'end'] as const) {
+      const text = stepFailure(name, runner(EXIT.GATE_FAILED));
+      expect(text).toMatch(/^qualor (scan|dotnet end) failed: the quality gate did not pass[.]/);
+      expect(text).not.toContain('docker');
+    }
+  });
+
+  it('says a usage or configuration error for exit code 2 of any qualor step', () => {
+    expect(EXIT.USAGE).toBe(2);
+    for (const name of ['scan', 'begin', 'end', 'abort'] as const) {
+      expect(stepFailure(name, runner(EXIT.USAGE))).toMatch(
+        /^qualor .* failed: the scanner rejected its arguments or its configuration [(]exit code 2[)][.]/,
+      );
+    }
+  });
+
+  it('names any other code, and the build command is never read as the gate', () => {
+    expect(stepFailure('scan', runner(EXIT.SERVER))).toBe('qualor scan failed with exit code 4.');
+    expect(stepFailure('begin', runner(1))).toBe('qualor dotnet begin failed with exit code 1.');
+    expect(stepFailure('build', runner(1))).toBe('The build command failed with exit code 1.');
+    expect(stepFailure('build', runner(2))).toBe('The build command failed with exit code 2.');
+  });
+
+  it('keeps a message without an exit code', () => {
+    expect(stepFailure('scan', 'spawn docker ENOENT')).toBe(
+      'qualor scan failed: spawn docker ENOENT',
+    );
   });
 });

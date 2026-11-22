@@ -3,7 +3,9 @@
 Run the scanner on Jenkins, Bitbucket Pipelines, TeamCity, Buildkite or your own machine. The
 scanner reads GitLab CI, GitHub Actions and Azure Pipelines variables by itself (Azure Pipelines:
 see [Azure DevOps](./azure-devops.md#run-the-scanner-in-azure-pipelines)). Everywhere else it reads
-the revision and the branch from git, and you pass the rest.
+the revision and the branch from git, and you pass the rest. Azure Pipelines building a repository
+that is not in Azure Repos (GitHub, Bitbucket and others) is not detected and works like the other
+CI systems on this page.
 
 ## What every job needs
 

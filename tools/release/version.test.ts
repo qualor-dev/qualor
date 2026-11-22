@@ -6,6 +6,7 @@ import { parse } from 'yaml';
 import { openApiDocument, serializeOpenApi } from '../../server/src/http/openapi-doc';
 import { VERSION } from '../../server/src/index';
 import {
+  AZURE_EXAMPLES,
   CHART_FILE,
   compareVersions,
   CONSTANT_FILES,
@@ -31,6 +32,7 @@ const ALL_FILES = [
   CHART_FILE,
   EXTENSION_FILE,
   TASK_FILE,
+  ...AZURE_EXAMPLES.map((e) => e.file),
 ];
 
 describe('versions (release.md §2)', () => {
@@ -197,6 +199,56 @@ describe('the Azure Pipelines extension follows VERSION', () => {
     const before = ALL_FILES.map((f) => readFileSync(path.join(dir, f), 'utf8'));
     expect(() => setVersion(dir, parseVersion('0.1.0'))).toThrow(/task\.json: no version found/);
     expect(ALL_FILES.map((f) => readFileSync(path.join(dir, f), 'utf8'))).toEqual(before);
+  });
+});
+
+describe('the Azure Pipelines examples pin the minor tag of VERSION', () => {
+  let dir = '';
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const copy = (): void => {
+    dir = mkdtempSync(path.join(tmpdir(), 'qualor-version-'));
+    for (const f of ALL_FILES) {
+      mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      cpSync(f, path.join(dir, f));
+    }
+  };
+  const text = (file: string): string => readFileSync(path.join(dir, file), 'utf8');
+
+  it('rewrites the image variable and the imageTag input to major.minor', () => {
+    copy();
+    setVersion(dir, parseVersion('1.4.2'));
+    expect(text('integrations/azure-devops/qualor-docker.yml')).toContain(
+      'QUALOR_SCANNER_IMAGE: qualor/scanner:1.4',
+    );
+    expect(text('integrations/azure-devops/qualor-dotnet-docker.yml')).toContain(
+      'QUALOR_SCANNER_IMAGE: qualor/scanner-dotnet:1.4',
+    );
+    expect(text('integrations/azure-devops/qualor.yml')).toContain("imageTag: '1.4'");
+    expect(text('integrations/azure-devops/qualor-dotnet.yml')).toContain("imageTag: '1.4'");
+    expect(versionProblems(readVersions(dir))).toEqual([]);
+  });
+
+  it('reports a pin that is not the minor line of VERSION', () => {
+    for (const { file } of AZURE_EXAMPLES) {
+      copy();
+      const p = path.join(dir, file);
+      writeFileSync(
+        p,
+        text(file).replace(/(scanner(?:-dotnet)?:|imageTag: ')[0-9]+[.][0-9]+/, '$19.9'),
+      );
+      expect(versionProblems(readVersions(dir))[0]).toContain(`${file} 9.9`);
+    }
+  });
+
+  it('changes nothing when an example has no pin', () => {
+    copy();
+    const file = 'integrations/azure-devops/qualor.yml';
+    writeFileSync(path.join(dir, file), text(file).replace("imageTag: '", "imageTagX: '"));
+    const before = ALL_FILES.map((f) => text(f));
+    expect(() => setVersion(dir, parseVersion('0.1.0'))).toThrow(
+      /azure-devops[/]qualor[.]yml: no version found/,
+    );
+    expect(ALL_FILES.map((f) => text(f))).toEqual(before);
   });
 });
 

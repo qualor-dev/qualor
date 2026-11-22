@@ -7,7 +7,14 @@ import { promisify } from 'node:util';
 import * as tl from 'azure-pipelines-task-lib/task';
 import { splitArguments } from './args';
 import { headCheckout } from './head';
-import { planRun, stepProcessEnv, withoutQualor, type DockerStep } from './plan';
+import {
+  planRun,
+  STEP_LABEL,
+  stepFailure,
+  stepProcessEnv,
+  withoutQualor,
+  type DockerStep,
+} from './plan';
 
 /**
  * The Qualor@0 task: task-lib wiring only. plan.ts decides what runs, head.ts checks out the pull
@@ -18,14 +25,6 @@ import { planRun, stepProcessEnv, withoutQualor, type DockerStep } from './plan'
 const execFileAsync = promisify(execFile);
 
 const DOCKER_MISSING = 'Docker is not installed on this agent.';
-
-const LABEL: Record<DockerStep['name'], string> = {
-  scan: 'qualor scan',
-  begin: 'qualor dotnet begin',
-  build: 'The build command',
-  end: 'qualor dotnet end',
-  abort: 'qualor dotnet abort',
-};
 
 function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -82,10 +81,10 @@ async function runSteps(docker: string, steps: readonly DockerStep[]): Promise<s
         try {
           await runStep(docker, cleanup);
         } catch (cleanupErr) {
-          tl.warning(`${LABEL[cleanup.name]} failed: ${messageOf(cleanupErr)}`);
+          tl.warning(`${STEP_LABEL[cleanup.name]} failed: ${messageOf(cleanupErr)}`);
         }
       }
-      return `${LABEL[step.name]} failed: ${messageOf(err)}`;
+      return stepFailure(step.name, messageOf(err));
     }
   }
   return null;

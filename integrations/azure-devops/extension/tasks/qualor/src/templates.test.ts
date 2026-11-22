@@ -39,7 +39,10 @@ function planned(dotnet: boolean): string[][] {
     gid: 5678,
     sourcesDir: '$(Build.SourcesDirectory)',
     tempDir: '$(Agent.TempDirectory)',
-    env: Object.fromEntries(AZURE_PIPELINES_ENV.map((n) => [n, 'x'])),
+    env: {
+      ...Object.fromEntries(AZURE_PIPELINES_ENV.map((n) => [n, 'x'])),
+      QUALOR_PROJECT_KEY: 'x',
+    },
     qualorUrl: 'https://qualor.example.test',
     qualorToken: 'token',
     taskVersion: 'TAG',

@@ -105,9 +105,13 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     it('uses the Qualor@0 task, with the .NET build only in the .NET form', () => {
       const tasks = pipeline.steps.filter((s) => s.task === 'Qualor@0');
       expect(tasks).toHaveLength(1);
+      // The extension updates itself on Azure DevOps Services: the scanner stays on the minor line.
       expect(tasks[0]!.inputs).toEqual(
-        dotnet ? { dotnet: true, dotnetBuild: 'dotnet build --no-incremental' } : undefined,
+        dotnet
+          ? { imageTag: TAG, dotnet: true, dotnetBuild: 'dotnet build --no-incremental' }
+          : { imageTag: TAG },
       );
+      expect(text).toContain(`imageTag: '${TAG}'`);
       expect(tasks[0]!.env).toEqual({ QUALOR_TOKEN: '$(QUALOR_TOKEN)' });
       expect(scripts).toEqual([]);
       expect(pipeline.variables).toBeUndefined();
@@ -130,7 +134,12 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
       expect(forwarded).toEqual([...AZURE_PIPELINES_ENV]);
       for (const n of names) {
         if (!AZURE_PIPELINES_ENV.includes(n)) {
-          expect(['QUALOR_URL', 'QUALOR_TOKEN', 'PYTHONNOUSERSITE']).toContain(n);
+          expect([
+            'QUALOR_URL',
+            'QUALOR_TOKEN',
+            'QUALOR_PROJECT_KEY',
+            'PYTHONNOUSERSITE',
+          ]).toContain(n);
         }
       }
     }
@@ -177,7 +186,9 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
 
   it('gives the server variables to the scan or end step only, and nothing of QUALOR_ to the build', () => {
     const steps = scripts.map((s) => s.script!);
-    const withServer = steps.filter((s) => /-e QUALOR_URL -e QUALOR_TOKEN/.test(s));
+    const withServer = steps.filter((s) =>
+      /-e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY/.test(s),
+    );
     expect(withServer).toHaveLength(1);
     expect(withServer[0]).toMatch(dotnet ? /dotnet end$/m : /scan$/m);
     expect(pipeline.steps.find((s) => s.env)?.script).toBe(withServer[0]);

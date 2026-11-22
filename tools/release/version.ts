@@ -100,6 +100,19 @@ export const CONSTANT_FILES = [
 /** The Azure Pipelines extension: its manifest version and its task (version triple, imageTag default). */
 export const EXTENSION_FILE = 'integrations/azure-devops/extension/vss-extension.json';
 export const TASK_FILE = 'integrations/azure-devops/extension/tasks/qualor/task.json';
+/**
+ * The Azure Pipelines examples pin the scanner by its minor tag (x.y, a tag every release of the
+ * line moves): the docker examples in the QUALOR_SCANNER_IMAGE variable, the task examples in the
+ * imageTag input. The pin follows VERSION's major.minor.
+ */
+const DOCKER_PIN = /^( *QUALOR_SCANNER_IMAGE: qualor[/]scanner(?:-dotnet)?:)([0-9]+[.][0-9]+)()$/m;
+const TASK_PIN = /^( *imageTag: ')([0-9]+[.][0-9]+)(')$/m;
+export const AZURE_EXAMPLES: readonly { file: string; pin: RegExp }[] = [
+  { file: 'integrations/azure-devops/qualor-docker.yml', pin: DOCKER_PIN },
+  { file: 'integrations/azure-devops/qualor-dotnet-docker.yml', pin: DOCKER_PIN },
+  { file: 'integrations/azure-devops/qualor.yml', pin: TASK_PIN },
+  { file: 'integrations/azure-devops/qualor-dotnet.yml', pin: TASK_PIN },
+];
 export const CHART_FILE = 'deploy/helm/qualor/Chart.yaml';
 /** The committed OpenAPI document carries VERSION in `info.version` (openapi.test.ts compares). */
 export const OPENAPI_FILE = 'server/openapi.json';
@@ -138,6 +151,15 @@ export function readVersions(root = REPO_ROOT): Record<string, string> {
   const triple = TASK_TRIPLE.exec(task);
   out[`${TASK_FILE} version`] = full(triple ? `${triple[2]}.${triple[4]}.${triple[6]}` : undefined);
   out[`${TASK_FILE} imageTag`] = TASK_IMAGE_TAG.exec(task)?.[2] ?? '(none)';
+  // The examples hold major.minor: the full version is reported while that line agrees.
+  const line = core.split('.').slice(0, 2).join('.');
+  for (const { file, pin } of AZURE_EXAMPLES) {
+    const found = pin.exec(read(root, file))?.[2];
+    out[file] =
+      found !== undefined && found === line
+        ? (out[CONSTANT_FILES[0] ?? ''] ?? found)
+        : (found ?? '(none)');
+  }
   out[OPENAPI_FILE] = OPENAPI_INFO_VERSION.exec(read(root, OPENAPI_FILE))?.[2] ?? '(none)';
   // Required (ruling RE6): a checkout without the chart fails here, naming the file.
   const chart = read(root, CHART_FILE);
@@ -191,8 +213,9 @@ function taskText(root: string, v: Version): string {
 }
 
 /**
- * Sets every location of release.md §2, the extension manifest and task.json (version, imageTag), and `info.version` of server/openapi.json; returns the
- * files changed. Atomic in effect: every file is read and checked before the first is written,
+ * Sets every location of release.md §2, the extension manifest, task.json (version, imageTag), the
+ * minor-tag pins of the Azure Pipelines examples and `info.version` of server/openapi.json; returns
+ * the files changed. Atomic in effect: every file is read and checked before the first is written,
  * so a file without its version changes nothing.
  */
 export function setVersion(root: string, v: Version): string[] {
@@ -206,6 +229,10 @@ export function setVersion(root: string, v: Version): string[] {
     ...plan.map(([f, patterns]) => [f, replaced(root, f, patterns, v)] as const),
     [EXTENSION_FILE, replaced(root, EXTENSION_FILE, [EXTENSION_VERSION], core(v))] as const,
     [TASK_FILE, taskText(root, v)] as const,
+    ...AZURE_EXAMPLES.map(
+      ({ file, pin }) =>
+        [file, replaced(root, file, [pin], { ...v, text: `${v.major}.${v.minor}` })] as const,
+    ),
   ];
   for (const [f, text] of texts) writeFileSync(path.join(root, f), text);
   return texts.map(([f]) => f);

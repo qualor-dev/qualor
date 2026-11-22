@@ -11,7 +11,9 @@
 # The pipeline also runs on tags. There the scan records a version: the release's dependency
 # list, with no analyzer and no quality gate.
 # The task checks out the pull request head, not Azure's merge commit, and runs the scanner image
-# with docker run. Its documentation: https://qualor.dev/docs/azure-devops
+# with docker run. imageTag pins the scanner to your Qualor server's release line: the extension
+# updates itself on Azure DevOps Services, so the default (its version) would move the scanner.
+# Its documentation: https://qualor.dev/docs/azure-devops
 trigger:
   branches:
     include: ['*']
@@ -31,5 +33,7 @@ steps:
 
   - task: Qualor@0
     displayName: Qualor scan
+    inputs:
+      imageTag: '0.16'
     env:
       QUALOR_TOKEN: $(QUALOR_TOKEN)

@@ -1,7 +1,16 @@
-import { execFile } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -205,5 +214,132 @@ describe('headCheckout', () => {
       expect(await headCheckout(git, env)).toEqual({ checkedOut: null });
     }
     expect(git).not.toHaveBeenCalled();
+  });
+});
+
+/** Runs bash scripts; false when this machine has no usable bash with git. */
+const HAS_BASH = ((): boolean => {
+  try {
+    execFileSync('bash', ['-c', 'git --version && mktemp -u >/dev/null'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * The "Check out the pull request head" step of the docker examples, run with bash against the
+ * same merge-commit repositories. Both files carry the same script, and so does the task.
+ */
+describe.skipIf(!HAS_BASH)('the YAML head checkout step', () => {
+  const EXAMPLES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
+  const stepScript = (file: string): string => {
+    const lines = readFileSync(path.join(EXAMPLES, file), 'utf8').split('\n');
+    const name = lines.findIndex(
+      (l) => l.trim() === 'displayName: Check out the pull request head',
+    );
+    let start = name;
+    while (start > 0 && lines[start]?.trim() !== '- script: |') start--;
+    return lines
+      .slice(start + 1, name)
+      .map((l) => l.replace(/^ {6}/, ''))
+      .join('\n');
+  };
+  const FILES = ['qualor-docker.yml', 'qualor-dotnet-docker.yml'];
+
+  interface Ran {
+    status: number;
+    stdout: string;
+    stderr: string;
+  }
+  const run = (script: string, cwd: string, env: Record<string, string | undefined>): Ran => {
+    const home = path.join(tmpRoot, `agent-temp-${++counter}`).split(path.sep).join('/');
+    mkdirSync(home);
+    const text = script.replaceAll('$(Agent.TempDirectory)', home);
+    const result = spawnSync('bash', ['-c', text], {
+      cwd,
+      env: { ...GIT_TEST_ENV, GIT_CEILING_DIRECTORIES: tmpRoot, ...env },
+      encoding: 'utf8',
+    });
+    return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
+  };
+
+  describe.each(FILES)('%s', (file) => {
+    const script = stepScript(file);
+    let repo: Repo;
+    beforeEach(() => {
+      repo = mergeRepo();
+    });
+    const head = (dir: string): string => gitSync(dir, 'rev-parse', 'HEAD');
+
+    it('is the script that was extracted', () => {
+      expect(script).toMatch(/^set -euo pipefail\n/);
+      expect(script).toContain('git checkout --detach "$head"');
+    });
+
+    it('checks out the head SYSTEM_PULLREQUEST_SOURCECOMMITID names', () => {
+      const out = run(script, repo.dir, {
+        BUILD_REASON: 'PullRequest',
+        SYSTEM_PULLREQUEST_SOURCECOMMITID: repo.older,
+        BUILD_SOURCEVERSION: repo.merge,
+      });
+      expect(out.status).toBe(0);
+      expect(head(repo.dir)).toBe(repo.older);
+    });
+
+    it('takes the head from the merge commit second parent without the variable', () => {
+      const out = run(script, repo.dir, {
+        BUILD_REASON: 'PullRequest',
+        BUILD_SOURCEVERSION: repo.merge.toUpperCase(),
+      });
+      expect(out.status).toBe(0);
+      expect(head(repo.dir)).toBe(repo.head);
+    });
+
+    it('leaves a clone that already is on the head alone, and prints nothing on success', () => {
+      gitSync(repo.dir, 'checkout', '-q', '--detach', repo.head);
+      const env = { BUILD_REASON: 'PullRequest', SYSTEM_PULLREQUEST_SOURCECOMMITID: repo.head };
+      const out = run(script, repo.dir, env);
+      expect(out).toEqual({ status: 0, stdout: '', stderr: '' });
+      expect(head(repo.dir)).toBe(repo.head);
+    });
+
+    it('fails with the fetchDepth hint when the head is not in a shallow clone', () => {
+      const clone = path.join(tmpRoot, `clone-${++counter}`);
+      gitSync(tmpRoot, 'clone', '-q', '--depth', '1', '--branch', 'main', fileUrl(repo.dir), clone);
+      for (const env of [
+        { SYSTEM_PULLREQUEST_SOURCECOMMITID: repo.head, BUILD_SOURCEVERSION: repo.merge },
+        { BUILD_SOURCEVERSION: repo.merge },
+      ]) {
+        const out = run(script, clone, { BUILD_REASON: 'PullRequest', ...env });
+        expect(out.status).toBe(1);
+        expect(out.stderr).toContain(
+          'The pull request head is not in the clone. Set fetchDepth: 0 on the checkout step.',
+        );
+      }
+      expect(head(clone)).toBe(repo.merge);
+    });
+
+    it('names a git failure that is not a missing commit', () => {
+      const notRepo = path.join(tmpRoot, `not-a-repo-${++counter}`);
+      mkdirSync(notRepo);
+      const out = run(script, notRepo, {
+        BUILD_REASON: 'PullRequest',
+        BUILD_SOURCEVERSION: repo.merge,
+      });
+      expect(out.status).toBe(1);
+      expect(out.stderr).toMatch(
+        /Could not read the pull request head from the clone: fatal: not a git repository/,
+      );
+    });
+
+    it('calls no git outside a pull request build', () => {
+      // A directory that is no repository: any git call would fail.
+      const plain = path.join(tmpRoot, `plain-${++counter}`);
+      mkdirSync(plain);
+      for (const env of [{}, { BUILD_REASON: 'IndividualCI' }]) {
+        expect(run(script, plain, env)).toEqual({ status: 0, stdout: '', stderr: '' });
+      }
+    });
   });
 });

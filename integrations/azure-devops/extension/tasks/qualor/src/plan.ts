@@ -227,3 +227,32 @@ export function stepProcessEnv(
 ): Record<string, string> {
   return { ...withoutQualor(hostEnv), ...step.env };
 }
+
+/** What the task says for a step that failed; `LABEL` names the step. */
+export const STEP_LABEL: Record<DockerStep['name'], string> = {
+  scan: 'qualor scan',
+  begin: 'qualor dotnet begin',
+  build: 'The build command',
+  end: 'qualor dotnet end',
+  abort: 'qualor dotnet abort',
+};
+
+/**
+ * The failure of a step in plain words. The tool runner's message is "The process '/usr/bin/docker'
+ * failed with exit code N": the scanner's own exit codes (cli/src/errors.ts `EXIT`) say more. 1 is
+ * a failed quality gate (only `scan` and `dotnet end` evaluate it), 2 is a usage or configuration
+ * error; any other code, and the build command's code, is named as it is. A message without an
+ * exit code stays as it is.
+ */
+export function stepFailure(name: DockerStep['name'], message: string): string {
+  const label = STEP_LABEL[name];
+  const code = /exit code (\d+)/.exec(message)?.[1];
+  if (code === undefined) return `${label} failed: ${message}`;
+  if (name !== 'build') {
+    if (code === '1' && (name === 'scan' || name === 'end'))
+      return `${label} failed: the quality gate did not pass. The scan report lists the conditions that failed.`;
+    if (code === '2')
+      return `${label} failed: the scanner rejected its arguments or its configuration (exit code 2). Check the task's inputs and qualor.yml.`;
+  }
+  return `${label} failed with exit code ${code}.`;
+}

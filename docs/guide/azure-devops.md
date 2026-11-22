@@ -5,7 +5,7 @@ An organisation administrator adds a connection, tests it and maps each Qualor p
 repository.
 
 Not yet available in this release: comments and statuses on pull requests, AI review, fix pull
-requests, CI setup, Azure Boards. A connection and a mapping prepare them.
+requests, CI setup, and Azure Boards. A connection and a mapping prepare them.
 
 ## Before you start
 
@@ -126,22 +126,29 @@ Copy one file to `azure-pipelines.yml`.
 | [`integrations/azure-devops/qualor-dotnet.yml`](../../integrations/azure-devops/qualor-dotnet.yml) | C#, with the `Qualor@0` task |
 | [`integrations/azure-devops/qualor-dotnet-docker.yml`](../../integrations/azure-devops/qualor-dotnet-docker.yml) | C#, with `docker run` and no extension |
 
-The `Qualor@0` task needs the Qualor extension in your organisation. Until its Marketplace listing
-is public, install it from the VSIX file attached to the release.
+The `Qualor@0` task needs the Qualor extension.
+
+| Deployment | How to get the extension |
+|---|---|
+| Azure DevOps Server | Upload the extension's VSIX file, from the release page, under **Collection settings → Extensions** (the local gallery) |
+| Azure DevOps Services | Only the Marketplace installs an extension: use the `docker run` examples until the extension's Marketplace listing is public |
 
 | Task input | Meaning |
 |---|---|
 | `dotnet` | `true` analyses C# with the MSBuild integration |
 | `dotnetBuild` | The build command for C#. Default: `dotnet build --no-incremental` |
-| `imageTag` | The tag of `qualor/scanner`. Default: the extension's version |
-| `arguments` | Extra arguments for `qualor scan` |
+| `imageTag` | The tag of `qualor/scanner` and `qualor/scanner-dotnet`. Default: the extension's version |
+| `arguments` | Extra arguments for `qualor scan`, and for `qualor dotnet end` with `dotnet: true`. Never put a token or password here: the task logs its command line |
 
-The checkout step needs `fetchDepth: 0`. The task fails with that hint on a shallow clone.
+The extension updates itself on Azure DevOps Services. Set `imageTag` to your Qualor server's release line.
+
+The checkout step needs `fetchDepth: 0`. In a pull request build the task fails with that hint on a shallow clone. Branch builds deepen the clone themselves.
 
 ### Cache the vulnerability database
 
 On Azure DevOps Services, a cache step before the scan keeps the vulnerability database between
-builds. Add it after the checkout:
+builds. Add it after the checkout. The key holds the build id, so every build saves a new entry, and
+`restoreKeys` restores the latest one:
 
 ```yaml
   - script: mkdir -p "$(Build.SourcesDirectory)/.qualor/trivy"

@@ -46,7 +46,7 @@
       "label": "Arguments",
       "defaultValue": "",
       "required": false,
-      "helpMarkDown": "Extra arguments of `qualor scan` (or `qualor dotnet end`), for example `--no-wait`."
+      "helpMarkDown": "Extra arguments of `qualor scan` (or `qualor dotnet end`), for example `--no-wait`. Never put a token or password here: the task logs its command line."
     }
   ],
   "execution": {
