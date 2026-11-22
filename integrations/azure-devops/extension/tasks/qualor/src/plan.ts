@@ -76,22 +76,24 @@ const TRIVY_CACHE = '/src/.qualor/trivy';
  *
  * | Step | Then | Image and command |
  * | --- | --- | --- |
- * | scan | `C G F S` | `qualor/scanner:<tag> scan <arguments>` |
+ * | scan | `C H F S` | `qualor/scanner:<tag> scan <arguments>` |
  * | begin | `C F` | `qualor/scanner-dotnet:<tag> dotnet begin` |
  * | build | `F` | `--entrypoint sh qualor/scanner-dotnet:<tag> -c <dotnetBuild>` |
- * | end | `C G F S` | `qualor/scanner-dotnet:<tag> dotnet end <arguments>` |
- * | abort | `C G F` | `qualor/scanner-dotnet:<tag> dotnet abort` (after a failure only) |
+ * | end | `C H F S` | `qualor/scanner-dotnet:<tag> dotnet end <arguments>` |
+ * | abort | `C H F` | `qualor/scanner-dotnet:<tag> dotnet abort` (after a failure only) |
  *
- * `C` = `-e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy`; `G` = `-e GIT_CONFIG_GLOBAL=/dev/null`;
- * `F` = `-e NAME` for each `TASK_FORWARDED_ENV` variable that is set; `S` = `-e QUALOR_URL
- * -e QUALOR_TOKEN` (and `-e QUALOR_PROJECT_KEY` when set). `<tag>` is `imageTag`, or the task's
- * version when that input is empty.
+ * `C` = `-e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy`; `H` = `-e GIT_CONFIG_GLOBAL=/dev/null
+ * -e PYTHONNOUSERSITE=1`; `F` = `-e NAME` for each `TASK_FORWARDED_ENV` variable that is set;
+ * `S` = `-e QUALOR_URL -e QUALOR_TOKEN` (and `-e QUALOR_PROJECT_KEY` when set). `<tag>` is
+ * `imageTag`, or the task's version when that input is empty.
  *
  * The build runs the project's code (NuGet props and targets, analyzers, source generators), so
  * it gets no `QUALOR_` variable and sees the repository's git directory read-only: its args add
- * `-v <sourcesDir>/.git:/src/.git:ro` right after the `/src` mount. It still shares HOME with
- * begin and end (the MSBuild hook lives there), so scan, end and abort ignore the global git
- * config: a `core.fsmonitor` or filter command written there would run next to the token.
+ * `--mount type=bind,source=<sourcesDir>/.git,target=/src/.git,readonly` right after the `/src`
+ * mount. It still shares HOME with begin and end (the MSBuild hook lives there), so scan, end
+ * and abort ignore what it could write there: the global git config (a `core.fsmonitor` or
+ * filter command would run next to the token) and python's user site-packages (the scanner runs
+ * python3 for the cppcheck addons).
  *
  * The container runs as the agent user, so what the scanner writes into the sources belongs to
  * that user, and HOME is a directory of the agent's temp directory that the task creates first.
@@ -119,7 +121,12 @@ export function planRun(
   };
   const tag = inputs.imageTag.trim() === '' ? ctx.taskVersion : inputs.imageTag.trim();
 
-  /** The common start; `readOnlyGit` adds the build's read-only `.git` after the `/src` mount. */
+  /**
+   * The common start; `readOnlyGit` adds the build's read-only `.git` after the `/src` mount.
+   * `--mount`, not `-v`: when `.git` is missing the step fails, where `-v` would make Docker
+   * create it as an empty directory owned by root.
+   */
+  const gitMount = `type=bind,source=${path.posix.join(ctx.sourcesDir, '.git')},target=${SOURCES}/.git,readonly`;
   const base = (readOnlyGit: boolean): string[] => [
     'run',
     '--rm',
@@ -127,7 +134,7 @@ export function planRun(
     `${ctx.uid}:${ctx.gid}`,
     '-v',
     `${ctx.sourcesDir}:${SOURCES}`,
-    ...(readOnlyGit ? ['-v', `${path.posix.join(ctx.sourcesDir, '.git')}:${SOURCES}/.git:ro`] : []),
+    ...(readOnlyGit ? ['--mount', gitMount] : []),
     '-w',
     SOURCES,
     '-v',
@@ -138,14 +145,14 @@ export function planRun(
   const names = (env: Record<string, string>): string[] =>
     Object.keys(env).flatMap((name) => ['-e', name]);
   /**
-   * A step that runs `qualor`. `noGlobalGit`: it ignores the global git config of the HOME the
-   * build shares; `upload`: it also gets the server variables.
+   * A step that runs `qualor`. `distrustHome`: it ignores what the build could write into the
+   * HOME they share (`H`); `upload`: it also gets the server variables.
    */
   const qualor = (
     name: DockerStep['name'],
     image: string,
     command: string[],
-    { noGlobalGit, upload }: { noGlobalGit: boolean; upload: boolean },
+    { distrustHome, upload }: { distrustHome: boolean; upload: boolean },
   ): DockerStep => {
     const env = upload ? { ...forwardedEnv, ...server } : forwardedEnv;
     return {
@@ -154,7 +161,7 @@ export function planRun(
         ...base(false),
         '-e',
         `QUALOR_TRIVY_CACHE_DIR=${TRIVY_CACHE}`,
-        ...(noGlobalGit ? ['-e', 'GIT_CONFIG_GLOBAL=/dev/null'] : []),
+        ...(distrustHome ? ['-e', 'GIT_CONFIG_GLOBAL=/dev/null', '-e', 'PYTHONNOUSERSITE=1'] : []),
         ...names(env),
         image,
         ...command,
@@ -166,13 +173,13 @@ export function planRun(
   if (!inputs.dotnet) {
     const scan = ['scan', ...inputs.extraArgs];
     return {
-      steps: [qualor('scan', `qualor/scanner:${tag}`, scan, { noGlobalGit: true, upload: true })],
+      steps: [qualor('scan', `qualor/scanner:${tag}`, scan, { distrustHome: true, upload: true })],
     };
   }
   const image = `qualor/scanner-dotnet:${tag}`;
   return {
     steps: [
-      qualor('begin', image, ['dotnet', 'begin'], { noGlobalGit: false, upload: false }),
+      qualor('begin', image, ['dotnet', 'begin'], { distrustHome: false, upload: false }),
       {
         name: 'build',
         args: [
@@ -187,11 +194,11 @@ export function planRun(
         env: forwardedEnv,
       },
       qualor('end', image, ['dotnet', 'end', ...inputs.extraArgs], {
-        noGlobalGit: true,
+        distrustHome: true,
         upload: true,
       }),
       {
-        ...qualor('abort', image, ['dotnet', 'abort'], { noGlobalGit: true, upload: false }),
+        ...qualor('abort', image, ['dotnet', 'abort'], { distrustHome: true, upload: false }),
         onFailureOnly: true,
       },
     ],

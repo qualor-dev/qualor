@@ -55,10 +55,14 @@ const REST = [
   'HOME=/qualor-home',
 ];
 const COMMON = [...USER_SOURCES, ...REST];
-/** The build's read-only view of the repository's git directory. */
-const GIT_READ_ONLY = ['-v', '/home/agent/_work/1/s/.git:/src/.git:ro'];
-/** scan, end and abort ignore a global git config the build could have written into HOME. */
-const NO_GLOBAL_GIT = ['-e', 'GIT_CONFIG_GLOBAL=/dev/null'];
+/** The build's read-only view of the repository's git directory (fails when it is missing). */
+const GIT_MOUNT = 'type=bind,source=/home/agent/_work/1/s/.git,target=/src/.git,readonly';
+const GIT_READ_ONLY = ['--mount', GIT_MOUNT];
+/**
+ * scan, end and abort ignore what the build could have written into the shared HOME: a global
+ * git config and python's user site-packages.
+ */
+const HOME_ISOLATION = ['-e', 'GIT_CONFIG_GLOBAL=/dev/null', '-e', 'PYTHONNOUSERSITE=1'];
 const CACHE = ['-e', 'QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy'];
 const FORWARDED = [
   '-e',
@@ -91,7 +95,7 @@ describe('planRun: qualor scan', () => {
         args: [
           ...COMMON,
           ...CACHE,
-          ...NO_GLOBAL_GIT,
+          ...HOME_ISOLATION,
           ...FORWARDED,
           ...SERVER,
           'qualor/scanner:0.16.0',
@@ -114,7 +118,7 @@ describe('planRun: qualor scan', () => {
     expect(scan!.args).toEqual([
       ...COMMON,
       ...CACHE,
-      ...NO_GLOBAL_GIT,
+      ...HOME_ISOLATION,
       '-e',
       'BUILD_BUILDID',
       '-e',
@@ -137,7 +141,7 @@ describe('planRun: qualor scan', () => {
     expect(scan!.args).toEqual([
       ...COMMON,
       ...CACHE,
-      ...NO_GLOBAL_GIT,
+      ...HOME_ISOLATION,
       ...FORWARDED,
       ...SERVER,
       '-e',
@@ -243,7 +247,7 @@ describe('planRun: .NET', () => {
         args: [
           ...COMMON,
           ...CACHE,
-          ...NO_GLOBAL_GIT,
+          ...HOME_ISOLATION,
           ...FORWARDED,
           ...SERVER,
           image,
@@ -255,7 +259,7 @@ describe('planRun: .NET', () => {
       },
       {
         name: 'abort',
-        args: [...COMMON, ...CACHE, ...NO_GLOBAL_GIT, ...FORWARDED, image, 'dotnet', 'abort'],
+        args: [...COMMON, ...CACHE, ...HOME_ISOLATION, ...FORWARDED, image, 'dotnet', 'abort'],
         env: FORWARDED_ENV,
         onFailureOnly: true,
       },
@@ -275,22 +279,24 @@ describe('planRun: .NET', () => {
     const steps = stepsOf(planRun(DOTNET, context()));
     const build = steps.find((s) => s.name === 'build')!;
     const sources = build.args.indexOf('/home/agent/_work/1/s:/src');
-    const git = build.args.indexOf('/home/agent/_work/1/s/.git:/src/.git:ro');
+    const git = build.args.indexOf(GIT_MOUNT);
     expect(sources).toBeGreaterThan(0);
-    expect(build.args[git - 1]).toBe('-v');
+    expect(build.args[sources - 1]).toBe('-v');
+    // --mount, not -v: a missing .git fails the step instead of becoming an empty root-owned dir.
+    expect(build.args[git - 1]).toBe('--mount');
     expect(git).toBeGreaterThan(sources);
     const others = steps.filter((s) => s.name !== 'build').flatMap((s) => s.args);
     expect(others.some((a) => a.includes('/.git'))).toBe(false);
   });
 
-  it('runs scan, end and abort without the global git config (HOME is shared with the build)', () => {
+  it('runs scan, end and abort without the global git config or python user site-packages', () => {
     const steps = [...stepsOf(planRun(SCAN, context())), ...stepsOf(planRun(DOTNET, context()))];
-    const ignoring = steps
-      .filter((s) =>
-        s.args.some((a, i) => a === '-e' && s.args[i + 1] === 'GIT_CONFIG_GLOBAL=/dev/null'),
-      )
-      .map((s) => s.name);
-    expect(ignoring).toEqual(['scan', 'end', 'abort']);
+    const withVariable = (value: string): string[] =>
+      steps
+        .filter((s) => s.args.some((a, i) => a === '-e' && s.args[i + 1] === value))
+        .map((s) => s.name);
+    expect(withVariable('GIT_CONFIG_GLOBAL=/dev/null')).toEqual(['scan', 'end', 'abort']);
+    expect(withVariable('PYTHONNOUSERSITE=1')).toEqual(['scan', 'end', 'abort']);
   });
 
   it('passes the server variables to end only, and the token never as an argument', () => {
