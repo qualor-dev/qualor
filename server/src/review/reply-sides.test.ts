@@ -579,7 +579,12 @@ describe('the side of a reply on Azure DevOps: not available yet (Azure sub-plan
         azureClientId: null,
         createdAt: new Date(),
       };
-      const scm = { secretKey, internalHosts: parseInternalHosts(listener.host) };
+      const scm = {
+        secretKey,
+        internalHosts: parseInternalHosts(listener.host),
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
+      };
       const target = {
         connection,
         project: { scmProjectRef: AZURE_REPOSITORY },

@@ -35,10 +35,10 @@ export interface ScmDeps {
   githubClientOptions?: GitHubClientOptions;
   /** The same for Azure DevOps clients (azure/connections.ts). */
   azureClientOptions?: AzureClientOptions;
-  /** Tests only: `Config.azureTokenOrigin`, the fake Entra's origin (Azure DevOps ruling 1). */
-  azureTokenOrigin?: string | null;
-  /** Tests only: `Config.azureTestOrigin`, the fake Services organisation's origin (ruling 5). */
-  azureTestOrigin?: string | null;
+  /** Tests only (null in production): `Config.azureTokenOrigin`, the fake Entra's origin (Azure DevOps ruling 1). */
+  azureTokenOrigin: string | null;
+  /** Tests only (null in production): `Config.azureTestOrigin`, the fake Services organisation's origin (ruling 5). */
+  azureTestOrigin: string | null;
 }
 
 /** The connections' dependencies from the server's configuration. */

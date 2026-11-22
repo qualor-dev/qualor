@@ -53,6 +53,8 @@ describe('the fix commit and close jobs on GitLab (0.16 fix MRs §6.7, B10, R8, 
     scm: {
       secretKey: h.ctx.config.secretKey,
       internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
       clientOptions: { timeoutMs: 2_000 },
     },
     runtime,

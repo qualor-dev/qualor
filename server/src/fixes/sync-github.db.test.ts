@@ -110,6 +110,8 @@ describe('the fix sync pass on GitHub (0.16 fix MRs §6.7, ruling FW4)', () => {
       scm: {
         secretKey: h.ctx.config.secretKey,
         internalHosts: h.ctx.config.scmInternalHosts,
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
         githubClientOptions: { timeoutMs: 2_000 },
       },
       runtime: runtime(),

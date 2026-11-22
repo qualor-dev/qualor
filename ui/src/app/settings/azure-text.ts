@@ -1,14 +1,28 @@
 import type { ResponseBody } from '../api/types';
+import { formatDate } from '../shared/date-time.pipe';
 
 type TestResult = ResponseBody<'/api/v0/scm-connections/{id}/test', 'post'>;
 type Problem = NonNullable<TestResult['problem']>;
 
 /**
- * A failed Azure DevOps test in the UI's own words. `token_endpoint` shows the server's text: it is
- * fixed and safe, and says whether the stored certificate expired, which a fixed sentence here
- * could not.
+ * When the connection's certificate has expired, the day it did in the page's language; else null.
+ * A service principal with a certificate that Microsoft Entra refuses is most often this.
  */
-export function azureProblemText(problem: Problem): string {
+export function azureCertificateExpiredOn(
+  connection: { azure?: { certificate: { notAfter: string } | null } | null } | undefined,
+  locale: string,
+  now: Date = new Date(),
+): string | null {
+  const notAfter = connection?.azure?.certificate?.notAfter;
+  if (!notAfter || new Date(notAfter).getTime() >= now.getTime()) return null;
+  return formatDate(notAfter, locale) || null;
+}
+
+/**
+ * A failed Azure DevOps test in the UI's own words, never the server's. `expiredOn` (see
+ * {@link azureCertificateExpiredOn}) makes a token failure say that the certificate expired.
+ */
+export function azureProblemText(problem: Problem, expiredOn: string | null = null): string {
   switch (problem.code) {
     case 'undecryptable':
       return $localize`:@@azure.problem.undecryptable:The stored credential can no longer be read (the server key changed). Set it again.`;
@@ -25,13 +39,13 @@ export function azureProblemText(problem: Problem): string {
     case 'token_refused':
       return $localize`:@@azure.problem.tokenRefused:Azure DevOps refused the credential. Check that it is valid, has not expired and may read the organization.`;
     case 'sign_in_required':
-      return $localize`:@@azure.problem.signInRequired:Azure DevOps asked for a sign-in: the credential was not accepted. Check it and the address.`;
+      return $localize`:@@azure.problem.signInRequired:The identity is not a member of this Azure DevOps organization or has no access level. Add it under Organization settings → Users with the Basic access level.`;
     case 'html_answer':
-      return $localize`:@@azure.problem.htmlAnswer:Azure DevOps answered with a web page instead of data. Check the address.`;
+      return $localize`:@@azure.problem.htmlAnswer:Azure DevOps answered with a web page instead of data. Check the credential and the address.`;
     case 'token_endpoint':
-      return problem.message !== ''
-        ? problem.message
-        : $localize`:@@azure.problem.tokenEndpoint:Microsoft Entra did not issue a token for this service principal. Check the tenant id, the client id and the credential.`;
+      return expiredOn === null
+        ? entraText(problem.message)
+        : $localize`:@@azure.problem.certificateExpired:The certificate expired on ${expiredOn}:date:. Replace it, then test again.`;
     case 'permission_missing':
       return $localize`:@@azure.problem.permission:The credential lacks a permission in Azure DevOps. Give it read access to Code.`;
     case 'not_found':
@@ -45,11 +59,28 @@ export function azureProblemText(problem: Problem): string {
   }
 }
 
+/**
+ * A failed token request: the cause class when the server's fixed text names one (Microsoft Entra
+ * could not be reached, did not answer, or answered with an error), else a refusal.
+ */
+function entraText(serverText: string): string {
+  if (serverText.includes('could not be reached')) {
+    return $localize`:@@azure.problem.entraUnreachable:Microsoft Entra could not be reached. Check that the server can reach login.microsoftonline.com.`;
+  }
+  if (serverText.includes('did not answer')) {
+    return $localize`:@@azure.problem.entraTimeout:Microsoft Entra did not answer in time. Check that the server can reach login.microsoftonline.com.`;
+  }
+  if (serverText.includes('answered with an error')) {
+    return $localize`:@@azure.problem.entraError:Microsoft Entra answered with an error. Try again later.`;
+  }
+  return $localize`:@@azure.problem.tokenEndpoint:Microsoft Entra refused the service principal. Check the tenant id, client id and the secret or certificate.`;
+}
+
 /** An Azure DevOps test answer as the pages show it: who connected, and what that identity sees. */
-export function azureTestText(result: TestResult): string {
+export function azureTestText(result: TestResult, expiredOn: string | null = null): string {
   if (!result.ok || !result.user) {
     return result.problem
-      ? azureProblemText(result.problem)
+      ? azureProblemText(result.problem, expiredOn)
       : $localize`:@@azure.problem.unknown:The test failed.`;
   }
   const name = result.user.username;

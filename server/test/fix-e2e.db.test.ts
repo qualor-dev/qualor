@@ -175,6 +175,8 @@ describe.runIf(toolInstalled('npm'))(
       scm: {
         secretKey: h.ctx.config.secretKey,
         internalHosts: h.ctx.config.scmInternalHosts,
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
         clientOptions: { timeoutMs: 2_000 },
       },
       runtime,

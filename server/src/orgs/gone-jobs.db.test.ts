@@ -233,7 +233,12 @@ function recordingLogger() {
 }
 type Logger = ReturnType<typeof recordingLogger>['logger'];
 
-const scm = { secretKey: config.secretKey, internalHosts: config.scmInternalHosts };
+const scm = {
+  secretKey: config.secretKey,
+  internalHosts: config.scmInternalHosts,
+  azureTokenOrigin: null,
+  azureTestOrigin: null,
+};
 
 const decorationDeps = (logger: Logger): DecorationDeps => ({
   db,

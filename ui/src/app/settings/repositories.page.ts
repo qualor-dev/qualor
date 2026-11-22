@@ -7,6 +7,7 @@ import {
   type ElementRef,
   inject,
   Injector,
+  LOCALE_ID,
   signal,
   untracked,
   viewChild,
@@ -20,7 +21,7 @@ import { keepFocus } from '../shared/focus';
 import { inputValue } from '../shared/forms';
 import { KeysetList } from '../shared/keyset';
 import { assertNever, type ScmProvider } from '../shared/scm-provider';
-import { azureTestText } from './azure-text';
+import { azureCertificateExpiredOn, azureTestText } from './azure-text';
 import { githubTestText } from './github-text';
 import { gitlabTestText } from './gitlab-text';
 import type { Connection } from './gitlab.page';
@@ -66,6 +67,7 @@ export class RepositoriesPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly locale = inject(LOCALE_ID);
   protected readonly org = inject(OrgContext);
   /** The role manages these (`org.scm.manage`, rbac-audit.md §3.1): the page shows them. */
   protected readonly canRead = computed(() => this.org.can('org.scm.manage'));
@@ -343,7 +345,14 @@ export class RepositoriesPage {
         );
         // An answer for another organisation or another mapping than the one on screen is dropped.
         if (generation !== this.orgGeneration || !this.sameDraft(project, draft)) return;
-        const text = testText(provider, result);
+        const text = testText(
+          provider,
+          result,
+          azureCertificateExpiredOn(
+            this.connections.items().find((c) => c.id === draft.connectionId),
+            this.locale,
+          ),
+        );
         this.results.update((all) => ({ ...all, [project.id]: text }));
         // A failure reads as one: the error alert, never the green news of a success.
         if (result.ok) this.announcement.set(text);
@@ -426,14 +435,18 @@ function badGitHubRef(): string {
   return $localize`:@@gitlab.badGitHubRef:Use owner/repo, the GitHub repository's owner and name, such as acme/api.`;
 }
 
-function testText(provider: ScmProvider, result: Parameters<typeof gitlabTestText>[0]): string {
+function testText(
+  provider: ScmProvider,
+  result: Parameters<typeof gitlabTestText>[0],
+  expiredOn: string | null,
+): string {
   switch (provider) {
     case 'github':
       return githubTestText(result);
     case 'gitlab':
       return gitlabTestText(result);
     case 'azure':
-      return azureTestText(result);
+      return azureTestText(result, expiredOn);
     default:
       return assertNever(provider, 'provider');
   }

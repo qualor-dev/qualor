@@ -62,6 +62,8 @@ describe('the automatic fix mode (0.16 fix MRs §6.3, §11.5, B4, R9)', () => {
     scm: {
       secretKey: h.ctx.config.secretKey,
       internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
       clientOptions: { timeoutMs: 2_000 },
     },
     runtime: createScmRuntime(),

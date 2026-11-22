@@ -275,7 +275,7 @@ function bearer(
   tokens: InstallationTokenCache,
 ): () => Promise<string> {
   const key = entraCacheKey(connectionId, entra);
-  const origin = deps.azureTokenOrigin ?? null;
+  const origin = deps.azureTokenOrigin;
   // Ruling 1: only a test's fake Entra (on loopback) stands in for Microsoft's endpoint.
   const options: EntraOptions =
     origin === null
@@ -284,10 +284,51 @@ function bearer(
   return async () => {
     const cached = tokens.get(key);
     if (cached !== null) return cached;
-    const { token, expiresAt } = await entraToken(entra, options);
-    tokens.set(key, token, expiresAt);
-    return token;
+    let issued: { token: string; expiresAt: number };
+    try {
+      issued = await entraToken(entra, options);
+    } catch (err) {
+      throw entraFailure(err);
+    }
+    tokens.set(key, issued.token, issued.expiresAt);
+    return issued.token;
   };
+}
+
+/** Fixed texts for a token request that failed in transport or on Microsoft's side (M3). */
+export const ENTRA_FAILURE_TEXT = {
+  unreachable: 'Microsoft Entra could not be reached',
+  timeout: 'Microsoft Entra did not answer in time',
+  error: 'Microsoft Entra answered with an error',
+} as const;
+
+/**
+ * An error of the Entra token request as one the test reports as token_endpoint, so a blocked or
+ * failing Entra is never blamed on Azure DevOps. Entra's refusals already are token_endpoint and
+ * stay; the rest get a fixed text naming Microsoft Entra and the class of the cause, never Entra's
+ * own words. The error's kind stays, so retries still tell transient from final.
+ */
+function entraFailure(err: unknown): unknown {
+  if (!(err instanceof ScmError) || err.reason === 'token_endpoint') return err;
+  let message: string;
+  switch (err.reason) {
+    case 'unresolved':
+    case 'unreachable':
+    case 'not_public':
+      message = ENTRA_FAILURE_TEXT.unreachable;
+      break;
+    case 'timeout':
+      message = ENTRA_FAILURE_TEXT.timeout;
+      break;
+    default:
+      message = ENTRA_FAILURE_TEXT.error;
+  }
+  return new ScmError(err.kind, message, {
+    reason: 'token_endpoint',
+    status: err.status,
+    retryAfterSeconds: err.retryAfterSeconds,
+    request: err.request,
+  });
 }
 
 /** The credential the client sends for `row`, or why there is none. */
@@ -333,7 +374,7 @@ function credentialOf(
  * organisation's path on the fake's origin. The outbound rules check that target.
  */
 function targetOf(baseUrl: string, deps: ScmDeps): string {
-  const origin = deps.azureTestOrigin ?? null;
+  const origin = deps.azureTestOrigin;
   if (origin === null || azureDeployment(baseUrl) !== 'services') return baseUrl;
   return `${origin}${new URL(baseUrl).pathname}`.replace(/\/+$/, '');
 }

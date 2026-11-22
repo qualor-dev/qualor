@@ -17,7 +17,12 @@ describe('the CI-setup status of an Azure DevOps connection: not available yet (
   beforeAll(async () => {
     listener = await recordingListener();
     // The listener's host is allowed: a request the stub made would reach it.
-    deps = { secretKey: SECRET_KEY, internalHosts: parseInternalHosts(listener.host) };
+    deps = {
+      secretKey: SECRET_KEY,
+      internalHosts: parseInternalHosts(listener.host),
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
+    };
     row = {
       id: randomUUID(),
       organizationId: randomUUID(),

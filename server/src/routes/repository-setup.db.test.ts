@@ -490,7 +490,12 @@ describe('Listing a connection’s repositories and its CI-setup status', () => 
       const [row] = await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id));
       let clock = 0;
       const status = createCiSetupStatus({
-        deps: { secretKey: h.ctx.config.secretKey, internalHosts: hosts as ReadonlySet<string> },
+        deps: {
+          secretKey: h.ctx.config.secretKey,
+          internalHosts: hosts as ReadonlySet<string>,
+          azureTokenOrigin: null,
+          azureTestOrigin: null,
+        },
         publicUrl: PUBLIC_URL,
         warn: () => undefined,
         now: () => clock,

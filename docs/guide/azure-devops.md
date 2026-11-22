@@ -11,8 +11,9 @@ them.
 ## Before you start
 
 - An organisation administrator account in Qualor.
-- Owner or administrator rights in the Azure DevOps organisation, to add a service principal or to
-  create a token.
+- To use a service principal: Owner or administrator rights in the Azure DevOps organisation, to add
+  it under **Organization settings → Users** with the **Basic** access level. Any user may create a
+  personal access token.
 - For Azure DevOps Server on your network: its host and port in `QUALOR_SCM_INTERNAL_HOSTS`
   ([Server settings](./install-server.md#server-settings)).
 
@@ -80,9 +81,11 @@ A failing test shows one of these:
 | The server no longer allows this Azure DevOps address, or this Azure DevOps Server is on an internal address | The operator lists the host and port in `QUALOR_SCM_INTERNAL_HOSTS` |
 | The Azure DevOps host name could not be found, did not answer in time, or could not be reached | Check the address and the network from the server |
 | Azure DevOps refused the credential | The credential is wrong, expired, or may not read the organisation |
-| Azure DevOps asked for a sign-in | The credential was not accepted. Check it and the address |
-| Azure DevOps answered with a web page instead of data | Check the address |
-| Microsoft Entra did not issue a token for this service principal | Check the tenant id, the client id and the credential. An expired certificate is named here |
+| The identity is not a member of this Azure DevOps organization or has no access level | Add the service principal under **Organization settings → Users** with the **Basic** access level |
+| Azure DevOps answered with a web page instead of data | Check the credential and the address |
+| Microsoft Entra refused the service principal | Check the tenant id, the client id and the secret or certificate |
+| The certificate expired on a date | Upload a new certificate |
+| Microsoft Entra could not be reached, did not answer in time, or answered with an error | Check that the server can reach `login.microsoftonline.com` |
 | The credential lacks a permission in Azure DevOps | Give it read access to Code |
 
 A service principal sees only the projects it was added to. A test that connects but finds no

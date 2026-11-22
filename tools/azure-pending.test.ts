@@ -15,7 +15,7 @@ export const PENDING: Record<string, number> = {
   '4': 9,
   '5': 3,
   '6': 12,
-  '7': 11,
+  '7': 12,
   '9': 1,
 };
 

@@ -95,6 +95,11 @@
               <a routerLink="/settings/github">Settings → GitHub</a> or
               <a routerLink="/settings/gitlab">Settings → GitLab</a>.
             </p>
+            @if (azureHidden()) {
+              <p class="panel-body no-connection" i18n="@@addRepos.azureNotYet">
+                Azure DevOps repositories cannot be added here yet.
+              </p>
+            }
           } @else {
             <fieldset class="conn-list" [attr.aria-busy]="connections() === null">
               <legend class="visually-hidden" i18n="@@addRepos.connection">Connection</legend>

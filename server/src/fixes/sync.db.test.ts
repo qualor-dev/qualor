@@ -80,6 +80,8 @@ describe('the fix sync pass (0.16 fix MRs §6.7, R8, R18, B10, rulings T8c, T10c
     scm: {
       secretKey: h.ctx.config.secretKey,
       internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
       clientOptions: { timeoutMs: 2_000 },
     },
     runtime,

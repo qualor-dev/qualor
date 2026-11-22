@@ -512,7 +512,12 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
     fake.clearRequests();
     const result = await testConnection(
       row!,
-      { secretKey: h.ctx.config.secretKey, internalHosts: new Set() },
+      {
+        secretKey: h.ctx.config.secretKey,
+        internalHosts: new Set(),
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
+      },
       null,
     );
     expect(result).toMatchObject({ ok: false, problem: { code: 'url_not_allowed' } });
@@ -523,6 +528,8 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       {
         secretKey: h.ctx.config.secretKey,
         internalHosts: new Set(['127.0.0.1']),
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
         clientOptions: {
           resolve: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
         },
@@ -536,6 +543,8 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       {
         secretKey: h.ctx.config.secretKey,
         internalHosts: new Set(['gitlab-ce']),
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
         clientOptions: { connectTimeoutMs: 50, resolve: () => new Promise(() => undefined) },
       },
       null,
@@ -2368,12 +2377,28 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     await expectNoCredential();
   });
 
+  it('blames Microsoft Entra, with a fixed text, when its token endpoint cannot be reached', async () => {
+    const row = await rowOf((await created(SP_SECRET)).id);
+    // A closed loopback port: the connection fails before any answer.
+    const deps = { ...scmDepsOf(h.ctx.config), azureTokenOrigin: 'http://127.0.0.1:1' };
+    services.clearRequests();
+    const result = await testAzureConnection(row, deps, null);
+    expect(result).toMatchObject({
+      ok: false,
+      user: null,
+      problem: { code: 'token_endpoint', message: 'Microsoft Entra could not be reached' },
+    });
+    expect(services.requests).toHaveLength(0);
+  });
+
   it('sends nothing to an address the operator no longer lists or the Azure DevOps rules refuse', async () => {
     const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
     const row = await rowOf(onServer.id);
     const deps = (hosts: string[]) => ({
       secretKey: h.ctx.config.secretKey,
       internalHosts: new Set(hosts) as ReadonlySet<string>,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
     });
     const listed = [new URL(server.url).host];
     expect(await testAzureConnection(row, deps([]), null)).toMatchObject({

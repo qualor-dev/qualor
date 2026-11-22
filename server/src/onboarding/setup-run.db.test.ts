@@ -99,6 +99,8 @@ describe('the repository-setup run', () => {
     scm: {
       secretKey: h.ctx.config.secretKey,
       internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
       clientOptions: { timeoutMs: 2_000 },
       githubClientOptions: { timeoutMs: 2_000 },
     },

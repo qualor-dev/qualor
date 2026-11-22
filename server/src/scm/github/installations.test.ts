@@ -24,6 +24,8 @@ describe('listInstallationRepositories', () => {
     const deps: ScmDeps = {
       secretKey: SECRET_KEY,
       internalHosts: new Set([new URL(fake.url).host]),
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
       githubClientOptions: { timeoutMs: 5_000 },
     };
     const row = {

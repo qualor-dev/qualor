@@ -49,6 +49,7 @@ import { replyHandlers } from './review/reply-job';
 import { reconcileStuckReplies } from './review/reply-queue';
 import { errorClass } from './review/run-ends';
 import { reconcileStuckReviewRuns } from './review/runs';
+import { scmDepsOf } from './scm/connections';
 import { scmHandlers } from './scm/decorate';
 import { createScmRuntime } from './scm/runtime';
 import { supportBundleCommand } from './support/command';
@@ -401,7 +402,7 @@ async function main(): Promise<void> {
     handlers: {
       ...scmHandlers({
         db: database.db,
-        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        scm: scmDepsOf(config),
         runtime: scmRuntime,
         publicUrl: config.publicUrl,
         logger,
@@ -411,7 +412,7 @@ async function main(): Promise<void> {
       // Onboarding: a connection's repositories added as projects, with their CI setup.
       ...repositorySetupHandlers({
         db: database.db,
-        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        scm: scmDepsOf(config),
         runtime: scmRuntime,
         publicUrl: config.publicUrl,
         audit,
@@ -420,7 +421,7 @@ async function main(): Promise<void> {
       // 0.16 fix MRs (R17): the fix branches and their MRs, under the organisations' SCM slots.
       ...fixHandlers({
         db: database.db,
-        scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+        scm: scmDepsOf(config),
         runtime: scmRuntime,
         publicUrl: config.publicUrl,
         limits: () => edition.limits(),
@@ -485,7 +486,7 @@ async function main(): Promise<void> {
     config,
     logger,
     ...reviewCircuitDeps(modelRuntimes),
-    scm: { secretKey: config.secretKey, internalHosts: config.scmInternalHosts },
+    scm: scmDepsOf(config),
     scmRuntime,
     shutdown: reviewShutdown.signal,
     audit,

@@ -352,7 +352,12 @@ beforeAll(async () => {
       db: ctx.db,
       handlers: scmHandlers({
         db: ctx.db,
-        scm: { secretKey: ctx.config.secretKey, internalHosts: ctx.config.scmInternalHosts },
+        scm: {
+          secretKey: ctx.config.secretKey,
+          internalHosts: ctx.config.scmInternalHosts,
+          azureTokenOrigin: null,
+          azureTestOrigin: null,
+        },
         runtime: createScmRuntime(),
         publicUrl: ctx.config.publicUrl,
         logger: ctx.app.log,

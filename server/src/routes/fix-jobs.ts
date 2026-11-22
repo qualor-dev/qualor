@@ -18,6 +18,7 @@ import { ProblemError } from '../http/problem';
 import { idParams } from '../http/schemas';
 import { PROJECT_KEY_PATTERN } from '../patterns';
 import { projectForUpload } from '../projects/access';
+import { scmDepsOf } from '../scm/connections';
 import { createScmRuntime } from '../scm/runtime';
 
 /**
@@ -44,7 +45,7 @@ export const fixJobRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (a
   // cached across uploads. Nothing here writes to the SCM.
   const scm: FixScmDeps = {
     db: deps.db,
-    scm: { secretKey: deps.config.secretKey, internalHosts: deps.config.scmInternalHosts },
+    scm: scmDepsOf(deps.config),
     runtime: createScmRuntime(),
   };
 

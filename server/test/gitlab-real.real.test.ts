@@ -202,7 +202,12 @@ describe('decoration against a real GitLab CE (scm.md §11)', () => {
       }),
     );
     const deps = decorationDeps(h, {
-      scm: { secretKey: ctx.config.secretKey, internalHosts: ctx.config.scmInternalHosts },
+      scm: {
+        secretKey: ctx.config.secretKey,
+        internalHosts: ctx.config.scmInternalHosts,
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
+      },
     });
     await runDecorations(h, deps);
 

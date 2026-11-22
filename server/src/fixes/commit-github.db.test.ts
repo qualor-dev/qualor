@@ -116,6 +116,8 @@ describe('the fix commit job on GitHub (0.16 fix MRs §6.7, B10, R14; Git Data A
       scm: {
         secretKey: h.ctx.config.secretKey,
         internalHosts: h.ctx.config.scmInternalHosts,
+        azureTokenOrigin: null,
+        azureTestOrigin: null,
         githubClientOptions: { timeoutMs: 2_000 },
       },
       runtime: runtime(),

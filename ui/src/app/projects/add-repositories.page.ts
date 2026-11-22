@@ -114,6 +114,8 @@ export class AddRepositoriesPage {
 
   protected readonly connections = signal<Connection[] | null>(null);
   protected readonly connectionsError = signal<string | null>(null);
+  /** The organisation has Azure DevOps connections, which this page does not list yet. */
+  protected readonly azureHidden = signal(false);
   protected readonly chosenId = signal<string | null>(null);
   protected readonly chosen = computed(
     () => this.connections()?.find((c) => c.id === this.chosenId()) ?? null,
@@ -218,9 +220,11 @@ export class AddRepositoriesPage {
         }),
       );
       if (organizationId !== this.org.currentId()) return;
-      this.connections.set(answer.items);
-      if (this.runId() || answer.items.some((c) => c.id === this.chosenId())) return;
-      const first = answer.items.find((c) => c.id === this.connection()) ?? answer.items[0];
+      const usable = answer.items.filter((c) => c.provider !== 'azure'); // provider-guard: Azure DevOps is left out; azure-pending(7): adding its repositories and CI setup here
+      this.azureHidden.set(usable.length < answer.items.length);
+      this.connections.set(usable);
+      if (this.runId() || usable.some((c) => c.id === this.chosenId())) return;
+      const first = usable.find((c) => c.id === this.connection()) ?? usable[0];
       this.chosenId.set(null);
       if (first) this.choose(first.id);
     } catch (err) {

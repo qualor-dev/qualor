@@ -6,6 +6,7 @@ import {
   type ElementRef,
   inject,
   Injector,
+  LOCALE_ID,
   signal,
   untracked,
   viewChild,
@@ -19,7 +20,7 @@ import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
-import { azureTestText } from './azure-text';
+import { azureCertificateExpiredOn, azureTestText } from './azure-text';
 import type { Connection } from './gitlab.page';
 
 type AuthKind = 'pat' | 'service_principal_secret' | 'service_principal_certificate';
@@ -82,6 +83,7 @@ export class AzureDevOpsPage {
   private readonly api = inject(Api);
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly locale = inject(LOCALE_ID);
   protected readonly org = inject(OrgContext);
   protected readonly canRead = computed(() => this.org.can('org.scm.manage'));
   protected readonly canManage = computed(() => this.org.canChange('org.scm.manage'));
@@ -378,7 +380,7 @@ export class AzureDevOpsPage {
         }),
       );
       if (generation !== this.orgGeneration) return;
-      const text = azureTestText(result);
+      const text = azureTestText(result, azureCertificateExpiredOn(connection, this.locale));
       this.results.update((all) => ({ ...all, [connection.id]: text }));
       const passed = result.ok && !!result.user;
       this.outcomes.update((all) => ({ ...all, [connection.id]: passed ? 'ok' : 'failed' }));

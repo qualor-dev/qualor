@@ -63,9 +63,13 @@ function rowOf(
     createdAt: new Date(),
   };
 }
-
 async function check(row: ScmConnectionRow, internalHosts: ReadonlySet<string>): Promise<void> {
-  const deps: ScmDeps = { secretKey: SECRET_KEY, internalHosts };
+  const deps: ScmDeps = {
+    secretKey: SECRET_KEY,
+    internalHosts,
+    azureTokenOrigin: null,
+    azureTestOrigin: null,
+  };
   const result = await testAzureConnection(row, deps, null);
   expect(result.problem?.code ?? null, 'problem code').toBeNull();
   expect(result.ok, 'connection ok').toBe(true);

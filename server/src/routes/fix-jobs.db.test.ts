@@ -155,7 +155,12 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
   /** What the route gives `acceptFixResult`, for the tests that call it with injected limits. */
   const scmDeps = () => ({
     db: db(),
-    scm: { secretKey: h.ctx.config.secretKey, internalHosts: h.ctx.config.scmInternalHosts },
+    scm: {
+      secretKey: h.ctx.config.secretKey,
+      internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
+    },
   });
   const projectRow = async () =>
     (await db().select().from(projects).where(eq(projects.id, projectId)))[0]!;
@@ -1013,7 +1018,12 @@ describe('the fix job: claim and result (0.16 fix MRs §6.5-§6.7, B1, R4-R8, R1
   it('a tiny time cap refuses the upload as unparsable on its largest file (ruling T3k)', async () => {
     const item = await claimQfA();
     const fix = await row(item.id);
-    const scm = { secretKey: h.ctx.config.secretKey, internalHosts: h.ctx.config.scmInternalHosts };
+    const scm = {
+      secretKey: h.ctx.config.secretKey,
+      internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: null,
+      azureTestOrigin: null,
+    };
     const [projectOf] = await db().select().from(projects).where(eq(projects.id, projectId));
     const warned: unknown[] = [];
     const attempt = acceptFixResult(

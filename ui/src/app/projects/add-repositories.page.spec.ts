@@ -21,11 +21,12 @@ type RunItem = SetupRun['items'][number];
 const GITHUB_ID = '0190a6c2-0000-7000-8000-0000000000c1';
 const GITLAB_ID = '0190a6c2-0000-7000-8000-0000000000c2';
 const GHES_ID = '0190a6c2-0000-7000-8000-0000000000c3';
+const AZURE_ID = '0190a6c2-0000-7000-8000-0000000000c4';
 const RUN_ID = '0190a6c2-0000-7000-8000-0000000000e1';
 
 function connection(
   id: string,
-  provider: 'github' | 'gitlab',
+  provider: 'github' | 'gitlab' | 'azure',
   baseUrl: string,
   ciSetup: Connection['ciSetup'],
 ): Connection {
@@ -74,6 +75,12 @@ const GHES = connection(GHES_ID, 'github', 'https://github.acme.example/api/v3',
   available: false,
   reason: 'missing_permissions',
   missing: ['workflows_write', 'secrets_write'],
+});
+
+const AZURE = connection(AZURE_ID, 'azure', 'https://dev.azure.com/acme', {
+  available: false,
+  reason: 'not_allowed',
+  missing: [],
 });
 
 function repo(name: string, over: Partial<Repository> = {}): Repository {
@@ -486,6 +493,27 @@ describe('AddRepositoriesPage', () => {
         'Connect GitHub or GitLab first',
       );
       expect(root.querySelector('.repo-table')).toBeNull();
+    });
+
+    it('leaves Azure DevOps connections out and says so when they are the only ones', async () => {
+      server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
+      const { root } = await render();
+      expect(root.querySelector('input[name=connection]')).toBeNull();
+      expect(text(root.querySelector('.panel'))).toContain(
+        'Azure DevOps repositories cannot be added here yet.',
+      );
+      expect(root.textContent).not.toContain('Turn it on');
+      expect(server.requests.some((r) => r.path.includes('/repositories'))).toBe(false);
+    });
+
+    it('lists only the other connections when Azure DevOps ones exist too', async () => {
+      server.on('GET', '/api/v0/scm-connections', { body: page([AZURE, GITHUB]) });
+      server.on('GET', `/api/v0/scm-connections/${GITHUB_ID}/repositories`, {
+        body: page(REPOS),
+      });
+      const { root } = await render();
+      expect(root.querySelectorAll('input[name=connection]')).toHaveLength(1);
+      expect(root.textContent).not.toContain('Azure DevOps');
     });
   });
 

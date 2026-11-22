@@ -12,7 +12,7 @@ import {
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
 import { AzureDevOpsPage } from './azure-devops.page';
-import { azureProblemText, azureTestText } from './azure-text';
+import { azureCertificateExpiredOn, azureProblemText, azureTestText } from './azure-text';
 import type { Connection } from './gitlab.page';
 
 const TENANT = '11111111-2222-4333-8444-555555555555';
@@ -374,6 +374,34 @@ describe('AzureDevOpsPage', () => {
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
   });
 
+  it('names an expired certificate and its day when Entra refuses the service principal', async () => {
+    const server = setup([
+      {
+        ...CERTIFICATE,
+        azure: {
+          ...CERTIFICATE.azure!,
+          certificate: { thumbprint: 'OLD', notAfter: '2020-01-01T00:00:00.000Z' },
+        },
+      },
+    ]);
+    server.on('POST', '/api/v0/scm-connections/a2/test', {
+      body: {
+        ok: false,
+        user: null,
+        project: null,
+        problem: { code: 'token_endpoint', message: 'The stored certificate has expired' },
+        missingAccess: null,
+        visible: null,
+      },
+    });
+    const { fixture, root } = await render();
+    button(root, 'Test').click();
+    await settle(fixture);
+    expect(root.querySelector('p[role="alert"]')?.textContent).toContain(
+      'The certificate expired on Jan 1, 2020.',
+    );
+  });
+
   it('words the counts of a test in the singular and the plural', () => {
     const text = (repositories: number, projects: number) =>
       azureTestText({
@@ -389,7 +417,7 @@ describe('AzureDevOpsPage', () => {
     expect(text(12, 3)).toBe('Connected as Bot; 12 repositories in 3 projects visible.');
   });
 
-  it('words each problem code, and shows the server’s own text for a token endpoint refusal', () => {
+  it('words each problem code in the UI’s own words, never the server’s', () => {
     const codes = [
       'undecryptable',
       'url_not_allowed',
@@ -400,6 +428,7 @@ describe('AzureDevOpsPage', () => {
       'token_refused',
       'sign_in_required',
       'html_answer',
+      'token_endpoint',
       'permission_missing',
       'not_found',
       'http_error',
@@ -408,20 +437,54 @@ describe('AzureDevOpsPage', () => {
     const texts = codes.map((code) => azureProblemText({ code, message: 'raw server text' }));
     expect(new Set(texts).size).toBe(codes.length);
     for (const text of texts) expect(text).not.toContain('raw server text');
-    expect(texts[7]).toContain('sign-in');
+    // TF401444: the identity was never added, not a wrong credential.
+    expect(texts[7]).toContain('not a member of this Azure DevOps organization');
+    expect(texts[7]).toContain('Basic access level');
+    expect(texts[7]).not.toContain('credential was not accepted');
     expect(texts[8]).toContain('web page');
-    expect(
-      azureProblemText({ code: 'token_endpoint', message: 'The stored certificate expired.' }),
-    ).toBe('The stored certificate expired.');
-    const result = azureTestText({
-      ok: false,
-      user: null,
-      project: null,
-      problem: { code: 'token_endpoint', message: 'The stored certificate expired.' },
-      missingAccess: null,
-      visible: null,
-    });
-    expect(result).toBe('The stored certificate expired.');
+    expect(texts[8]).toContain('Check the credential and the address');
+    expect(texts[9]).toBe(
+      'Microsoft Entra refused the service principal. Check the tenant id, client id and the secret or certificate.',
+    );
+  });
+
+  it('names the cause when Microsoft Entra could not be reached, not Azure DevOps', () => {
+    const entra = (message: string) =>
+      azureProblemText({ code: 'token_endpoint', message: message });
+    expect(entra('Microsoft Entra could not be reached')).toContain(
+      'Microsoft Entra could not be reached',
+    );
+    expect(entra('Microsoft Entra did not answer in time')).toContain('did not answer in time');
+    expect(entra('Microsoft Entra answered with an error')).toContain('answered with an error');
+    for (const message of [
+      'Microsoft Entra could not be reached',
+      'Microsoft Entra did not answer in time',
+      'Microsoft Entra answered with an error',
+    ]) {
+      expect(entra(message)).not.toMatch(/refused|Azure DevOps (host|did)/);
+    }
+  });
+
+  it('says a certificate expired, and when, only for a connection whose certificate has', () => {
+    const entra = {
+      code: 'token_endpoint',
+      message: 'Microsoft Entra refused the service principal',
+    } as const;
+    const expired = { azure: { certificate: { notAfter: '2025-03-04T00:00:00.000Z' } } };
+    const valid = { azure: { certificate: { notAfter: '2099-01-01T00:00:00.000Z' } } };
+    const now = new Date('2026-11-22T00:00:00.000Z');
+    expect(azureCertificateExpiredOn(expired, 'en-US', now)).toBe('Mar 4, 2025');
+    expect(azureCertificateExpiredOn(valid, 'en-US', now)).toBeNull();
+    expect(azureCertificateExpiredOn({ azure: null }, 'en-US', now)).toBeNull();
+    expect(azureCertificateExpiredOn(undefined, 'en-US', now)).toBeNull();
+    expect(azureProblemText(entra, 'Mar 4, 2025')).toBe(
+      'The certificate expired on Mar 4, 2025. Replace it, then test again.',
+    );
+    const result = azureTestText(
+      { ok: false, user: null, project: null, problem: entra, missingAccess: null, visible: null },
+      'Mar 4, 2025',
+    );
+    expect(result).toContain('expired on Mar 4, 2025');
     expect(result).not.toContain('refused');
   });
 
