@@ -631,8 +631,8 @@ export function unnamedHead(ci: Settings['ci']): string {
         ? `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA is not a commit id in this ${merged.replace('_', ' ')} pipeline`
         : 'CI_COMMIT_SHA is not a commit id';
     }
-    case 'azure': // azure-pending(3): what Azure Pipelines lacks to name the pull request's head
-      return "CI does not name the pull request's head commit";
+    case 'azure':
+      return 'SYSTEM_PULLREQUEST_SOURCECOMMITID is not a commit id and the merge commit has no second parent';
     default:
       return assertNever(ci.provider, 'CI provider');
   }

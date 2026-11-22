@@ -79,8 +79,10 @@ describe('unnamedHead', () => {
     expect(unnamedHead(ci('none'))).toBe('CI_COMMIT_SHA is not a commit id');
   });
 
-  it('says neutrally what is missing on Azure DevOps, whose CI is not detected yet (Azure sub-plan 2, Task 2)', () => {
-    expect(unnamedHead(ci('azure'))).toBe("CI does not name the pull request's head commit");
+  it('names the Azure Pipelines variable and the merge commit fallback', () => {
+    expect(unnamedHead(ci('azure'))).toBe(
+      'SYSTEM_PULLREQUEST_SOURCECOMMITID is not a commit id and the merge commit has no second parent',
+    );
   });
 });
 

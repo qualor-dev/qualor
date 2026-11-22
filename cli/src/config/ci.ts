@@ -24,6 +24,8 @@ export interface CiInfo {
   gitlab: GitLabCi | null;
   /** GitHub Actions only (report `scm.github`, github.md §3); a malformed value is left out. */
   github: GitHubCi | null;
+  /** Azure Pipelines with Azure Repos only (report `scm.azure`); a malformed value is left out. */
+  azure: AzureCi | null;
   /** The pull request's head SHA from the event payload (full, lower-case hex), else null. */
   pullRequestHead: string | null;
 }
@@ -57,6 +59,14 @@ export interface GitHubCi {
   runId?: string;
 }
 
+export interface AzureCi {
+  projectId?: string;
+  repositoryId?: string;
+  buildId?: string;
+  /**  (full SHA) of a pull request build: the merge commit Azure checks out. */
+  mergeCommit?: string;
+}
+
 type Env = Readonly<Record<string, string | undefined>>;
 
 function get(env: Env, name: string): string | null {
@@ -74,6 +84,89 @@ const FULL_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** A full commit id, else null. */
 function fullSha(value: string | null | undefined): string | null {
   return value !== null && value !== undefined && FULL_SHA.test(value) ? value : null;
+}
+
+const AZURE_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const AZURE_BUILD_ID = /^[0-9]{1,20}$/;
+const DIGITS = /^[0-9]+$/;
+
+/**
+ * Every variable the Azure Pipelines arm reads. The Azure Pipelines task forwards exactly these
+ * into the scanner container; no secret (`SYSTEM_ACCESSTOKEN`, ...) is among them.
+ */
+export const AZURE_PIPELINES_ENV: readonly string[] = [
+  'TF_BUILD',
+  'BUILD_REPOSITORY_PROVIDER',
+  'BUILD_REASON',
+  'BUILD_SOURCEBRANCH',
+  'BUILD_SOURCEVERSION',
+  'BUILD_BUILDID',
+  'BUILD_REPOSITORY_ID',
+  'BUILD_REPOSITORY_NAME',
+  'SYSTEM_TEAMPROJECT',
+  'SYSTEM_TEAMPROJECTID',
+  'SYSTEM_COLLECTIONURI',
+  'SYSTEM_PULLREQUEST_PULLREQUESTID',
+  'SYSTEM_PULLREQUEST_SOURCEBRANCH',
+  'SYSTEM_PULLREQUEST_TARGETBRANCH',
+  'SYSTEM_PULLREQUEST_SOURCECOMMITID',
+];
+
+/** The name inside a full ref (`refs/heads/x` gives `x`), else null. */
+function refName(ref: string | null, prefix: 'refs/heads/' | 'refs/tags/'): string | null {
+  return ref !== null && ref.startsWith(prefix) && ref.length > prefix.length
+    ? ref.slice(prefix.length)
+    : null;
+}
+
+/** An Azure variable that must be a GUID (any case in, lower case out), else undefined. */
+function azureGuid(env: Env, name: string): string | undefined {
+  const v = get(env, name)?.toLowerCase();
+  return v !== undefined && AZURE_GUID.test(v) ? v : undefined;
+}
+
+function azureCi(env: Env, mergeCommit: string | null): AzureCi {
+  const projectId = azureGuid(env, 'SYSTEM_TEAMPROJECTID');
+  const repositoryId = azureGuid(env, 'BUILD_REPOSITORY_ID');
+  const buildId = get(env, 'BUILD_BUILDID');
+  return {
+    ...(projectId === undefined ? {} : { projectId }),
+    ...(repositoryId === undefined ? {} : { repositoryId }),
+    ...(buildId !== null && AZURE_BUILD_ID.test(buildId) ? { buildId } : {}),
+    ...(mergeCommit === null ? {} : { mergeCommit }),
+  };
+}
+
+function detectAzure(env: Env): CiInfo {
+  const sourceRef = get(env, 'BUILD_SOURCEBRANCH');
+  const version = fullSha(get(env, 'BUILD_SOURCEVERSION')?.toLowerCase());
+  const prId = get(env, 'SYSTEM_PULLREQUEST_PULLREQUESTID');
+  const target = refName(get(env, 'SYSTEM_PULLREQUEST_TARGETBRANCH'), 'refs/heads/');
+  const isPr =
+    get(env, 'BUILD_REASON') === 'PullRequest' &&
+    prId !== null &&
+    DIGITS.test(prId) &&
+    target !== null;
+  const head = isPr ? fullSha(get(env, 'SYSTEM_PULLREQUEST_SOURCECOMMITID')?.toLowerCase()) : null;
+  const project = get(env, 'SYSTEM_TEAMPROJECT');
+  const repository = get(env, 'BUILD_REPOSITORY_NAME');
+  return {
+    provider: 'azure',
+    revision: head ?? version,
+    branch: isPr
+      ? refName(get(env, 'SYSTEM_PULLREQUEST_SOURCEBRANCH'), 'refs/heads/')
+      : refName(sourceRef, 'refs/heads/'),
+    tag: refName(sourceRef, 'refs/tags/'),
+    mergeRequest: isPr
+      ? { id: prId, targetBranch: target, headSha: head, title: null, description: null }
+      : null,
+    mainBranch: null,
+    projectPath: project !== null && repository !== null ? `${project}/${repository}` : null,
+    gitlab: null,
+    github: null,
+    azure: azureCi(env, isPr ? version : null),
+    pullRequestHead: head,
+  };
 }
 
 /** A text field of the event read leniently: of another type it is absent, never the PR lost. */
@@ -181,6 +274,7 @@ export function detectCi(
       projectPath: get(env, 'CI_PROJECT_PATH'),
       gitlab,
       github: null,
+      azure: null,
       pullRequestHead: null,
     };
   }
@@ -211,8 +305,15 @@ export function detectCi(
       projectPath: get(env, 'GITHUB_REPOSITORY'),
       gitlab: null,
       github: githubCi(env),
+      azure: null,
       pullRequestHead: head,
     };
+  }
+  if (
+    get(env, 'TF_BUILD')?.toLowerCase() === 'true' &&
+    get(env, 'BUILD_REPOSITORY_PROVIDER') === 'TfsGit'
+  ) {
+    return detectAzure(env);
   }
   return {
     provider: 'none',
@@ -224,6 +325,7 @@ export function detectCi(
     projectPath: null,
     gitlab: null,
     github: null,
+    azure: null,
     pullRequestHead: null,
   };
 }

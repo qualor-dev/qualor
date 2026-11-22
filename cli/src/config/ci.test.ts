@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectCi } from './ci';
+import { AZURE_PIPELINES_ENV, detectCi } from './ci';
 
 const noFile = () => {
   throw new Error('no file');
@@ -17,6 +17,7 @@ describe('detectCi', () => {
       projectPath: null,
       gitlab: null,
       github: null,
+      azure: null,
       pullRequestHead: null,
     });
   });
@@ -57,6 +58,7 @@ describe('detectCi', () => {
       projectPath: 'acme/payments-api',
       gitlab: { projectId: '4711', pipelineId: '99001', mergeRequestEventType: 'detached' },
       github: null,
+      azure: null,
       pullRequestHead: null,
     });
   });
@@ -243,6 +245,7 @@ describe('detectCi', () => {
       projectPath: 'acme/web',
       gitlab: null,
       github: {},
+      azure: null,
       pullRequestHead: 'b'.repeat(40),
     });
   });
@@ -362,5 +365,157 @@ describe('detectCi tag (versions)', () => {
       ).tag,
     ).toBeNull();
     expect(detectCi({}, noFile).tag).toBeNull();
+  });
+});
+
+describe('detectCi: Azure Pipelines (azure-devops.md §7.3)', () => {
+  const sha = 'a'.repeat(40);
+  const base = {
+    TF_BUILD: 'True',
+    BUILD_REPOSITORY_PROVIDER: 'TfsGit',
+    BUILD_SOURCEVERSION: sha,
+  };
+  const project = '11111111-2222-3333-4444-555555555555';
+  const repo = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const none = {
+    provider: 'none',
+    revision: null,
+    branch: null,
+    tag: null,
+    mergeRequest: null,
+    mainBranch: null,
+    projectPath: null,
+    gitlab: null,
+    github: null,
+    azure: null,
+    pullRequestHead: null,
+  };
+  const pr = {
+    ...base,
+    BUILD_REASON: 'PullRequest',
+    BUILD_SOURCEBRANCH: 'refs/pull/7/merge',
+    BUILD_BUILDID: '4521',
+    BUILD_REPOSITORY_ID: repo.toUpperCase(),
+    BUILD_REPOSITORY_NAME: 'web',
+    SYSTEM_TEAMPROJECT: 'Shop',
+    SYSTEM_TEAMPROJECTID: project.toUpperCase(),
+    SYSTEM_PULLREQUEST_PULLREQUESTID: '7',
+    SYSTEM_PULLREQUEST_SOURCEBRANCH: 'refs/heads/feature/x',
+    SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main',
+    SYSTEM_PULLREQUEST_SOURCECOMMITID: 'B'.repeat(40),
+  };
+
+  it('reads a branch build', () => {
+    expect(
+      detectCi(
+        { ...base, BUILD_REASON: 'IndividualCI', BUILD_SOURCEBRANCH: 'refs/heads/feature/a-b' },
+        noFile,
+      ),
+    ).toEqual({
+      ...none,
+      provider: 'azure',
+      revision: sha,
+      branch: 'feature/a-b',
+      azure: {},
+    });
+  });
+
+  it('reads a tag build', () => {
+    expect(
+      detectCi(
+        { ...base, BUILD_REASON: 'IndividualCI', BUILD_SOURCEBRANCH: 'refs/tags/v1.2' },
+        noFile,
+      ),
+    ).toEqual({ ...none, provider: 'azure', revision: sha, tag: 'v1.2', azure: {} });
+  });
+
+  it('reads a pull request build on Services, GUIDs lower-cased', () => {
+    expect(detectCi(pr, noFile)).toEqual({
+      ...none,
+      provider: 'azure',
+      revision: 'b'.repeat(40),
+      branch: 'feature/x',
+      mergeRequest: {
+        id: '7',
+        targetBranch: 'main',
+        headSha: 'b'.repeat(40),
+        title: null,
+        description: null,
+      },
+      projectPath: 'Shop/web',
+      azure: { projectId: project, repositoryId: repo, buildId: '4521', mergeCommit: sha },
+      pullRequestHead: 'b'.repeat(40),
+    });
+  });
+
+  it('falls back to the merge commit without SYSTEM_PULLREQUEST_SOURCECOMMITID', () => {
+    const ci = detectCi({ ...pr, SYSTEM_PULLREQUEST_SOURCECOMMITID: undefined }, noFile);
+    expect(ci.pullRequestHead).toBeNull();
+    expect(ci.revision).toBe(sha);
+    expect(ci.mergeRequest?.headSha).toBeNull();
+    expect(ci.azure?.mergeCommit).toBe(sha);
+  });
+
+  it('is no pull request outside a PullRequest build', () => {
+    const ci = detectCi(
+      { ...pr, BUILD_REASON: 'Manual', SYSTEM_PULLREQUEST_SOURCECOMMITID: undefined },
+      noFile,
+    );
+    expect(ci.branch).toBeNull();
+    expect(ci.mergeRequest).toBeNull();
+    expect(ci.pullRequestHead).toBeNull();
+    expect(ci.revision).toBe(sha);
+    expect(ci.azure?.mergeCommit).toBeUndefined();
+  });
+
+  it('leaves another repository provider alone', () => {
+    expect(detectCi({ ...pr, BUILD_REPOSITORY_PROVIDER: 'GitHub' }, noFile)).toEqual(none);
+    expect(detectCi({ TF_BUILD: 'True' }, noFile)).toEqual(none);
+  });
+
+  it('detects TF_BUILD in any case', () => {
+    expect(detectCi({ ...pr, TF_BUILD: 'true' }, noFile).provider).toBe('azure');
+  });
+
+  it('drops malformed ids and a bad head', () => {
+    const ci = detectCi(
+      {
+        ...pr,
+        BUILD_BUILDID: '12x',
+        BUILD_REPOSITORY_ID: 'not-a-guid',
+        SYSTEM_TEAMPROJECTID: project + '0',
+        SYSTEM_PULLREQUEST_SOURCECOMMITID: 'abc',
+      },
+      noFile,
+    );
+    expect(ci.azure).toEqual({ mergeCommit: sha });
+    expect(ci.pullRequestHead).toBeNull();
+    expect(ci.revision).toBe(sha);
+  });
+
+  it('never copies a secret variable', () => {
+    const secret = ['tok', 'en', '-value-123'].join('');
+    const ci = detectCi({ ...pr, SYSTEM_ACCESSTOKEN: secret, QUALOR_TOKEN: secret }, noFile);
+    expect(JSON.stringify(ci)).not.toContain(secret);
+  });
+
+  it('exports every variable the arm reads, in order', () => {
+    expect(AZURE_PIPELINES_ENV).toEqual([
+      'TF_BUILD',
+      'BUILD_REPOSITORY_PROVIDER',
+      'BUILD_REASON',
+      'BUILD_SOURCEBRANCH',
+      'BUILD_SOURCEVERSION',
+      'BUILD_BUILDID',
+      'BUILD_REPOSITORY_ID',
+      'BUILD_REPOSITORY_NAME',
+      'SYSTEM_TEAMPROJECT',
+      'SYSTEM_TEAMPROJECTID',
+      'SYSTEM_COLLECTIONURI',
+      'SYSTEM_PULLREQUEST_PULLREQUESTID',
+      'SYSTEM_PULLREQUEST_SOURCEBRANCH',
+      'SYSTEM_PULLREQUEST_TARGETBRANCH',
+      'SYSTEM_PULLREQUEST_SOURCECOMMITID',
+    ]);
   });
 });
