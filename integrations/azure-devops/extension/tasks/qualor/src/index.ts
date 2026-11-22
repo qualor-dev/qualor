@@ -1,17 +1,18 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
 import { promisify } from 'node:util';
 import * as tl from 'azure-pipelines-task-lib/task';
-import { ToolRunner } from 'azure-pipelines-task-lib/toolrunner';
+import { splitArguments } from './args';
 import { headCheckout } from './head';
-import { planRun, type DockerStep } from './plan';
+import { planRun, stepProcessEnv, withoutQualor, type DockerStep } from './plan';
 
 /**
  * The Qualor@0 task: task-lib wiring only. plan.ts decides what runs, head.ts checks out the pull
- * request head; this file reads the inputs and variables and runs docker.
+ * request head, args.ts splits `arguments`; this file reads the inputs and variables and runs
+ * docker.
  */
 
 const execFileAsync = promisify(execFile);
@@ -47,33 +48,20 @@ function secretVariable(name: string): string | undefined {
   return value;
 }
 
-/**
- * `arguments` split as task-lib splits a command line (`ToolRunner.line`). Its parser is private
- * and uses no instance state; a ToolRunner instance would need the tool to exist on the agent.
- */
-function splitArguments(line: string): string[] {
-  const parse = (ToolRunner.prototype as unknown as { _argStringToArray?: unknown })
-    ._argStringToArray;
-  const args: unknown =
-    typeof parse === 'function' ? parse.call(ToolRunner.prototype, line) : undefined;
-  if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) {
-    throw new Error(
-      'azure-pipelines-task-lib no longer has the argument parser of ToolRunner.line',
-    );
-  }
-  return args;
+/** The task's version from the task.json beside the bundle (the extension's version). */
+function taskVersion(): string {
+  const task = JSON.parse(readFileSync(path.join(__dirname, 'task.json'), 'utf8')) as {
+    version?: { Major?: unknown; Minor?: unknown; Patch?: unknown };
+  };
+  const parts = [task.version?.Major, task.version?.Minor, task.version?.Patch];
+  if (!parts.every((p) => Number.isInteger(p))) throw new Error('task.json has no version');
+  return parts.join('.');
 }
 
+/** git in the sources directory, without the agent's QUALOR_ variables (head.ts adds its -c options). */
 function git(cwd: string): (args: string[]) => Promise<string> {
-  return async (args) => (await execFileAsync('git', args, { cwd, encoding: 'utf8' })).stdout;
-}
-
-function definedEnv(extra: Record<string, string>): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[name] = value;
-  }
-  return { ...env, ...extra };
+  const env = withoutQualor(process.env);
+  return async (args) => (await execFileAsync('git', args, { cwd, env, encoding: 'utf8' })).stdout;
 }
 
 async function runStep(docker: string, step: DockerStep): Promise<void> {
@@ -81,7 +69,7 @@ async function runStep(docker: string, step: DockerStep): Promise<void> {
   await tl
     .tool(docker)
     .arg(step.args)
-    .exec({ env: definedEnv(step.env) });
+    .execAsync({ env: stepProcessEnv(process.env, step) });
 }
 
 /** Runs the steps in order; after a failed step, the `onFailureOnly` ones (`dotnet abort`). */
@@ -124,6 +112,7 @@ async function run(): Promise<string | null> {
       env: process.env,
       qualorUrl: tl.getVariable('QUALOR_URL'),
       qualorToken,
+      taskVersion: taskVersion(),
     },
   );
   if ('problem' in plan) return plan.problem;

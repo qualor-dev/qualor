@@ -42,6 +42,8 @@ export interface TaskContext {
   env: Record<string, string | undefined>;
   qualorUrl: string | undefined;
   qualorToken: string | undefined;
+  /** The task's own version (task.json): the image tag when the `imageTag` input is empty. */
+  taskVersion: string;
 }
 
 /**
@@ -69,20 +71,27 @@ const TRIVY_CACHE = '/src/.qualor/trivy';
 /**
  * The `docker run` steps of one task run, or the problem that stops it before anything runs.
  *
- * Every step: `run --rm --user <uid>:<gid> -v <sourcesDir>:/src -w /src
- * -v <tempDir>/qualor-home:/qualor-home -e HOME=/qualor-home`, then
- * `-e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy` (not for the build, which gets no `QUALOR_`
- * variable), `-e NAME` for each `TASK_FORWARDED_ENV` variable that is set, `-e QUALOR_URL
- * -e QUALOR_TOKEN` (and `-e QUALOR_PROJECT_KEY` when set) for the steps that upload, the image
- * and the command:
+ * Every step starts `run --rm --user <uid>:<gid> -v <sourcesDir>:/src -w /src
+ * -v <tempDir>/qualor-home:/qualor-home -e HOME=/qualor-home`. Then, by step:
  *
- * | Step | Image | Command |
+ * | Step | Then | Image and command |
  * | --- | --- | --- |
- * | scan | `qualor/scanner:<imageTag>` | `scan <arguments>` (uploads) |
- * | begin | `qualor/scanner-dotnet:<imageTag>` | `dotnet begin` |
- * | build | `--entrypoint sh qualor/scanner-dotnet:<imageTag>` | `-c <dotnetBuild>` |
- * | end | `qualor/scanner-dotnet:<imageTag>` | `dotnet end <arguments>` (uploads) |
- * | abort | `qualor/scanner-dotnet:<imageTag>` | `dotnet abort` (after a failure only) |
+ * | scan | `C G F S` | `qualor/scanner:<tag> scan <arguments>` |
+ * | begin | `C F` | `qualor/scanner-dotnet:<tag> dotnet begin` |
+ * | build | `F` | `--entrypoint sh qualor/scanner-dotnet:<tag> -c <dotnetBuild>` |
+ * | end | `C G F S` | `qualor/scanner-dotnet:<tag> dotnet end <arguments>` |
+ * | abort | `C G F` | `qualor/scanner-dotnet:<tag> dotnet abort` (after a failure only) |
+ *
+ * `C` = `-e QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy`; `G` = `-e GIT_CONFIG_GLOBAL=/dev/null`;
+ * `F` = `-e NAME` for each `TASK_FORWARDED_ENV` variable that is set; `S` = `-e QUALOR_URL
+ * -e QUALOR_TOKEN` (and `-e QUALOR_PROJECT_KEY` when set). `<tag>` is `imageTag`, or the task's
+ * version when that input is empty.
+ *
+ * The build runs the project's code (NuGet props and targets, analyzers, source generators), so
+ * it gets no `QUALOR_` variable and sees the repository's git directory read-only: its args add
+ * `-v <sourcesDir>/.git:/src/.git:ro` right after the `/src` mount. It still shares HOME with
+ * begin and end (the MSBuild hook lives there), so scan, end and abort ignore the global git
+ * config: a `core.fsmonitor` or filter command written there would run next to the token.
  *
  * The container runs as the agent user, so what the scanner writes into the sources belongs to
  * that user, and HOME is a directory of the agent's temp directory that the task creates first.
@@ -108,14 +117,17 @@ export function planRun(
     QUALOR_TOKEN: token,
     ...(projectKey.trim() === '' ? {} : { QUALOR_PROJECT_KEY: projectKey }),
   };
+  const tag = inputs.imageTag.trim() === '' ? ctx.taskVersion : inputs.imageTag.trim();
 
-  const base = [
+  /** The common start; `readOnlyGit` adds the build's read-only `.git` after the `/src` mount. */
+  const base = (readOnlyGit: boolean): string[] => [
     'run',
     '--rm',
     '--user',
     `${ctx.uid}:${ctx.gid}`,
     '-v',
     `${ctx.sourcesDir}:${SOURCES}`,
+    ...(readOnlyGit ? ['-v', `${path.posix.join(ctx.sourcesDir, '.git')}:${SOURCES}/.git:ro`] : []),
     '-w',
     SOURCES,
     '-v',
@@ -125,20 +137,24 @@ export function planRun(
   ];
   const names = (env: Record<string, string>): string[] =>
     Object.keys(env).flatMap((name) => ['-e', name]);
-  /** A step that runs `qualor`; with `upload`, it also gets the server variables. */
+  /**
+   * A step that runs `qualor`. `noGlobalGit`: it ignores the global git config of the HOME the
+   * build shares; `upload`: it also gets the server variables.
+   */
   const qualor = (
     name: DockerStep['name'],
     image: string,
     command: string[],
-    upload: boolean,
+    { noGlobalGit, upload }: { noGlobalGit: boolean; upload: boolean },
   ): DockerStep => {
     const env = upload ? { ...forwardedEnv, ...server } : forwardedEnv;
     return {
       name,
       args: [
-        ...base,
+        ...base(false),
         '-e',
         `QUALOR_TRIVY_CACHE_DIR=${TRIVY_CACHE}`,
+        ...(noGlobalGit ? ['-e', 'GIT_CONFIG_GLOBAL=/dev/null'] : []),
         ...names(env),
         image,
         ...command,
@@ -148,20 +164,19 @@ export function planRun(
   };
 
   if (!inputs.dotnet) {
+    const scan = ['scan', ...inputs.extraArgs];
     return {
-      steps: [
-        qualor('scan', `qualor/scanner:${inputs.imageTag}`, ['scan', ...inputs.extraArgs], true),
-      ],
+      steps: [qualor('scan', `qualor/scanner:${tag}`, scan, { noGlobalGit: true, upload: true })],
     };
   }
-  const image = `qualor/scanner-dotnet:${inputs.imageTag}`;
+  const image = `qualor/scanner-dotnet:${tag}`;
   return {
     steps: [
-      qualor('begin', image, ['dotnet', 'begin'], false),
+      qualor('begin', image, ['dotnet', 'begin'], { noGlobalGit: false, upload: false }),
       {
         name: 'build',
         args: [
-          ...base,
+          ...base(true),
           ...names(forwardedEnv),
           '--entrypoint',
           'sh',
@@ -171,8 +186,37 @@ export function planRun(
         ],
         env: forwardedEnv,
       },
-      qualor('end', image, ['dotnet', 'end', ...inputs.extraArgs], true),
-      { ...qualor('abort', image, ['dotnet', 'abort'], false), onFailureOnly: true },
+      qualor('end', image, ['dotnet', 'end', ...inputs.extraArgs], {
+        noGlobalGit: true,
+        upload: true,
+      }),
+      {
+        ...qualor('abort', image, ['dotnet', 'abort'], { noGlobalGit: true, upload: false }),
+        onFailureOnly: true,
+      },
     ],
   };
+}
+
+/**
+ * The agent's environment without unset values and without any `QUALOR_` variable (in any
+ * case): the base of every child process the task starts, so a value mapped with `env:` on the
+ * task reaches only the steps that plan it.
+ */
+export function withoutQualor(
+  env: Readonly<Record<string, string | undefined>>,
+): Record<string, string> {
+  const kept: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value !== undefined && !/^QUALOR_/i.test(name)) kept[name] = value;
+  }
+  return kept;
+}
+
+/** A step's docker client environment: the agent's without `QUALOR_` variables, plus `step.env`. */
+export function stepProcessEnv(
+  hostEnv: Readonly<Record<string, string | undefined>>,
+  step: DockerStep,
+): Record<string, string> {
+  return { ...withoutQualor(hostEnv), ...step.env };
 }

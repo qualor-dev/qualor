@@ -21,7 +21,7 @@
       "label": "Analyse .NET with the MSBuild integration",
       "defaultValue": "false",
       "required": false,
-      "helpMarkDown": "Runs `qualor dotnet begin`, the build command and `qualor dotnet end` in the `qualor/scanner-dotnet` image. The build gets neither QUALOR_URL nor QUALOR_TOKEN."
+      "helpMarkDown": "Runs `qualor dotnet begin`, the build command and `qualor dotnet end` in the `qualor/scanner-dotnet` image. The build gets neither QUALOR_URL nor QUALOR_TOKEN and sees the repository's .git read-only: run tools that write to .git in an earlier step."
     },
     {
       "name": "dotnetBuild",

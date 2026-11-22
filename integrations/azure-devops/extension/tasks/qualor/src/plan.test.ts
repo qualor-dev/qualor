@@ -1,7 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { AZURE_PIPELINES_ENV } from '../../../../../../cli/src/config/ci';
-import { planRun, TASK_FORWARDED_ENV, type TaskContext, type TaskInputs } from './plan';
+import {
+  planRun,
+  stepProcessEnv,
+  TASK_FORWARDED_ENV,
+  withoutQualor,
+  type TaskContext,
+  type TaskInputs,
+} from './plan';
 
 // Assembled at run time: gitleaks scans the repository for Qualor tokens.
 const TOKEN = ['qlr', 'prj', randomBytes(16).toString('hex')].join('_');
@@ -33,17 +40,13 @@ function context(overrides: Partial<TaskContext> = {}): TaskContext {
     },
     qualorUrl: URL,
     qualorToken: TOKEN,
+    taskVersion: '0.16.0',
     ...overrides,
   };
 }
 
-const COMMON = [
-  'run',
-  '--rm',
-  '--user',
-  '1234:1235',
-  '-v',
-  '/home/agent/_work/1/s:/src',
+const USER_SOURCES = ['run', '--rm', '--user', '1234:1235', '-v', '/home/agent/_work/1/s:/src'];
+const REST = [
   '-w',
   '/src',
   '-v',
@@ -51,6 +54,11 @@ const COMMON = [
   '-e',
   'HOME=/qualor-home',
 ];
+const COMMON = [...USER_SOURCES, ...REST];
+/** The build's read-only view of the repository's git directory. */
+const GIT_READ_ONLY = ['-v', '/home/agent/_work/1/s/.git:/src/.git:ro'];
+/** scan, end and abort ignore a global git config the build could have written into HOME. */
+const NO_GLOBAL_GIT = ['-e', 'GIT_CONFIG_GLOBAL=/dev/null'];
 const CACHE = ['-e', 'QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy'];
 const FORWARDED = [
   '-e',
@@ -83,6 +91,7 @@ describe('planRun: qualor scan', () => {
         args: [
           ...COMMON,
           ...CACHE,
+          ...NO_GLOBAL_GIT,
           ...FORWARDED,
           ...SERVER,
           'qualor/scanner:0.16.0',
@@ -105,6 +114,7 @@ describe('planRun: qualor scan', () => {
     expect(scan!.args).toEqual([
       ...COMMON,
       ...CACHE,
+      ...NO_GLOBAL_GIT,
       '-e',
       'BUILD_BUILDID',
       '-e',
@@ -127,6 +137,7 @@ describe('planRun: qualor scan', () => {
     expect(scan!.args).toEqual([
       ...COMMON,
       ...CACHE,
+      ...NO_GLOBAL_GIT,
       ...FORWARDED,
       ...SERVER,
       '-e',
@@ -141,6 +152,18 @@ describe('planRun: qualor scan', () => {
   it('takes the uid and gid from the context (an agent that is not 1000 or 1001)', () => {
     const [scan] = stepsOf(planRun(SCAN, context({ uid: 4242, gid: 77 })));
     expect(scan!.args.slice(0, 4)).toEqual(['run', '--rm', '--user', '4242:77']);
+  });
+
+  it('falls back to the task version when imageTag is empty, so the image always has a tag', () => {
+    for (const imageTag of ['', '  ']) {
+      const ctx = context({ taskVersion: '0.17.2' });
+      const [scan] = stepsOf(planRun({ ...SCAN, imageTag }, ctx));
+      expect(scan!.args).toContain('qualor/scanner:0.17.2');
+      const images = stepsOf(planRun({ ...DOTNET, imageTag }, ctx)).map((s) =>
+        s.args.find((a) => a.startsWith('qualor/')),
+      );
+      expect(images).toEqual(Array(4).fill('qualor/scanner-dotnet:0.17.2'));
+    }
   });
 
   it('keeps the token out of the arguments: it reaches docker only through the environment', () => {
@@ -203,7 +226,9 @@ describe('planRun: .NET', () => {
       {
         name: 'build',
         args: [
-          ...COMMON,
+          ...USER_SOURCES,
+          ...GIT_READ_ONLY,
+          ...REST,
           ...FORWARDED,
           '--entrypoint',
           'sh',
@@ -215,12 +240,22 @@ describe('planRun: .NET', () => {
       },
       {
         name: 'end',
-        args: [...COMMON, ...CACHE, ...FORWARDED, ...SERVER, image, 'dotnet', 'end', '--no-wait'],
+        args: [
+          ...COMMON,
+          ...CACHE,
+          ...NO_GLOBAL_GIT,
+          ...FORWARDED,
+          ...SERVER,
+          image,
+          'dotnet',
+          'end',
+          '--no-wait',
+        ],
         env: { ...FORWARDED_ENV, QUALOR_URL: URL, QUALOR_TOKEN: TOKEN },
       },
       {
         name: 'abort',
-        args: [...COMMON, ...CACHE, ...FORWARDED, image, 'dotnet', 'abort'],
+        args: [...COMMON, ...CACHE, ...NO_GLOBAL_GIT, ...FORWARDED, image, 'dotnet', 'abort'],
         env: FORWARDED_ENV,
         onFailureOnly: true,
       },
@@ -236,6 +271,28 @@ describe('planRun: .NET', () => {
     expect(build.args.join(' ')).not.toContain('-e QUALOR_TOKEN');
   });
 
+  it('mounts .git read-only for the build, after the /src mount, and only for the build', () => {
+    const steps = stepsOf(planRun(DOTNET, context()));
+    const build = steps.find((s) => s.name === 'build')!;
+    const sources = build.args.indexOf('/home/agent/_work/1/s:/src');
+    const git = build.args.indexOf('/home/agent/_work/1/s/.git:/src/.git:ro');
+    expect(sources).toBeGreaterThan(0);
+    expect(build.args[git - 1]).toBe('-v');
+    expect(git).toBeGreaterThan(sources);
+    const others = steps.filter((s) => s.name !== 'build').flatMap((s) => s.args);
+    expect(others.some((a) => a.includes('/.git'))).toBe(false);
+  });
+
+  it('runs scan, end and abort without the global git config (HOME is shared with the build)', () => {
+    const steps = [...stepsOf(planRun(SCAN, context())), ...stepsOf(planRun(DOTNET, context()))];
+    const ignoring = steps
+      .filter((s) =>
+        s.args.some((a, i) => a === '-e' && s.args[i + 1] === 'GIT_CONFIG_GLOBAL=/dev/null'),
+      )
+      .map((s) => s.name);
+    expect(ignoring).toEqual(['scan', 'end', 'abort']);
+  });
+
   it('passes the server variables to end only, and the token never as an argument', () => {
     const env = { ...context().env, QUALOR_PROJECT_KEY: 'acme/app' };
     const steps = stepsOf(planRun(DOTNET, context({ env })));
@@ -243,6 +300,46 @@ describe('planRun: .NET', () => {
     expect(withServer).toEqual(['end']);
     expect(steps.find((s) => s.name === 'end')!.env['QUALOR_PROJECT_KEY']).toBe('acme/app');
     expect(steps.flatMap((s) => s.args).some((a) => a.includes(TOKEN))).toBe(false);
+  });
+});
+
+describe('the environment of the docker client and of git on the agent', () => {
+  // The agent's own environment: an `env:` mapping may put QUALOR_ values there.
+  const host = {
+    PATH: '/usr/bin',
+    QUALOR_TOKEN: `${TOKEN}-mapped`,
+    QUALOR_URL: 'https://other.example.test',
+    QUALOR_CA_FILE: '/etc/ca.pem',
+    qualor_lower: 'x',
+    UNSET: undefined,
+  };
+
+  it('drops every QUALOR_ variable and unset values from the host environment', () => {
+    expect(withoutQualor(host)).toEqual({ PATH: '/usr/bin' });
+  });
+
+  it('gives begin, build and abort no QUALOR_ variable, and end only the planned ones', () => {
+    const steps = [...stepsOf(planRun(SCAN, context())), ...stepsOf(planRun(DOTNET, context()))];
+    const qualorKeys = Object.fromEntries(
+      steps.map((s) => [
+        s.name,
+        Object.keys(stepProcessEnv(host, s)).filter((k) => /^qualor_/i.test(k)),
+      ]),
+    );
+    expect(qualorKeys).toEqual({
+      scan: ['QUALOR_URL', 'QUALOR_TOKEN'],
+      begin: [],
+      build: [],
+      end: ['QUALOR_URL', 'QUALOR_TOKEN'],
+      abort: [],
+    });
+    const end = steps.find((s) => s.name === 'end')!;
+    expect(stepProcessEnv(host, end)).toEqual({
+      PATH: '/usr/bin',
+      ...FORWARDED_ENV,
+      QUALOR_URL: URL,
+      QUALOR_TOKEN: TOKEN,
+    });
   });
 });
 

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -21,15 +21,25 @@ const SHALLOW = {
   problem: 'The pull request head is not in the clone. Set fetchDepth: 0 on the checkout step.',
 };
 
-/** A git runner like the task's: resolves with stdout, rejects on a non-zero exit. */
+/**
+ * A git runner like the task's: resolves with stdout, rejects on a non-zero exit with execFile's
+ * error (`code`, `stderr`). Git does not look for a repository above tmpRoot.
+ */
 function gitIn(dir: string): { git: (args: string[]) => Promise<string>; calls: string[][] } {
   const calls: string[][] = [];
+  const env = { ...GIT_TEST_ENV, GIT_CEILING_DIRECTORIES: tmpRoot };
   const git = async (args: string[]): Promise<string> => {
     calls.push(args);
-    return (await execFileAsync('git', args, { cwd: dir, env: GIT_TEST_ENV })).stdout;
+    return (await execFileAsync('git', args, { cwd: dir, env, encoding: 'utf8' })).stdout;
   };
   return { git, calls };
 }
+
+const checkedOut = (calls: string[][]): boolean => calls.some((args) => args.includes('checkout'));
+
+/** An error shaped like execFile's for a git that exited with `code`. */
+const gitError = (code: number | string, stderr: string, message = 'Command failed: git') =>
+  Object.assign(new Error(message), { code, stderr });
 
 interface Repo {
   dir: string;
@@ -89,6 +99,18 @@ describe('headCheckout', () => {
     }
   });
 
+  it('reads the commit ids in any case, as the CLI does', async () => {
+    const { git } = gitIn(repo.dir);
+    const env = prBuild({
+      SYSTEM_PULLREQUEST_SOURCECOMMITID: repo.older.toUpperCase(),
+      BUILD_SOURCEVERSION: repo.merge.toUpperCase(),
+    });
+    expect(await headCheckout(git, env)).toEqual({ checkedOut: repo.older });
+    gitSync(repo.dir, 'checkout', '-q', '--detach', repo.merge);
+    const fallback = prBuild({ BUILD_SOURCEVERSION: repo.merge.toUpperCase() });
+    expect(await headCheckout(git, fallback)).toEqual({ checkedOut: repo.head });
+  });
+
   it('takes the second parent of BUILD_SOURCEVERSION, so a second run stays on the head', async () => {
     const { git } = gitIn(repo.dir);
     const env = prBuild({ BUILD_SOURCEVERSION: repo.merge });
@@ -102,7 +124,7 @@ describe('headCheckout', () => {
     const { git, calls } = gitIn(repo.dir);
     const env = prBuild({ SYSTEM_PULLREQUEST_SOURCECOMMITID: repo.head });
     expect(await headCheckout(git, env)).toEqual({ checkedOut: null });
-    expect(calls.some((args) => args[0] === 'checkout')).toBe(false);
+    expect(checkedOut(calls)).toBe(false);
   });
 
   it('refuses a shallow clone, where the head is not in the clone (fetchDepth: 1)', async () => {
@@ -117,8 +139,60 @@ describe('headCheckout', () => {
     ]) {
       expect(await headCheckout(git, env)).toEqual(SHALLOW);
     }
-    expect(calls.some((args) => args[0] === 'checkout')).toBe(false);
+    expect(checkedOut(calls)).toBe(false);
     expect(gitSync(clone, 'rev-parse', 'HEAD')).toBe(repo.merge);
+  });
+
+  it('runs git without hooks or an fsmonitor command', async () => {
+    const hook = path.join(repo.dir, '.git', 'hooks', 'post-checkout');
+    writeFileSync(hook, '#!/bin/sh\necho ran > hook-ran\n');
+    chmodSync(hook, 0o755);
+    const { git, calls } = gitIn(repo.dir);
+    expect(await headCheckout(git, prBuild({ BUILD_SOURCEVERSION: repo.merge }))).toEqual({
+      checkedOut: repo.head,
+    });
+    expect(existsSync(path.join(repo.dir, 'hook-ran'))).toBe(false);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const args of calls) {
+      expect(args.slice(0, 4)).toEqual([
+        '-c',
+        'core.hooksPath=/dev/null',
+        '-c',
+        'core.fsmonitor=false',
+      ]);
+    }
+    // The hook itself works: git without those options runs it.
+    gitSync(repo.dir, 'checkout', '-q', '--detach', repo.merge);
+    expect(existsSync(path.join(repo.dir, 'hook-ran'))).toBe(true);
+  });
+
+  it('names the git failure when the clone cannot be read (not exit code 1)', async () => {
+    const notRepo = path.join(tmpRoot, `not-a-repo-${++counter}`);
+    mkdirSync(notRepo);
+    const { git } = gitIn(notRepo);
+    const result = await headCheckout(git, prBuild({ BUILD_SOURCEVERSION: repo.merge }));
+    expect(result).toEqual({
+      problem: expect.stringMatching(
+        /^Could not read the pull request head from the clone: fatal: not a git repository[^\n]*$/,
+      ),
+    });
+  });
+
+  it("keeps only the first line of git's standard error, or the error without one", async () => {
+    const stderr =
+      "fatal: detected dubious ownership in repository at '/src'\n" +
+      'To add an exception for this directory, call:\n';
+    const dubious = vi.fn(() => Promise.reject(gitError(128, stderr)));
+    expect(await headCheckout(dubious, prBuild())).toEqual({
+      problem:
+        "Could not read the pull request head from the clone: fatal: detected dubious ownership in repository at '/src'",
+    });
+    const missing = vi.fn(() => Promise.reject(gitError('ENOENT', '', 'spawn git ENOENT')));
+    expect(await headCheckout(missing, prBuild())).toEqual({
+      problem: 'Could not read the pull request head from the clone: spawn git ENOENT',
+    });
+    const exitOne = vi.fn(() => Promise.reject(gitError(1, '')));
+    expect(await headCheckout(exitOne, prBuild())).toEqual(SHALLOW);
   });
 
   it('does nothing outside a pull request build, without calling git', async () => {
