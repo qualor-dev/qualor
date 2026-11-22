@@ -1,8 +1,8 @@
 # CLI reference
 
 The `qualor` CLI is the entrypoint of the `qualor/scanner` and `qualor/scanner-dotnet` images:
-`docker run qualor/scanner:<tag> scan` runs `qualor scan`. In GitLab CI and Azure Pipelines, set
-`entrypoint: ['']` and call `qualor` in `script`. `qualor help` (or `--help`) prints the usage.
+`docker run qualor/scanner:<tag> scan` runs `qualor scan`. In GitLab CI, set `entrypoint: ['']`
+and call `qualor` in `script`. `qualor help` (or `--help`) prints the usage.
 
 ## `qualor scan`
 

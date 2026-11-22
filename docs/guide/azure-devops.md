@@ -149,7 +149,7 @@ checkout still uploads, but later inline comments cannot be placed in it.
 ### The default branch
 
 Qualor does not detect the default branch on Azure Pipelines. When it is not `main`, set it in
-`.qualor.yml`:
+`qualor.yml`:
 
 ```yaml
 scm:
