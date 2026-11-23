@@ -29,6 +29,7 @@ import {
 } from '../db/schema';
 import { readLlmSettings } from '../llm/settings';
 import { enqueue } from '../queue/queue';
+import type { WorkerLogger } from '../queue/worker';
 import type { AzureThread } from '../scm/azure/client';
 import type { GitHubComment } from '../scm/github/client';
 import type { GitLabDiscussion } from '../scm/gitlab/client';
@@ -698,7 +699,8 @@ export async function queueGitHubAnswers(
  * `identityId` is Qualor's identity in Azure DevOps. Each note is a comment's `azureNoteId`, the
  * thread's id and the comment's in one number, so comment 1 of two threads is two notes. Reads
  * nothing from Azure DevOps. Without a `window` AI review is not active for the project, and
- * Qualor answers none. Answers how many jobs it queued.
+ * Qualor answers none. A comment whose id is too large for its note id is skipped, and `logger`
+ * says so once, without its text. Answers how many jobs it queued.
  */
 export async function queueAzureAnswers(
   db: Db,
@@ -706,9 +708,18 @@ export async function queueAzureAnswers(
   window: ReplyWindow | null,
   identityId: string,
   threads: readonly AzureThread[],
+  logger?: Pick<WorkerLogger, 'warn'>,
 ): Promise<number> {
   if (window === null) return 0;
-  const options = { qualor: { azureIdentityId: identityId }, ...window };
+  const options = {
+    qualor: { azureIdentityId: identityId },
+    ...window,
+    onUnusableComment: () =>
+      logger?.warn(
+        { branchId: ids.branchId },
+        'azure devops comment ids too large to answer were skipped',
+      ),
+  };
   return queueReplies(db, { ...ids, provider: 'azure' }, window, {
     rounds: azureRounds(threads, options),
     commands: azureCommands(threads, options),

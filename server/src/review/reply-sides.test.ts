@@ -717,14 +717,19 @@ describe('the sides of a reply and of a command on Azure DevOps (Azure sub-plan 
       expect(await side.read()).toMatchObject({ answered: noteOf(thread.id, answer.id) });
       thread.status = 'fixed';
       expect(await side.read()).toMatchObject({ resolved: true });
+      for (const status of ['wontFix', 'closed', 'byDesign'] as const) {
+        thread.status = status;
+        expect(await side.read(), status).toMatchObject({ resolved: true });
+      }
+      // Pending is under review, and still open: a reply in it is answered.
       thread.status = 'pending';
-      expect(await side.read()).toMatchObject({ resolved: true });
+      expect(await side.read()).toMatchObject({ resolved: false });
       // Each read is who Qualor is, then one GET of the thread alone.
       const once = [
         'GET connectionData',
         `GET git/repositories/${repositoryId}/pullrequests/7/threads/${thread.id}`,
       ];
-      expect(sent()).toEqual([...once, ...once, ...once, ...once]);
+      expect(sent()).toEqual(Array.from({ length: 7 }, () => once).flat());
     });
 
     it("is no thread of the row's when its first comment is not Qualor's or names another issue; a thread Azure DevOps does not have is not found", async () => {
@@ -788,6 +793,21 @@ describe('the sides of a reply and of a command on Azure DevOps (Azure sub-plan 
       expect(await strangerSide.mayChangeStatus([noteOf(strangers.id, 2)])).toBe(false);
     });
 
+    it('names the reply in the warning of a rights check that failed for good', async () => {
+      const { thread, row, side } = seeded();
+      await side.read();
+      warnings.length = 0;
+      fake.inject('GET', /accesscontrollists/, {
+        status: 403,
+        headers: { 'content-type': 'application/json' },
+        body: { message: 'no' },
+      });
+      expect(await side.mayChangeStatus([noteOf(thread.id, 2)])).toBe(false);
+      expect(warnings).toEqual([
+        [{ kind: 'auth', replyId: row.id }, 'azure devops contribute check failed'],
+      ]);
+    });
+
     it('throws a transient failure of the rights check, so that the job tries again', async () => {
       const { thread, side } = seeded();
       await side.read();
@@ -847,6 +867,17 @@ describe('the sides of a reply and of a command on Azure DevOps (Azure sub-plan 
       expect(answer).toMatchObject({ authorId: qualor, parentCommentId: 1 });
       expect(posted).toBe(noteOf(thread.id, answer.id));
       expect(await side.read()).toEqual({ answered: posted });
+    });
+
+    it('throws a transient failure of the rights check of a command, so that the job tries again', async () => {
+      const { side } = commanded(contributor.id);
+      await side.read();
+      fake.inject('GET', /accesscontrollists/, {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+        body: { message: 'unavailable' },
+      });
+      await expect(side.mayReview()).rejects.toMatchObject({ kind: 'transient' });
     });
 
     it('a command that was deleted, or whose thread is gone, is gone', async () => {

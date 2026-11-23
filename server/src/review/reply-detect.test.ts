@@ -917,11 +917,55 @@ describe('Azure DevOps detection', () => {
       expect(rounds(fixed)).toEqual([]);
       const withStatus = (status: string | null) =>
         rounds([azureThread(5, [qualorFirst(), comment({ id: 2 })], { status })]);
-      // The control: the same thread, active.
+      // The controls: the same thread, active, or pending (under review: still open).
       expect(withStatus('active')).toHaveLength(1);
-      for (const status of ['fixed', 'wontFix', 'closed', 'byDesign', 'pending', null]) {
+      expect(withStatus('pending')).toHaveLength(1);
+      for (const status of ['fixed', 'wontFix', 'closed', 'byDesign', null]) {
         expect(withStatus(status), String(status)).toEqual([]);
       }
+    });
+
+    it('a reply in a pending thread is a round, as in an active one', () => {
+      const pending = azureThread(5, [qualorFirst(), comment({ id: 2 })], { status: 'pending' });
+      expect(rounds([pending])).toMatchObject([{ threadId: '5', newest: azureNoteId(5, 2) }]);
+    });
+
+    it('takes the last comment id a note id can hold and skips the next, saying so once without any text', () => {
+      let skipped = 0;
+      const found = rounds(
+        [
+          azureThread(5, [
+            qualorFirst(),
+            comment({ id: 65_535, content: 'secret one' }),
+            comment({ id: 65_536, content: 'secret two' }),
+            comment({ id: 70_000, content: 'secret three' }),
+          ]),
+        ],
+        { onUnusableComment: () => (skipped += 1) },
+      );
+      expect(found).toMatchObject([{ noteIds: [azureNoteId(5, 65_535)] }]);
+      expect(skipped).toBe(1);
+      // Without a thread's reply beyond the bound nothing is said.
+      skipped = 0;
+      rounds([azureThread(5, [qualorFirst(), comment({ id: 2 })])], {
+        onUnusableComment: () => (skipped += 1),
+      });
+      expect(skipped).toBe(0);
+    });
+
+    it('strips control characters from the author name and keeps the cut-off to the queue', () => {
+      const [round] = rounds([
+        azureThread(5, [
+          qualorFirst(),
+          comment({ id: 2, authorName: 'An\u0000n\u0007 \u009fSmith `x`' }),
+        ]),
+      ]);
+      expect(round?.author).toBe('Ann Smith `x`');
+      // A name that is only control characters falls back to the identity id.
+      const [bare] = rounds([
+        azureThread(5, [qualorFirst(), comment({ id: 2, authorName: '\u0000\u0001' })]),
+      ]);
+      expect(bare?.author).toBe(AZURE_PERSON);
     });
 
     it("Qualor's own answers, comments Azure DevOps made and deleted comments are never replies", () => {
@@ -1102,6 +1146,16 @@ describe('Azure DevOps detection', () => {
       expect(
         commands([...(await recorded('15-thread-a1')), ...(await recorded('15-threads-b'))]),
       ).toEqual([]);
+    });
+
+    it('skips a command whose comment id a note id cannot hold, saying so once', () => {
+      let skipped = 0;
+      const found = commands(
+        [opened(5, { id: 65_535 }), opened(6, { id: 65_536 }), opened(7, { id: 99_999 })],
+        { onUnusableComment: () => (skipped += 1) },
+      );
+      expect(found.map((c) => c.threadId)).toEqual(['5']);
+      expect(skipped).toBe(1);
     });
 
     it('reads the command the comment gives, as on GitLab and GitHub', () => {

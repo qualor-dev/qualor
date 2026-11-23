@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ReplyCommand } from '../db/schema';
 import {
   machineMadeComment,
+  azureThreadOpen,
   sameAzureIdentity,
   type AzureThread,
   type AzureThreadComment,
@@ -25,7 +26,7 @@ import { parseCommand } from './command-parse';
  * in a comment that Azure DevOps did not write itself and that was not deleted), that the ledger
  * does not hold yet (its id is above the thread's largest) and that was made at or after `since`.
  * All the replies of a thread make one round, which its newest note keys. A resolved thread has no
- * round (on Azure DevOps, any thread that is not active), and nor has a GitHub thread whose
+ * round (on Azure DevOps, any thread that is neither active nor pending), and nor has a GitHub thread whose
  * resolution was not listed: it may be closed.
  *
  * A command is the first note of a GitLab discussion (not Qualor's own, no system note), the first
@@ -51,7 +52,13 @@ export function azureNoteId(threadId: number, commentId: number): number {
   return threadId * AZURE_COMMENT_IDS + commentId;
 }
 
+/** Whether a comment's id fits the 16 bits of {@link azureNoteId}; a larger one would collide with the next thread's. */
+export const azureNoteable = (comment: AzureThreadComment): boolean =>
+  comment.id < AZURE_COMMENT_IDS;
+
 export interface DetectOptions {
+  /** Called once by an Azure DevOps detection that skipped a person's comment whose id is too large. */
+  onUnusableComment?: () => void;
   /**
    * Qualor's own identity on the provider: GitLab's user id, GitHub's `<slug>[bot]`, Azure
    * DevOps' identity id (a GUID, in any case). Without the one a function needs, it finds nothing:
@@ -289,33 +296,58 @@ export const writtenByPerson = (comment: AzureThreadComment, qualor: string): bo
   comment.authorId !== '' &&
   !sameAzureIdentity(comment.authorId, qualor);
 
-/** Who wrote a comment, as the ledger names them: the display name, else the identity's id. */
-export const azureAuthor = (comment: AzureThreadComment): string =>
-  comment.authorName === '' ? comment.authorId : comment.authorName;
+/** `fn`, which runs at most once. */
+const once = (fn: (() => void) | undefined): (() => void) => {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    fn?.();
+  };
+};
+
+/** A display name without its C0 and C1 control characters (a NUL would fail the ledger's insert). */
+const withoutControls = (text: string): string =>
+  Array.from(text)
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code > 0x1f && (code < 0x7f || code > 0x9f);
+    })
+    .join('');
+
+/**
+ * Who wrote a comment, as the ledger names them: the display name without control characters, else
+ * the identity's id. A display name is free text.
+ */
+export const azureAuthor = (comment: AzureThreadComment): string => {
+  const name = withoutControls(comment.authorName);
+  return name.trim() === '' ? comment.authorId : name;
+};
 
 /**
  * The rounds of Qualor's Azure DevOps threads (`threads`: the pull request's, all comments of
- * each): one for each active thread that has a new reply. A thread is Qualor's when its first
+ * each): one for each open thread (active or pending) that has a new reply. A thread is Qualor's when its first
  * comment is a text comment of Qualor's identity (`qualor.azureIdentityId`, in any case) that
- * opens with an issue marker; a thread that is not active (fixed, won't fix, closed, by design,
- * pending) is resolved and has none. Each reply is the note `azureNoteId` names.
+ * opens with an issue marker; a thread that is not open (fixed, won't fix, closed, by design)
+ * is resolved and has none. Each reply is the note `azureNoteId` names.
  */
 export function azureRounds(threads: readonly AzureThread[], o: DetectOptions): Round[] {
   const qualor = o.qualor.azureIdentityId;
   if (qualor === undefined) return [];
   const rounds: Round[] = [];
+  const unusable = once(o.onUnusableComment);
   for (const thread of threads) {
     const [first, ...later] = azureCommentsInOrder(thread);
     if (first === undefined || !writtenByQualor(first, qualor)) continue;
     const marker = markerOf(first.content);
-    if (marker?.kind !== 'issue' || thread.status !== 'active') continue;
-    const replies = later
-      .filter((comment) => writtenByPerson(comment, qualor))
-      .map((comment) => ({
-        id: azureNoteId(thread.id, comment.id),
-        author: azureAuthor(comment),
-        createdAt: comment.publishedDate,
-      }));
+    if (marker?.kind !== 'issue' || !azureThreadOpen(thread.status)) continue;
+    const people = later.filter((comment) => writtenByPerson(comment, qualor));
+    if (people.some((comment) => !azureNoteable(comment))) unusable();
+    const replies = people.filter(azureNoteable).map((comment) => ({
+      id: azureNoteId(thread.id, comment.id),
+      author: azureAuthor(comment),
+      createdAt: comment.publishedDate,
+    }));
     const round = roundOf(String(thread.id), marker.issueId, replies, o);
     if (round !== null) rounds.push(round);
   }
@@ -332,9 +364,14 @@ export function azureCommands(threads: readonly AzureThread[], o: DetectOptions)
   const qualor = o.qualor.azureIdentityId;
   if (qualor === undefined) return [];
   const found: CommandNote[] = [];
+  const unusable = once(o.onUnusableComment);
   for (const thread of threads) {
     const first = azureCommentsInOrder(thread)[0];
     if (first === undefined || !writtenByPerson(first, qualor)) continue;
+    if (!azureNoteable(first)) {
+      unusable();
+      continue;
+    }
     const command = parseCommand(first.content);
     if (command === null || !madeSince(first.publishedDate, o.since)) continue;
     found.push({

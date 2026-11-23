@@ -12,6 +12,7 @@ import { isFullSha, markerOf, notedFixes } from '../markdown';
 import { ScmError } from '../provider';
 import { fixedNote, inlineBody, reopenedNote, resolvedNote } from '../render';
 import {
+  azureThreadOpen,
   machineMadeComment as machineMade,
   sameAzureIdentity as sameId,
   type AzureChange,
@@ -57,7 +58,7 @@ interface OwnThread {
   thread: AzureThread;
   /** Qualor's `qualor:fixed` comment for the issue is the last non-system comment. */
   fixedLast: boolean;
-  /** Resolved by Qualor: not active, {@link fixedLast}, and no person replied in it. */
+  /** Resolved by Qualor: not open (neither active nor pending), {@link fixedLast}, no person replied. */
   resolvedByQualor: boolean;
   /** Someone but Qualor commented after its first comment. */
   humanReplied: boolean;
@@ -89,7 +90,7 @@ function ownThreads(threads: readonly AzureThread[], identityId: string): Map<st
     own.set(marker.issueId, {
       thread,
       fixedLast,
-      resolvedByQualor: thread.status !== 'active' && fixedLast && !humanReplied,
+      resolvedByQualor: !azureThreadOpen(thread.status) && fixedLast && !humanReplied,
       humanReplied,
       notedFixes: notedFixes(
         replies.filter((c) => sameId(c.authorId, identityId)).map((c) => c.content),
@@ -124,7 +125,8 @@ type ThreadUpdate = 'resolve' | 'reopen' | 'note';
 
 /**
  * What a thread of Qualor's needs: resolving, reopening, its lost reopened comment alone (`note`),
- * or nothing (null). A thread is resolved by Qualor exactly when it is not active, Qualor's
+ * or nothing (null). A thread is resolved by Qualor exactly when it is not open (neither `active` nor `pending`: a
+ * pending thread is under review, so Qualor never reopens it and never resolves it), Qualor's
  * `qualor:fixed` comment is its last non-system comment, and no person replied in it (Qualor never
  * resolves a thread anyone replied in, so a resolved one with a reply was resolved by a person).
  * Only that is Qualor's to undo (ruling G3); any other resolution stays, and its issue still counts.
@@ -191,7 +193,7 @@ async function planUpdates(
     if (
       onBranch &&
       issue.status === 'closed' &&
-      mine.thread.status === 'active' &&
+      azureThreadOpen(mine.thread.status) &&
       mine.humanReplied
     ) {
       plan.fixed.push(issueId);

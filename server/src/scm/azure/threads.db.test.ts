@@ -331,6 +331,64 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(s.summary()).toContain('1 new issue is commented inline');
   });
 
+  it('never reopens a pending thread, whoever wrote its last comment: pending is open, not resolved by Qualor', async () => {
+    const s = await setup('thr/pending', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    await s.ingest([]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    // Qualor resolved it: its fixed comment is last, no person replied.
+    expect(thread?.status).toBe('fixed');
+    // A person sets it Pending, as an open state, and the finding returns.
+    thread!.status = 'pending';
+    fake.clearRequests();
+    const count = thread!.comments.length;
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    expect(thread?.status).toBe('pending');
+    expect(thread?.comments).toHaveLength(count);
+    expect(threadWrites()).toEqual([]);
+    expect(s.ownThreads()).toHaveLength(1);
+    expect(s.summary()).toContain('1 new issue is commented inline');
+  });
+
+  it('leaves a pending thread of a finding that is gone as it is: Qualor resolves only active threads', async () => {
+    const s = await setup('thr/pending-gone', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    thread!.status = 'pending';
+    fake.clearRequests();
+    await s.ingest([]);
+    await decorate();
+    expect(thread?.status).toBe('pending');
+    expect(thread?.comments).toHaveLength(1);
+    expect(threadWrites()).toEqual([]);
+  });
+
+  it('writes the fixed note into a pending thread a person replied in, once per revision', async () => {
+    const s = await setup('thr/pending-note', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    thread!.comments.push(person(thread!.id));
+    thread!.status = 'pending';
+    await s.ingest([]);
+    await decorate();
+    expect(thread?.status).toBe('pending');
+    expect(thread?.comments.map((c) => markerOf(c.content)?.kind)).toContain('fixed');
+  });
+
   it('does not take a resolution as Qualor’s once someone commented after its fixed comment', async () => {
     const s = await setup('thr/after', {
       files: { 'src/a.ts': HEAD_A },

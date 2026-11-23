@@ -287,8 +287,14 @@ async function snapshotOf(db: Db, branch: Target['branch']): Promise<SnapshotRea
 }
 
 /** The changelog's comment on a status a reply changed: whose reply decided it. */
-const statusComment = (verdict: 'wont_fix' | 'false_positive', author: string): string =>
-  `${verdict === 'wont_fix' ? "Won't fix" : 'False positive'} after \`${author}\` replied in the merge request.`;
+export const statusComment = (verdict: 'wont_fix' | 'false_positive', author: string): string => {
+  // A name with a backtick (a free-text Azure DevOps display name) needs a longer fence, padded
+  // when the name starts or ends with one; any other name is written as it always was.
+  const longest = Math.max(0, ...(author.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  const edge = author.startsWith('`') || author.endsWith('`') ? ' ' : '';
+  return `${verdict === 'wont_fix' ? "Won't fix" : 'False positive'} after ${fence}${edge}${author}${edge}${fence} replied in the merge request.`;
+};
 
 const SUPERSEDED: ReplyEnd = { status: 'skipped', reason: 'superseded', dropDecision: true };
 

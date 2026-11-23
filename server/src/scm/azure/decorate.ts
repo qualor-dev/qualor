@@ -328,6 +328,7 @@ async function decorateAzureSteps(
         await replyWindow(deps.db, project, branch.id),
         identity.id,
         threads,
+        deps.logger,
       );
     }
     return finish(connection.id, failures, failed);

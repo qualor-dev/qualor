@@ -1,8 +1,13 @@
 import { assertNever } from '@qualor/shared';
 import type { WorkerLogger } from '../queue/worker';
-import { AZURE_PR_ID, type AzureDevOpsClient, type AzureThread } from '../scm/azure/client';
+import {
+  AZURE_PR_ID,
+  azureThreadOpen,
+  type AzureDevOpsClient,
+  type AzureThread,
+} from '../scm/azure/client';
 import { azureClientFor } from '../scm/azure/connections';
-import { azureMayTriage } from '../scm/azure/rights';
+import { azureMayTriage, type RightsLogger } from '../scm/azure/rights';
 import { AZURE_REPOSITORY_ID } from '../scm/azure/url';
 import { gitlabClientFor, type ScmConnectionRow } from '../scm/connections';
 import {
@@ -34,6 +39,7 @@ import {
   azureCommentsInOrder,
   azureNoteId,
   githubRounds,
+  azureNoteable,
   writtenByPerson,
   writtenByQualor,
   type Round,
@@ -277,6 +283,11 @@ const marksIssue = (body: string, issueId: string): boolean => {
   return marker?.kind === 'issue' && marker.issueId === issueId;
 };
 
+/** `logger`, whose warnings also name the reply they are about (as GitLab's do). */
+const forReply = (logger: Pick<WorkerLogger, 'warn'>, replyId: string): RightsLogger => ({
+  warn: (details: object, message: string) => logger.warn({ ...details, replyId }, message),
+});
+
 /**
  * The thread on GitLab: the merge request's discussion of the row. `logger` says when a
  * membership GitLab answered is not understood.
@@ -423,7 +434,7 @@ export function githubSide(
  * The thread on Azure DevOps: the pull request's thread of the row (its id is the thread's). It
  * is read alone (`GET …/threads/<id>`), with who Qualor is; the people's comments are the notes
  * `azureNoteId` names, as detection counts them (reply-detect.ts), and the answer is a reply to
- * the thread's first comment. A thread that is not active is resolved, and resolving sets it
+ * the thread's first comment. A thread that is neither active nor pending is resolved, and resolving sets it
  * `fixed`: with a person's reply in it, decoration then reads it as a person's resolution, so a
  * finding that comes back does not reopen it (sub-plan 4's rule G3, plan ruling 8). Whether the
  * authors may change a status is whether each has Contribute on the repository
@@ -454,7 +465,9 @@ export function azureSide(
       if (!marksIssue(first.content, row.issueId)) return null;
       firstCommentId = first.id;
       authorOf.clear();
-      const people = later.filter((comment) => writtenByPerson(comment, me.id));
+      const people = later.filter(
+        (comment) => writtenByPerson(comment, me.id) && azureNoteable(comment),
+      );
       for (const comment of people) {
         authorOf.set(azureNoteId(thread.id, comment.id), comment.authorId);
       }
@@ -470,7 +483,7 @@ export function azureSide(
           body: comment.content,
         })),
         answered: answer === undefined ? null : azureNoteId(thread.id, answer.id),
-        resolved: thread.status !== 'active',
+        resolved: !azureThreadOpen(thread.status),
       };
     },
     async mayChangeStatus(noteIds) {
@@ -481,7 +494,7 @@ export function azureSide(
         if (author === undefined) return false;
         authors.push(author);
       }
-      return azureMayTriage(client, repositoryId, authors, logger);
+      return azureMayTriage(client, repositoryId, authors, forReply(logger, row.id));
     },
     post: async (body) =>
       azureNoteId(threadId, await client.reply(repositoryId, prId, threadId, firstCommentId, body)),
@@ -658,7 +671,7 @@ export function azureCommandSide(
     },
     async mayReview() {
       if (author === undefined) return false;
-      return azureMayTriage(client, repositoryId, [author], logger);
+      return azureMayTriage(client, repositoryId, [author], forReply(logger, row.id));
     },
     post: async (body) =>
       azureNoteId(thread, await client.reply(repositoryId, prId, thread, commandId, body)),

@@ -111,7 +111,7 @@ class ScanFlow extends JobSteps {
         queued = await queueGitHubAnswers(db, ids, window, found.login, found);
         break;
       case 'azure':
-        queued = await queueAzureAnswers(db, ids, window, found.identityId, found.threads);
+        queued = await queueAzureAnswers(db, ids, window, found.identityId, found.threads, logger);
         break;
       default:
         return assertNever(found, 'provider');

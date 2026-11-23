@@ -179,6 +179,14 @@ export interface AzureThread {
 export const sameAzureIdentity = (a: string, b: string): boolean =>
   a.toLowerCase() === b.toLowerCase();
 
+/**
+ * Whether a thread's status is an open one: `active`, or `pending` (Microsoft: "the issue in this
+ * comment is under review and awaits something else"). Any other status (`fixed`, `wontFix`,
+ * `closed`, `byDesign`) is resolved; a system thread has none and is neither.
+ */
+export const azureThreadOpen = (status: string | null): boolean =>
+  status === 'active' || status === 'pending';
+
 /** Comments Azure DevOps writes itself (a push, a changed file) are nobody's reply. */
 export const machineMadeComment = (commentType: string): boolean =>
   commentType === 'system' || commentType === 'codeChange';

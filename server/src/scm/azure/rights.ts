@@ -1,7 +1,11 @@
-import type { WorkerLogger } from '../../queue/worker';
 import { ScmError, type ScmErrorKind } from '../provider';
 import { MAX_AUTHORS_LOOKED_UP } from '../rights-limits';
 import type { AzureDevOpsClient } from './client';
+
+/** What the check says when an answer is not one it can use; a caller may add what it is about. */
+export interface RightsLogger {
+  warn(details: object, message: string): void;
+}
 
 /** The kinds of answer that settle the question: this person may not (as far as Qualor can see). */
 const DEFINITIVE_KINDS: ReadonlySet<ScmErrorKind> = new Set(['refused', 'not_found', 'bad_answer']);
@@ -25,7 +29,7 @@ export async function azureMayTriage(
   client: AzureDevOpsClient,
   repositoryId: string,
   authorIds: readonly string[],
-  logger?: Pick<WorkerLogger, 'warn'>,
+  logger?: RightsLogger,
 ): Promise<boolean> {
   // Identity ids are GUIDs, which Azure writes in either case: one person counts once.
   const authors = [...new Map(authorIds.map((id) => [id.toLowerCase(), id])).values()];
