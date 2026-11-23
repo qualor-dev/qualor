@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "inheritPermissions": true,
+        "token": "repoV2/a1532079-a512-4327-8d28-fa6e00004469/4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+        "acesDictionary": {
+          "Microsoft.IdentityModel.Claims.ClaimsIdentity;ado.example.invalid\\user@example.invalid": {
+            "descriptor": "Microsoft.IdentityModel.Claims.ClaimsIdentity;ado.example.invalid\\user@example.invalid",
+            "allow": 228990,
+            "deny": 0,
+            "extendedInfo": {
+              "effectiveAllow": 491390
+            }
+          }
+        },
+        "includeExtendedInfo": true
+      }
+    ]
+  }
+}

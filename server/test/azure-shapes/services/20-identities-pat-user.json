@@ -1,0 +1,68 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "descriptor": "Microsoft.IdentityModel.Claims.ClaimsIdentity;ado.example.invalid\\user@example.invalid",
+        "subjectDescriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "providerDisplayName": "user@example.invalid",
+        "customDisplayName": "Probe User",
+        "isActive": true,
+        "members": [],
+        "memberOf": [],
+        "memberIds": [],
+        "properties": {
+          "SchemaClassName": {
+            "$type": "System.String",
+            "$value": "User"
+          },
+          "Description": {
+            "$type": "System.String",
+            "$value": ""
+          },
+          "Domain": {
+            "$type": "System.String",
+            "$value": "ado.example.invalid"
+          },
+          "Account": {
+            "$type": "System.String",
+            "$value": "user@example.invalid"
+          },
+          "DN": {
+            "$type": "System.String",
+            "$value": ""
+          },
+          "Mail": {
+            "$type": "System.String",
+            "$value": "user@example.invalid"
+          },
+          "SpecialType": {
+            "$type": "System.String",
+            "$value": "Generic"
+          },
+          "ComplianceValidated": {
+            "$type": "System.DateTime",
+            "$value": "2026-11-23T00:00:00Z"
+          },
+          "http://schemas.microsoft.com/identity/claims/objectidentifier": {
+            "$type": "System.String",
+            "$value": "Probe User"
+          },
+          "MetadataUpdateDate": {
+            "$type": "System.DateTime",
+            "$value": "2026-11-21T04:43:15.03Z"
+          },
+          "DirectoryAlias": {
+            "$type": "System.String",
+            "$value": "Probe User"
+          }
+        },
+        "resourceVersion": 2,
+        "metaTypeId": 0
+      }
+    ]
+  }
+}

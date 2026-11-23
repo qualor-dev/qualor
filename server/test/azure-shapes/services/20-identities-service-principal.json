@@ -1,0 +1,67 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+        "descriptor": "Microsoft.VisualStudio.Services.Claims.AadServicePrincipal;ado.example.invalid\\Probe User",
+        "subjectDescriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+        "providerDisplayName": "Probe User",
+        "isActive": true,
+        "members": [],
+        "memberOf": [],
+        "memberIds": [],
+        "properties": {
+          "SchemaClassName": {
+            "$type": "System.String",
+            "$value": "User"
+          },
+          "Description": {
+            "$type": "System.String",
+            "$value": ""
+          },
+          "Domain": {
+            "$type": "System.String",
+            "$value": "ado.example.invalid"
+          },
+          "Account": {
+            "$type": "System.String",
+            "$value": "Probe User"
+          },
+          "DN": {
+            "$type": "System.String",
+            "$value": ""
+          },
+          "Mail": {
+            "$type": "System.String",
+            "$value": ""
+          },
+          "SpecialType": {
+            "$type": "System.String",
+            "$value": "Generic"
+          },
+          "ComplianceValidated": {
+            "$type": "System.DateTime",
+            "$value": "2026-11-23T00:00:00Z"
+          },
+          "http://schemas.microsoft.com/identity/claims/objectidentifier": {
+            "$type": "System.String",
+            "$value": "Probe User"
+          },
+          "DirectoryAlias": {
+            "$type": "System.String",
+            "$value": "Probe User"
+          },
+          "ApplicationId": {
+            "$type": "System.String",
+            "$value": "d87bd941-4195-4c42-804d-fa6e0000fdfa"
+          }
+        },
+        "resourceVersion": 2,
+        "metaTypeId": 5
+      }
+    ]
+  }
+}

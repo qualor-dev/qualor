@@ -1,0 +1,40 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 2,
+    "parentCommentId": 1,
+    "author": {
+      "displayName": "Probe User",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+        }
+      },
+      "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+      "uniqueName": "user@example.invalid",
+      "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+      "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+    },
+    "content": "Qualor probe item 20: a reply from the PAT user",
+    "publishedDate": "2026-11-23T13:51:47.66Z",
+    "lastUpdatedDate": "2026-11-23T13:51:47.66Z",
+    "lastContentUpdatedDate": "2026-11-23T13:51:47.66Z",
+    "commentType": "text",
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/23/threads/83/comments/2"
+      },
+      "repository": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+      },
+      "threads": {
+        "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/23/threads/83"
+      },
+      "pullRequests": {
+        "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/23"
+      }
+    }
+  }
+}
