@@ -1320,7 +1320,8 @@ const REFERENCES: readonly (readonly [string, RegExp])[] = [
   ['math', /\$[^$\s]/],
   ['a task list item', /^\s*[-*]\s+\[[ x]\]/i],
   ['a heading', /^#{1,6}\s/],
-  ['a mention by id', /@[0-9a-f]{8}-/i],
+  ['a mention by id', /@<?[0-9a-f]{8}-/i],
+  ['a KaTeX block delimiter', /\$\$/],
   ['a details block', /<details/i],
 ];
 
@@ -2354,7 +2355,14 @@ describe('Azure DevOps renderer (probe item 21)', () => {
   const GUID = '8f2c1a4e-5b7d-4c3a-9e10-2d6f7a8b9c0d';
   const corpusModule = '../../../tools/azure/items/11-markdown-corpus';
   const AZURE_PATTERNS = REFERENCES.filter(([name]) =>
-    ['math', 'a task list item', 'a heading', 'a mention by id', 'a details block'].includes(name),
+    [
+      'math',
+      'a task list item',
+      'a heading',
+      'a mention by id',
+      'a KaTeX block delimiter',
+      'a details block',
+    ].includes(name),
   );
   let cases: readonly (readonly [string, string])[] = [];
 
