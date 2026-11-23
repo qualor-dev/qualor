@@ -50,6 +50,33 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  * - A 400 for a route asked at another api-version than Qualor's (the probe saw Server refuse
  *   connectionData at 7.0 with VssInvalidPreviewVersionException), and a 404 for any other route:
  *   the WrappedException body of `10-not-found` with the fake's own message.
+ * - Pull request decoration (sub-plan 4), under `[/<project>]/_apis/git/repositories/{id}/`, all at
+ *   api-version 7.0, with state the tests seed (`addPullRequest`, `addIteration`, `addFile`,
+ *   `addThread`, `addSystemThread`) and read back (`pullRequest()`, `commitStatuses`):
+ *   - `pullrequests/{id}` (GET): the pull request object of `9-event-pr-updated` (`resource`), with
+ *     the fake's id, status, title, refs, head commit and repository. The probe recorded no GET.
+ *   - `pullrequests/{id}/iterations` (GET): `{ count, value }` of iterations with `id` and
+ *     `sourceRefCommit` / `commonRefCommit` / `targetRefCommit` as `{ commitId }`; the probe read
+ *     the list but recorded only the changes.
+ *   - `.../iterations/{n}/changes` (GET, `$top`, `$skip`): the `changeEntries` of
+ *     `6-iteration-changes`; `nextSkip` (the REST docs' paging field, not recorded) while more
+ *     remain; `originalPath` on a rename.
+ *   - `items?path&versionDescriptor.version&includeContent=true&$format=json` (GET): a JSON item
+ *     `{ objectId, gitObjectType, commitId, path, content, contentMetadata }`; a binary file has
+ *     `contentMetadata.isBinary` and no `content`; a file the commit does not hold answers 404
+ *     TF401174. Not recorded: the probe never read file content.
+ *   - `pullrequests/{id}/threads` (GET, POST) and `threads/{t}` (PATCH): the thread of
+ *     `3-thread-list` / `3-thread-create` with the fake's values. Thread ids count per fake (probe
+ *     item 15), comment ids per thread from 1. A PATCH carrying `properties` is the recorded 400
+ *     (`3-thread-patch-add`); one with `status` answers as `4-patch-status-*`. A system thread
+ *     (no recording holds one; the REST docs name `commentType: 'system'`) has no `status`.
+ *   - `threads/{t}/comments` (POST) and `threads/{t}/comments/{c}` (PATCH): the comment object of
+ *     the thread recordings. Constructed: the probe never added or edited a comment.
+ *   - `pullrequests/{id}/statuses` (POST): `7-pr-status-iteration`; without `iterationId` and with
+ *     `statusPolicy: true` on the seeded pull request, the recorded 403 (`7-pr-status-no-iteration`).
+ *   - `.../iterations/{n}/statuses` (GET): `{ count, value }` of the statuses posted on the
+ *     iteration (a later one of the same genre and name replaces the earlier). Constructed.
+ *   - `commits/{sha}/statuses` (POST): `7-commit-status` (201).
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
  *   AADSTS code) for a refusal: 400, or 401 `invalid_client` for a wrong secret or assertion. It
@@ -138,6 +165,102 @@ export interface FakeAzureRepository {
   isDisabled: boolean;
 }
 
+export interface FakeAzureChange {
+  /** Without the leading `/`. */
+  path: string;
+  /** A rename: where the file was. */
+  originalPath?: string;
+  /** Default `edit`. */
+  changeType?: string;
+  /** Default its position in the iteration, from 1. */
+  changeTrackingId?: number;
+}
+
+export interface FakeAzureStatus {
+  iterationId: number | null;
+  state: string;
+  description: string;
+  targetUrl: string | null;
+  genre: string;
+  name: string;
+}
+
+export interface FakeAzureIteration {
+  id: number;
+  sourceRefCommit: string;
+  commonRefCommit: string;
+  targetRefCommit: string;
+  changes: FakeAzureChange[];
+  /** What was posted on this iteration, one per genre and name. */
+  statuses: FakeAzureStatus[];
+}
+
+export interface FakeAzureComment {
+  id: number;
+  authorId: string;
+  content: string;
+  commentType: 'text' | 'system' | 'codeChange';
+}
+
+export type FakeAzureThreadStatus =
+  'active' | 'fixed' | 'wontFix' | 'closed' | 'byDesign' | 'pending';
+
+export interface FakeAzureThread {
+  id: number;
+  /** Null: a system thread. */
+  status: FakeAzureThreadStatus | null;
+  /** Without the leading `/`; null: a thread on the pull request as a whole. */
+  filePath: string | null;
+  /** The right side's first line, when there is a position. */
+  line: number | null;
+  /** The `threadContext` as it was created (null: none). */
+  threadContext: Record<string, unknown> | null;
+  comments: FakeAzureComment[];
+}
+
+export interface FakeAzurePullRequestInput {
+  /** Default: the next free id of the repository, from 1. */
+  id?: number;
+  /** Default `active`. */
+  status?: 'active' | 'completed' | 'abandoned';
+  isDraft?: boolean;
+  title?: string;
+  sourceRefName?: string;
+  targetRefName?: string;
+  /** `lastMergeSourceCommit`; default a synthetic commit id, null: none. */
+  headSha?: string | null;
+  /** A status policy that wants every status on an iteration (probe item 7). Default false. */
+  statusPolicy?: boolean;
+}
+
+export interface FakeAzurePullRequest {
+  id: number;
+  status: 'active' | 'completed' | 'abandoned';
+  isDraft: boolean;
+  title: string;
+  sourceRefName: string;
+  targetRefName: string;
+  headSha: string | null;
+  statusPolicy: boolean;
+  iterations: FakeAzureIteration[];
+  threads: FakeAzureThread[];
+  /** Statuses posted without an iteration (accepted only without a status policy). */
+  statuses: FakeAzureStatus[];
+}
+
+export interface FakeAzureThreadInput {
+  /** Default `active`. */
+  status?: FakeAzureThreadStatus;
+  filePath?: string;
+  line?: number;
+  /** Default: one comment by the PAT's user. */
+  comments?: {
+    content: string;
+    authorId?: string;
+    commentType?: FakeAzureComment['commentType'];
+  }[];
+}
+
 export interface RecordedRequest {
   method: string;
   /** The path under the organisation or collection (`/_apis/…`), still percent-encoded. */
@@ -181,6 +304,29 @@ export interface FakeAzureDevOps {
   identityAdded: boolean;
   readonly repositories: readonly FakeAzureRepository[];
   addRepository(input: FakeAzureRepositoryInput): FakeAzureRepository;
+  /** A pull request of a repository (by its id), to be read and decorated. */
+  addPullRequest(repositoryId: string, input?: FakeAzurePullRequestInput): FakeAzurePullRequest;
+  /** The seeded pull request, whose threads and statuses a test reads back; throws when unknown. */
+  pullRequest(repositoryId: string, id: number): FakeAzurePullRequest;
+  /** An iteration (ids from 1); `targetRefCommit` defaults to `commonRefCommit`. */
+  addIteration(
+    repositoryId: string,
+    prId: number,
+    input: {
+      sourceRefCommit: string;
+      commonRefCommit: string;
+      targetRefCommit?: string;
+      changes?: FakeAzureChange[];
+    },
+  ): FakeAzureIteration;
+  /** A file as a commit holds it (a Buffer with a NUL byte is binary); `path` has no leading `/`. */
+  addFile(repositoryId: string, commit: string, path: string, content: string | Buffer): void;
+  /** A thread, as a person or another tool made it (the default author is the PAT's user). */
+  addThread(repositoryId: string, prId: number, input?: FakeAzureThreadInput): FakeAzureThread;
+  /** A system thread (`commentType: 'system'`, no status), as Azure DevOps writes for a push. */
+  addSystemThread(repositoryId: string, prId: number, content?: string): FakeAzureThread;
+  /** The commit statuses posted, in order. */
+  readonly commitStatuses: { repositoryId: string; sha: string; status: FakeAzureStatus }[];
   readonly requests: RecordedRequest[];
   /** The requests to the token endpoint (path from `/`). */
   readonly tokenRequests: RecordedRequest[];
@@ -333,6 +479,12 @@ export async function createFakeAzureDevOps(options: {
   const injections: Injection[] = [];
   const repositories: FakeAzureRepository[] = [];
   const projectIds = new Map<string, string>();
+  /** Pull requests by `<repository id>#<id>`; files by `<repository id>@<commit>:<path>`. */
+  const pullRequests = new Map<string, FakeAzurePullRequest>();
+  const files = new Map<string, Buffer>();
+  const commitStatuses: FakeAzureDevOps['commitStatuses'] = [];
+  let threadCounter = 0;
+  let statusCounter = 0;
   /** Issued bearer tokens: how the principal proved itself, and until when the token holds. */
   const tokens = new Map<string, { how: 'secret' | 'certificate'; expiresAt: number }>();
   let url = '';
@@ -434,6 +586,385 @@ export async function createFakeAzureDevOps(options: {
     return token && token.expiresAt > now() ? token.how : 'wrong';
   };
 
+  const unknownRepository = (res: ServerResponse, id: string) => {
+    const message = String(notFound.message).replace(
+      /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i,
+      id,
+    );
+    send(res, 404, { ...notFound, message }, { 'content-type': 'application/json; charset=utf-8' });
+  };
+
+  // The recorded objects the decoration routes lay their values over.
+  const recordedPullRequest = azureShape<Event>(deployment, '9-event-pr-updated').body
+    .resource as unknown as Record<string, unknown>;
+  const recordedThread = azureShape<{ body: { value: Record<string, unknown>[] } }>(
+    deployment,
+    '3-thread-list',
+  ).body.value[0]!;
+  const recordedComment = (recordedThread.comments as Record<string, unknown>[])[0]!;
+  const recordedPrStatus = azureShape<{ body: Record<string, unknown> }>(
+    deployment,
+    '7-pr-status-iteration',
+  ).body;
+  const recordedCommitStatus = azureShape<{ body: Record<string, unknown> }>(
+    deployment,
+    '7-commit-status',
+  ).body;
+  const recordedChange = azureShape<{ body: { changeEntries: Record<string, unknown>[] } }>(
+    deployment,
+    '6-iteration-changes',
+  ).body.changeEntries[0] as Record<string, unknown>;
+  const recordedStatusPolicyRefusal = recordedAnswer(deployment, '7-pr-status-no-iteration');
+  const recordedPropertiesRefusal = recordedAnswer(deployment, '3-thread-patch-add');
+  const THREAD_STATUS_BY_NUMBER: Record<number, FakeAzureThreadStatus> = {
+    1: 'active',
+    2: 'fixed',
+    3: 'wontFix',
+    4: 'closed',
+    5: 'byDesign',
+    6: 'pending',
+  };
+
+  const commentJson = (
+    r: FakeAzureRepository,
+    p: FakeAzurePullRequest,
+    t: FakeAzureThread,
+    c: FakeAzureComment,
+  ) => {
+    const author = recordedComment.author as Record<string, unknown>;
+    const who = c.authorId === principalUser?.id ? principalUser : patUser;
+    return {
+      ...recordedComment,
+      id: c.id,
+      parentCommentId: 0,
+      author: {
+        ...author,
+        id: c.authorId,
+        displayName: c.authorId === who.id ? who.displayName : c.authorId,
+      },
+      content: c.content,
+      commentType: c.commentType,
+      _links: {
+        self: {
+          href: `${url}/_apis/git/repositories/${r.id}/pullRequests/${p.id}/threads/${t.id}/comments/${c.id}`,
+        },
+      },
+    };
+  };
+
+  const threadJson = (r: FakeAzureRepository, p: FakeAzurePullRequest, t: FakeAzureThread) => {
+    const rest = { ...recordedThread };
+    delete rest.status;
+    return {
+      ...rest,
+      pullRequestThreadContext: null,
+      id: t.id,
+      comments: t.comments.map((c) => commentJson(r, p, t, c)),
+      ...(t.status === null ? {} : { status: t.status }),
+      threadContext: t.threadContext,
+      properties: {},
+      _links: {
+        self: {
+          href: `${url}/_apis/git/repositories/${r.id}/pullRequests/${p.id}/threads/${t.id}`,
+        },
+      },
+    };
+  };
+
+  const pullRequestJson = (r: FakeAzureRepository, p: FakeAzurePullRequest) => ({
+    ...recordedPullRequest,
+    repository: repositoryJson(r),
+    pullRequestId: p.id,
+    codeReviewId: p.id,
+    status: p.status,
+    isDraft: p.isDraft,
+    title: p.title,
+    sourceRefName: p.sourceRefName,
+    targetRefName: p.targetRefName,
+    lastMergeSourceCommit:
+      p.headSha === null
+        ? undefined
+        : {
+            commitId: p.headSha,
+            url: `${url}/_apis/git/repositories/${r.id}/commits/${p.headSha}`,
+          },
+    url: `${url}/_apis/git/repositories/${r.id}/pullRequests/${p.id}`,
+  });
+
+  const statusJson = (s: FakeAzureStatus, id: number) => ({
+    ...recordedPrStatus,
+    ...(s.iterationId === null ? { iterationId: undefined } : { iterationId: s.iterationId }),
+    id,
+    state: s.state,
+    description: s.description,
+    ...(s.targetUrl === null ? {} : { targetUrl: s.targetUrl }),
+    context: { name: s.name, genre: s.genre },
+  });
+
+  const statusOf = (body: Record<string, unknown>): FakeAzureStatus | null => {
+    const context = body.context as { genre?: unknown; name?: unknown } | undefined;
+    if (
+      typeof body.state !== 'string' ||
+      typeof context?.genre !== 'string' ||
+      typeof context.name !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      iterationId: typeof body.iterationId === 'number' ? body.iterationId : null,
+      state: body.state,
+      description: typeof body.description === 'string' ? body.description : '',
+      targetUrl: typeof body.targetUrl === 'string' ? body.targetUrl : null,
+      genre: context.genre,
+      name: context.name,
+    };
+  };
+
+  const putStatus = (list: FakeAzureStatus[], status: FakeAzureStatus) => {
+    const same = list.findIndex((s) => s.genre === status.genre && s.name === status.name);
+    if (same >= 0) list[same] = status;
+    else list.push(status);
+  };
+
+  const jsonBodyOf = (req: RecordedRequest): Record<string, unknown> | null => {
+    try {
+      const parsed: unknown = JSON.parse(req.body);
+      return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const gitRoute = (
+    req: RecordedRequest,
+    res: ServerResponse,
+    who: 'pat' | 'secret' | 'certificate',
+    repositoryId: string,
+    rest: string,
+    version: string,
+  ): void => {
+    const answerJson = (status: number, body: unknown) =>
+      send(res, status, body, { 'content-type': JSON_7_0 });
+    const missing = (text: string, typeKey: string) => wrapped(res, 404, text, typeKey);
+    const bad = (text: string) =>
+      wrapped(res, 400, `fake Azure DevOps: ${text}`, 'ArgumentException');
+    const refuse = (answerOf: InjectedAnswer) =>
+      send(res, answerOf.status, answerOf.body, answerOf.headers);
+    if (version !== '7.0') {
+      const text = `fake Azure DevOps: this route is not asked at api-version ${version}`;
+      return wrapped(res, 400, text, 'VssInvalidPreviewVersionException');
+    }
+    const repository = repositories.find((r) => r.id === repositoryId.toLowerCase());
+    if (!repository) return unknownRepository(res, repositoryId);
+    const authorId = who === 'pat' ? patUser.id : principalUser!.id;
+    const query = new URLSearchParams(req.query);
+
+    const commitRoute = /^commits\/([0-9a-fA-F]+)\/statuses$/.exec(rest);
+    if (commitRoute && req.method === 'POST') {
+      const body = jsonBodyOf(req);
+      const status = body && statusOf(body);
+      if (!status) return bad('a commit status needs a state and a context');
+      statusCounter += 1;
+      commitStatuses.push({
+        repositoryId: repository.id,
+        sha: commitRoute[1]!.toLowerCase(),
+        status,
+      });
+      return answerJson(201, {
+        ...recordedCommitStatus,
+        ...statusJson(status, statusCounter),
+        iterationId: undefined,
+      });
+    }
+
+    if (rest === 'items' && req.method === 'GET') {
+      const path = query.get('path') ?? '';
+      const commit = (query.get('versionDescriptor.version') ?? '').toLowerCase();
+      const content = files.get(`${repository.id}@${commit}:${path.replace(/^\//, '')}`);
+      if (!content) {
+        return missing(
+          `TF401174: The item could not be found at commit ${commit}.`,
+          'GitItemNotFoundException',
+        );
+      }
+      const binary = content.includes(0);
+      return answerJson(200, {
+        objectId: createHash('sha1').update(content).digest('hex'),
+        gitObjectType: 'blob',
+        commitId: commit,
+        path: path.startsWith('/') ? path : `/${path}`,
+        ...(binary ? {} : { content: content.toString('utf8') }),
+        contentMetadata: { fileName: path.split('/').pop(), isBinary: binary },
+      });
+    }
+
+    const prRoute = /^pullrequests\/(\d+)(?:\/(.*))?$/.exec(rest);
+    if (!prRoute) return missing('fake Azure DevOps: no such route', 'NotFound');
+    const pr = pullRequests.get(`${repository.id}#${prRoute[1]}`);
+    if (!pr) {
+      return missing(
+        `TF401180: The requested pull request, ${prRoute[1]}, was not found.`,
+        'GitPullRequestNotFoundException',
+      );
+    }
+    const sub = prRoute[2] ?? '';
+    const { method } = req;
+
+    if (sub === '' && method === 'GET') return answerJson(200, pullRequestJson(repository, pr));
+
+    if (sub === 'iterations' && method === 'GET') {
+      const value = pr.iterations.map((i) => ({
+        id: i.id,
+        sourceRefCommit: { commitId: i.sourceRefCommit },
+        commonRefCommit: { commitId: i.commonRefCommit },
+        targetRefCommit: { commitId: i.targetRefCommit },
+      }));
+      return answerJson(200, { count: value.length, value });
+    }
+
+    const iterationRoute = /^iterations\/(\d+)\/(changes|statuses)$/.exec(sub);
+    if (iterationRoute) {
+      const iteration = pr.iterations.find((i) => i.id === Number(iterationRoute[1]));
+      if (!iteration)
+        return missing('TF401190: The iteration does not exist.', 'GitIterationNotFoundException');
+      if (iterationRoute[2] === 'changes' && method === 'GET') {
+        const top = Number(query.get('$top') ?? 100);
+        const skip = Number(query.get('$skip') ?? 0);
+        const page = iteration.changes.slice(skip, skip + top);
+        const changeEntries = page.map((c, i) => ({
+          ...recordedChange,
+          changeTrackingId: c.changeTrackingId ?? skip + i + 1,
+          changeId: skip + i + 1,
+          item: { objectId: createHash('sha1').update(c.path).digest('hex'), path: `/${c.path}` },
+          changeType: c.changeType ?? 'edit',
+          ...(c.originalPath === undefined ? {} : { originalPath: `/${c.originalPath}` }),
+        }));
+        const more = skip + top < iteration.changes.length;
+        return answerJson(200, {
+          changeEntries,
+          ...(more ? { nextTop: top, nextSkip: skip + top } : {}),
+        });
+      }
+      if (iterationRoute[2] === 'statuses' && method === 'GET') {
+        const value = iteration.statuses.map((s, i) => statusJson(s, i + 1));
+        return answerJson(200, { count: value.length, value });
+      }
+    }
+
+    if (sub === 'statuses' && method === 'POST') {
+      const body = jsonBodyOf(req);
+      const status = body && statusOf(body);
+      if (!status) return bad('a status needs a state and a context');
+      if (status.iterationId === null) {
+        if (pr.statusPolicy) return refuse(recordedStatusPolicyRefusal);
+        putStatus(pr.statuses, status);
+      } else {
+        const iteration = pr.iterations.find((i) => i.id === status.iterationId);
+        if (!iteration) return bad(`the pull request has no iteration ${status.iterationId}`);
+        putStatus(iteration.statuses, status);
+      }
+      statusCounter += 1;
+      return answerJson(200, statusJson(status, statusCounter));
+    }
+
+    if (sub === 'threads' && method === 'GET') {
+      const value = pr.threads.map((t) => threadJson(repository, pr, t));
+      return answerJson(200, { value, count: value.length });
+    }
+
+    if (sub === 'threads' && method === 'POST') {
+      const body = jsonBodyOf(req);
+      const comment = (body?.comments as { content?: unknown }[] | undefined)?.[0];
+      if (!body || typeof comment?.content !== 'string') return bad('a thread needs a comment');
+      const status = THREAD_STATUS_BY_NUMBER[Number(body.status)];
+      if (!status) return bad('unknown thread status');
+      const threadContext = (body.threadContext ?? null) as Record<string, unknown> | null;
+      const thread = addThreadTo(pr, {
+        status,
+        threadContext,
+        comments: [{ content: comment.content, authorId }],
+      });
+      return answerJson(200, threadJson(repository, pr, thread));
+    }
+
+    const threadRoute = /^threads\/(\d+)(?:\/comments(?:\/(\d+))?)?$/.exec(sub);
+    const thread = threadRoute && pr.threads.find((t) => t.id === Number(threadRoute[1]));
+    if (threadRoute && !thread)
+      return missing('TF401152: The thread does not exist.', 'GitThreadNotFoundException');
+    if (threadRoute && thread) {
+      const isComments = sub.includes('/comments');
+      if (!isComments && method === 'PATCH') {
+        const body = jsonBodyOf(req);
+        if (!body) return bad('a thread update is a JSON object');
+        if ('properties' in body) return refuse(recordedPropertiesRefusal);
+        if ('status' in body) {
+          const status = THREAD_STATUS_BY_NUMBER[Number(body.status)];
+          if (!status) return bad('unknown thread status');
+          thread.status = status;
+        }
+        return answerJson(200, threadJson(repository, pr, thread));
+      }
+      if (isComments && threadRoute[2] === undefined && method === 'POST') {
+        const body = jsonBodyOf(req);
+        if (!body || typeof body.content !== 'string') return bad('a comment has content');
+        const comment: FakeAzureComment = {
+          id: Math.max(0, ...thread.comments.map((c) => c.id)) + 1,
+          authorId,
+          content: body.content,
+          commentType: 'text',
+        };
+        thread.comments.push(comment);
+        return answerJson(200, commentJson(repository, pr, thread, comment));
+      }
+      if (isComments && threadRoute[2] !== undefined && method === 'PATCH') {
+        const comment = thread.comments.find((c) => c.id === Number(threadRoute[2]));
+        if (!comment)
+          return missing('TF401153: The comment does not exist.', 'GitCommentNotFoundException');
+        const body = jsonBodyOf(req);
+        if (!body || typeof body.content !== 'string') return bad('a comment has content');
+        comment.content = body.content;
+        return answerJson(200, commentJson(repository, pr, thread, comment));
+      }
+    }
+    return missing('fake Azure DevOps: no such route', 'NotFound');
+  };
+
+  const addThreadTo = (
+    pr: FakeAzurePullRequest,
+    input: {
+      status: FakeAzureThreadStatus | null;
+      threadContext: Record<string, unknown> | null;
+      comments: {
+        content: string;
+        authorId?: string;
+        commentType?: FakeAzureComment['commentType'];
+      }[];
+    },
+  ): FakeAzureThread => {
+    const context = input.threadContext as {
+      filePath?: string;
+      rightFileStart?: { line?: number };
+    } | null;
+    threadCounter += 1;
+    const thread: FakeAzureThread = {
+      id: threadCounter,
+      status: input.status,
+      filePath: context?.filePath?.replace(/^\//, '') ?? null,
+      line: context?.rightFileStart?.line ?? null,
+      threadContext: input.threadContext,
+      comments: input.comments.map((c, i) => ({
+        id: i + 1,
+        authorId: c.authorId ?? patUser.id,
+        content: c.content,
+        commentType: c.commentType ?? 'text',
+      })),
+    };
+    pr.threads.push(thread);
+    return thread;
+  };
+
   const answer = (req: RecordedRequest, res: ServerResponse, inside: boolean): void => {
     if (!inside) {
       return wrapped(res, 404, 'fake Azure DevOps: no such collection', 'NotFound');
@@ -455,6 +986,9 @@ export async function createFakeAzureDevOps(options: {
             : one
               ? { wanted: /^7\.0$/, name: 'repository' as const }
               : null;
+    const git = /^(?:\/[^/]+)?\/_apis\/git\/repositories\/([^/]+)\/(.+)$/.exec(req.path);
+    if (!route && git)
+      return gitRoute(req, res, who, decodeURIComponent(git[1]!), git[2]!, version);
     if (!route) return wrapped(res, 404, 'fake Azure DevOps: no such route', 'NotFound');
     if (!route.wanted.test(version)) {
       const text = `fake Azure DevOps: this route is not asked at api-version ${version}`;
@@ -473,11 +1007,7 @@ export async function createFakeAzureDevOps(options: {
     const id = decodeURIComponent(one![1]!);
     const repository = repositories.find((r) => r.id === id.toLowerCase());
     if (repository) return send(res, 200, repositoryJson(repository), { 'content-type': JSON_7_0 });
-    const message = String(notFound.message).replace(
-      /[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/i,
-      id,
-    );
-    send(res, 404, { ...notFound, message }, { 'content-type': 'application/json; charset=utf-8' });
+    unknownRepository(res, id);
   };
 
   const handleApi = async (incoming: IncomingMessage, res: ServerResponse) => {
@@ -593,6 +1123,78 @@ export async function createFakeAzureDevOps(options: {
       repositories.push(repository);
       return repository;
     },
+    addPullRequest(repositoryId, input = {}) {
+      const repoId = repositoryId.toLowerCase();
+      if (!repositories.some((r) => r.id === repoId)) {
+        throw new Error(`fake Azure DevOps: no repository ${repositoryId}`);
+      }
+      const own = [...pullRequests.keys()].filter((k) => k.startsWith(`${repoId}#`)).length;
+      const id = input.id ?? own + 1;
+      const pr: FakeAzurePullRequest = {
+        id,
+        status: input.status ?? 'active',
+        isDraft: input.isDraft ?? false,
+        title: input.title ?? `Pull request ${id}`,
+        sourceRefName: input.sourceRefName ?? `refs/heads/feature/${id}`,
+        targetRefName: input.targetRefName ?? 'refs/heads/main',
+        headSha:
+          input.headSha === undefined
+            ? createHash('sha1').update(`head-${repoId}-${id}`).digest('hex')
+            : input.headSha,
+        statusPolicy: input.statusPolicy ?? false,
+        iterations: [],
+        threads: [],
+        statuses: [],
+      };
+      pullRequests.set(`${repoId}#${id}`, pr);
+      return pr;
+    },
+    pullRequest(repositoryId, id) {
+      const pr = pullRequests.get(`${repositoryId.toLowerCase()}#${id}`);
+      if (!pr) throw new Error(`fake Azure DevOps: no pull request ${id} in ${repositoryId}`);
+      return pr;
+    },
+    addIteration(repositoryId, prId, input) {
+      const pr = fake.pullRequest(repositoryId, prId);
+      const iteration: FakeAzureIteration = {
+        id: pr.iterations.length + 1,
+        sourceRefCommit: input.sourceRefCommit.toLowerCase(),
+        commonRefCommit: input.commonRefCommit.toLowerCase(),
+        targetRefCommit: (input.targetRefCommit ?? input.commonRefCommit).toLowerCase(),
+        changes: input.changes ?? [],
+        statuses: [],
+      };
+      pr.iterations.push(iteration);
+      return iteration;
+    },
+    addFile(repositoryId, commit, filePath, content) {
+      const key = `${repositoryId.toLowerCase()}@${commit.toLowerCase()}:${filePath.replace(/^\//, '')}`;
+      files.set(key, Buffer.isBuffer(content) ? content : Buffer.from(content));
+    },
+    addThread(repositoryId, prId, input = {}) {
+      const pr = fake.pullRequest(repositoryId, prId);
+      const positioned = input.filePath !== undefined && input.line !== undefined;
+      return addThreadTo(pr, {
+        status: input.status ?? 'active',
+        threadContext: positioned
+          ? {
+              filePath: `/${input.filePath}`,
+              rightFileStart: { line: input.line, offset: 1 },
+              rightFileEnd: { line: input.line, offset: 2 },
+            }
+          : null,
+        comments: input.comments ?? [{ content: 'A comment' }],
+      });
+    },
+    addSystemThread(repositoryId, prId, content = 'Updated the source branch') {
+      const pr = fake.pullRequest(repositoryId, prId);
+      return addThreadTo(pr, {
+        status: null,
+        threadContext: null,
+        comments: [{ content, commentType: 'system' }],
+      });
+    },
+    commitStatuses,
     requests,
     tokenRequests,
     inject(method, pathPattern, ...answers) {

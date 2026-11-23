@@ -1,8 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { Config } from '../src/config';
 import type { AzureCredential } from '../src/scm/azure/client';
 import { parseAzureCertificate } from '../src/scm/azure/certificate';
 import { entraToken, type EntraCredential, type EntraOptions } from '../src/scm/azure/entra';
-import type { FakeAzureDevOps } from './fake-azure-devops';
+import type {
+  FakeAzureChange,
+  FakeAzureDevOps,
+  FakeAzureIteration,
+  FakeAzurePullRequest,
+  FakeAzurePullRequestInput,
+} from './fake-azure-devops';
 import { TEST_IDP, type TestKeyPair } from './saml';
 
 /**
@@ -85,4 +92,47 @@ export function bearerOf(
     kind: 'bearer',
     token: async () => (await entraToken(entra, fakeEntraOptions(fake))).token,
   };
+}
+
+/** A 40-character commit id the tests can tell apart (`azureCommitId('a')`). */
+export function azureCommitId(seed: string): string {
+  return createHash('sha1').update(seed).digest('hex');
+}
+
+/**
+ * A pull request in the fake with one iteration: `changes` (paths without a leading `/`), and
+ * `files` (path to content, a Buffer for a binary file) as the source commit holds them. For a
+ * decoration test, which then reads `fake.pullRequest(...)` back.
+ */
+export function seedAzurePullRequest(
+  fake: FakeAzureDevOps,
+  repositoryId: string,
+  options: {
+    pullRequest?: FakeAzurePullRequestInput;
+    changes?: FakeAzureChange[];
+    files?: Record<string, string | Buffer>;
+    sourceCommit?: string;
+    baseCommit?: string;
+  } = {},
+): {
+  pullRequest: FakeAzurePullRequest;
+  iteration: FakeAzureIteration;
+  sourceCommit: string;
+  baseCommit: string;
+} {
+  const sourceCommit = options.sourceCommit ?? azureCommitId('source');
+  const baseCommit = options.baseCommit ?? azureCommitId('base');
+  const pullRequest = fake.addPullRequest(repositoryId, {
+    headSha: sourceCommit,
+    ...options.pullRequest,
+  });
+  const iteration = fake.addIteration(repositoryId, pullRequest.id, {
+    sourceRefCommit: sourceCommit,
+    commonRefCommit: baseCommit,
+    changes: options.changes ?? Object.keys(options.files ?? {}).map((path) => ({ path })),
+  });
+  for (const [path, content] of Object.entries(options.files ?? {})) {
+    fake.addFile(repositoryId, sourceCommit, path, content);
+  }
+  return { pullRequest, iteration, sourceCommit, baseCommit };
 }

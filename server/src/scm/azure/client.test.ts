@@ -1,6 +1,13 @@
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { AZURE_TEST_PRINCIPAL, bearerOf, entraCredentialOf, patOf } from '../../../test/azure';
+import {
+  AZURE_TEST_PRINCIPAL,
+  azureCommitId,
+  bearerOf,
+  entraCredentialOf,
+  patOf,
+  seedAzurePullRequest,
+} from '../../../test/azure';
 import {
   azureShape,
   createFakeAzureDevOps,
@@ -537,5 +544,472 @@ describe('the fake replays the recorded refusals (probe item 10)', () => {
     expect(res.status).toBe(401);
     expect(res.headers.get('content-type')).toBe('application/json');
     expect(decodeURIComponent(res.headers.get('x-tfs-serviceerror') ?? '')).toMatch(/^TF400813:/);
+  });
+});
+
+describe('pull requests, threads and statuses (sub-plan 4)', () => {
+  const repo = () => services.repositories[0]!;
+  const lastRequest = () => services.requests.at(-1)!;
+  const rest = (r: { path: string }) => r.path.replace(`/_apis/git/repositories/${repo().id}`, '');
+  const bodyOf = (r: { body: string }) => JSON.parse(r.body) as unknown;
+  const STATUS = {
+    iterationId: 1,
+    state: 'succeeded',
+    description: 'Quality gate passed',
+    targetUrl: 'https://qualor.example/p/1',
+    genre: 'qualor',
+    name: 'gate',
+  } as const;
+
+  const COMMIT_STATUS: Omit<typeof STATUS, 'iterationId'> = {
+    state: STATUS.state,
+    description: STATUS.description,
+    targetUrl: STATUS.targetUrl,
+    genre: STATUS.genre,
+    name: STATUS.name,
+  };
+
+  it('reads a pull request: state, refs, head commit and web URL', async () => {
+    const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+      pullRequest: { title: 'Fix it', isDraft: true },
+    });
+    const pr = await clientOf(services).pullRequest(repo().id, pullRequest.id);
+    expect(pr).toEqual({
+      id: pullRequest.id,
+      status: 'active',
+      isDraft: true,
+      title: 'Fix it',
+      sourceRefName: pullRequest.sourceRefName,
+      targetRefName: 'refs/heads/main',
+      headSha: pullRequest.headSha,
+      webUrl: `${services.url}/Payments/_git/api/pullrequest/${pullRequest.id}`,
+    });
+    expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}`);
+    expect(apiVersion(lastRequest().query)).toBe('7.0');
+    expect(lastRequest().method).toBe('GET');
+  });
+
+  it('reads a pull request without a merge yet: headSha null', async () => {
+    const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+      pullRequest: { headSha: null, status: 'abandoned' },
+    });
+    expect(await clientOf(services).pullRequest(repo().id, pullRequest.id)).toMatchObject({
+      status: 'abandoned',
+      headSha: null,
+    });
+  });
+
+  it('answers an unknown pull request as not found, and a bad repository id before sending', async () => {
+    expect(await failure(clientOf(services).pullRequest(repo().id, 9999))).toMatchObject({
+      kind: 'not_found',
+    });
+    services.clearRequests();
+    expect(await failure(clientOf(services).pullRequest('../x', 1))).toMatchObject({
+      reason: 'invalid_input',
+    });
+    expect(services.requests).toHaveLength(0);
+  });
+
+  it('lists the iterations with lower-case commit ids', async () => {
+    const { pullRequest } = seedAzurePullRequest(services, repo().id);
+    services.addIteration(repo().id, pullRequest.id, {
+      sourceRefCommit: 'ABCDEF0123456789ABCDEF0123456789ABCDEF01',
+      commonRefCommit: azureCommitId('c2'),
+      targetRefCommit: azureCommitId('t2'),
+    });
+    const list = await clientOf(services).iterations(repo().id, pullRequest.id);
+    expect(list.map((i) => i.id)).toEqual([1, 2]);
+    expect(list[1]).toEqual({
+      id: 2,
+      sourceRefCommit: 'abcdef0123456789abcdef0123456789abcdef01',
+      commonRefCommit: azureCommitId('c2'),
+      targetRefCommit: azureCommitId('t2'),
+    });
+    expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/iterations`);
+  });
+
+  describe('iterationChanges', () => {
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ path: `f${i}.ts` }));
+
+    it('lists changes without the leading slash, with renames', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+        changes: [
+          { path: 'src/a.ts', changeType: 'add' },
+          {
+            path: 'src/b.ts',
+            originalPath: 'src/old.ts',
+            changeType: 'rename',
+            changeTrackingId: 7,
+          },
+        ],
+      });
+      const answer = await clientOf(services).iterationChanges(repo().id, pullRequest.id, 1);
+      expect(answer).toEqual({
+        complete: true,
+        changes: [
+          { path: 'src/a.ts', originalPath: null, changeType: 'add', changeTrackingId: 1 },
+          {
+            path: 'src/b.ts',
+            originalPath: 'src/old.ts',
+            changeType: 'rename',
+            changeTrackingId: 7,
+          },
+        ],
+      });
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/iterations/1/changes`);
+      expect(new URLSearchParams(lastRequest().query).get('$top')).toBe('100');
+      expect(new URLSearchParams(lastRequest().query).get('$skip')).toBe('0');
+    });
+
+    it('pages with $skip, 100 at a time', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, { changes: many(250) });
+      const answer = await clientOf(services).iterationChanges(repo().id, pullRequest.id, 1);
+      expect(answer.complete).toBe(true);
+      expect(answer.changes).toHaveLength(250);
+      expect(services.requests.map((r) => new URLSearchParams(r.query).get('$skip'))).toEqual([
+        '0',
+        '100',
+        '200',
+      ]);
+    });
+
+    it('stops past maxPages and says it is incomplete', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, { changes: many(250) });
+      const answer = await clientOf(services).iterationChanges(repo().id, pullRequest.id, 1, 2);
+      expect(answer.complete).toBe(false);
+      expect(answer.changes).toHaveLength(200);
+      expect(services.requests).toHaveLength(2);
+    });
+
+    it('is complete when the last allowed page is the last one', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, { changes: many(150) });
+      const answer = await clientOf(services).iterationChanges(repo().id, pullRequest.id, 1, 2);
+      expect(answer.complete).toBe(true);
+      expect(answer.changes).toHaveLength(150);
+    });
+  });
+
+  describe('fileText', () => {
+    it('reads the text of a file at a commit', async () => {
+      const { sourceCommit } = seedAzurePullRequest(services, repo().id, {
+        files: { 'src/a b.ts': 'const a = 1;\n' },
+      });
+      const answer = await clientOf(services).fileText(repo().id, 'src/a b.ts', sourceCommit);
+      expect(answer).toEqual({ text: 'const a = 1;\n' });
+      expect(rest(lastRequest())).toBe('/items');
+      expect(Object.fromEntries(new URLSearchParams(lastRequest().query))).toEqual({
+        path: '/src/a b.ts',
+        'versionDescriptor.version': sourceCommit,
+        'versionDescriptor.versionType': 'commit',
+        includeContent: 'true',
+        $format: 'json',
+        'api-version': '7.0',
+      });
+    });
+
+    it('skips a binary file, a file over the limit and a missing one, never throwing', async () => {
+      const commit = azureCommitId('files');
+      services.addFile(repo().id, commit, 'logo.png', Buffer.from([0x89, 0x50, 0, 0x47]));
+      services.addFile(repo().id, commit, 'big.txt', 'a'.repeat(1024 * 1024 + 1));
+      services.addFile(repo().id, commit, 'fits.txt', 'a'.repeat(1024 * 1024));
+      const client = clientOf(services);
+      expect(await client.fileText(repo().id, 'logo.png', commit)).toEqual({ skipped: 'binary' });
+      expect(await client.fileText(repo().id, 'big.txt', commit)).toEqual({ skipped: 'too_large' });
+      expect(await client.fileText(repo().id, 'gone.txt', commit)).toEqual({ skipped: 'missing' });
+      expect(await client.fileText(repo().id, 'fits.txt', commit)).toHaveProperty('text');
+      expect(await client.fileText(repo().id, 'fits.txt', commit, 10)).toEqual({
+        skipped: 'too_large',
+      });
+    });
+
+    it('skips a file over the 8 MiB an answer may have', async () => {
+      const commit = azureCommitId('huge');
+      services.addFile(repo().id, commit, 'huge.txt', 'a'.repeat(MAX_AZURE_RESPONSE_BYTES + 1));
+      expect(await clientOf(services).fileText(repo().id, 'huge.txt', commit)).toEqual({
+        skipped: 'too_large',
+      });
+    });
+
+    it('still throws a failure that is no property of the file', async () => {
+      services.inject('GET', /\/items$/, recordedAnswer('services', '10-wrong-pat'));
+      const read = clientOf(services).fileText(repo().id, 'a.ts', azureCommitId('x'));
+      expect(await failure(read)).toMatchObject({ kind: 'auth' });
+    });
+  });
+
+  describe('threads', () => {
+    it('lists threads, keeping system threads with a null status', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.addSystemThread(repo().id, pullRequest.id);
+      services.addThread(repo().id, pullRequest.id, {
+        status: 'fixed',
+        filePath: 'src/a.ts',
+        line: 12,
+        comments: [
+          { content: 'first', authorId: 'u-1' },
+          { content: 'second', authorId: 'u-2' },
+        ],
+      });
+      services.addThread(repo().id, pullRequest.id);
+      const list = await clientOf(services).threads(repo().id, pullRequest.id);
+      expect(list).toHaveLength(3);
+      expect(list[0]).toMatchObject({
+        status: null,
+        filePath: null,
+        rightLine: null,
+        comments: [{ id: 1, content: 'Updated the source branch', commentType: 'system' }],
+      });
+      expect(list[1]).toEqual({
+        id: list[1]!.id,
+        status: 'fixed',
+        filePath: 'src/a.ts',
+        rightLine: 12,
+        comments: [
+          { id: 1, authorId: 'u-1', content: 'first', commentType: 'text' },
+          { id: 2, authorId: 'u-2', content: 'second', commentType: 'text' },
+        ],
+      });
+      expect(list[2]).toMatchObject({ status: 'active', filePath: null, rightLine: null });
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/threads`);
+    });
+
+    it('creates a thread on a line: closed is 4, the whole line selected, no pullRequestThreadContext', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const created = await clientOf(services).createThread(repo().id, pullRequest.id, {
+        content: 'Hello',
+        status: 'closed',
+        filePath: 'src/a.ts',
+        line: 5,
+        lineLength: 9,
+      });
+      expect(lastRequest().method).toBe('POST');
+      expect(lastRequest().headers['content-type']).toBe('application/json');
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/threads`);
+      expect(bodyOf(lastRequest())).toEqual({
+        comments: [{ parentCommentId: 0, content: 'Hello', commentType: 1 }],
+        status: 4,
+        threadContext: {
+          filePath: '/src/a.ts',
+          rightFileStart: { line: 5, offset: 1 },
+          rightFileEnd: { line: 5, offset: 10 },
+        },
+      });
+      const stored = services.pullRequest(repo().id, pullRequest.id).threads[0]!;
+      expect(created).toEqual({ id: stored.id, commentId: 1 });
+      expect(stored).toMatchObject({ status: 'closed', filePath: 'src/a.ts', line: 5 });
+    });
+
+    it('creates an active thread on the pull request as a whole, without a context', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      await clientOf(services).createThread(repo().id, pullRequest.id, {
+        content: 'Summary',
+        status: 'active',
+      });
+      expect(bodyOf(lastRequest())).toEqual({
+        comments: [{ parentCommentId: 0, content: 'Summary', commentType: 1 }],
+        status: 1,
+      });
+    });
+
+    it('sets a status with nothing but the status, and never sends properties', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const client = clientOf(services);
+      await client.setThreadStatus(repo().id, pullRequest.id, thread.id, 'fixed');
+      expect(lastRequest().method).toBe('PATCH');
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/threads/${thread.id}`);
+      expect(bodyOf(lastRequest())).toEqual({ status: 2 });
+      expect(thread.status).toBe('fixed');
+      await client.setThreadStatus(repo().id, pullRequest.id, thread.id, 'active');
+      expect(bodyOf(lastRequest())).toEqual({ status: 1 });
+      expect(thread.status).toBe('active');
+      const patches = services.requests.filter((r) => r.method === 'PATCH');
+      expect(patches).toHaveLength(2);
+      expect(patches.every((r) => !r.body.includes('properties'))).toBe(true);
+    });
+
+    it('adds a comment and edits one', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const client = clientOf(services);
+      await client.addComment(repo().id, pullRequest.id, thread.id, 'Resolved');
+      expect(lastRequest().method).toBe('POST');
+      expect(rest(lastRequest())).toBe(
+        `/pullrequests/${pullRequest.id}/threads/${thread.id}/comments`,
+      );
+      expect(bodyOf(lastRequest())).toEqual({
+        content: 'Resolved',
+        parentCommentId: 0,
+        commentType: 1,
+      });
+      await client.editComment(repo().id, pullRequest.id, thread.id, 2, 'Resolved, again');
+      expect(lastRequest().method).toBe('PATCH');
+      expect(rest(lastRequest())).toBe(
+        `/pullrequests/${pullRequest.id}/threads/${thread.id}/comments/2`,
+      );
+      expect(bodyOf(lastRequest())).toEqual({ content: 'Resolved, again' });
+      expect(thread.comments.map((c) => c.content)).toEqual(['A comment', 'Resolved, again']);
+    });
+
+    it('answers a comment edit on a missing comment as not found', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const edit = clientOf(services).editComment(repo().id, pullRequest.id, thread.id, 9, 'x');
+      expect(await failure(edit)).toMatchObject({ kind: 'not_found' });
+    });
+  });
+
+  describe('statuses', () => {
+    it('posts a status on an iteration and reads it back', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+        pullRequest: { statusPolicy: true },
+      });
+      const client = clientOf(services);
+      await client.postPullRequestStatus(repo().id, pullRequest.id, STATUS);
+      expect(lastRequest().method).toBe('POST');
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/statuses`);
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(bodyOf(lastRequest())).toEqual({
+        iterationId: 1,
+        state: 'succeeded',
+        description: 'Quality gate passed',
+        targetUrl: 'https://qualor.example/p/1',
+        context: { genre: 'qualor', name: 'gate' },
+      });
+      await client.postPullRequestStatus(repo().id, pullRequest.id, {
+        ...STATUS,
+        state: 'failed',
+        targetUrl: null,
+      });
+      expect(bodyOf(lastRequest())).not.toHaveProperty('targetUrl');
+      expect(await client.iterationStatuses(repo().id, pullRequest.id, 1)).toEqual([
+        { ...STATUS, state: 'failed', targetUrl: null },
+      ]);
+      expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/iterations/1/statuses`);
+    });
+
+    it('lists only the statuses of the qualor genre', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const client = clientOf(services);
+      await client.postPullRequestStatus(repo().id, pullRequest.id, STATUS);
+      services.pullRequest(repo().id, pullRequest.id).iterations[0]!.statuses.push({
+        iterationId: 1,
+        state: 'succeeded',
+        description: 'x',
+        targetUrl: null,
+        genre: 'other-tool',
+        name: 'ci',
+      });
+      expect(await client.iterationStatuses(repo().id, pullRequest.id, 1)).toHaveLength(1);
+    });
+
+    it('reads the recorded 403 for a status without an iteration as permission_missing', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+        pullRequest: { statusPolicy: true },
+      });
+      const post = clientOf(services).postPullRequestStatus(repo().id, pullRequest.id, {
+        ...STATUS,
+        iterationId: undefined,
+      } as unknown as typeof STATUS);
+      const err = await failure(post);
+      expect(err).toMatchObject({ kind: 'auth', reason: 'permission_missing', status: 403 });
+      expect(err.message).toBe(AZURE_TEXT.forbidden);
+    });
+
+    it('posts a commit status (201), which carries no iteration', async () => {
+      const sha = azureCommitId('commit');
+      const commitStatus = COMMIT_STATUS;
+      await clientOf(services).postCommitStatus(repo().id, sha.toUpperCase(), commitStatus);
+      expect(lastRequest().method).toBe('POST');
+      expect(rest(lastRequest())).toBe(`/commits/${sha}/statuses`);
+      expect(bodyOf(lastRequest())).toEqual({
+        state: 'succeeded',
+        description: 'Quality gate passed',
+        targetUrl: 'https://qualor.example/p/1',
+        context: { genre: 'qualor', name: 'gate' },
+      });
+      expect(services.commitStatuses.at(-1)).toMatchObject({ repositoryId: repo().id, sha });
+      const bad = clientOf(services).postCommitStatus(repo().id, 'zz', commitStatus);
+      expect(await failure(bad)).toMatchObject({ reason: 'invalid_input' });
+    });
+  });
+
+  describe('the fake enforces the probe', () => {
+    it('refuses a thread PATCH with properties (400) and a status without iterationId (403)', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id, {
+        pullRequest: { statusPolicy: true },
+      });
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const url = `${services.url}/_apis/git/repositories/${repo().id}/pullrequests/${pullRequest.id}`;
+      const headers = {
+        authorization: `Basic ${Buffer.from(`:${services.pat}`).toString('base64')}`,
+        'content-type': 'application/json',
+      };
+      const patch = await fetch(`${url}/threads/${thread.id}?api-version=7.0`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ status: 2, properties: { x: { $type: 'System.String' } } }),
+      });
+      expect(patch.status).toBe(400);
+      expect(thread.status).toBe('active');
+      const post = await fetch(`${url}/statuses?api-version=7.0`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ state: 'succeeded', context: { genre: 'qualor', name: 'gate' } }),
+      });
+      expect(post.status).toBe(403);
+    });
+
+    it('accepts a status without iterationId when the pull request has no status policy', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const url = `${services.url}/_apis/git/repositories/${repo().id}/pullrequests/${pullRequest.id}`;
+      const post = await fetch(`${url}/statuses?api-version=7.0`, {
+        method: 'POST',
+        headers: {
+          authorization: `Basic ${Buffer.from(`:${services.pat}`).toString('base64')}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ state: 'succeeded', context: { genre: 'qualor', name: 'gate' } }),
+      });
+      expect(post.status).toBe(200);
+    });
+  });
+
+  describe('writes and the request budget', () => {
+    it('counts every write against the same budget as reads', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const client = clientOf(services, undefined, { maxRequests: 3 });
+      await client.pullRequest(repo().id, pullRequest.id);
+      await client.createThread(repo().id, pullRequest.id, { content: 'a', status: 'active' });
+      await client.addComment(repo().id, pullRequest.id, thread.id, 'b');
+      expect(client.requestCount).toBe(3);
+      const err = await failure(client.postPullRequestStatus(repo().id, pullRequest.id, STATUS));
+      expect(err).toMatchObject({ kind: 'budget' });
+      expect(services.requests).toHaveLength(3);
+    });
+
+    it('resolves a write whose answer has no body', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      for (const status of [200, 201, 204]) {
+        services.inject('PATCH', /\/threads\/\d+$/, { status });
+        await expect(
+          clientOf(services).setThreadStatus(repo().id, pullRequest.id, thread.id, 'fixed'),
+        ).resolves.toBeUndefined();
+      }
+    });
+
+    it('names a failed write by its method and route, without ids or query', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const err = await failure(
+        clientOf(services).setThreadStatus(repo().id, pullRequest.id, 9999, 'fixed'),
+      );
+      expect(err).toMatchObject({ kind: 'not_found' });
+      expect(err.request).toBe(
+        `PATCH /_apis/git/repositories/{id}/pullrequests/${pullRequest.id}/threads/9999`,
+      );
+    });
   });
 });
