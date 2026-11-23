@@ -301,9 +301,10 @@ async function decorateAzureSteps(
     if (branch.lastAnalysisId !== analysis.id) return finish(connection.id, failures, failed);
     let inline: Inline;
     let aiNotPosted: readonly DesiredAiIssue[] = [];
-    if (payload.azure?.checkout !== 'head') {
-      inline = { ...NO_INLINE, skipped: 'checkout_other' };
-    } else if (analysed === null || analysed.id !== newest) {
+    // The pipeline's checkout decides the analyzers' threads only: the AI review's are placed on the
+    // live diff at the reviewed head, whatever was analysed.
+    const analyzers = payload.azure?.checkout === 'head';
+    if (analysed === null || analysed.id !== newest) {
       inline = { ...NO_INLINE, skipped: 'stale' };
     } else {
       inline =
@@ -316,11 +317,16 @@ async function decorateAzureSteps(
             prId,
             analysed,
             liveHead: pull.headSha,
+            analyzers,
             identityId: identity.id,
             failures,
           }).then((result) => {
             aiNotPosted = result.aiNotPosted;
-            return { commented: result.commented, unplaced: result.unplaced, skipped: null };
+            return {
+              commented: result.commented,
+              unplaced: result.unplaced,
+              skipped: analyzers ? null : 'checkout_other',
+            };
           }),
         )) ?? NOT_UPDATED;
       if (failures.stop !== null) return failed(failures.stop);

@@ -835,9 +835,13 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
   const THREE_TO_FIVE: Suggestion = { startLine: 3, endLine: 5, lines: ['3', '4', '5'] };
 
   /** A project with pull request #7 whose review of the source commit is done, its snapshot stored. */
-  const reviewed = async (key: string, findings: At[] = []) => {
+  const reviewed = async (
+    key: string,
+    findings: At[] = [],
+    opts: { checkout?: 'head' | 'other' } = {},
+  ) => {
     const s = await setup(key, { files: { 'src/a.ts': HEAD_A }, base: { 'src/a.ts': BASE_A } });
-    const analysisId = await s.ingest(findings);
+    const analysisId = await s.ingest(findings, opts);
     const [branch] = await h.ctx.db
       .select()
       .from(branches)
@@ -1007,5 +1011,67 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(lastComment(fixedThread!)).toMatch(new RegExp(`^<!-- qualor:fixed ${fixed} `));
     expect(keptThread?.status).toBe('fixed');
     expect(keptThread?.comments).toHaveLength(1);
+  });
+
+  it('with the head not checked out, posts and resolves the AI threads but no analyzer thread', async () => {
+    const s = await reviewed('ai/other', [{ path: 'src/a.ts', line: 3 }], { checkout: 'other' });
+    const fixed = await s.aiFinding({ line: 4 });
+    const fresh = await s.aiFinding({ line: 5 });
+    // A thread of an earlier job for the finding that is fixed since.
+    const old = s.pr().threads.length;
+    s.pr().threads.push({
+      id: 5000,
+      status: 'active',
+      filePath: 'src/a.ts',
+      line: 4,
+      threadContext: null,
+      publishedDate: '2026-11-23T10:00:00Z',
+      comments: [
+        {
+          id: 1,
+          authorId: fake.patUser.id,
+          content: `${issueMarker(fixed)}
+old`,
+          commentType: 'text',
+          parentCommentId: 0,
+          publishedDate: '2026-11-23T10:00:00Z',
+          isDeleted: false,
+        },
+      ],
+    });
+    expect(old).toBeGreaterThanOrEqual(0);
+    await h.ctx.db
+      .update(issues)
+      .set({ status: 'closed', closedAt: new Date() })
+      .where(eq(issues.id, fixed));
+    await decorate();
+    expect(s.aiThread(fresh)).toMatchObject({ status: 'active', line: 5 });
+    expect(s.aiThread(fixed)?.status).toBe('fixed');
+    // No thread for the analyzer's issue at line 3.
+    expect(s.ownThreads().map((t) => t.line)).toEqual([4, 5]);
+    expect(s.summary()).toContain('did not check out');
+  });
+
+  it('lists the AI findings as not posted when the iteration’s changes are cut by their bound', async () => {
+    const s = await reviewed('ai/cut');
+    await s.aiFinding({ line: 4 });
+    // Ten pages that each say more follow: the listing is cut by its page bound.
+    fake.inject(
+      'GET',
+      /\/iterations\/\d+\/changes/,
+      ...Array.from({ length: 10 }, (_, i) => ({
+        status: 200,
+        body: {
+          changeEntries: [
+            { changeTrackingId: i + 1, changeType: 'edit', item: { path: '/src/a.ts' } },
+          ],
+          nextSkip: i + 1,
+        },
+      })),
+    );
+    await decorate();
+    expect(s.ownThreads()).toEqual([]);
+    expect(s.summary()).toContain('**Not on changed lines:**');
+    expect(s.summary()).toContain('Line 4 is wrong');
   });
 });

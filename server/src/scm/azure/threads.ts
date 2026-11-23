@@ -64,6 +64,12 @@ export interface AzureThreadsContext {
   analysed: AzureIteration;
   /** The pull request's head commit now: the AI review's threads are posted only while it is the reviewed one. */
   liveHead: string | null;
+  /**
+   * Whether the analyzers' issues are Qualor's to comment: false when the pipeline did not check
+   * out the head, so their line numbers are not the pull request's. The AI review's threads do
+   * not depend on it: they are placed on the live diff at the reviewed head.
+   */
+  analyzers: boolean;
   /** Qualor's identity in Azure DevOps (the author of its threads). */
   identityId: string;
   /** Where the failures of single writes are kept: the job goes on, or stops on a rate limit. */
@@ -199,6 +205,8 @@ async function planUpdates(
   for (const [issueId, mine] of own) {
     const issue = known.get(issueId);
     if (issue === undefined) continue;
+    // Without `analyzers` their threads are left as they are.
+    if (!ctx.analyzers && issue.engineId !== AI_ENGINE) continue;
     // The AI review's threads are reconciled like the analyzers' but not counted: the summary's
     // count is the analyzers' (GitLab's `reviewed` rule).
     const reviewed = issue.engineId === AI_ENGINE;
@@ -370,11 +378,18 @@ async function createThreads(
   own: ReadonlyMap<string, OwnThread>,
 ): Promise<Creations> {
   const { client, repositoryId, prId, analysed, failures } = ctx;
-  const desired = await desiredInlineIssues(ctx.deps.db, ctx.loaded.branch.id, MAX_INLINE_THREADS);
+  const desired = ctx.analyzers
+    ? await desiredInlineIssues(ctx.deps.db, ctx.loaded.branch.id, MAX_INLINE_THREADS)
+    : [];
   const fresh = desired.filter((issue) => !own.has(issue.id));
   const ai = await aiThreads(ctx.deps.db, ctx.loaded.branch.id, ctx.liveHead, (id) => own.has(id));
   const aiCreate = ai?.create ?? [];
   const posted = new Set<DesiredAiIssue>();
+  // Nothing is created, so the findings that wait are listed instead.
+  const unlisted: Creations = {
+    ...NOTHING,
+    aiNotPosted: listedAiFindings(ai?.waiting ?? [], posted),
+  };
   if (fresh.length === 0 && aiCreate.length === 0) {
     return { ...NOTHING, aiNotPosted: listedAiFindings(ai?.waiting ?? [], posted) };
   }
@@ -387,7 +402,7 @@ async function createThreads(
       MAX_AZURE_CHANGE_PAGES,
     );
     // The files past the page bound may hold the issues' files: place none rather than some.
-    if (!listed.complete) return NOTHING;
+    if (!listed.complete) return unlisted;
     const paths = [
       ...new Set([
         ...fresh.flatMap((issue) => (issue.path === null ? [] : [issue.path])),
@@ -397,7 +412,7 @@ async function createThreads(
     places = await placesOf(ctx, paths, listed.changes);
   } catch (err) {
     failures.add(err);
-    return NOTHING;
+    return unlisted;
   }
   let created = 0;
   let unplaced = 0;
@@ -473,6 +488,15 @@ async function createThreads(
   };
 }
 
+/** The AI findings that wait for a thread when the job stopped before creating any: all are listed. */
+async function stoppedAiFindings(
+  ctx: AzureThreadsContext,
+  own: ReadonlyMap<string, OwnThread>,
+): Promise<DesiredAiIssue[]> {
+  const ai = await aiThreads(ctx.deps.db, ctx.loaded.branch.id, ctx.liveHead, (id) => own.has(id));
+  return listedAiFindings(ai?.waiting ?? [], new Set());
+}
+
 /**
  * Qualor's inline threads on an open pull request whose newest iteration was analysed at its head.
  * For the threads of this project's analyzer issues (design §7.4, thread properties cannot be
@@ -506,7 +530,7 @@ export async function reconcileAzureThreads(ctx: AzureThreadsContext): Promise<I
   const creations =
     ctx.failures.stop === null
       ? await createThreads(ctx, own)
-      : { created: 0, unplaced: 0, aiNotPosted: [] };
+      : { created: 0, unplaced: 0, aiNotPosted: await stoppedAiFindings(ctx, own) };
   return {
     commented: plan.commented - lost + creations.created,
     unplaced: creations.unplaced,
