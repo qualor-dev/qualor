@@ -40,6 +40,8 @@ const PAT: Connection = {
     certificate: null,
     webhookSecretSet: false,
     webhookUrl: null,
+    webhookSecretReadable: false,
+    hooksCurrent: false,
   },
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
@@ -58,6 +60,8 @@ const CERTIFICATE: Connection = {
     certificate: { thumbprint: 'AB12CD34', notAfter: '2099-01-01T00:00:00.000Z' },
     webhookSecretSet: false,
     webhookUrl: null,
+    webhookSecretReadable: false,
+    hooksCurrent: false,
   },
 };
 

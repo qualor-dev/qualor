@@ -8,6 +8,7 @@ import {
 } from '../../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub } from '../../../test/fake-github';
 import { githubConnection } from '../../../test/github';
+import { addMember, createUser, login } from '../../../test/app';
 import { createIngestHarness, type IngestHarness } from '../../../test/ingest';
 import { rbacPlugins } from '../../../test/rbac';
 import { PUBLIC_URL } from '../../../test/scm';
@@ -178,7 +179,6 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
   });
 
   it('the secret route answers url null without a public URL, and 404s for a GitHub connection', async () => {
-    const id = await connect();
     const noUrl = await createIngestHarness({ config: azureServerConfig(fake) });
     try {
       const other = await connect(noUrl);
@@ -188,7 +188,6 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
     } finally {
       await noUrl.close();
     }
-    expect(id).toBeTruthy();
     const gh = await githubConnection(h, github);
     for (const path of ['azure-hooks/secret', 'azure-hooks']) {
       expect((await call(h, 'POST', `/scm-connections/${gh}/${path}`)).statusCode).toBe(404);
@@ -410,5 +409,177 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
       (c) => c.id === connection,
     );
     expect(gh!.azure).toBeNull();
+  });
+  describe('fix round 1', () => {
+    const dtoOf = async (id: string) =>
+      (
+        (await call(h, 'GET', `/scm-connections?organizationId=${h.organizationId}`)).json() as {
+          items: { id: string; azure: Record<string, unknown> }[];
+        }
+      ).items.find((c) => c.id === id)!.azure;
+    const hooksOf = async (id: string) =>
+      (
+        (await call(h, 'POST', `/scm-connections/${id}/test`, {})).json() as {
+          hooks: { projectId: string; state: string }[] | null;
+        }
+      ).hooks;
+
+    it('F1: moving a connection that has a hook password is 200; the password stays, the mark goes', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      await subscribe(id);
+      const password = await storedPassword(id);
+      expect((await dtoOf(id)).hooksCurrent).toBe(true);
+      const moved = await call(h, 'PATCH', `/scm-connections/${id}`, {
+        baseUrl: 'https://dev.azure.com/other-org',
+        azureAuth: 'pat',
+        token: fake.pat,
+      });
+      expect(moved.statusCode, moved.body).toBe(200);
+      expect(await storedPassword(id)).toBe(password);
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretSet: true, hooksCurrent: false });
+      expect(
+        ((await rowOf(id)).webhookSecretEnc as unknown as Record<string, unknown>).hooksPushed,
+      ).toBe(undefined);
+    });
+
+    it('F2: hooksCurrent and stale follow the rotation and the secret key', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretReadable: false, hooksCurrent: false });
+      await subscribe(id);
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretReadable: true, hooksCurrent: true });
+      expect((await hooksOf(id))![0]!.state).toBe('enabled');
+      await rotate(id);
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretSet: true, hooksCurrent: false });
+      expect((await hooksOf(id))![0]!.state).toBe('stale');
+      await subscribe(id);
+      expect((await hooksOf(id))![0]!.state).toBe('enabled');
+      await h.ctx.db
+        .update(scmConnections)
+        .set({
+          webhookSecretEnc: {
+            ...(await rowOf(id)).webhookSecretEnc!,
+            ct: Buffer.from('tampered').toString('base64'),
+          },
+        })
+        .where(eq(scmConnections.id, id));
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretReadable: false, hooksCurrent: false });
+    });
+
+    it('F3: the replace sends status enabled', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      await subscribe(id);
+      await rotate(id);
+      fake.clearRequests();
+      await subscribe(id);
+      const puts = fake.requests.filter((r) => r.method === 'PUT');
+      expect(puts).toHaveLength(2);
+      for (const put of puts) expect(JSON.parse(put.body)).toMatchObject({ status: 'enabled' });
+    });
+
+    it('F4: two concurrent subscribe calls make one password and two subscriptions per project', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      const [a, b] = await Promise.all([subscribe(id), subscribe(id)]);
+      expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
+      expect(fake.subscriptions).toHaveLength(2);
+      const password = await storedPassword(id);
+      for (const s of fake.subscriptions) expect(s.password).toBe(password);
+      expect(await auditOf('scm_connection.updated', id)).toHaveLength(1);
+      const seen = [a, b].map((r) => outcomes(r)[0]!.comment).sort();
+      expect(seen).toEqual(['created', 'unchanged']);
+    });
+
+    it('F5: an own subscription deleted meanwhile (404 on its PUT) is created again', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      await subscribe(id);
+      await rotate(id);
+      fake.inject('PUT', /hooks\/subscriptions\//, {
+        status: 404,
+        body: { message: 'gone', typeKey: 'SubscriptionNotFoundException' },
+      });
+      const res = await subscribe(id);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(outcomes(res)[0]).toMatchObject({ comment: 'created', updated: 'replaced' });
+    });
+
+    it('F5: another failure part-way is a 502, and what was written is audited', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      await mapRepository(h, 'hooks/docs', id, docs);
+      const through = { status: 200, passThrough: true };
+      fake.inject('POST', /hooks\/subscriptions$/, through, through, {
+        status: 503,
+        body: { message: 'down' },
+      });
+      const res = await subscribe(id);
+      expect(res.statusCode, res.body).toBe(502);
+      expect(res.json()).toMatchObject({ code: 'SCM_UNAVAILABLE' });
+      expect(fake.subscriptions.length).toBeGreaterThanOrEqual(2);
+      expect(await auditOf('scm_connection.hooks_updated', id)).toEqual([{ projects: 1 }]);
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+    });
+
+    it('F7: no public URL at all is 409, and nothing is sent', async () => {
+      const noUrl = await createIngestHarness({ config: azureServerConfig(fake) });
+      try {
+        const other = await connect(noUrl);
+        fake.clearRequests();
+        const res = await subscribe(other, noUrl);
+        expect(res.statusCode).toBe(409);
+        expect(res.json()).toMatchObject({ code: 'PUBLIC_URL_NOT_HTTPS' });
+        expect(fake.requests).toEqual([]);
+      } finally {
+        await noUrl.close();
+      }
+    });
+
+    it('F7: an http public URL sends nothing to Azure DevOps', async () => {
+      const id = await connect(http);
+      fake.clearRequests();
+      expect((await subscribe(id, http)).statusCode).toBe(409);
+      expect(fake.requests).toEqual([]);
+    });
+
+    it('F7: a member without org.scm.manage is 403 on both routes', async () => {
+      const id = await connect();
+      const user = await createUser(h.ctx, { username: 'hooks-member' });
+      await addMember(h.ctx, h.organizationId, user.id, 'member');
+      const session = await login(h.ctx, user.username, user.password);
+      for (const path of ['azure-hooks/secret', 'azure-hooks']) {
+        const res = await h.ctx.app.inject({
+          method: 'POST',
+          url: `/api/v0/scm-connections/${id}/${path}`,
+          headers: session.headers,
+        });
+        expect(res.statusCode).toBe(403);
+      }
+      expect(fake.subscriptions).toHaveLength(0);
+    });
+
+    it('F7: the Test with an unreadable subscriptions list answers hooks null', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      fake.inject('GET', /hooks\/subscriptions$/, { status: 403, body: { message: 'no' } });
+      const res = await call(h, 'POST', `/scm-connections/${id}/test`, {});
+      expect(res.json()).toMatchObject({ ok: true, hooks: null });
+    });
+
+    it('F7: a mapped repository the identity no longer sees is skipped', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/api', id, api);
+      const project = await h.project('hooks/gone');
+      await h.ctx.db
+        .update(projects)
+        .set({ scmConnectionId: id, scmProjectRef: 'aaaaaaaa-0000-4000-8000-000000000001' })
+        .where(eq(projects.id, project.id));
+      expect(outcomes(await subscribe(id))).toEqual([
+        { projectId: api.projectId, comment: 'created', updated: 'created' },
+      ]);
+      expect(await hooksOf(id)).toEqual([{ projectId: api.projectId, state: 'enabled' }]);
+    });
   });
 });

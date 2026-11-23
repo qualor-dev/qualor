@@ -504,6 +504,8 @@ export interface HookTestInput {
   repositoryRefs: readonly string[];
   /** Null without `QUALOR_PUBLIC_URL`: nothing can be Qualor's own, every project is `missing`. */
   url: string | null;
+  /** Whether Azure DevOps holds the stored password (`hooksCurrent` of the DTO); false reads `stale`. */
+  current: boolean;
 }
 
 /**
@@ -516,7 +518,7 @@ export async function testAzureConnection(
   row: ScmConnectionRow,
   deps: ScmDeps,
   projectRef: string | null,
-  hookInput: HookTestInput = { repositoryRefs: [], url: null },
+  hookInput: HookTestInput = { repositoryRefs: [], url: null, current: false },
 ): Promise<ConnectionTest> {
   const failed = (code: TestProblemCode, message: string): ConnectionTest => ({
     ok: false,
@@ -581,7 +583,10 @@ async function hookStates(
   if (input.url === null) return projectIds.map((projectId) => ({ projectId, state: 'missing' }));
   try {
     const own = ownSubscriptions(await client.subscriptions(), input.url);
-    return projectIds.map((projectId) => ({ projectId, state: projectHookState(own, projectId) }));
+    return projectIds.map((projectId) => ({
+      projectId,
+      state: projectHookState(own, projectId, input.current),
+    }));
   } catch (err) {
     if (err instanceof ScmError) return null;
     throw err;

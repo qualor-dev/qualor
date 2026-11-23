@@ -1716,6 +1716,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         certificate: null,
         webhookSecretSet: false,
         webhookUrl: null,
+        webhookSecretReadable: false,
+        hooksCurrent: false,
       },
       ciSetup: { available: false, reason: 'not_allowed', missing: [] },
       fixMrsAllowed: false,
@@ -1736,6 +1738,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: null,
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     const certificate = await created(SP_CERTIFICATE);
     expect(certificate.azure).toEqual({
@@ -1747,6 +1751,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: certificateOf(TEST_IDP.certPem),
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
     expect([onServer.baseUrl, onServer.azure]).toEqual([
@@ -1997,6 +2003,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: certificateOf(TEST_IDP.certPem),
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     expect(await storedCredential(id)).toBe(CERTIFICATE);
     expect((await patch(id, { certificate: CERTIFICATE })).statusCode).toBe(200);
@@ -2011,6 +2019,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: null,
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     expect(await rowOf(id)).toMatchObject({
       azureAuth: 'pat',
@@ -2065,6 +2075,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: certificateOf(TEST_IDP.certPem),
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     expect(await storedCredential(id)).toBe(CERTIFICATE);
     expect((await test(id)).json()).toMatchObject({
@@ -2086,6 +2098,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: null,
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     expect(await storedCredential(id)).toBe(SECRET);
     expect((await test(id)).json()).toMatchObject({ ok: true });
@@ -2127,6 +2141,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       certificate: { ...certificateOf(expiredCertificate), notAfter: '2001-01-01T00:00:00.000Z' },
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     });
     services.clearRequests();
     expect((await test(id)).json()).toEqual({

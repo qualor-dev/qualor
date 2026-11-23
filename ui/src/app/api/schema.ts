@@ -11312,6 +11312,8 @@ export interface paths {
                                     } | null;
                                     webhookSecretSet: boolean;
                                     webhookUrl: string | null;
+                                    webhookSecretReadable: boolean;
+                                    hooksCurrent: boolean;
                                 } | null;
                                 ciSetup: {
                                     available: boolean;
@@ -11482,6 +11484,8 @@ export interface paths {
                                 } | null;
                                 webhookSecretSet: boolean;
                                 webhookUrl: string | null;
+                                webhookSecretReadable: boolean;
+                                hooksCurrent: boolean;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11704,6 +11708,8 @@ export interface paths {
                                 } | null;
                                 webhookSecretSet: boolean;
                                 webhookUrl: string | null;
+                                webhookSecretReadable: boolean;
+                                hooksCurrent: boolean;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11879,7 +11885,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Azure DevOps: create Qualor's two service hook subscriptions in each Azure project that holds a mapped repository, or rewrite them when their version, status or password differ. 409 `PUBLIC_URL_NOT_HTTPS` unless QUALOR_PUBLIC_URL is an https address */
+        /** Azure DevOps: create Qualor's two service hook subscriptions in each Azure project that holds a mapped repository, or rewrite them when their version, status or password differ. 409 `PUBLIC_URL_NOT_HTTPS` unless QUALOR_PUBLIC_URL is an https address; 502 when Azure DevOps fails part-way (what was written stays, and is audited) */
         post: {
             parameters: {
                 query?: never;
@@ -11953,6 +11959,15 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
+                /** @description Error */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -12016,11 +12031,11 @@ export interface paths {
                                 repositories: number;
                                 projects: number;
                             } | null;
-                            /** @description Azure DevOps: the state of Qualor's service hook subscriptions in each Azure project that holds a mapped repository (`missing`: Qualor does not have both of its subscriptions there; `disabled`: Azure DevOps or a person switched one off). Null for GitLab and GitHub, and when the test failed or the subscriptions could not be read. */
+                            /** @description Azure DevOps: the state of Qualor's service hook subscriptions in each Azure project that holds a mapped repository (`missing`: Qualor does not have both of its subscriptions there; `disabled`: Azure DevOps or a person switched one off; `stale`: subscribed, but Azure DevOps may hold another password than Qualor's, so deliveries are refused until the hooks are written again). Null for GitLab and GitHub, and when the test failed or the subscriptions could not be read. */
                             hooks: {
                                 projectId: string;
                                 /** @enum {string} */
-                                state: "enabled" | "onProbation" | "disabled" | "missing";
+                                state: "enabled" | "onProbation" | "disabled" | "stale" | "missing";
                             }[] | null;
                         };
                     };

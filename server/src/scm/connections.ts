@@ -147,7 +147,9 @@ export interface ConnectionTest {
    * a mapped repository. Absent (null in the API) for GitLab and GitHub, and when the test failed
    * or the subscriptions could not be read.
    */
-  hooks?: { projectId: string; state: 'enabled' | 'onProbation' | 'disabled' | 'missing' }[] | null;
+  hooks?:
+    | { projectId: string; state: 'enabled' | 'onProbation' | 'disabled' | 'stale' | 'missing' }[]
+    | null;
 }
 
 function problemCode(err: GitLabError): TestProblemCode {

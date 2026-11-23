@@ -368,6 +368,8 @@ describe('RepositoriesPage with Azure DevOps', () => {
       certificate: null,
       webhookSecretSet: false,
       webhookUrl: null,
+      webhookSecretReadable: false,
+      hooksCurrent: false,
     },
   };
 

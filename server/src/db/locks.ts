@@ -153,4 +153,10 @@ export const LOCKS = {
    * lock (`FOR NO KEY UPDATE`); the delete job never takes it.
    */
   organizationDeletes: 7_310_040,
+  /**
+   * `pg_advisory_xact_lock(key, hashtext(connectionId))`: one subscribe or password rotation of an
+   * Azure DevOps connection's service hooks at a time (sub-plan 5, task 7). Held across the calls to
+   * Azure DevOps, so a double click never makes two passwords or duplicate subscriptions.
+   */
+  azureHooks: 7_310_041,
 } as const;

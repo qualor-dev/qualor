@@ -949,7 +949,8 @@ export class AzureDevOpsClient {
         'PUT',
         `/_apis/hooks/subscriptions/${id.toLowerCase()}`,
         subscriptionAnswer,
-        { ...this.#subscriptionBody(input), id: id.toLowerCase() },
+        // `status` is sent: a PUT without it is not recorded to enable the subscription again.
+        { ...this.#subscriptionBody(input), id: id.toLowerCase(), status: 'enabled' },
         AZURE_API_VERSION,
         'base',
         [input.password],
