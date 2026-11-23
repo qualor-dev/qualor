@@ -175,6 +175,7 @@ export function buildRedactionTable(env: Record<string, string | undefined>): Re
     hosts: withCases([
       ...hostsOf(env['AZURE_PROBE_SERVER_URL']),
       ...hostsOf(env['AZURE_PROBE_HOOK_BASE']),
+      ...hostsOf(env['AZURE_PROBE_QUALOR_URL']),
       ...servicesHosts,
     ]),
     orgs: withCases(orgs),

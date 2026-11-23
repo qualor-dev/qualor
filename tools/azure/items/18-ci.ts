@@ -34,7 +34,7 @@ import {
   type Repo,
 } from './common.js';
 
-/** The image the bench builds from the branch (`ship-scanner.ps1`); it exists on the bench host only. */
+/** The images the bench builds from the branch (`ship-images.ps1`); they exist on the bench host only. */
 export const BENCH_IMAGE_TAG = 'azure-dev';
 /** Nothing is uploaded: the report goes into the checkout, where the next step reads it. */
 export const DRY_RUN = '--dry-run --output /src/.qualor/report.json';
@@ -42,7 +42,7 @@ export const DRY_RUN = '--dry-run --output /src/.qualor/report.json';
 const EXTENSION = { publisher: 'qualor', id: 'qualor-dev' } as const;
 /** The Qualor@0 task's id (task.json), the same in the dev variant. */
 const QUALOR_TASK_ID = '86f47d06-36e4-4f79-9432-3ae5770d5288';
-const EXAMPLES = new URL('../../../integrations/azure-devops/', import.meta.url);
+export const EXAMPLES = new URL('../../../integrations/azure-devops/', import.meta.url);
 
 export type Form = 'docker' | 'task';
 const PATHS: Record<Form, string> = {
@@ -54,7 +54,7 @@ const PATHS: Record<Form, string> = {
  * The step both forms end with: the report's `scm` block on one line. The report is gzipped
  * whatever its name says. Backticks, not `$(...)`: Azure DevOps would read that as a macro.
  */
-const PRINT_SCM = [
+export const PRINT_SCM = [
   '  - script: |',
   '      set -euo pipefail',
   '      report="$(Build.SourcesDirectory)/.qualor/report.json"',
@@ -63,20 +63,25 @@ const PRINT_SCM = [
   '    condition: succeededOrFailed()',
 ].join('\n');
 
-type Swap = [RegExp, (match: string, ...groups: string[]) => string];
+export type Swap = [RegExp, (match: string, ...groups: string[]) => string];
 
 /** `text` with every swap applied once; throws when the example no longer has what a swap expects. */
-function swapped(name: string, text: string, swaps: Swap[]): string {
+export function swapped(
+  name: string,
+  text: string,
+  swaps: Swap[],
+  tail: string | null = PRINT_SCM,
+): string {
   let out = text.replace(/\r\n/g, '\n');
   for (const [re, to] of swaps) {
     if (!re.test(out)) throw new Error(`${name} no longer matches ${String(re)}`);
     out = out.replace(re, to);
   }
-  return `${out.trimEnd()}\n\n${PRINT_SCM}\n`;
+  return tail === null ? `${out.trimEnd()}\n` : `${out.trimEnd()}\n\n${tail}\n`;
 }
 
 /** The bench's own pool and no CI trigger (only the Build validation policy queues builds). */
-const BENCH_SWAPS: Swap[] = [
+export const BENCH_SWAPS: Swap[] = [
   [/^trigger:\n(?: {2}.*\n)+/m, () => 'trigger: none\n'],
   [/^pool:\n {2}vmImage: ubuntu-latest\n/m, () => 'pool:\n  name: Default\n'],
 ];
@@ -110,7 +115,7 @@ export function benchTaskYaml(example: string): string {
   ]);
 }
 
-const example = (file: string): string =>
+export const example = (file: string): string =>
   readFileSync(fileURLToPath(new URL(file, EXAMPLES)), 'utf8');
 
 /** The report's `scm` block, as far as item 18 reads it. */
@@ -132,7 +137,7 @@ const ScmSchema = z.object({
 });
 type Scm = z.infer<typeof ScmSchema>;
 
-const branchName = (ref: string): string => ref.replace(/^refs\/heads\//, '');
+export const branchName = (ref: string): string => ref.replace(/^refs\/heads\//, '');
 
 /** Each assertion of the brief as `[what, expected, got]`. */
 export function scmChecks(
@@ -153,7 +158,9 @@ export function scmChecks(
 }
 
 /** Whether the target's collection or organisation has the dev extension installed. */
-async function extensionInstalled(ctx: ProbeContext): Promise<{ installed: boolean; why: string }> {
+export async function extensionInstalled(
+  ctx: ProbeContext,
+): Promise<{ installed: boolean; why: string }> {
   const client = ctx.admin ?? ctx.bot;
   const res = await client.request(
     'GET',
@@ -209,7 +216,7 @@ async function extensionInstalled(ctx: ProbeContext): Promise<{ installed: boole
  * clean-up takes the authorizations back; a check after clean-up compares the queue's permissions
  * with the first reading, the probe's definitions left out.
  */
-async function authorizeDefinitions(
+export async function authorizeDefinitions(
   ctx: ProbeContext,
   queueId: number,
   ids: number[],
@@ -268,7 +275,7 @@ async function authorizeDefinitions(
 }
 
 /** The build the policy queued for definition `definitionId` (item 17's wait). */
-async function policyBuild(ctx: ProbeContext, definitionId: number) {
+export async function policyBuild(ctx: ProbeContext, definitionId: number) {
   return waitFor(
     async () => {
       const res = ok(
@@ -284,7 +291,14 @@ async function policyBuild(ctx: ProbeContext, definitionId: number) {
   );
 }
 
-type Run = { form: Form; definitionId: number; policyId: number };
+/** One pipeline of the item; `label` names it in texts and recordings (default: its form), `scanStep` is the step whose result counts. */
+export type Run = {
+  form: Form;
+  label?: string;
+  scanStep?: string;
+  definitionId: number;
+  policyId: number;
+};
 
 const TimelineSchema = z.object({
   records: z.array(
@@ -371,11 +385,13 @@ function validationErrors(json: unknown): string[] {
 }
 
 /** One form's build: waits for it, records it, and checks the printed `scm` block. */
-async function checkForm(
+export async function checkForm(
   ctx: ProbeContext,
   run: Run,
   want: { pr: Pr; target: string; source: string; repo: Repo },
 ): Promise<{ pass: boolean; text: string }> {
+  const tag = run.label ?? run.form;
+  const stepName = run.scanStep ?? SCAN_STEP;
   let queued = await policyBuild(ctx, run.definitionId);
   let how = 'queued by the Build validation policy';
   if (!queued) {
@@ -395,31 +411,31 @@ async function checkForm(
     }
   }
   if (!queued)
-    return { pass: false, text: `${run.form} form: no build was queued for the pull request` };
+    return { pass: false, text: `${tag} form: no build was queued for the pull request` };
   // Both forms share the target's one agent: the second waits for the first.
   const done = await waitBuild(ctx, queued.id, { timeoutMs: 30 * 60_000 });
   if (done.build.status !== 'completed') {
     return {
       pass: false,
-      text: `${run.form} form: build ${queued.id} did not complete within 30 minutes (${how})`,
+      text: `${tag} form: build ${queued.id} did not complete within 30 minutes (${how})`,
     };
   }
   const invalid = validationErrors(done.res.json);
   if (invalid.length > 0) {
     return {
       pass: false,
-      text: `${run.form} form: build ${queued.id} has no logs: its YAML did not compile (${invalid.join('; ')})`,
+      text: `${tag} form: build ${queued.id} has no logs: its YAML did not compile (${invalid.join('; ')})`,
     };
   }
   // The logs first: reading them adds the agent's name to the redaction table.
   const logs = await buildLogs(ctx, queued.id);
-  await ctx.record(`build-${run.form}`, answerOf(done.res));
+  await ctx.record(`build-${tag}`, answerOf(done.res));
   let line: string | undefined;
   for (const [logId, lines] of logs) {
     const found = printedValues(lines, ['QUALOR_SCM'])['QUALOR_SCM'];
     if (found !== undefined) {
       line = found;
-      await ctx.record(`build-log-${run.form}`, {
+      await ctx.record(`build-log-${tag}`, {
         logId,
         lines: keptLogLines(lines, ['QUALOR_SCM']),
       });
@@ -428,21 +444,21 @@ async function checkForm(
   }
   const records = await timeline(ctx, queued.id);
   const scanStep =
-    records.find((r) => r.type === 'Task' && r.name === SCAN_STEP)?.result ?? 'not run';
+    records.find((r) => r.type === 'Task' && r.name === stepName)?.result ?? 'not run';
   const why = done.build.result === 'succeeded' ? '' : ` (${failedSteps(records, logs)})`;
-  const status = `build ${queued.id} (${how}): result ${done.build.result ?? 'none'}${why}, step "${SCAN_STEP}" ${scanStep}, reason ${done.build.reason ?? '?'}, sourceBranch ${done.build.sourceBranch ?? '?'}`;
+  const status = `build ${queued.id} (${how}): result ${done.build.result ?? 'none'}${why}, step "${stepName}" ${scanStep}, reason ${done.build.reason ?? '?'}, sourceBranch ${done.build.sourceBranch ?? '?'}`;
   if (line === undefined)
-    return { pass: false, text: `${run.form} form: ${status}; no QUALOR_SCM line printed` };
+    return { pass: false, text: `${tag} form: ${status}; no QUALOR_SCM line printed` };
   let scm: Scm;
   try {
     scm = shape(ScmSchema, JSON.parse(line), 'report scm');
   } catch (err) {
     return {
       pass: false,
-      text: `${run.form} form: ${status}; the scm line is not the expected JSON (${(err as Error).message})`,
+      text: `${tag} form: ${status}; the scm line is not the expected JSON (${(err as Error).message})`,
     };
   }
-  await ctx.record(`scm-${run.form}`, scm);
+  await ctx.record(`scm-${tag}`, scm);
   const head = want.pr.lastMergeSourceCommit?.commitId ?? '?';
   const checks = scmChecks(scm, {
     prId: want.pr.pullRequestId,
@@ -459,7 +475,7 @@ async function checkForm(
   // The item asks about the scan and its report: another failed step is named in the text only.
   return {
     pass: failed.length === 0 && scanStep === 'succeeded',
-    text: `${run.form} form: ${status}; ${failed.length === 0 ? 'every scm field as expected' : `${failed.length} scm field(s) differ`}: ${lines.join('; ')}`,
+    text: `${tag} form: ${status}; ${failed.length === 0 ? 'every scm field as expected' : `${failed.length} scm field(s) differ`}: ${lines.join('; ')}`,
   };
 }
 
