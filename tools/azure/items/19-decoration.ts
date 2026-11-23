@@ -17,6 +17,7 @@ import {
   createPr,
   defaultQueueId,
   evaluations,
+  getPr,
   gitPath,
   ok,
   prWithMerge,
@@ -283,8 +284,12 @@ async function pushEdit(
   return push.commits[push.commits.length - 1]?.commitId ?? '';
 }
 
-/** The newest build of a definition that is not `except`. */
-async function newBuild(ctx: ProbeContext, definitionId: number, except: number | undefined) {
+/**
+ * The build of a definition whose `sourceVersion` is one of `commits` (the pull request's merge commit
+ * and the source commit, lower case; item 18 reads the same field). `commits` empty: any build, the newest.
+ * A re-queue of an older iteration is another commit and never matches.
+ */
+async function buildAt(ctx: ProbeContext, definitionId: number, commits: string[]) {
   return waitFor(
     async () => {
       const res = ok(
@@ -295,7 +300,9 @@ async function newBuild(ctx: ProbeContext, definitionId: number, except: number 
         'builds',
       );
       const list = shape(z.object({ value: z.array(BuildSchema) }), res.json, 'builds').value;
-      return list.find((b) => b.id !== except);
+      return commits.length === 0
+        ? list[0]
+        : list.find((b) => commits.includes((b.sourceVersion ?? '').toLowerCase()));
     },
     { timeoutMs: 180_000, intervalMs: 5000 },
   );
@@ -571,7 +578,7 @@ export const item: ProbeItem = {
       `pull request ${prId}: build, then Qualor's decoration (up to ${DECORATION_WAIT_MS / 60000} min)`,
     );
 
-    const build1 = await newBuild(ctx, defMain.id, undefined);
+    const build1 = await buildAt(ctx, defMain.id, []);
     if (!build1) {
       checks.push(check('first build queued', false, 'none within 3 minutes'));
       return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
@@ -668,9 +675,26 @@ export const item: ProbeItem = {
         `// Qualor probe item 19 (${ctx.stamp})\n${FIXED_TEXT}`,
       )
     ).toLowerCase();
-    const build2 = await newBuild(ctx, defMain.id, build1.id);
+    // The merge commit Azure makes for the fix commit: wait until the pull request has it, then take the build of
+    // exactly that commit (or of the fix commit itself), never another build of the pull request.
+    const merged2 = await waitFor(
+      async () => {
+        const got = await getPr(ctx, prId);
+        return got.pr.lastMergeSourceCommit?.commitId.toLowerCase() === fixCommit &&
+          got.pr.lastMergeCommit
+          ? got
+          : undefined;
+      },
+      { timeoutMs: 180_000, intervalMs: 3000 },
+    );
+    const build2 = await buildAt(ctx, defMain.id, [
+      fixCommit,
+      ...(merged2?.pr.lastMergeCommit ? [merged2.pr.lastMergeCommit.commitId.toLowerCase()] : []),
+    ]);
     if (!build2) {
-      checks.push(check('second build queued by the push', false, 'none within 3 minutes'));
+      checks.push(
+        check('a build of the fixing commit queued by the push', false, 'none within 3 minutes'),
+      );
       return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
     }
     const done2 = await waitBuild(ctx, build2.id, { timeoutMs: 30 * 60_000 });
