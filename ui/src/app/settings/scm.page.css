@@ -106,3 +106,15 @@
 .ci-setup .req {
   margin-top: 8px;
 }
+.service-hooks {
+  display: grid;
+  gap: 8px;
+}
+.service-hooks .subhead {
+  margin: 0;
+}
+.hook-states,
+.hook-outcomes {
+  margin: 0;
+  padding-left: 1.2rem;
+}

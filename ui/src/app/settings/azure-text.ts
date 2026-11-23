@@ -103,6 +103,54 @@ export function azureTestText(result: TestResult, expiredOn: string | null = nul
   return $localize`:@@azure.testOk:Connected as ${name}:user:.`;
 }
 
+export type HookState = NonNullable<TestResult['hooks']>[number]['state'];
+export type HookOutcome = 'created' | 'replaced' | 'unchanged' | 'refused';
+
+/** The state of Qualor's subscriptions in one Azure DevOps project, in the UI's own words. */
+export function azureHookStateText(state: HookState): string {
+  switch (state) {
+    case 'enabled':
+      return $localize`:@@azure.hooks.state.enabled:Active`;
+    case 'onProbation':
+      return $localize`:@@azure.hooks.state.onProbation:On probation: Azure DevOps is retrying failed deliveries`;
+    case 'disabled':
+      return $localize`:@@azure.hooks.state.disabled:Switched off in Azure DevOps`;
+    case 'stale':
+      return $localize`:@@azure.hooks.state.stale:Older password`;
+    case 'missing':
+      return $localize`:@@azure.hooks.state.missing:Not subscribed`;
+  }
+}
+
+/** What writing the subscriptions did in one project: one word for each of the two. */
+export function azureHookOutcomeText(comment: HookOutcome, updated: HookOutcome): string {
+  const word = (outcome: HookOutcome): string => {
+    switch (outcome) {
+      case 'created':
+        return $localize`:@@azure.hooks.outcome.created:created`;
+      case 'replaced':
+        return $localize`:@@azure.hooks.outcome.replaced:replaced`;
+      case 'unchanged':
+        return $localize`:@@azure.hooks.outcome.unchanged:unchanged`;
+      case 'refused':
+        return $localize`:@@azure.hooks.outcome.refused:refused`;
+    }
+  };
+  const first = word(comment);
+  const second = word(updated);
+  return $localize`:@@azure.hooks.outcome:Comments: ${first}:comment:, pull request updates: ${second}:updated:`;
+}
+
+/** The 409 of the subscribe route, and the reason its button is disabled. */
+export function azureHooksNeedHttps(): string {
+  return $localize`:@@azure.hooks.needHttps:Azure DevOps sends service hooks with a password only to an https address. Set QUALOR_PUBLIC_URL to one; until then Qualor reads replies every 15 minutes.`;
+}
+
+/** The 502 of the subscribe route: Azure DevOps failed part-way. */
+export function azureHooksPartial(): string {
+  return $localize`:@@azure.hooks.partial:Azure DevOps could not be reached or refused a request. Some subscriptions may already be written: test the connection to see each project's state, then try again.`;
+}
+
 /** "1 repository", "12 repositories", "1 project", "3 projects". */
 function countText(count: number, noun: 'repository' | 'project'): string {
   if (noun === 'repository') {

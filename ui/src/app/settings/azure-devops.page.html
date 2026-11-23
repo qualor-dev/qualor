@@ -361,6 +361,129 @@
                 </p>
               }
             }
+            <div class="service-hooks">
+              <h4 class="subhead" i18n="@@azure.hooks.title">Service hooks</h4>
+              @if (hookErrors()[c.id]; as message) {
+                <p class="alert alert-error" role="alert">{{ message }}</p>
+              }
+              @if (az.webhookSecretSet && !az.webhookSecretReadable) {
+                <p class="alert alert-error" i18n="@@azure.hooks.unreadable">
+                  The stored password can no longer be read (the server key changed). Show a new
+                  password, then create or update Qualor's subscriptions.
+                </p>
+              } @else if (az.webhookSecretSet && !az.hooksCurrent) {
+                <p class="req">
+                  <q-icon name="alert" />
+                  <span i18n="@@azure.hooks.mayBeOlder"
+                    >Azure DevOps may hold an older password: create or update Qualor's
+                    subscriptions.</span
+                  >
+                </p>
+              }
+              @if (hookOutcomes()[c.id]; as projects) {
+                @if (projects.length === 0) {
+                  <p class="muted" i18n="@@azure.hooks.noProjects">
+                    No Azure DevOps project holds a mapped repository yet. Map one under
+                    Repositories.
+                  </p>
+                } @else {
+                  <ul class="hook-outcomes">
+                    @for (p of projects; track p.projectId) {
+                      <li>
+                        <code>{{ p.projectId }}</code
+                        >: {{ hookOutcomeText(p.comment, p.updated) }}
+                      </li>
+                    }
+                  </ul>
+                }
+              } @else if (hookStates()[c.id]; as states) {
+                @if (states.length === 0) {
+                  <p class="muted" i18n="@@azure.hooks.noProjects">
+                    No Azure DevOps project holds a mapped repository yet. Map one under
+                    Repositories.
+                  </p>
+                } @else {
+                  <ul class="hook-states">
+                    @for (s of states; track s.projectId) {
+                      <li>
+                        <code>{{ s.projectId }}</code
+                        >: {{ hookStateText(s.state) }}
+                      </li>
+                    }
+                  </ul>
+                }
+              } @else {
+                <p class="muted" i18n="@@azure.hooks.untested">
+                  Test the connection to see the hooks of each project.
+                </p>
+              }
+              @if (hookSecrets()[c.id]; as secret) {
+                <div class="webhook-address">
+                  @if (secret.url; as hookUrl) {
+                    <q-copy-value
+                      [fieldId]="'hook-url-' + c.id"
+                      label="URL"
+                      i18n-label="@@azure.hooks.url"
+                      [value]="hookUrl"
+                    />
+                  }
+                  <q-copy-value
+                    [fieldId]="'hook-user-' + c.id"
+                    label="User"
+                    i18n-label="@@azure.hooks.user"
+                    [value]="secret.user"
+                  />
+                  <q-copy-value
+                    [fieldId]="'hook-password-' + c.id"
+                    label="Password"
+                    i18n-label="@@azure.hooks.password"
+                    [value]="secret.password"
+                  />
+                  <p class="hint" i18n="@@azure.hooks.once">
+                    Copy it now: Qualor shows it only once.
+                  </p>
+                  <p class="hint" i18n="@@azure.hooks.thenSubscribe">
+                    Azure DevOps keeps the old password until you create or update Qualor's
+                    subscriptions.
+                  </p>
+                  <button
+                    type="button"
+                    class="btn"
+                    (click)="forgetHookPassword(c)"
+                    i18n="@@azure.hooks.done"
+                  >
+                    Done
+                  </button>
+                </div>
+              }
+              @if (canManage()) {
+                <div class="setting-actions">
+                  <button
+                    type="button"
+                    class="btn"
+                    [disabled]="hooksBlocked(c)"
+                    [attr.aria-describedby]="hooksBlocked(c) ? 'hooks-reason-' + c.id : null"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    (click)="subscribeHooks(c)"
+                    i18n="@@azure.hooks.subscribe"
+                  >
+                    Create or update Qualor's subscriptions
+                  </button>
+                  <button
+                    type="button"
+                    class="btn"
+                    [attr.aria-disabled]="busy() ? true : null"
+                    (click)="newHookPassword(c)"
+                    i18n="@@azure.hooks.newPassword"
+                  >
+                    Show a new password
+                  </button>
+                </div>
+                @if (hooksBlocked(c)) {
+                  <p class="hint" [id]="'hooks-reason-' + c.id">{{ hooksNeedHttps() }}</p>
+                }
+              }
+            </div>
           }
           @if (results()[c.id]; as result) {
             <p class="prose-text connection-result">{{ result }}</p>

@@ -13,19 +13,33 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, done, ok } from '../api/api';
-import { fieldErrors, problemMessage } from '../api/errors';
+import { ApiError, fieldErrors, problemMessage } from '../api/errors';
+import type { ResponseBody } from '../api/types';
 import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
-import { azureBackgroundProblemText, azureCertificateExpiredOn, azureTestText } from './azure-text';
+import {
+  azureBackgroundProblemText,
+  azureCertificateExpiredOn,
+  azureHookOutcomeText,
+  azureHookStateText,
+  azureHooksNeedHttps,
+  azureHooksPartial,
+  azureTestText,
+} from './azure-text';
+import { CopyValue } from './copy-value';
 import type { Connection } from './gitlab.page';
 
 type AuthKind = 'pat' | 'service_principal_secret' | 'service_principal_certificate';
 type Field = 'url' | 'kind' | 'tenant' | 'client' | 'credential';
 type Errors = Partial<Record<Field, string>>;
+type HookStates = NonNullable<ResponseBody<'/api/v0/scm-connections/{id}/test', 'post'>['hooks']>;
+type HookProjects = ResponseBody<'/api/v0/scm-connections/{id}/azure-hooks', 'post'>['projects'];
+/** The new hook password as the server shows it, once. */
+type HookSecret = ResponseBody<'/api/v0/scm-connections/{id}/azure-hooks/secret', 'post'>;
 
 /** The certificate and key of a service principal: a PEM of at most 16 KiB, as the server takes. */
 const PEM_MAX_BYTES = 16 * 1024;
@@ -75,7 +89,7 @@ function normalBaseUrl(raw: string): string | null {
 /** Azure DevOps, for org admins: its connections, a test of each, and their credentials. */
 @Component({
   selector: 'q-azure-devops-page',
-  imports: [DateTimePipe, Icon, NgTemplateOutlet, RouterLink],
+  imports: [CopyValue, DateTimePipe, Icon, NgTemplateOutlet, RouterLink],
   templateUrl: './azure-devops.page.html',
   styleUrl: './scm.page.css',
 })
@@ -106,6 +120,15 @@ export class AzureDevOpsPage {
   protected readonly busy = signal(false);
   protected readonly results = signal<Record<string, string>>({});
   protected readonly outcomes = signal<Record<string, 'ok' | 'failed'>>({});
+  /** The hook states each connection's last Test read, and what its last subscribe did. */
+  protected readonly hookStates = signal<Record<string, HookStates>>({});
+  protected readonly hookOutcomes = signal<Record<string, HookProjects>>({});
+  protected readonly hookErrors = signal<Record<string, string>>({});
+  /** A new hook password: held only until "Done", never stored or logged. */
+  protected readonly hookSecrets = signal<Record<string, HookSecret>>({});
+  protected readonly hookStateText = azureHookStateText;
+  protected readonly hookOutcomeText = azureHookOutcomeText;
+  protected readonly hooksNeedHttps = azureHooksNeedHttps;
   /** A refused addition other than its fields, shown in the dialog that is still open. */
   protected readonly createError = signal<string | null>(null);
   protected readonly pendingDelete = signal<{ connection: Connection; question: string } | null>(
@@ -156,6 +179,10 @@ export class AzureDevOpsPage {
         this.createError.set(null);
         this.results.set({});
         this.outcomes.set({});
+        this.hookStates.set({});
+        this.hookOutcomes.set({});
+        this.hookErrors.set({});
+        this.hookSecrets.set({});
         this.rowErrors.set({});
         this.rowKinds.set({});
         this.rowUrls.set({});
@@ -389,6 +416,9 @@ export class AzureDevOpsPage {
       if (generation !== this.orgGeneration) return;
       const text = azureTestText(result, azureCertificateExpiredOn(connection, this.locale));
       this.results.update((all) => ({ ...all, [connection.id]: text }));
+      this.hookStates.update((all) =>
+        result.hooks ? { ...all, [connection.id]: result.hooks } : without(all, connection.id),
+      );
       const passed = result.ok && !!result.user;
       // A passing test clears the background problem the server recorded.
       if (result.ok) {
@@ -401,6 +431,69 @@ export class AzureDevOpsPage {
       if (passed) this.announcement.set(text);
       else this.error.set(text);
     });
+  }
+
+  /**
+   * Whether Qualor knows the public address is not https: only then is subscribing refused up
+   * front. Without a password the address is not shown either, so the server (409) decides.
+   */
+  protected hooksBlocked(c: Connection): boolean {
+    const az = c.azure;
+    return !!az && az.webhookSecretSet && !(az.webhookUrl ?? '').startsWith('https://');
+  }
+
+  /** "Create or update Qualor's subscriptions" in each project that holds a mapped repository. */
+  protected async subscribeHooks(connection: Connection): Promise<void> {
+    if (this.busy() || this.hooksBlocked(connection)) return;
+    const generation = this.orgGeneration;
+    this.hookErrors.update((all) => without(all, connection.id));
+    await this.run(
+      async () => {
+        const answer = await ok(
+          this.api.client.POST('/api/v0/scm-connections/{id}/azure-hooks', {
+            params: { path: { id: connection.id } },
+          }),
+        );
+        if (generation !== this.orgGeneration) return;
+        this.hookOutcomes.update((all) => ({ ...all, [connection.id]: answer.projects }));
+        this.hookStates.update((all) => without(all, connection.id));
+        this.hookSecrets.update((all) => without(all, connection.id));
+        await this.connections.refresh();
+      },
+      (err) => {
+        const text = hooksProblemText(err);
+        if (text === null) return false;
+        this.hookErrors.update((all) => ({ ...all, [connection.id]: text }));
+        // A failure part-way may have written subscriptions and a password.
+        if (err instanceof ApiError && err.status === 502) {
+          this.hookStates.update((all) => without(all, connection.id));
+          void this.connections.refresh();
+        }
+        return true;
+      },
+    );
+  }
+
+  /** "Show a new password": the server makes one and shows it only in this answer. */
+  protected async newHookPassword(connection: Connection): Promise<void> {
+    if (this.busy()) return;
+    const generation = this.orgGeneration;
+    this.hookErrors.update((all) => without(all, connection.id));
+    await this.run(async () => {
+      const secret = await ok(
+        this.api.client.POST('/api/v0/scm-connections/{id}/azure-hooks/secret', {
+          params: { path: { id: connection.id } },
+        }),
+      );
+      if (generation !== this.orgGeneration) return;
+      this.hookSecrets.update((all) => ({ ...all, [connection.id]: secret }));
+      this.hookOutcomes.update((all) => without(all, connection.id));
+      await this.connections.refresh();
+    });
+  }
+
+  protected forgetHookPassword(connection: Connection): void {
+    this.hookSecrets.update((all) => without(all, connection.id));
   }
 
   protected remove(connection: Connection): void {
@@ -482,6 +575,14 @@ export class AzureDevOpsPage {
       this.busy.set(false);
     }
   }
+}
+
+/** The subscribe route's refusals in the UI's own words; null for any other problem. */
+function hooksProblemText(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  if (err.code === 'PUBLIC_URL_NOT_HTTPS') return azureHooksNeedHttps();
+  if (err.status === 502) return azureHooksPartial();
+  return null;
 }
 
 function without<T>(all: Record<string, T>, id: string): Record<string, T> {

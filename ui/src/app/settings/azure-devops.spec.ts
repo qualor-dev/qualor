@@ -11,6 +11,7 @@ import {
   settle,
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
+import { OrgContext } from '../org/org-context';
 import { AzureDevOpsPage } from './azure-devops.page';
 import {
   azureBackgroundProblemText,
@@ -655,5 +656,183 @@ describe('AzureDevOpsPage', () => {
     expect(server.requestsTo('DELETE', '/api/v0/scm-connections/a1')).toHaveLength(1);
     expect(root.textContent).toContain('No Azure DevOps connection yet.');
     confirm.mockRestore();
+  });
+});
+
+describe('AzureDevOpsPage service hooks', () => {
+  const HTTPS_URL = 'https://qualor.example.com/api/v0/scm-connections/a1/azure-webhook';
+  const SUBSCRIBE = "Create or update Qualor's subscriptions";
+  const WITH_SECRET: Connection = {
+    ...PAT,
+    azure: {
+      ...PAT.azure!,
+      webhookSecretSet: true,
+      webhookSecretReadable: true,
+      hooksCurrent: true,
+      webhookUrl: HTTPS_URL,
+    },
+  };
+  const TEST_OK = {
+    ok: true,
+    user: { username: 'Qualor Bot' },
+    project: null,
+    problem: null,
+    missingAccess: null,
+    visible: { repositories: 2, projects: 2 },
+  };
+  const hooks = (root: HTMLElement) =>
+    root.querySelector<HTMLElement>('section[data-key="a1"] .service-hooks')!;
+  const text = (el: Element) => (el.textContent ?? '').replace(/\s+/g, ' ');
+  const PASSWORD = ['hook-pass-', 'word-value'].join('');
+
+  it('shows the hook state of each project after a Test, the stale one as an older password', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: {
+        ...TEST_OK,
+        hooks: [
+          { projectId: 'proj-api', state: 'enabled' },
+          { projectId: 'proj-docs', state: 'stale' },
+          { projectId: 'proj-web', state: 'onProbation' },
+          { projectId: 'proj-old', state: 'disabled' },
+          { projectId: 'proj-new', state: 'missing' },
+        ],
+      },
+    }));
+    const { fixture, root } = await render();
+    expect(text(hooks(root))).toContain('Service hooks');
+    expect(text(hooks(root))).toContain('Test the connection to see');
+    button(root, 'Test').click();
+    await settle(fixture);
+    const rows = [...hooks(root).querySelectorAll('li')].map((li) => text(li));
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toContain('proj-api');
+    expect(rows[0]).toContain('Active');
+    expect(rows[1]).toContain('proj-docs');
+    expect(rows[1]).toContain('Older password');
+    expect(rows[2]).toContain('On probation');
+    expect(rows[3]).toContain('Switched off');
+    expect(rows[4]).toContain('Not subscribed');
+  });
+
+  it('creates or updates the subscriptions and lists what happened in each project', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () => ({
+      body: {
+        projects: [
+          { projectId: 'proj-api', comment: 'created', updated: 'replaced' },
+          { projectId: 'proj-docs', comment: 'unchanged', updated: 'refused' },
+        ],
+      },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    expect(server.requestsTo('POST', '/api/v0/scm-connections/a1/azure-hooks')).toHaveLength(1);
+    const rows = [...hooks(root).querySelectorAll('.hook-outcomes li')].map((li) => text(li));
+    expect(rows[0]).toContain('proj-api');
+    expect(rows[0]).toContain('Comments: created');
+    expect(rows[0]).toContain('pull request updates: replaced');
+    expect(rows[1]).toContain('Comments: unchanged');
+    expect(rows[1]).toContain('pull request updates: refused');
+  });
+
+  it('shows a new password once, with the address and the user, and forgets it on Done', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
+      body: { url: HTTPS_URL, user: 'qualor', password: PASSWORD },
+    }));
+    const { fixture, root } = await render();
+    expect(root.textContent).not.toContain(PASSWORD);
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    const url = root.querySelector<HTMLInputElement>('#hook-url-a1')!;
+    const user = root.querySelector<HTMLInputElement>('#hook-user-a1')!;
+    const password = root.querySelector<HTMLInputElement>('#hook-password-a1')!;
+    expect([url.value, user.value, password.value]).toEqual([HTTPS_URL, 'qualor', PASSWORD]);
+    expect(url.readOnly && user.readOnly && password.readOnly).toBe(true);
+    expect(text(hooks(root))).toContain('Copy it now: Qualor shows it only once.');
+    button(hooks(root), 'Done').click();
+    await settle(fixture);
+    expect(root.querySelector('#hook-password-a1')).toBeNull();
+    expect(root.textContent).not.toContain(PASSWORD);
+  });
+
+  it('disables the button without an https public URL and says why', async () => {
+    const reason =
+      'Azure DevOps sends service hooks with a password only to an https address. Set QUALOR_PUBLIC_URL to one; until then Qualor reads replies every 15 minutes.';
+    for (const webhookUrl of ['http://qualor.example.com/x', null]) {
+      TestBed.resetTestingModule();
+      const server = setup([{ ...WITH_SECRET, azure: { ...WITH_SECRET.azure!, webhookUrl } }]);
+      const { fixture, root } = await render();
+      const subscribe = button(hooks(root), SUBSCRIBE);
+      expect(subscribe.disabled).toBe(true);
+      expect(text(hooks(root))).toContain(reason);
+      subscribe.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', '/api/v0/scm-connections/a1/azure-hooks')).toHaveLength(0);
+    }
+  });
+
+  it('says the same when the server answers 409 PUBLIC_URL_NOT_HTTPS', async () => {
+    const server = setup([PAT]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () => ({
+      status: 409,
+      body: problem(409, 'PUBLIC_URL_NOT_HTTPS'),
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    expect(text(root.querySelector('p[role="alert"]')!)).toContain(
+      'Set QUALOR_PUBLIC_URL to one; until then Qualor reads replies every 15 minutes.',
+    );
+  });
+
+  it('on a 502 says some subscriptions may be written already, in its own words', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () => ({
+      status: 502,
+      body: { ...problem(502, 'SCM_UNAVAILABLE'), detail: 'raw Azure answer' },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    const alert = text(root.querySelector('p[role="alert"]')!);
+    expect(alert).toContain('Some subscriptions may already be written');
+    expect(alert).not.toContain('raw Azure answer');
+  });
+
+  it('warns that Azure DevOps may hold an older password, and about an unreadable one', async () => {
+    setup([
+      { ...WITH_SECRET, azure: { ...WITH_SECRET.azure!, hooksCurrent: false } },
+      {
+        ...WITH_SECRET,
+        id: 'a3',
+        azure: { ...WITH_SECRET.azure!, webhookSecretReadable: false, hooksCurrent: false },
+      },
+      { ...WITH_SECRET, id: 'a4' },
+    ]);
+    const { root } = await render();
+    const blocks = [...root.querySelectorAll('.service-hooks')].map((el) => text(el));
+    expect(blocks[0]).toContain(
+      "Azure DevOps may hold an older password: create or update Qualor's subscriptions.",
+    );
+    expect(blocks[1]).toContain('The stored password can no longer be read');
+    expect(blocks[1]).not.toContain('may hold an older password');
+    expect(blocks[2]).not.toContain('older password');
+  });
+
+  it('shows a reader the states but no buttons', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: { ...TEST_OK, hooks: [{ projectId: 'proj-api', state: 'stale' }] },
+    }));
+    vi.spyOn(TestBed.inject(OrgContext), 'canChange').mockReturnValue(false);
+    const { fixture, root } = await render();
+    button(root, 'Test').click();
+    await settle(fixture);
+    expect(text(hooks(root))).toContain('Older password');
+    expect(button(hooks(root), SUBSCRIBE)).toBeUndefined();
+    expect(button(hooks(root), 'Show a new password')).toBeUndefined();
   });
 });
