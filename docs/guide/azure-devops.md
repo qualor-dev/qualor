@@ -252,18 +252,13 @@ A passing **Test**, or the next decoration that succeeds, clears the problem.
 [AI review](./ai-review.md) works on Azure DevOps pull requests. It needs the connection, the
 repository mapping and a pipeline that uploads the scan.
 
-- AI threads appear on added lines, at most 20 a pull request, the most severe first. The pipeline
-  need not check out the pull request's head. A thread is posted while the pull request is still at
-  the reviewed commit.
-- A thread carries an **Apply** suggestion only when the fix replaces one line. Other fixes are
-  written in words.
-- Qualor reads replies in its open threads. A thread is open while it is **Active** or **Pending**.
-- A reply changes a finding's status only when each author has **Contribute** on the repository.
-- A comment that opens a new thread and starts with `qualor review` asks for a review. Without
-  **Contribute**, the answer is "Only project members can ask for an AI review."
-- `qualor fix` and `qualor stop` answer "Auto-fix is not switched on for this project."
+- AI threads are posted whatever the pipeline checked out.
+- A thread carries an **Apply** suggestion only when the fix replaces one line.
+- Qualor reads replies in its open threads: **Active** or **Pending**.
+- A command is the first comment of a new thread, and Qualor answers in that thread.
 
-[AI review](./ai-review.md#replies-and-commands) lists the rules for replies and commands.
+[AI review](./ai-review.md#replies-and-commands) has the rest, including
+[who may change a status](./ai-review.md#who-may-change-a-status).
 
 To look up who wrote a comment, Qualor asks the Azure DevOps identities host, from the server only.
 Allow it in a firewall: `vssps.dev.azure.com` for `https://dev.azure.com/<organization>`, and
@@ -285,8 +280,8 @@ Press **Create or update Qualor's subscriptions**. Qualor makes two subscription
 DevOps project that holds a mapped repository. The identity needs **Edit subscriptions** in that
 project, which Project Administrators have by default.
 
-Azure DevOps no longer lists a personal access token scope for service hooks. Use a
-[service principal](#a-service-principal) for this button, or subscribe by hand.
+A personal access token may not be allowed to create subscriptions. If the button is refused, use a
+[service principal](#a-service-principal) or subscribe by hand.
 
 ### Subscribe by hand
 

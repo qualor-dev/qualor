@@ -73,8 +73,8 @@ The Status then says **On**, how many projects are reviewed, and who confirmed t
 for which provider and models. The **Reviewed?** column of each chosen project says:
 
 - **Yes**: it is reviewed;
-- **Not linked**: the project has no GitLab, GitHub or Azure DevOps repository, so it is not reviewed or counted.
-  Link it in **Settings → Repositories**;
+- **Not linked**: the project has no GitLab, GitHub or Azure DevOps repository, so it is not
+  reviewed or counted. Link it in **Settings → Repositories**;
 - **Excluded**: an instance admin excluded it from AI, so it is never reviewed, whatever you choose.
 
 A project's **AI** panel (**Project → Settings → AI**) shows whether AI review runs for it and, if
@@ -332,8 +332,8 @@ the summary's count of new issues.
 ### Threads
 
 A high or medium finding gets a thread on its line in the diff: a discussion on GitLab, a review
-comment on GitHub, a thread on Azure DevOps. A low finding gets one only with a suggested change that applies. The thread's
-first comment has:
+comment on GitHub, a thread on Azure DevOps. A low finding gets one only with a suggested change that
+applies. The thread's first comment has:
 
 - a header with the severity, the category, _likely_ or _possible_, and the rule key;
 - the title in bold, then what is wrong, why it matters and how to fix it;
@@ -348,8 +348,8 @@ that push's review posts its own. Threads are never deleted.
 
 The threads need no extra GitLab scope or GitHub App permission. On Azure DevOps they need the
 identity's **Contribute to pull requests**, as the
-[analyzers' threads](./azure-devops.md#the-identitys-permissions) do. Only answering `qualor review` at
-once on GitHub needs the App's Issues: Read-only permission
+[analyzers' threads](./azure-devops.md#the-identitys-permissions) do. Only answering
+`qualor review` at once on GitHub needs the App's Issues: Read-only permission
 ([GitHub](./github.md#turn-on-the-webhook-recommended)). **On GitHub, Qualor resolves or reopens a
 thread only when the App has Contents: Read and write**
 ([What reviewers see](./github.md#what-reviewers-see)). That holds wherever this page says Qualor
@@ -518,7 +518,7 @@ answers is not answered.
 gets the answer above.
 
 - **Who may ask:** the members who may change a status (GitLab: Developer or more; GitHub: triage
-  or more; Azure DevOps: Contribute). A refusal is still posted.
+  or more; Azure DevOps: [Contribute](#who-may-change-a-status)). A refusal is still posted.
 - **What it starts:** a review of the newest analysis, if none has run for it or the last one ended
   without a result: skipped for any reason but "unchanged", failed, or replaced. The summary says
   "AI review in progress…" at once.
