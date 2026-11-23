@@ -5,14 +5,14 @@ import { isInside } from './binary';
 /**
  * Variable names stripped from every analyzer's child process environment, on top of the
  * generic secret-suffix rule reused from `qualor.yml` interpolation (`isSecretVarName`).
- * `QUALOR_TOKEN_FILE` does not end in one of that rule's suffixes, so it needs listing here.
+ * `QUALOR_TOKEN_FILE` and `QUALOR_TOKEN_FD` do not end in one of that rule's suffixes, so they need listing here.
  */
-const EXTRA_STRIPPED = new Set(['QUALOR_TOKEN', 'QUALOR_TOKEN_FILE']);
+const EXTRA_STRIPPED = new Set(['QUALOR_TOKEN', 'QUALOR_TOKEN_FILE', 'QUALOR_TOKEN_FD']);
 
 /**
  * Fix-round finding 3: analyzers run repo-controlled code (ESLint plugins, PMD rulesets, Semgrep
  * rules), so the server token must never be visible to their process environment. Strips
- * `QUALOR_TOKEN`, `QUALOR_TOKEN_FILE`, and any other `QUALOR_`-prefixed variable that looks like a
+ * `QUALOR_TOKEN`, `QUALOR_TOKEN_FILE`, `QUALOR_TOKEN_FD`, and any other `QUALOR_`-prefixed variable that looks like a
  * secret by the same name rule `qualor.yml` interpolation uses; every other variable (`PATH`,
  * `HOME`, etc.) passes through unchanged.
  *

@@ -104,7 +104,7 @@ describe('image definitions (plan 1G)', () => {
     }
     const text = readFileSync(file, 'utf8');
     expect([...text.matchAll(/^USER (\S+)$/gm)].at(-1)?.[1]).toBe('node');
-    expect(text).toMatch(/^ENTRYPOINT \["qualor"\]$/m);
+    expect(text).toMatch(/^ENTRYPOINT \["\/usr\/local\/bin\/qualor-entrypoint"\]$/m);
     expect(text).toContain('sh /tmp/install.sh');
     expect(text).toContain('sh /tmp/install-qualor-rules.sh');
     expect(text).toContain('install -d /opt/qualor/rules/semgrep');

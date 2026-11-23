@@ -366,7 +366,7 @@ function githubContext(
  */
 export async function azureHead(git: Git, ci: CiInfo): Promise<CiInfo> {
   const mergeCommit = ci.azure?.mergeCommit;
-  if (ci.provider !== 'azure' || ci.mergeRequest === null) return ci;
+  if (ci.provider !== 'azure' || ci.mergeRequest === null) return ci; // provider-guard: the merge commit is Azure Pipelines' own
   if (ci.pullRequestHead !== null || mergeCommit === undefined) return ci;
   const r = await git(['rev-parse', '--verify', '--quiet', `${mergeCommit}^2^{commit}`]);
   const head = r.stdout.trim();
@@ -388,7 +388,7 @@ export function azureContext(
   isPullRequest: boolean,
   headSha: string,
 ): { azure?: NonNullable<Report['scm']['azure']> } {
-  if (ci.provider !== 'azure' || ci.azure === null) return {};
+  if (ci.provider !== 'azure' || ci.azure === null) return {}; // provider-guard: scm.azure exists only for Azure Pipelines
   const { projectId, repositoryId, buildId } = ci.azure; // not mergeCommit: it stays in the CLI
   const azure: NonNullable<Report['scm']['azure']> = {
     ...(projectId === undefined ? {} : { projectId }),

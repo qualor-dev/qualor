@@ -130,6 +130,9 @@ docker run --rm -v "$PWD":/src -w /src \
   qualor/scanner:0.16 scan
 ```
 
+Started through the image's entrypoint, the scanner keeps `QUALOR_TOKEN` out of the environment of the analyzers it runs.
+Repository code that runs in the same CI job outside the scanner (build steps) can read the job's variables: give the job a project token, not an organisation token.
+
 Without a server, `--dry-run --output report.json.gz` writes the report to a file and uploads
 nothing:
 

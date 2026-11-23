@@ -168,6 +168,8 @@ COPY --from=jre /opt/java/openjdk /opt/java/openjdk
 COPY --from=tools /opt/qualor /opt/qualor
 COPY --from=cli /qualor /usr/local/bin/qualor
 COPY deploy/scanner/NOTICE.md /opt/qualor/NOTICE.md
+# Keeps QUALOR_TOKEN out of the environment of the analyzers (see the script).
+COPY --chmod=0755 deploy/scanner/qualor-entrypoint.sh /usr/local/bin/qualor-entrypoint
 # The index of the corresponding source published as qualor/scanner-sources:<same tag>.
 COPY deploy/scanner/SOURCES.md /opt/qualor/SOURCES.md
 COPY deploy/scanner/licenses/ /opt/qualor/licenses/
@@ -185,5 +187,5 @@ ENV JAVA_HOME=/opt/java/openjdk \
 ENV GOTOOLCHAIN=local
 USER node
 WORKDIR /src
-ENTRYPOINT ["qualor"]
+ENTRYPOINT ["/usr/local/bin/qualor-entrypoint"]
 CMD ["scan"]

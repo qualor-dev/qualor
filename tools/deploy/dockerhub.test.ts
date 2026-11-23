@@ -59,7 +59,7 @@ describe('the Docker Hub descriptions', () => {
       expect(text, tool).toContain(version);
     }
     const dockerfile = readFileSync('deploy/scanner/Dockerfile', 'utf8');
-    expect(dockerfile).toContain('ENTRYPOINT ["qualor"]');
+    expect(dockerfile).toContain('ENTRYPOINT ["/usr/local/bin/qualor-entrypoint"]');
     expect(dockerfile).toMatch(/^USER node$/m);
     expect(text).toContain('entrypoint `qualor`');
     expect(text).toContain('`node` (uid 1000)');

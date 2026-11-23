@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, readFileSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { ConfigError, interpolateEnv, parseConfig, type QualorConfig } from '@qualor/shared';
 import { parse as parseYaml } from 'yaml';
@@ -105,8 +105,46 @@ function rejectToken(raw: Record<string, unknown>, file: string): void {
   }
 }
 
+/**
+ * The token from the descriptor `QUALOR_TOKEN_FD` names (the scanner image's entrypoint opens
+ * it on a here-document), trimmed. Reads at most 64 KiB and always closes the descriptor, so no
+ * analyzer or package manager started later inherits it.
+ */
+function readTokenFd(raw: string): string {
+  if (!/^\d+$/.test(raw) || Number(raw) < 3 || !Number.isSafeInteger(Number(raw))) {
+    throw new CliError(EXIT.USAGE, 'QUALOR_TOKEN_FD must be a descriptor number of 3 or more');
+  }
+  const fd = Number(raw);
+  const buffer = Buffer.alloc(MAX_TOKEN_FILE_BYTES + 1);
+  let length = 0;
+  try {
+    for (;;) {
+      const n = readSync(fd, buffer, length, buffer.length - length, null);
+      if (n === 0) break;
+      length += n;
+      if (length > MAX_TOKEN_FILE_BYTES) throw new Error('larger than 64 KiB');
+    }
+  } catch (err) {
+    throw new CliError(EXIT.USAGE, `QUALOR_TOKEN_FD ${fd} could not be read: ${message(err)}`);
+  } finally {
+    try {
+      closeSync(fd);
+    } catch {
+      // not open: the read above has already reported it
+    }
+  }
+  const token = buffer.toString('utf8', 0, length).trim();
+  if (token === '') throw new CliError(EXIT.USAGE, `QUALOR_TOKEN_FD ${fd} is empty`);
+  return token;
+}
+
+/** `--token-file`, else `QUALOR_TOKEN_FD`, else `QUALOR_TOKEN`. */
 function readToken(flags: ConfigFlags, env: Env, cwd: string): string | null {
-  if (flags.tokenFile === undefined) return nonEmpty(env['QUALOR_TOKEN'])?.trim() ?? null;
+  if (flags.tokenFile === undefined) {
+    const fd = env['QUALOR_TOKEN_FD'];
+    if (fd !== undefined) return readTokenFd(fd);
+    return nonEmpty(env['QUALOR_TOKEN'])?.trim() ?? null;
+  }
   const file = path.resolve(cwd, flags.tokenFile);
   let text: string;
   try {

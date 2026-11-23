@@ -1,3 +1,4 @@
+import { closeSync, fstatSync, openSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { useTempDirs, writeTree } from '../../test/tmp';
@@ -305,6 +306,76 @@ describe('loadSettings', () => {
       );
       expect(err.exitCode).toBe(2);
     }
+  });
+
+  describe('QUALOR_TOKEN_FD', () => {
+    const settingsWith = (root: string, env: Record<string, string>, tokenFile?: string) =>
+      loadSettings({
+        cwd: root,
+        env,
+        flags: tokenFile === undefined ? {} : { tokenFile },
+        log: silentLogger,
+      });
+    const isOpen = (fd: number): boolean => {
+      try {
+        fstatSync(fd);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    it('reads the token (trimmed) from the descriptor, ignores QUALOR_TOKEN and closes it', () => {
+      const root = tmp();
+      writeTree(root, { 'token.txt': '  qlr_from_fd\n' });
+      const fd = openSync(path.join(root, 'token.txt'), 'r');
+      const s = settingsWith(root, { QUALOR_TOKEN_FD: String(fd), QUALOR_TOKEN: 'qlr_from_env' });
+      expect(s.token).toBe('qlr_from_fd');
+      expect(isOpen(fd)).toBe(false);
+    });
+
+    it('--token-file wins over the descriptor, which is then left alone', () => {
+      const root = tmp();
+      writeTree(root, { 'token.txt': 'qlr_from_file\n', 'fd.txt': 'qlr_from_fd\n' });
+      const fd = openSync(path.join(root, 'fd.txt'), 'r');
+      try {
+        const s = settingsWith(root, { QUALOR_TOKEN_FD: String(fd) }, 'token.txt');
+        expect(s.token).toBe('qlr_from_file');
+      } finally {
+        closeSync(fd);
+      }
+    });
+
+    it('an empty descriptor is exit 2 and is closed too', () => {
+      const root = tmp();
+      writeTree(root, { 'empty.txt': '\n' });
+      const fd = openSync(path.join(root, 'empty.txt'), 'r');
+      const err = failure(() => settingsWith(root, { QUALOR_TOKEN_FD: String(fd) }));
+      expect(err.exitCode).toBe(2);
+      expect(err.message).toBe(`QUALOR_TOKEN_FD ${fd} is empty`);
+      expect(isOpen(fd)).toBe(false);
+    });
+
+    it('a descriptor that is not open, or holds more than 64 KiB, is exit 2', () => {
+      const root = tmp();
+      writeTree(root, { 'big.txt': 'x'.repeat(64 * 1024 + 1) });
+      const big = openSync(path.join(root, 'big.txt'), 'r');
+      const bigErr = failure(() => settingsWith(root, { QUALOR_TOKEN_FD: String(big) }));
+      expect(bigErr.exitCode).toBe(2);
+      expect(bigErr.message).toContain(`QUALOR_TOKEN_FD ${big} could not be read`);
+      const err = failure(() => settingsWith(root, { QUALOR_TOKEN_FD: '987654' }));
+      expect(err.exitCode).toBe(2);
+      expect(err.message).toContain('QUALOR_TOKEN_FD 987654 could not be read');
+    });
+
+    it.each(['abc', '', '3x', '2', '0', '-1', '1.5'])(
+      '%j is not a descriptor number: exit 2',
+      (v) => {
+        const err = failure(() => settingsWith(tmp(), { QUALOR_TOKEN_FD: v }));
+        expect(err.exitCode).toBe(2);
+        expect(err.message).toContain('QUALOR_TOKEN_FD must be a descriptor number of 3 or more');
+      },
+    );
   });
 
   it('appends --sarif and --coverage to the file lists, and --no-wait turns off gate.wait', () => {

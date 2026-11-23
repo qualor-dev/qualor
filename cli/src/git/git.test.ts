@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GIT_TEST_ENV, gitSync, initRepo } from '../../test/git';
 import { useTempDirs, writeTree } from '../../test/tmp';
 import { CliError } from '../errors';
-import { createGit, gitText, scrubCredentials } from './git';
+import { createGit, GIT_OPTIONS, gitText, scrubCredentials } from './git';
 
 const tmp = useTempDirs();
 
@@ -65,6 +65,30 @@ describe('createGit: timeouts', () => {
     expect(Date.now() - start).toBeLessThan(30_000);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('timed out after 150ms');
+  });
+});
+
+describe('createGit: repository configuration that runs programs', () => {
+  it('turns fsmonitor and hooks off after the other options', () => {
+    expect(GIT_OPTIONS.slice(-4)).toEqual([
+      '-c',
+      'core.fsmonitor=false',
+      '-c',
+      'core.hooksPath=/dev/null',
+    ]);
+  });
+
+  it('does not run a core.fsmonitor command planted in the repository', async () => {
+    const root = tmp();
+    initRepo(root);
+    const dir = root.replaceAll('\\', '/');
+    writeTree(root, { 'a.txt': 'a\n', 'hook.sh': `#!/bin/sh\necho ran > '${dir}/ran.txt'\n` });
+    chmodSync(path.join(root, 'hook.sh'), 0o755);
+    gitSync(root, 'config', 'core.fsmonitor', `sh ${dir}/hook.sh`);
+    const git = createGit(root, GIT_TEST_ENV);
+    const r = await git(['status', '--porcelain']);
+    expect(r.code).toBe(0);
+    expect(existsSync(path.join(root, 'ran.txt'))).toBe(false);
   });
 });
 

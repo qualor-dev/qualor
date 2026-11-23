@@ -11,6 +11,7 @@ describe('sanitizeAnalyzerEnv', () => {
       HOME: '/home/qualor',
       QUALOR_TOKEN: 'super-secret',
       QUALOR_TOKEN_FILE: '/etc/qualor/token',
+      QUALOR_TOKEN_FD: '3',
       QUALOR_URL: 'https://qualor.example.com',
       QUALOR_PROJECT_KEY: 'my-project',
       QUALOR_SERVER_API_KEY: 'also-secret',
