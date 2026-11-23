@@ -6,6 +6,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A new Qualor icon: a ring that reads as Q, with a dot set into it. It replaces the magnifier in
+  the browser tab, the header, the sign-in page and the email header.
+
 ## [0.16.0] - 2026-11-19
 
 ### Added
