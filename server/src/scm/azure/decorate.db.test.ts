@@ -9,7 +9,7 @@ import {
 import { createIngestHarness, type IngestHarness } from '../../../test/ingest';
 import { engine, file, finding, reportWith } from '../../../test/reports';
 import { decorationDeps, PUBLIC_URL, runDecorations } from '../../../test/scm';
-import { analyses, branches, projects, reviewSnapshots } from '../../db/schema';
+import { analyses, branches, jobs, projects, reviewSnapshots } from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
 import { markerOf, summaryMarker } from '../markdown';
 import { statusName } from '../render';
@@ -138,6 +138,7 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
       .where(and(eq(branches.projectId, s.project.id), eq(branches.kind, 'merge_request')));
     expect(iterationStatus(s.repository.id, 1)).toEqual([
       {
+        id: expect.any(Number),
         iterationId: 1,
         state: 'succeeded',
         description: 'Quality gate passed',
@@ -161,6 +162,33 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     expect(outcome.kind).toBe('done');
     expect(writesOf()).toEqual([]);
     expect(summaries(s.repository.id)).toHaveLength(1);
+  });
+
+  it('a newer status wins over an older one whatever the list’s order, so a failed gate is posted', async () => {
+    const s = await setup('az/order');
+    const name = statusName(s.project.key);
+    const base = { iterationId: 1, description: 'old', targetUrl: null, genre: 'qualor', name };
+    // Seeded out of order: the highest id (the newest) is a succeeded status.
+    s.iteration.statuses.push(
+      { ...base, id: 20, state: 'succeeded' },
+      { ...base, id: 10, state: 'failed', description: 'Quality gate failed: new_issues 1 > 0' },
+    );
+    await s.ingest({ findings: 1 });
+    await decorate();
+    expect(writesOf().filter((w) => w.includes('/statuses'))).toHaveLength(1);
+    const newest = iterationStatus(s.repository.id, 1).reduce((a, b) =>
+      (b.id ?? 0) > (a.id ?? 0) ? b : a,
+    );
+    expect(newest).toMatchObject({
+      state: 'failed',
+      description: 'Quality gate failed: new_issues 1 > 0',
+    });
+    expect(newest.id).toBeGreaterThan(20);
+    // Decorated again: the newest already says it, nothing is posted.
+    fake.clearRequests();
+    await s.ingest({ findings: 1 });
+    await decorate();
+    expect(writesOf().filter((w) => w.includes('/statuses'))).toEqual([]);
   });
 
   it('posts failed for a failed gate', async () => {
@@ -282,6 +310,24 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     expect(own).toHaveLength(1);
     expect(foreign.comments[0]?.content).toContain('someone else');
     expect(writesOf().some((w) => w.includes(`/threads/${foreign.id}`))).toBe(false);
+  });
+
+  it('fails retryably when a refused status is followed by a transient summary failure', async () => {
+    const s = await setup('az/two-failures');
+    fake.inject('POST', /\/statuses$/, { status: 403, body: {} });
+    fake.inject('POST', /\/threads$/, { status: 503, body: {} });
+    const analysisId = await s.ingest();
+    fake.clearRequests();
+    const outcome = await decorateAnalysis(decorationDeps(h), {
+      analysisId,
+      attempt: 0,
+      gitlab: null,
+      azure: { repositoryId: s.repository.id, checkout: 'head' },
+    });
+    // The job its ingestion queued is not run here.
+    await h.ctx.db.delete(jobs);
+    expect(outcome).toMatchObject({ kind: 'failed', retry: true, error: { kind: 'transient' } });
+    expect(writesOf()).toHaveLength(2);
   });
 
   it('posts one commit status for a branch analysis', async () => {

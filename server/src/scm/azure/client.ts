@@ -270,6 +270,7 @@ const createdThread = z.looseObject({
 const statusList = z.looseObject({
   value: z.array(
     z.looseObject({
+      id: z.number().int(),
       iterationId: z.number().int().nullish(),
       state: z.string(),
       description: z.string().nullish(),
@@ -641,20 +642,24 @@ export class AzureDevOpsClient {
     });
   }
 
-  /** The statuses of Qualor's genre on an iteration. */
+  /**
+   * The statuses of Qualor's genre on an iteration, in the order Azure DevOps lists them (not to be
+   * relied on): each carries its `id`, and the highest id of a context is the newest status.
+   */
   async iterationStatuses(
     repositoryId: string,
     prId: number,
     iterationId: number,
-  ): Promise<AzureStatus[]> {
+  ): Promise<(AzureStatus & { id: number })[]> {
     const answer = await this.#get(
       `${this.#pullRequestPath(repositoryId, prId)}/iterations/${iterationId}/statuses`,
       statusList,
     );
-    const ours: AzureStatus[] = [];
+    const ours: (AzureStatus & { id: number })[] = [];
     for (const s of answer.value) {
       if (s.context.genre !== 'qualor' || !STATUS_STATES.includes(s.state)) continue;
       ours.push({
+        id: s.id,
         iterationId: s.iterationId ?? iterationId,
         state: s.state as AzureStatus['state'],
         description: s.description ?? '',

@@ -883,9 +883,12 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
         targetUrl: null,
       });
       expect(bodyOf(lastRequest())).not.toHaveProperty('targetUrl');
-      expect(await client.iterationStatuses(repo().id, pullRequest.id, 1)).toEqual([
-        { ...STATUS, state: 'failed', targetUrl: null },
-      ]);
+      // Both are kept, each with its id: the higher one is the newer status.
+      const listed = await client.iterationStatuses(repo().id, pullRequest.id, 1);
+      expect(listed.map((s) => s.state).sort()).toEqual(['failed', 'succeeded']);
+      const newest = listed.reduce((a, b) => (b.id > a.id ? b : a));
+      expect(newest).toEqual({ ...STATUS, id: newest.id, state: 'failed', targetUrl: null });
+      expect(listed.find((s) => s.id !== newest.id)?.id).toBeLessThan(newest.id);
       expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/iterations/1/statuses`);
     });
 

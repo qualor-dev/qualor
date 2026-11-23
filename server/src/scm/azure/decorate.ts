@@ -10,6 +10,7 @@ import {
   type Loaded,
   type SummaryData,
 } from '../decoration-data';
+import { attempt, Failures } from '../failures';
 import { markerOf } from '../markdown';
 import { ScmError } from '../provider';
 import type { DecorationPayload } from '../queue';
@@ -60,9 +61,6 @@ function reconcileThreads(input: AzureThreadsInput): Promise<Inline> {
   return Promise.resolve(NO_INLINE);
 }
 
-/** More requests now would only be refused too. */
-const stopsTheJob = (e: ScmError) => e.kind === 'budget' || e.kind === 'rate_limited';
-
 /** The newest iteration (the highest id) whose source commit is `revision`, or null. */
 function iterationOf(
   iterations: readonly AzureIteration[],
@@ -83,9 +81,13 @@ async function reconcilePullRequestStatus(
   prId: number,
   status: AzureStatus,
 ): Promise<void> {
+  // The newest status of this name is the one with the highest id: the list's order says nothing.
   const current = (await client.iterationStatuses(repositoryId, prId, status.iterationId))
     .filter((s) => s.name === status.name)
-    .at(-1);
+    .reduce<{ id: number; state: string; description: string } | null>(
+      (newest, s) => (newest === null || s.id > newest.id ? s : newest),
+      null,
+    );
   if (current?.state === status.state && current.description === status.description) return;
   await client.postPullRequestStatus(repositoryId, prId, status);
 }
@@ -166,9 +168,10 @@ function statusOf(deps: DecorationDeps, loaded: Loaded): Omit<AzureStatus, 'iter
 
 function finish(
   connectionId: string,
-  error: ScmError | null,
+  failures: Failures,
   failed: (error: ScmError) => DecorationOutcome,
 ): DecorationOutcome {
+  const error = failures.decisive();
   return error === null ? { kind: 'done', connectionId } : failed(error);
 }
 
@@ -213,64 +216,55 @@ export async function decorateAzure(
       await deleteBranchSnapshots(deps.db, branch.id);
       return { kind: 'done', connectionId: connection.id };
     }
+    const failures = new Failures();
     const iterations = await client.iterations(repositoryId, prId);
     const analysed = iterationOf(iterations, loaded.revision);
     const newest = iterations.reduce((n, i) => Math.max(n, i.id), 0);
-    let error: ScmError | null = null;
     if (analysed === null) {
       deps.logger?.info(
         { analysisId: analysis.id, connectionId: connection.id },
         'no iteration of the pull request has the analysed commit',
       );
     } else {
-      try {
-        await reconcilePullRequestStatus(client, repositoryId, prId, {
+      await attempt(failures, () =>
+        reconcilePullRequestStatus(client, repositoryId, prId, {
           ...statusOf(deps, loaded),
           iterationId: analysed.id,
-        });
-      } catch (err) {
-        if (!(err instanceof ScmError)) throw err;
-        if (stopsTheJob(err)) return failed(err);
-        error = err;
-      }
+        }),
+      );
+      if (failures.stop !== null) return failed(failures.stop);
     }
     // Only the pull request's latest analysis speaks for it: an older one leaves the threads and
     // the summary as they are.
-    if (branch.lastAnalysisId !== analysis.id) return finish(connection.id, error, failed);
+    if (branch.lastAnalysisId !== analysis.id) return finish(connection.id, failures, failed);
     let inline: Inline;
     if (payload.azure?.checkout !== 'head') {
       inline = { ...NO_INLINE, skipped: 'checkout_other' };
     } else if (analysed === null || analysed.id !== newest) {
       inline = { ...NO_INLINE, skipped: 'stale' };
     } else {
-      try {
-        inline = await reconcileThreads({
-          deps,
-          client,
-          loaded,
-          repositoryId,
-          prId,
-          pullRequest: pull,
-          analysed,
-          identityId: identity.id,
-        });
-      } catch (err) {
-        if (!(err instanceof ScmError)) throw err;
-        if (stopsTheJob(err)) return failed(err);
-        error ??= err;
-        inline = NOT_UPDATED;
-      }
+      inline =
+        (await attempt(failures, () =>
+          reconcileThreads({
+            deps,
+            client,
+            loaded,
+            repositoryId,
+            prId,
+            pullRequest: pull,
+            analysed,
+            identityId: identity.id,
+          }),
+        )) ?? NOT_UPDATED;
+      if (failures.stop !== null) return failed(failures.stop);
     }
     const data = await summaryData(deps.db, loaded, deps.publicUrl);
     const review = await loadReviewSummary(deps.db, analysis.id, deps.publicUrl);
     const body = summaryFor(deps, loaded, data, review, pull, inline);
-    try {
-      await reconcileSummary(client, repositoryId, prId, loaded, identity.id, body);
-    } catch (err) {
-      if (!(err instanceof ScmError)) throw err;
-      error ??= err;
-    }
-    return finish(connection.id, error, failed);
+    await attempt(failures, () =>
+      reconcileSummary(client, repositoryId, prId, loaded, identity.id, body),
+    );
+    return finish(connection.id, failures, failed);
   } catch (err) {
     if (err instanceof ScmError) return failed(err);
     throw err;

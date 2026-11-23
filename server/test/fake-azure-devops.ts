@@ -75,7 +75,8 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *   - `pullrequests/{id}/statuses` (POST): `7-pr-status-iteration`; without `iterationId` and with
  *     `statusPolicy: true` on the seeded pull request, the recorded 403 (`7-pr-status-no-iteration`).
  *   - `.../iterations/{n}/statuses` (GET): `{ count, value }` of the statuses posted on the
- *     iteration (a later one of the same genre and name replaces the earlier). Constructed.
+ *     iteration, newest first, each with its `id`: a POST adds a status with a higher id, and the newest
+ *     of a genre and name supersedes the older ones (the list keeps them). Constructed.
  *   - `commits/{sha}/statuses` (POST): `7-commit-status` (201).
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
@@ -177,6 +178,8 @@ export interface FakeAzureChange {
 }
 
 export interface FakeAzureStatus {
+  /** Assigned on a POST (rising); a test that seeds a status by hand may set it. */
+  id?: number;
   iterationId: number | null;
   state: string;
   description: string;
@@ -720,10 +723,8 @@ export async function createFakeAzureDevOps(options: {
     };
   };
 
-  const putStatus = (list: FakeAzureStatus[], status: FakeAzureStatus) => {
-    const same = list.findIndex((s) => s.genre === status.genre && s.name === status.name);
-    if (same >= 0) list[same] = status;
-    else list.push(status);
+  const putStatus = (list: FakeAzureStatus[], status: FakeAzureStatus, id: number) => {
+    list.push({ ...status, id });
   };
 
   const jsonBodyOf = (req: RecordedRequest): Record<string, unknown> | null => {
@@ -848,7 +849,9 @@ export async function createFakeAzureDevOps(options: {
         });
       }
       if (iterationRoute[2] === 'statuses' && method === 'GET') {
-        const value = iteration.statuses.map((s, i) => statusJson(s, i + 1));
+        const value = iteration.statuses
+          .map((s, i) => statusJson(s, s.id ?? i + 1))
+          .sort((a, b) => b.id - a.id);
         return answerJson(200, { count: value.length, value });
       }
     }
@@ -857,15 +860,16 @@ export async function createFakeAzureDevOps(options: {
       const body = jsonBodyOf(req);
       const status = body && statusOf(body);
       if (!status) return bad('a status needs a state and a context');
+      const listed = [pr.statuses, ...pr.iterations.map((i) => i.statuses)].flat();
+      statusCounter = Math.max(statusCounter, ...listed.map((x) => x.id ?? 0)) + 1;
       if (status.iterationId === null) {
         if (pr.statusPolicy) return refuse(recordedStatusPolicyRefusal);
-        putStatus(pr.statuses, status);
+        putStatus(pr.statuses, status, statusCounter);
       } else {
         const iteration = pr.iterations.find((i) => i.id === status.iterationId);
         if (!iteration) return bad(`the pull request has no iteration ${status.iterationId}`);
-        putStatus(iteration.statuses, status);
+        putStatus(iteration.statuses, status, statusCounter);
       }
-      statusCounter += 1;
       return answerJson(200, statusJson(status, statusCounter));
     }
 

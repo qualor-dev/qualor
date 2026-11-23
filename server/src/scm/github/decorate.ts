@@ -19,11 +19,12 @@ import {
   type Loaded,
   type SummaryData,
 } from '../decoration-data';
+import { attempt, Failures } from '../failures';
 import { markerOf } from '../markdown';
 import { ScmError } from '../provider';
 import type { DecorationPayload } from '../queue';
 import { statusName, summaryBody, type SummaryInput } from '../render';
-import { installationSlotKey, retryable } from '../runtime';
+import { installationSlotKey } from '../runtime';
 import {
   GITHUB_PR_NUMBER,
   GITHUB_TEXT,
@@ -121,41 +122,6 @@ const NO_PULL_REQUEST: PullRequestPart = {
   planned: null,
   replies: null,
 };
-
-/** More requests now would only be refused too (the retry waits for GitHub's Retry-After). */
-const stopsTheJob = (e: ScmError) => e.kind === 'budget' || e.kind === 'rate_limited';
-
-/**
- * The failures of a job's parts (github.md §5.2). A rate limit or the exhausted budget is the
- * job's stop: the job ends once the check run is written, or at once when it comes later. Any
- * other failure is kept and the job goes on; it then fails with a retryable one if there is one,
- * else with the first.
- */
-class Failures {
-  stop: ScmError | null = null;
-  private readonly kept: ScmError[] = [];
-
-  /** Records a failure of GitHub's; anything else (the database, a bug) is thrown on. */
-  add(err: unknown): void {
-    if (!(err instanceof ScmError)) throw err;
-    if (stopsTheJob(err)) this.stop ??= err;
-    else this.kept.push(err);
-  }
-
-  decisive(): ScmError | null {
-    return this.stop ?? this.kept.find(retryable) ?? this.kept[0] ?? null;
-  }
-}
-
-/** One part of the job: its failure is recorded, and null returned, so the others go on. */
-async function attempt<T>(failures: Failures, part: () => Promise<T>): Promise<T | null> {
-  try {
-    return await part();
-  } catch (err) {
-    failures.add(err);
-    return null;
-  }
-}
 
 /**
  * Ruling T3: why an open pull request's analyzer threads are left as they are, or null. The AI
