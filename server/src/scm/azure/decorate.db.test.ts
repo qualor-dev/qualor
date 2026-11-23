@@ -274,6 +274,28 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     expect(summaries(s.repository.id)[0]?.comments[0]?.content).toContain(STALE);
   });
 
+  it('an older analysis of the pull request posts its status only: the threads and summary are the latest’s', async () => {
+    const s = await setup('az/older');
+    const older = await s.ingest({ findings: 1 });
+    await s.ingest();
+    // The job its ingestion queued is not run here: only the older analysis is decorated.
+    await h.ctx.db.delete(jobs);
+    fake.clearRequests();
+    const outcome = await decorateAnalysis(decorationDeps(h), {
+      analysisId: older,
+      attempt: 0,
+      gitlab: null,
+      azure: { repositoryId: s.repository.id, checkout: 'head' },
+    });
+    expect(outcome).toMatchObject({ kind: 'done' });
+    expect(writesOf()).toEqual([expect.stringMatching(/^POST .*\/pullrequests\/7\/statuses$/)]);
+    expect(iterationStatus(s.repository.id, 1)).toEqual([
+      expect.objectContaining({ state: 'failed' }),
+    ]);
+    expect(requestsOf().some((r) => /\/threads/.test(r))).toBe(false);
+    expect(summaries(s.repository.id)).toEqual([]);
+  });
+
   it('says in the summary that the pipeline did not check out the head', async () => {
     const s = await setup('az/other');
     await s.ingest({ azure: { repositoryId: s.repository.id, checkout: 'other' } });

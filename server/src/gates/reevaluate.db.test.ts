@@ -428,10 +428,12 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
           secretKey: h.ctx.config.secretKey,
         });
         await mapToAzure(h.ctx.db, project.id, connection.id);
+        // The re-evaluation keeps what the pipeline checked out: the head, so threads may follow.
         const azure = {
           projectId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
           repositoryId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001',
           buildId: '77',
+          checkout: 'head' as const,
         };
         const report = withProvider(mainReport(project.key), 'azure');
         await project.ingestOk({ ...report, scm: { ...report.scm, azure } });
@@ -455,6 +457,9 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
         expect((await decorationsOf(analysis.id)).map((j) => j.payload)).toEqual([
           { analysisId: analysis.id, attempt: 0, gitlab: null, azure, reevaluation: true },
         ]);
+        expect(
+          (await decorationsOf(analysis.id)).map((j) => (j.payload as { azure?: unknown }).azure),
+        ).toEqual([expect.objectContaining({ checkout: 'head' })]);
         expect(warnings).toEqual([]);
         // An Azure context the report did not carry: fail closed, and say why.
         await h.ctx.db.delete(jobs).where(eq(jobs.queue, SCM_QUEUE));
