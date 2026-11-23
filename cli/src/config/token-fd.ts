@@ -49,6 +49,20 @@ function readDescriptor(raw: string): string {
 }
 
 /**
+ * Reads and closes the descriptor once, when the CLI starts and before any command runs, so no
+ * child process a command starts (an analyzer, the taint engine) ever inherits it, whatever fails
+ * first. The outcome is kept for {@link consumeTokenFd}: the command that reads the token gets it,
+ * or the descriptor's error then (a `--token-file` still wins over it), never here.
+ */
+export function consumeTokenFdAtStartUp(env: Env): void {
+  try {
+    consumeTokenFd(env);
+  } catch (err) {
+    if (!(err instanceof CliError)) throw err;
+  }
+}
+
+/**
  * The token from the descriptor `QUALOR_TOKEN_FD` names (the scanner image's entrypoint opens it
  * on a here-document), trimmed; null when the variable is unset or empty. Reads at most 64 KiB
  * and closes the descriptor, once per environment object, so no analyzer or package manager

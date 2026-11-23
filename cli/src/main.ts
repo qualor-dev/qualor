@@ -4,6 +4,7 @@ import { runImportSonarqube } from './commands/import-sonarqube';
 import { runUploadSbom } from './commands/upload-sbom';
 import { runValidate } from './commands/validate';
 import { runVersion } from './commands/version';
+import { consumeTokenFdAtStartUp } from './config/token-fd';
 import { runDotnetAbort } from './dotnet/abort';
 import { runDotnetBegin } from './dotnet/begin';
 import { runDotnetEnd } from './dotnet/end';
@@ -47,6 +48,8 @@ async function dispatch(argv: readonly string[], io: CliIO, log: Logger): Promis
 export async function main(argv: readonly string[], io: CliIO): Promise<ExitCode> {
   let log = createLogger('info', io.stderr);
   try {
+    // The scanner image hands the token over on a descriptor: closed before any command runs.
+    consumeTokenFdAtStartUp(io.env);
     log = createLogger(parseLogLevel(io.env['QUALOR_LOG_LEVEL']), io.stderr);
     return await dispatch(argv, io, log);
   } catch (err) {

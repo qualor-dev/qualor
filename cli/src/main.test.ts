@@ -1,3 +1,5 @@
+import { fstatSync, openSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { captureIO } from '../test/io';
 import { useTempDirs, writeTree } from '../test/tmp';
@@ -83,6 +85,54 @@ describe('main', () => {
     const c = captureIO({ cwd: root });
     expect(await main(['validate'], c.io)).toBe(2);
     expect(c.stderr()).toContain('version');
+  });
+
+  describe('QUALOR_TOKEN_FD at start-up (FW6)', () => {
+    const isOpen = (fd: number): boolean => {
+      try {
+        fstatSync(fd);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const descriptor = (root: string): number => {
+      writeTree(root, { '.token': 'qlr_prj_from_fd\n' });
+      return openSync(path.join(root, '.token'), 'r');
+    };
+
+    it('closes the descriptor before any command runs, even one that fails on its qualor.yml', async () => {
+      const root = tmp();
+      writeTree(root, { 'qualor.yml': 'version: 2\n' });
+      const fd = descriptor(root);
+      const c = captureIO({ cwd: root, env: { QUALOR_TOKEN_FD: String(fd) } });
+      expect(await main(['validate'], c.io)).toBe(2);
+      expect(c.stderr()).toContain('version');
+      expect(isOpen(fd)).toBe(false);
+    });
+
+    it('closes it for a command that reads no token, and keeps the token for one that does', async () => {
+      const root = tmp();
+      const fd = descriptor(root);
+      const env = { QUALOR_TOKEN_FD: String(fd) };
+      expect(await main(['version'], captureIO({ cwd: root, env }).io)).toBe(0);
+      expect(isOpen(fd)).toBe(false);
+      // The same process environment: a later read gets the token read at start-up.
+      writeTree(root, { 'qualor.yml': 'version: 1\nproject:\n  key: acme/app\n' });
+      const c = captureIO({ cwd: root, env });
+      expect(await main(['validate'], c.io)).toBe(0);
+      expect(c.stdout()).toContain('token: «redacted»');
+    });
+
+    it('a descriptor that cannot be read fails only a command that needs the token, with its own words', async () => {
+      const root = tmp();
+      writeTree(root, { 'qualor.yml': 'version: 1\nproject:\n  key: acme/app\n' });
+      const env = { QUALOR_TOKEN_FD: 'three' };
+      expect(await main(['version'], captureIO({ cwd: root, env }).io)).toBe(0);
+      const c = captureIO({ cwd: root, env });
+      expect(await main(['validate'], c.io)).toBe(2);
+      expect(c.stderr()).toContain('QUALOR_TOKEN_FD must be a descriptor number of 3 or more');
+    });
   });
 
   it('validate never leaks the token through a ${QUALOR_TOKEN} reference elsewhere in qualor.yml', async () => {
