@@ -4,8 +4,8 @@ Qualor connects to Azure DevOps Services (`dev.azure.com`) and Azure DevOps Serv
 An organisation administrator adds a connection, tests it and maps each Qualor project to a
 repository.
 
-Not yet available in this release: AI review, fix pull requests, CI setup, and Azure Boards. A
-connection and a mapping prepare them.
+Not yet available in this release: fix pull requests, CI setup, and Azure Boards. A connection and a
+mapping prepare them.
 
 ## Before you start
 
@@ -247,10 +247,83 @@ access token also **Code: Read & write**.
 
 A passing **Test**, or the next decoration that succeeds, clears the problem.
 
+## AI review, replies and commands
+
+[AI review](./ai-review.md) works on Azure DevOps pull requests. It needs the connection, the
+repository mapping and a pipeline that uploads the scan.
+
+- AI threads appear on added lines, at most 20 a pull request, the most severe first. The pipeline
+  need not check out the pull request's head. A thread is posted while the pull request is still at
+  the reviewed commit.
+- A thread carries an **Apply** suggestion only when the fix replaces one line. Other fixes are
+  written in words.
+- Qualor reads replies in its open threads. A thread is open while it is **Active** or **Pending**.
+- A reply changes a finding's status only when each author has **Contribute** on the repository.
+- A comment that opens a new thread and starts with `qualor review` asks for a review. Without
+  **Contribute**, the answer is "Only project members can ask for an AI review."
+- `qualor fix` and `qualor stop` answer "Auto-fix is not switched on for this project."
+
+[AI review](./ai-review.md#replies-and-commands) lists the rules for replies and commands.
+
+To look up who wrote a comment, Qualor asks the Azure DevOps identities host, from the server only.
+Allow it in a firewall: `vssps.dev.azure.com` for `https://dev.azure.com/<organization>`, and
+`<organization>.vssps.visualstudio.com` for `https://<organization>.visualstudio.com`. Azure DevOps
+Server needs no extra host.
+
+## Service hooks
+
+With service hooks, Azure DevOps tells Qualor at once that someone commented. Without them, Qualor
+reads replies and commands every 15 minutes. Open **Settings → Azure DevOps** and find **Service
+hooks** under the connection.
+
+Qualor needs `QUALOR_PUBLIC_URL` set to an `https` address. Azure DevOps sends the hooks' password
+only there.
+
+### Let Qualor subscribe
+
+Press **Create or update Qualor's subscriptions**. Qualor makes two subscriptions in each Azure
+DevOps project that holds a mapped repository. The identity needs **Edit subscriptions** in that
+project, which Project Administrators have by default.
+
+Azure DevOps no longer lists a personal access token scope for service hooks. Use a
+[service principal](#a-service-principal) for this button, or subscribe by hand.
+
+### Subscribe by hand
+
+1. Press **Show a new password**. Qualor shows the URL, the user `qualor` and the password once.
+2. In Azure DevOps, open **Project settings → Service hooks** and add a **Web Hooks** subscription
+   for **Pull request commented on** (`ms.vss-code.git-pullrequest-comment-event`).
+3. Add a second one for **Pull request updated** (`git.pullrequest.updated`).
+4. In both, enter the URL, choose basic authentication, and enter the user and the password.
+
+A new password replaces the old one. Azure DevOps keeps the old one until you subscribe again.
+
+### The states
+
+**Test** shows each project's state.
+
+| State | Meaning |
+|---|---|
+| Active | Both subscriptions work |
+| On probation | Azure DevOps is retrying failed deliveries and may skip events |
+| Switched off in Azure DevOps | A person or Azure DevOps disabled one |
+| Not subscribed | A subscription of Qualor's is missing |
+| Older password | Azure DevOps may hold another password than Qualor. Subscribe again |
+
+Probation and switched-off hooks also show as a problem on **Settings → Azure DevOps**. Replies are
+still read every 15 minutes. Press **Create or update Qualor's subscriptions** to fix them.
+
+### Change or delete a connection
+
+Changing the connection's address clears the password. Subscribe again afterwards.
+
+Deleting a connection leaves its subscriptions in Azure DevOps. Remove them under **Project
+settings → Service hooks**.
+
 ## Roles and audit
 
 Only organisation administrators see and change Azure DevOps connections. Creating, changing and
-deleting one is recorded in the [audit log](./roles-and-audit.md).
+deleting one, and subscribing its hooks, is recorded in the [audit log](./roles-and-audit.md).
 
 ## Delete a connection
 

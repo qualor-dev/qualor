@@ -1,9 +1,9 @@
 # AI review
 
-AI review has a model of your choice review GitLab merge requests and GitHub pull requests. It
-comments in threads on the changed lines, answers replies, and reviews again after each push. It is
-in every edition and **off by default**. On GitHub, read "pull request" wherever this page says
-"merge request".
+AI review has a model of your choice review GitLab merge requests, GitHub pull requests and Azure
+DevOps pull requests. It comments in threads on the changed lines, answers replies, and reviews
+again after each push. It is in every edition and **off by default**. On GitHub and Azure DevOps,
+read "pull request" wherever this page says "merge request".
 
 AI review uses the provider of the [AI assistant](./ai-assistant.md): a hosted model with your own
 key, or a local model on your network. **Your code goes to that provider.** For each merge request
@@ -41,8 +41,8 @@ applies a suggestion.
   organisation to use AI ([Configuration](./ai-assistant.md#configuration)). The assistant's own
   features (Explain, Suggest triage, Suggest a fix) need not be on.
 - The model can call tools ([Models that work](#models-that-work)).
-- The project is mapped to its GitLab or GitHub repository, where the review is posted
-  ([GitLab](./gitlab.md), [GitHub](./github.md)).
+- The project is mapped to its GitLab, GitHub or Azure DevOps repository, where the review is posted
+  ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md)).
 - Your CI scans merge requests with the full history ([What your CI needs](#what-your-ci-needs)).
 - Optional: a webhook on the SCM connection, so that replies and commands are answered at once
   ([At once, or at the next analysis](#at-once-or-at-the-next-analysis)).
@@ -73,7 +73,7 @@ The Status then says **On**, how many projects are reviewed, and who confirmed t
 for which provider and models. The **Reviewed?** column of each chosen project says:
 
 - **Yes**: it is reviewed;
-- **Not linked**: the project has no GitLab or GitHub repository, so it is not reviewed or counted.
+- **Not linked**: the project has no GitLab, GitHub or Azure DevOps repository, so it is not reviewed or counted.
   Link it in **Settings → Repositories**;
 - **Excluded**: an instance admin excluded it from AI, so it is never reviewed, whatever you choose.
 
@@ -115,11 +115,12 @@ saving is refused and the box shows the new warning.
   nothing about it. Pin the CI component
   ([GitLab](./gitlab.md#with-the-cicd-component-recommended)), the action
   ([GitHub](./github.md#2-the-workflow)) or the scanner image to the server's release.
-- **Merge request pipelines on GitLab CI or GitHub Actions**: `merge_request_event`
-  ([GitLab](./gitlab.md#2-the-ci-job)) or `pull_request` ([GitHub](./github.md#2-the-workflow)).
+- **Merge request pipelines on GitLab CI, GitHub Actions or Azure Pipelines**: `merge_request_event`
+  ([GitLab](./gitlab.md#2-the-ci-job)), `pull_request` ([GitHub](./github.md#2-the-workflow)) or a
+  Build validation policy ([Azure DevOps](./azure-devops.md#pull-requests)).
   Other CI systems, such as Jenkins, Bitbucket, TeamCity or a laptop, send no snapshot, even with
   `--mr` and `--mr-target`: the scanner reads the merge request, last commit, title and description
-  only from these two (table below).
+  only from these (table below).
 - **The full history**: `GIT_DEPTH: 0` on GitLab, `fetch-depth: 0` on GitHub. A shallow clone that
   cannot be deepened sends no snapshot.
 - **The last commit in the clone.** GitHub's default checkout is a merge commit, so the scanner
@@ -331,7 +332,7 @@ the summary's count of new issues.
 ### Threads
 
 A high or medium finding gets a thread on its line in the diff: a discussion on GitLab, a review
-comment on GitHub. A low finding gets one only with a suggested change that applies. The thread's
+comment on GitHub, a thread on Azure DevOps. A low finding gets one only with a suggested change that applies. The thread's
 first comment has:
 
 - a header with the severity, the category, _likely_ or _possible_, and the rule key;
@@ -345,7 +346,9 @@ A merge request gets at most **20 AI threads**, beside the analyzers' 50, the mo
 Threads are posted only while the merge request is still at the reviewed commit; after a newer push,
 that push's review posts its own. Threads are never deleted.
 
-The threads need no extra GitLab scope or GitHub App permission. Only answering `qualor review` at
+The threads need no extra GitLab scope or GitHub App permission. On Azure DevOps they need the
+identity's **Contribute to pull requests**, as the
+[analyzers' threads](./azure-devops.md#the-identitys-permissions) do. Only answering `qualor review` at
 once on GitHub needs the App's Issues: Read-only permission
 ([GitHub](./github.md#turn-on-the-webhook-recommended)). **On GitHub, Qualor resolves or reopens a
 thread only when the App has Contents: Read and write**
@@ -359,7 +362,8 @@ If merging requires all threads to be resolved, open AI threads block it like th
 ### Suggested changes
 
 When the fix replaces up to 15 lines that the merge request added, the thread carries it as a
-GitLab suggestion or GitHub suggested change. A person applies it with a click, which commits in
+GitLab suggestion or GitHub suggested change. On Azure DevOps only a one-line fix gets the **Apply**
+block. A person applies it with a click, which commits in
 that person's name. Qualor never commits, pushes or opens a branch.
 
 The suggestion is posted only if the lines it replaces are still exactly the added lines the review
@@ -475,6 +479,7 @@ A status changes only when every author in the round is a member:
 
 - **GitLab:** Developer or higher on the project, through a membership in force. A group membership
   counts. An inactive user, or an inactive or expired membership, does not.
+- **Azure DevOps:** **Contribute** on the repository, for each author.
 - **GitHub:** a repository role of admin, maintain, write or triage. A custom role counts by its
   legacy permission, `admin` or `write`. Qualor reads the role through the collaborator permission
   API, which needs only the Metadata permission every App has. Organisation membership counts only
@@ -490,7 +495,8 @@ A command is a **top-level** note whose **first line** starts with `qualor revie
 command. `@qualor review`, `please qualor review`, `qualor reviewer` and `qualor review.` are not.
 
 Top-level means the first note of a discussion on GitLab, or a comment on the pull request's page
-on GitHub, not a review comment on the diff. A note inside a thread is never a command. GitHub
+on GitHub, not a review comment on the diff. On Azure DevOps it is the first comment of a new
+thread, and Qualor answers in that thread. A note inside a thread is never a command. GitHub
 comments by bots are ignored. As for replies, a command must be written after the warning was
 confirmed and at most 30 days ago.
 
@@ -512,7 +518,7 @@ answers is not answered.
 gets the answer above.
 
 - **Who may ask:** the members who may change a status (GitLab: Developer or more; GitHub: triage
-  or more). A refusal is still posted.
+  or more; Azure DevOps: Contribute). A refusal is still posted.
 - **What it starts:** a review of the newest analysis, if none has run for it or the last one ended
   without a result: skipped for any reason but "unchanged", failed, or replaced. The summary says
   "AI review in progress…" at once.
@@ -533,6 +539,8 @@ gets the answer above.
   decided. Set it up on [GitLab](./gitlab.md#answers-to-replies-and-commands-webhook) (Comments
   events) or [GitHub](./github.md#turn-on-the-webhook-recommended) (Issue comment and Pull request
   review comment events, and the Issues permission).
+- **On Azure DevOps**, set up [service hooks](./azure-devops.md#service-hooks). Without them,
+  Qualor reads the comments of recent pull requests every 15 minutes.
 - **Without one**, Qualor reads a merge request's comments when it updates its own: when the merge
   request is analysed again, when a review ends, when an issue's status changes in Qualor, and on
   GitHub when someone presses **Re-run**. A reply waits until then.
@@ -881,7 +889,7 @@ token budget allows.
 | The summary says | What it means, and what to do |
 |---|---|
 | AI review in progress… | The review waits for the snapshot (up to 15 minutes) or is running. |
-| AI review did not run: no repository snapshot came for this commit. See the CI job’s log and the guide’s `fetch-depth` note. | No snapshot arrived within 15 minutes. Read the `AI review:` lines of the CI job's log ([The scan log](#the-scan-log)). The usual causes are a shallow clone, a pipeline that is not a merge request pipeline, and a secret scan that did not finish ([What your CI needs](#what-your-ci-needs)). No `AI review:` line at all means a scanner from before AI review, or a CI other than GitLab CI, GitHub Actions and Azure Pipelines. Azure Pipelines sends the snapshot, but AI review on Azure DevOps is not available yet. A snapshot that arrives later starts the review. |
+| AI review did not run: no repository snapshot came for this commit. See the CI job’s log and the guide’s `fetch-depth` note. | No snapshot arrived within 15 minutes. Read the `AI review:` lines of the CI job's log ([The scan log](#the-scan-log)). The usual causes are a shallow clone, a pipeline that is not a merge request pipeline, and a secret scan that did not finish ([What your CI needs](#what-your-ci-needs)). No `AI review:` line at all means a scanner from before AI review, or a CI other than GitLab CI, GitHub Actions and Azure Pipelines. A snapshot that arrives later starts the review. |
 | AI review did not run: the server refused the repository snapshot of this commit. (`Reason: SNAPSHOT_INVALID`) | The server could not use the upload, or it was of another merge request. The server log says why. Run the job again, and report it if it repeats. |
 | AI review is skipped while this merge request is a draft; the next pipeline after it is ready reviews it, and a `qualor review` note reviews it now. | Mark it ready and run the pipeline again, or write `qualor review` to review the draft now. The next push skips the draft again ([Commands](#commands)). |
 | AI review did not run because this merge request is merged or closed. | Nothing to do. |
@@ -921,8 +929,9 @@ under `ended` by `replyId`, with its `outcome`. A note with neither line was nev
 | Symptom | What to check |
 |---|---|
 | A reply gets no answer, and the log has no `AI reply ended` line for it | The note must meet the conditions of [Replies](#replies): an open thread Qualor started on a finding, a person as author, written after the warning was confirmed and at most 30 days ago, in an open merge request. AI review must be on for the project ([Why AI review is off for a project](#why-ai-review-is-off-for-a-project)). Without a webhook the answer comes at the next analysis. |
-| A command gets no answer | The first line of a top-level note must start with `qualor review`, `qualor fix` or `qualor stop`; on GitHub, in a comment on the pull request's page ([Commands](#commands)). AI review must be on for the project: without it, Qualor says nothing. The merge request needs an analysis by Qualor. Without a webhook the answer comes at the next analysis. |
+| A command gets no answer | The first line of a top-level note must start with `qualor review`, `qualor fix` or `qualor stop`; on GitHub, in a comment on the pull request's page; on Azure DevOps, in the first comment of a new thread ([Commands](#commands)). AI review must be on for the project: without it, Qualor says nothing. The merge request needs an analysis by Qualor. Without a webhook the answer comes at the next analysis. |
 | On GitHub, `qualor review` is answered only at the next analysis | GitHub does not send the `issue_comment` event: the App lacks the Issues permission or the event, or the installation's owner has not accepted the new permission ([GitHub](./github.md#update-an-app-you-created-before)). |
+| On Azure DevOps, replies and commands are answered only every 15 minutes | The connection has no working service hooks ([Azure DevOps](./azure-devops.md#service-hooks)). |
 | On GitLab, replies and commands are answered only at the next analysis | The project has no webhook, its secret token differs (GitLab shows 401 under **Recent events**), **Comments** is not ticked, or GitLab cannot reach Qualor ([GitLab](./gitlab.md#answers-to-replies-and-commands-webhook)). |
 | A reply in a busy thread is answered only the next day | The thread had its 5 rounds for the UTC day. The next round waits for a later UTC day, when Qualor next looks at the comments (a webhook delivery or an analysis), and reads every note written meanwhile. |
 | A reply is answered, but the finding stays open | The author may not change a status ([Who may change a status](#who-may-change-a-status)). Or the thread is an analyzer's, or its finding is no longer open. Or the reply states no decision of priority and no claim the code bears out. Or the merge request had no snapshot, which a false positive needs. |

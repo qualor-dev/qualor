@@ -94,6 +94,7 @@ and its message says what is wrong.
 | the AI review section says the review did not run or failed | see [AI review: What the summary says](./ai-review.md#what-the-summary-says) |
 | GitHub: Re-run does nothing | the webhook is inactive, its secret differs, or `QUALOR_PUBLIC_URL` is not set |
 | a reply to an AI review comment, or a `qualor review` note, is answered late or never | see [AI review: Why a reply or a command was not answered](./ai-review.md#why-a-reply-or-a-command-was-not-answered). A webhook makes the answer immediate. Without one, it comes at the next analysis ([GitLab](./gitlab.md#answers-to-replies-and-commands-webhook), [GitHub](./github.md#turn-on-the-webhook-recommended)) |
+| Azure DevOps: "hook on probation" or "hook disabled" on **Settings → Azure DevOps** | Azure DevOps skips or stopped delivering Qualor's service hook events. Replies are still read every 15 minutes. Press **Create or update Qualor's subscriptions** ([Azure DevOps: Service hooks](./azure-devops.md#service-hooks)) |
 | Slack or Teams: a webhook is refused, a message does not arrive, or there is no digest | see [Slack and Microsoft Teams: Troubleshooting](./chat-notifications.md#troubleshooting) |
 
 ## The AI assistant

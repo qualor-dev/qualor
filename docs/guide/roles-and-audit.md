@@ -151,7 +151,7 @@ in `.*` (for example `issue.*`).
   a project-wide change removed, and the MCP client when an agent made the change. A change on the
   Issues tab to a Trivy issue of the main branch or a tracked branch records it too, besides the
   issue's own event.
-- **Integrations:** a GitLab, GitHub or Azure DevOps connection created, changed (the names of the changed fields only, such as `baseUrl`, `token`, `azureAuth`, `tenantId`, `clientId` or `certificate`) or deleted; a webhook created,
+- **Integrations:** a GitLab, GitHub or Azure DevOps connection created, changed (the names of the changed fields only, such as `baseUrl`, `token`, `azureAuth`, `tenantId`, `clientId` or `certificate`) or deleted; an Azure DevOps connection's service hooks subscribed (`scm_connection.hooks_updated`, with how many Azure DevOps projects, never the password); a webhook created,
   changed or deleted, its secret regenerated, or a delivery resent.
 - **The licence:** a key uploaded or removed, never the key itself.
 - **The AI assistant:** its settings changed (whether a key was set, removed or kept, never the
