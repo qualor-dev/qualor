@@ -1,0 +1,141 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "value": [
+      {
+        "configuration": {
+          "createdBy": {
+            "displayName": "Probe User",
+            "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "_links": {
+              "avatar": {
+                "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+              }
+            },
+            "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "uniqueName": "user@example.invalid",
+            "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          },
+          "createdDate": "2026-11-23T12:51:55.2600624Z",
+          "isEnabled": true,
+          "isBlocking": true,
+          "isDeleted": false,
+          "settings": {
+            "buildDefinitionId": 16,
+            "queueOnSourceUpdateOnly": false,
+            "manualQueueOnly": false,
+            "displayName": "Qualor probe item 19 build 20261123125151",
+            "validDuration": 0,
+            "scope": [
+              {
+                "refName": "refs/heads/probe/19-20261123125151-target",
+                "matchKind": "Exact",
+                "repositoryId": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              }
+            ]
+          },
+          "isEnterpriseManaged": false,
+          "_links": {
+            "self": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/15"
+            },
+            "policyType": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+            }
+          },
+          "revision": 1,
+          "id": 15,
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/15",
+          "type": {
+            "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+            "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+            "displayName": "Build"
+          }
+        },
+        "artifactId": "vstfs:///CodeReview/CodeReviewId/a1532079-a512-4327-8d28-fa6e00004469%2f20",
+        "evaluationId": "9581d0ea-6ff6-415c-8d2e-fa6e0000d675",
+        "startedDate": "2026-11-23T12:53:53.7004961Z",
+        "completedDate": "2026-11-23T12:55:35.7075598Z",
+        "status": "approved",
+        "context": {
+          "lastMergeCommitId": "25e240c9b084e25313974d3f3874fac956e74df3",
+          "lastMergeSourceCommitId": "be15cf01445b2895a14b5a93d4c419a3741b3bfb",
+          "lastMergeTargetCommitId": "b86695d64dc5eef48d5f13437024a72d0f6c8e28",
+          "buildId": 17,
+          "buildDefinitionId": 16,
+          "buildDefinitionName": "Qualor probe item 19 decoration 20261123125151",
+          "buildIsNotCurrent": false,
+          "buildStartedUtc": "2026-11-23T12:53:53.6914085Z",
+          "isExpired": false,
+          "buildAfterMerge": false,
+          "wasAutoRequeued": false,
+          "buildOutputPreview": null
+        }
+      },
+      {
+        "configuration": {
+          "createdBy": {
+            "displayName": "Probe User",
+            "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "_links": {
+              "avatar": {
+                "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+              }
+            },
+            "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "uniqueName": "user@example.invalid",
+            "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          },
+          "createdDate": "2026-11-23T12:51:55.3255188Z",
+          "isEnabled": true,
+          "isBlocking": true,
+          "isDeleted": false,
+          "settings": {
+            "statusName": "bench",
+            "statusGenre": "qualor",
+            "authorId": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+            "invalidateOnSourceUpdate": true,
+            "defaultDisplayName": "Qualor probe item 19 20261123125151",
+            "policyApplicability": null,
+            "scope": [
+              {
+                "refName": "refs/heads/probe/19-20261123125151-target",
+                "matchKind": "Exact",
+                "repositoryId": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              }
+            ]
+          },
+          "isEnterpriseManaged": false,
+          "_links": {
+            "self": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/16"
+            },
+            "policyType": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/cbdc66da-9728-4af8-aada-9a5a32e4a226"
+            }
+          },
+          "revision": 1,
+          "id": 16,
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/16",
+          "type": {
+            "id": "cbdc66da-9728-4af8-aada-9a5a32e4a226",
+            "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/cbdc66da-9728-4af8-aada-9a5a32e4a226",
+            "displayName": "Status"
+          }
+        },
+        "artifactId": "vstfs:///CodeReview/CodeReviewId/a1532079-a512-4327-8d28-fa6e00004469%2f20",
+        "evaluationId": "1ef2478f-a98c-43c9-8810-fa6e00009fc4",
+        "startedDate": "2026-11-23T12:53:52.6831018Z",
+        "completedDate": "2026-11-23T12:55:29.1377988Z",
+        "status": "approved",
+        "context": {
+          "latestStatusId": 6
+        }
+      }
+    ],
+    "count": 2
+  }
+}
