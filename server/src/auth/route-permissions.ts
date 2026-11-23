@@ -188,6 +188,7 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /repository-setups/:id': 'org.projects.create',
   'POST /api/v0/github/webhooks/:connectionId': 'public',
   'POST /api/v0/gitlab/webhooks/:connectionId': 'public',
+  'POST /api/v0/azure-devops/webhooks/:connectionId': 'public',
   'POST /issues/:id/ai/:feature': 'ai.use',
   'GET /ai-requests/:id': 'project.read',
   'POST /ai-requests/:id/post': 'ai.use',

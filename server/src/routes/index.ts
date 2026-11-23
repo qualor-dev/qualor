@@ -11,6 +11,7 @@ import { branchRoutes } from './branches';
 import { dependencyRoutes } from './dependencies';
 import { gateRoutes } from './gates';
 import { githubWebhookRoutes } from './github-webhooks';
+import { azureWebhookRoutes } from './azure-webhooks';
 import { gitlabWebhookRoutes } from './gitlab-webhooks';
 import { issueRoutes } from './issues';
 import { issueStatusImportRoutes } from './issue-status-import';
@@ -112,4 +113,5 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   // (github.md §9).
   await app.register(githubWebhookRoutes, { deps });
   await app.register(gitlabWebhookRoutes, { deps });
+  await app.register(azureWebhookRoutes, { deps });
 }

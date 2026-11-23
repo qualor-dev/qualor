@@ -74,3 +74,8 @@ export function azureIdentitiesBase(
   const label = host.slice(0, -'.visualstudio.com'.length);
   return `https://${label}.vssps.visualstudio.com`;
 }
+
+/** Where Azure DevOps posts service hooks for a connection: Qualor's public URL plus the route. */
+export function azureWebhookUrl(publicUrl: string, connectionId: string): string {
+  return `${publicUrl.replace(/\/+$/, '')}/api/v0/azure-devops/webhooks/${connectionId}`;
+}
