@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { scmConnections, type ScmProblemValue } from '../db/schema';
 import { type TestProblemCode } from './connections';
@@ -24,7 +24,10 @@ export function isScmBackgroundProblem(code: TestProblemCode): code is ScmBackgr
   return (SCM_BACKGROUND_PROBLEM_CODES as readonly string[]).includes(code);
 }
 
-/** Records the problem on the connection (the newest replaces the one before). */
+/**
+ * Records the problem on the connection. The same problem again keeps its time, so the settings'
+ * "Problem since" is when it began; another problem replaces it with its own time.
+ */
 export async function recordScmProblem(
   db: Executor,
   connectionId: string,
@@ -34,7 +37,12 @@ export async function recordScmProblem(
   await db
     .update(scmConnections)
     .set({ problem: value })
-    .where(eq(scmConnections.id, connectionId));
+    .where(
+      and(
+        eq(scmConnections.id, connectionId),
+        sql`(${scmConnections.problem} ->> 'code') is distinct from ${code}`,
+      ),
+    );
 }
 
 /** Clears the recorded problem; a connection without one is not written. */

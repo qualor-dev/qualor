@@ -477,6 +477,42 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
         .where(eq(scmConnections.id, connectionId));
     });
 
+    it('keeps the time a problem began while it goes on, and takes a new time for another problem (FW7)', async () => {
+      await seed();
+      // The same problem again: "Problem since" stays the first failure's time.
+      const a = await setup('az/since-same');
+      fake.inject('GET', /\/connectionData$/, { status: 401, body: {} });
+      await a.ingest();
+      await decorate();
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toEqual(SEEDED);
+      // Another problem: its own time.
+      const b = await setup('az/since-other');
+      fake.inject('POST', /\/statuses$/, { status: 403, body: {} });
+      await b.ingest();
+      await decorate();
+      await h.ctx.db.delete(jobs);
+      const other = await problemOf();
+      expect(other).toMatchObject({ code: 'permission_missing' });
+      expect(Date.parse(other!.at)).toBeGreaterThan(Date.parse(SEEDED.at));
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: null })
+        .where(eq(scmConnections.id, connectionId));
+      // None before: the failure's own time.
+      const c = await setup('az/since-none');
+      fake.inject('GET', /\/connectionData$/, { status: 401, body: {} });
+      const before = Date.now();
+      await c.ingest();
+      await decorate();
+      await h.ctx.db.delete(jobs);
+      expect(Date.parse((await problemOf())!.at)).toBeGreaterThanOrEqual(before - 1000);
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: null })
+        .where(eq(scmConnections.id, connectionId));
+    });
+
     /** Deps whose writes to scm_connections fail, as a database error would. */
     const failingWrites = () => {
       const warn = vi.fn();
