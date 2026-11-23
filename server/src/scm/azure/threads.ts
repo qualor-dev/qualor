@@ -48,6 +48,9 @@ export interface AzureThreadsContext {
 interface OwnThread {
   thread: AzureThread;
   /** Resolved by Qualor: not active, and Qualor's own `qualor:fixed` comment is the last. */
+  /** Qualor's `qualor:fixed` comment for the issue is the last non-system comment. */
+  fixedLast: boolean;
+  /** Resolved by Qualor: not active, {@link fixedLast}, and no person replied in it. */
   resolvedByQualor: boolean;
   /** Someone but Qualor commented after its first comment. */
   humanReplied: boolean;
@@ -80,13 +83,13 @@ function ownThreads(threads: readonly AzureThread[], identityId: string): Map<st
     const last = comments[comments.length - 1];
     const lastMarker =
       last !== undefined && sameId(last.authorId, identityId) ? markerOf(last.content) : null;
+    const fixedLast = lastMarker?.kind === 'fixed' && lastMarker.issueId === marker.issueId;
+    const humanReplied = replies.some((c) => !sameId(c.authorId, identityId));
     own.set(marker.issueId, {
       thread,
-      resolvedByQualor:
-        thread.status !== 'active' &&
-        lastMarker?.kind === 'fixed' &&
-        lastMarker.issueId === marker.issueId,
-      humanReplied: replies.some((c) => !sameId(c.authorId, identityId)),
+      fixedLast,
+      resolvedByQualor: thread.status !== 'active' && fixedLast && !humanReplied,
+      humanReplied,
       notedFixes: notedFixes(
         replies.filter((c) => sameId(c.authorId, identityId)).map((c) => c.content),
         marker.issueId,
@@ -116,10 +119,11 @@ async function threadIssues(db: Db, projectId: string, ids: string[]) {
 }
 
 /**
- * What a thread of Qualor's needs: resolving (true), reopening (false), or nothing (null). Only a
- * resolution Qualor made (its fixed comment is the last) is Qualor's to undo (ruling G3); one by
- * anyone else stays, and a person's reply keeps a fixed issue's thread open but never stops Qualor
- * from reopening what it resolved.
+ * What a thread of Qualor's needs: resolving (true), reopening (false), or nothing (null). A thread
+ * is resolved by Qualor exactly when it is not active, Qualor's `qualor:fixed` comment is its last
+ * non-system comment, and no person replied in it (Qualor never resolves a thread anyone replied
+ * in, so a resolved one with a reply was resolved by a person). Only that is Qualor's to undo (ruling
+ * G3); any other resolution stays, and its issue still counts.
  */
 function threadResolution(own: OwnThread, open: boolean): boolean | null {
   if (open && own.resolvedByQualor) return false;
@@ -156,7 +160,13 @@ async function write(failures: Failures, part: () => Promise<unknown>): Promise<
 
 /** What the thread reconciliation worked out about the existing threads. */
 interface Plan {
-  updates: { issueId: string; thread: AzureThread; resolve: boolean; counted: boolean }[];
+  updates: {
+    issueId: string;
+    thread: AzureThread;
+    resolve: boolean;
+    counted: boolean;
+    fixedLast: boolean;
+  }[];
   /** The fixed issues whose open threads someone replied in, the oldest thread first. */
   fixed: string[];
   /** The analyzers' open issues with a thread. */
@@ -180,7 +190,13 @@ async function planUpdates(
     if (open) plan.commented += 1;
     const resolve = threadResolution(mine, open);
     if (resolve !== null && plan.updates.length < MAX_AZURE_THREAD_UPDATES) {
-      plan.updates.push({ issueId, thread: mine.thread, resolve, counted: open });
+      plan.updates.push({
+        issueId,
+        thread: mine.thread,
+        resolve,
+        counted: open,
+        fixedLast: mine.fixedLast,
+      });
     }
     if (
       onBranch &&
@@ -215,11 +231,14 @@ async function applyUpdates(
     if (update.resolve) {
       const sha = revisions.get(update.issueId) ?? ctx.loaded.revision.toLowerCase();
       // No full revision to name (a marker holds one only): the thread waits.
-      if (!isFullSha(sha)) continue;
+      if (!update.fixedLast && !isFullSha(sha)) continue;
+      // Qualor's fixed comment is already the last (an earlier job's status change failed, or a
+      // person reopened the thread without a word): only the status is sent, one note a time.
       done =
-        (await write(failures, () =>
-          client.addComment(repositoryId, prId, id, resolvedNote(update.issueId, sha)),
-        )) &&
+        (update.fixedLast ||
+          (await write(failures, () =>
+            client.addComment(repositoryId, prId, id, resolvedNote(update.issueId, sha)),
+          ))) &&
         (await write(failures, () => client.setThreadStatus(repositoryId, prId, id, 'fixed')));
     } else {
       done =
@@ -365,10 +384,11 @@ async function createThreads(
  * For the threads of this project's analyzer issues (design §7.4, thread properties cannot be
  * changed, so Qualor's comments carry the state):
  * - an open issue whose thread Qualor resolved gets it reopened, with a `qualor:reopened` comment.
- *   A thread is resolved by Qualor exactly when it is not active and Qualor's `qualor:fixed`
- *   comment is its last; one a person resolved stays, and its issue still counts (ruling G3);
+ *   The rule for "resolved by Qualor" is {@link threadResolution}'s; a resolution of a person's
+ *   stays, and its issue still counts (ruling G3);
  * - an issue that is no longer open gets its thread resolved, with a `qualor:fixed` comment, unless
- *   someone but Qualor commented in it;
+ *   someone but Qualor commented in it. Its comment is skipped when Qualor's `qualor:fixed` comment
+ *   for the issue is already the last (a retry, or a person reopened it silently): one note a time;
  * - a fixed issue whose open thread someone replied in gets one note per revision
  *   ({@link MAX_FIXED_NOTES} a job);
  * - then each of the (at most {@link MAX_INLINE_THREADS}) most severe open new issues without a

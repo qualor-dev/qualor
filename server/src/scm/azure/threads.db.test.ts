@@ -150,6 +150,9 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
   const requestsOf = () =>
     fake.requests.map((r) => `${r.method} ${r.path.replace(/^.*\/_apis\//, '')}`);
   const writesOf = () => requestsOf().filter((r) => !r.startsWith('GET'));
+  /** Writes to a thread (not to the summary's comment). */
+  const threadWrites = () =>
+    writesOf().filter((w) => /\/threads\/\d+/.test(w) && !/comments\/1$/.test(w));
   const decorate = () => runDecorations(h, decorationDeps(h));
   const person = (threadId: number, content = 'A person replied'): FakeAzureComment => ({
     id: threadId * 100,
@@ -336,6 +339,66 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     await s.ingest([{ path: 'src/a.ts', line: 3 }]);
     await decorate();
     expect(thread?.status).toBe('fixed');
+  });
+
+  it('never reopens a thread a person resolved after Qualor’s fixed note, and still counts its issue', async () => {
+    const s = await setup('thr/note-resolved', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    thread!.comments.push(person(thread!.id));
+    await s.ingest([]);
+    await decorate();
+    // Qualor's note is the last comment and the thread is active; the person then resolves it.
+    expect(thread?.status).toBe('active');
+    expect(markerOf(lastComment(thread!))?.kind).toBe('fixed');
+    thread!.status = 'fixed';
+    const comments = thread!.comments.length;
+    fake.clearRequests();
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    expect(thread?.status).toBe('fixed');
+    expect(thread?.comments).toHaveLength(comments);
+    expect(threadWrites()).toEqual([]);
+    expect(s.summary()).toContain('1 new issue is commented inline');
+  });
+
+  it('sends only the status when its resolution failed after the comment, and after a silent reopen', async () => {
+    const s = await setup('thr/one-note', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    const fixedComments = () =>
+      thread!.comments.filter((c) => markerOf(c.content)?.kind === 'fixed').length;
+    // The comment is written, the status change fails.
+    fake.inject('PATCH', /\/threads\/\d+$/, { status: 503, body: {} });
+    const analysisId = await s.ingest([]);
+    const outcome = await decorateOnce(s, analysisId);
+    expect(outcome).toMatchObject({ kind: 'failed', retry: true });
+    expect(thread?.status).toBe('active');
+    expect(fixedComments()).toBe(1);
+    // The next job sends the status only.
+    await s.ingest([]);
+    fake.clearRequests();
+    await decorate();
+    expect(thread?.status).toBe('fixed');
+    expect(fixedComments()).toBe(1);
+    expect(threadWrites()).toEqual([expect.stringMatching(/^PATCH .*\/threads\/\d+$/)]);
+    // A person reopens it without a word, the issue stays fixed: the status only again.
+    thread!.status = 'active';
+    await s.ingest([]);
+    fake.clearRequests();
+    await decorate();
+    expect(thread?.status).toBe('fixed');
+    expect(fixedComments()).toBe(1);
+    expect(thread?.comments).toHaveLength(2);
+    expect(threadWrites()).toEqual([expect.stringMatching(/^PATCH .*\/threads\/\d+$/)]);
   });
 
   it('leaves a thread a person replied in open, with one fixed note per revision', async () => {
