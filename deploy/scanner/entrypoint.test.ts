@@ -65,7 +65,7 @@ describe.runIf(process.platform === 'linux')('qualor-entrypoint', () => {
   });
 
   it('changes nothing when there is no token', () => {
-    for (const env of [{}, { QUALOR_TOKEN: '' }]) {
+    for (const env of [{}, { QUALOR_TOKEN: '' }] as Record<string, string>[]) {
       const seen = run(env, ['fix']);
       expect(seen).toMatchObject({ args: ['fix'], fd: null, fdContent: null });
     }

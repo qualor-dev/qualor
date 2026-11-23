@@ -38,7 +38,7 @@ export type Git = (args: readonly string[], options?: GitCallOptions) => Promise
  * runner's `log` or `diff` setting from writing a submodule's commit subjects or file diffs into
  * the diff, without a header of their own, where they would end up in the previous file's patch
  * (the review snapshot's). `gc.auto`/`maintenance.auto` are disabled so a scan never triggers
- * background repository maintenance. `core.fsmonitor=false` and `core.hooksPath=/dev/null` keep a
+ * background repository maintenance. `core.fsmonitor=` and `core.hooksPath=/dev/null` keep a
  * repository's own configuration from running a program (a planted fsmonitor command or hook)
  * during a scan; the fix workspace's own `core.hooksPath` comes later on its command lines and wins.
  */
@@ -64,7 +64,8 @@ export const GIT_OPTIONS: readonly string[] = [
   '-c',
   'maintenance.auto=false',
   '-c',
-  'core.fsmonitor=false',
+  // An empty value, not `false`: git before 2.36 reads `false` as a hook path to run.
+  'core.fsmonitor=',
   '-c',
   'core.hooksPath=/dev/null',
 ];

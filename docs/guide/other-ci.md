@@ -13,6 +13,7 @@ CI systems on this page.
    much simpler.
 2. The repository checked out with **full history**, at the root of the working directory.
 3. `QUALOR_URL` and `QUALOR_TOKEN` in the environment, with the token from the CI's secret store.
+   Repository code that runs in the same CI job outside the scanner (build steps) can read the job's variables: give the job a project token, not an organisation token.
 4. The project key, because no CI project path is detected: `QUALOR_PROJECT_KEY`, `--project-key`
    or `project.key` in `qualor.yml`.
 5. For a pull request or merge request: `--mr <id> --mr-target <target branch>`. Without them the
@@ -131,7 +132,6 @@ docker run --rm -v "$PWD":/src -w /src \
 ```
 
 Started through the image's entrypoint, the scanner keeps `QUALOR_TOKEN` out of the environment of the analyzers it runs.
-Repository code that runs in the same CI job outside the scanner (build steps) can read the job's variables: give the job a project token, not an organisation token.
 
 Without a server, `--dry-run --output report.json.gz` writes the report to a file and uploads
 nothing:

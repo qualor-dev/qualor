@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { fstatSync, mkdtempSync, openSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -87,6 +87,25 @@ describe('resolveImportSetup (import-sonarqube.md §3, §14)', () => {
   it('reads the Qualor token from --qualor-token-file before QUALOR_TOKEN', () => {
     writeFileSync(path.join(dir, 'qtok'), 'qlr_pat_file0123456789\n');
     expect(setup(flags({ qualorTokenFile: 'qtok' })).s.qualor.token).toBe('qlr_pat_file0123456789');
+  });
+
+  it('takes the Qualor token from QUALOR_TOKEN_FD, ignoring QUALOR_TOKEN, and closes it', () => {
+    writeFileSync(path.join(dir, 'fdtok'), 'qlr_pat_fromfd0123456789\n');
+    const open = openSync(path.join(dir, 'fdtok'), 'r');
+    const e = { ...env, QUALOR_TOKEN_FD: String(open), QUALOR_TOKEN: 'qlr_pat_other0123456789' };
+    expect(setup(flags(), e).s.qualor.token).toBe('qlr_pat_fromfd0123456789');
+    expect(() => fstatSync(open)).toThrow();
+  });
+
+  it('--qualor-token-file wins over the descriptor, which is closed all the same', () => {
+    writeFileSync(path.join(dir, 'qtok'), 'qlr_pat_file0123456789\n');
+    writeFileSync(path.join(dir, 'fdtok'), 'qlr_pat_fromfd0123456789\n');
+    const open = openSync(path.join(dir, 'fdtok'), 'r');
+    const e = { ...env, QUALOR_TOKEN_FD: String(open) };
+    expect(setup(flags({ qualorTokenFile: 'qtok' }), e).s.qualor.token).toBe(
+      'qlr_pat_file0123456789',
+    );
+    expect(() => fstatSync(open)).toThrow();
   });
 
   it('refuses a token with a space, without showing it', () => {

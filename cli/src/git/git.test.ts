@@ -72,7 +72,7 @@ describe('createGit: repository configuration that runs programs', () => {
   it('turns fsmonitor and hooks off after the other options', () => {
     expect(GIT_OPTIONS.slice(-4)).toEqual([
       '-c',
-      'core.fsmonitor=false',
+      'core.fsmonitor=',
       '-c',
       'core.hooksPath=/dev/null',
     ]);

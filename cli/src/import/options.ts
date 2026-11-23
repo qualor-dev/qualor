@@ -1,6 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import path from 'node:path';
 import type { ImportFlags } from '../args';
+import { consumeTokenFd } from '../config/token-fd';
 import { CliError, EXIT } from '../errors';
 import type { Logger } from '../log';
 import { readCaFile, type ServerEndpoint } from '../server/http';
@@ -60,6 +61,19 @@ export function readTokenFile(file: string, flag: string): string {
     throw new CliError(EXIT.USAGE, `cannot read ${flag}: ${code}`);
   } finally {
     if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** The token descriptor's token; with a token file given, its failure is ignored (the file wins). */
+function consumeTokenFdUnless(
+  env: Readonly<Record<string, string | undefined>>,
+  fileGiven: boolean,
+): string | undefined {
+  try {
+    return consumeTokenFd(env) ?? undefined;
+  } catch (err) {
+    if (fileGiven) return undefined;
+    throw err;
   }
 }
 
@@ -189,10 +203,12 @@ export function resolveImportSetup(
     throw new CliError(EXIT.USAGE, 'no Qualor server: set QUALOR_URL or pass --server-url');
   }
   const qualorUrl = checkUrl('--server-url', serverUrl, flags.allowInsecureHttp, warnings);
+  // The image's entrypoint hands QUALOR_TOKEN over on a descriptor: consume it whichever source wins.
+  const tokenFromFd = consumeTokenFdUnless(env, flags.qualorTokenFile !== undefined);
   const qualorToken = checkToken(
     flags.qualorTokenFile !== undefined
       ? fileToken(flags.qualorTokenFile, '--qualor-token-file', cwd)
-      : envToken(env['QUALOR_TOKEN']),
+      : (tokenFromFd ?? envToken(env['QUALOR_TOKEN'])),
     'Qualor token',
     'set QUALOR_TOKEN (a personal token with the admin scope), or pass --qualor-token-file',
   );

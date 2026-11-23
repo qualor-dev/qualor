@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -128,6 +136,18 @@ describe('qualor dotnet end (config.md §6.1, ruling D7)', () => {
     expect(
       report.findings.filter((f: { engineId: string }) => f.engineId === 'roslyn'),
     ).toMatchObject([{ ruleId: 'CA5351', location: { path: 'src/Hashing.cs', startLine: 3 } }]);
+  });
+
+  it('scans with the token from QUALOR_TOKEN_FD although the settings load several times in one process', async () => {
+    const { root, env } = setup();
+    runDotnetBegin({}, captureIO({ cwd: root, env }).io, silentLogger);
+    build(root, 'Lib', 'net8.0');
+    const tokenFile = path.join(tmp(), 'token');
+    writeFileSync(tokenFile, 'qlr_prj_fromfd\n');
+    const fd = openSync(tokenFile, 'r');
+    const { code } = await end(root, { ...env, QUALOR_TOKEN_FD: String(fd) });
+    expect(code).toBe(EXIT.OK);
+    expect(() => fstatSync(fd)).toThrow();
   });
 
   it('keeps the hook while another session holds a lease, whatever each job sets QUALOR_CACHE_DIR to (final review R9)', async () => {

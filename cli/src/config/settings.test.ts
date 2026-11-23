@@ -334,16 +334,35 @@ describe('loadSettings', () => {
       expect(isOpen(fd)).toBe(false);
     });
 
-    it('--token-file wins over the descriptor, which is then left alone', () => {
+    it('--token-file wins over the descriptor, which is closed all the same', () => {
       const root = tmp();
       writeTree(root, { 'token.txt': 'qlr_from_file\n', 'fd.txt': 'qlr_from_fd\n' });
       const fd = openSync(path.join(root, 'fd.txt'), 'r');
+      const s = settingsWith(root, { QUALOR_TOKEN_FD: String(fd) }, 'token.txt');
+      expect(s.token).toBe('qlr_from_file');
+      expect(isOpen(fd)).toBe(false);
+    });
+
+    it('reads the descriptor once per environment: a second load gets the same token', () => {
+      const root = tmp();
+      writeTree(root, { 'token.txt': 'qlr_from_fd\n' });
+      const fd = openSync(path.join(root, 'token.txt'), 'r');
+      const env = { QUALOR_TOKEN_FD: String(fd) };
+      expect(settingsWith(root, env).token).toBe('qlr_from_fd');
+      // The number is free now and the next open file takes it: it must not be read or closed.
+      const other = openSync(path.join(root, 'token.txt'), 'r');
       try {
-        const s = settingsWith(root, { QUALOR_TOKEN_FD: String(fd) }, 'token.txt');
-        expect(s.token).toBe('qlr_from_file');
+        expect(settingsWith(root, env).token).toBe('qlr_from_fd');
+        expect(isOpen(other)).toBe(true);
+        expect(env).toEqual({ QUALOR_TOKEN_FD: String(fd) });
       } finally {
-        closeSync(fd);
+        closeSync(other);
       }
+    });
+
+    it('an empty QUALOR_TOKEN_FD counts as unset, like every other variable', () => {
+      const s = settingsWith(tmp(), { QUALOR_TOKEN_FD: '', QUALOR_TOKEN: 'qlr_from_env' });
+      expect(s.token).toBe('qlr_from_env');
     });
 
     it('an empty descriptor is exit 2 and is closed too', () => {
@@ -368,14 +387,11 @@ describe('loadSettings', () => {
       expect(err.message).toContain('QUALOR_TOKEN_FD 987654 could not be read');
     });
 
-    it.each(['abc', '', '3x', '2', '0', '-1', '1.5'])(
-      '%j is not a descriptor number: exit 2',
-      (v) => {
-        const err = failure(() => settingsWith(tmp(), { QUALOR_TOKEN_FD: v }));
-        expect(err.exitCode).toBe(2);
-        expect(err.message).toContain('QUALOR_TOKEN_FD must be a descriptor number of 3 or more');
-      },
-    );
+    it.each(['abc', '3x', '2', '0', '-1', '1.5'])('%j is not a descriptor number: exit 2', (v) => {
+      const err = failure(() => settingsWith(tmp(), { QUALOR_TOKEN_FD: v }));
+      expect(err.exitCode).toBe(2);
+      expect(err.message).toContain('QUALOR_TOKEN_FD must be a descriptor number of 3 or more');
+    });
   });
 
   it('appends --sarif and --coverage to the file lists, and --no-wait turns off gate.wait', () => {

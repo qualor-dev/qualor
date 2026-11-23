@@ -169,6 +169,7 @@ The server's variables, such as `QUALOR_PUBLIC_URL`, `QUALOR_SCM_INTERNAL_HOSTS`
 | --- | --- |
 | `QUALOR_URL` | server base URL (`https://…`) |
 | `QUALOR_TOKEN` | project analysis token or personal token |
+| `QUALOR_TOKEN_FD` | a file descriptor (3 or more) holding the token. The `qualor/scanner` entrypoint sets it from `QUALOR_TOKEN`; you rarely set it yourself. The scanner reads and closes it. Order: `--token-file`, then `QUALOR_TOKEN_FD`, then `QUALOR_TOKEN` |
 | `QUALOR_PROJECT_KEY` | overrides `project.key` |
 | `QUALOR_CONFIG` | path to the config file |
 | `QUALOR_CA_FILE` | a PEM CA bundle for the server's certificate. Keep it outside the checkout |
