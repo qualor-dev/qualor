@@ -39,7 +39,8 @@ as a [version](./releases.md) instead.
 
 The GitLab report paths must be inside the working directory.
 
-Started through the image's entrypoint, the scanner keeps `QUALOR_TOKEN` out of the environment of the analyzers it runs.
+Started through the image's entrypoint, the scanner keeps `QUALOR_TOKEN` out of the environment of
+the analyzers it runs.
 
 **Versions.** The first line is the scanner's version (`qualor 0.16.0 (linux-x64)`). With a server
 configured, it then logs the server's (`server https://qualor.example.com runs Qualor 0.16.0`). If

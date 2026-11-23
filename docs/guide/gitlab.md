@@ -137,7 +137,8 @@ qualor:
     - if: $CI_COMMIT_TAG
 ```
 
-- `entrypoint: ['']`: the image's entrypoint is `qualor`, and GitLab needs a shell.
+- `entrypoint: ['']`: GitLab needs a shell, so the job replaces the image's entrypoint
+  (`/usr/local/bin/qualor-entrypoint`, which runs `qualor`), as the component does.
 - `GIT_DEPTH: 0` gives the full history. With a shallow clone the CLI tries to fetch the baseline.
   If that fails, new-code conditions end in `error`, and the gate fails rather than guess.
   [AI review](./ai-review.md#what-your-ci-needs) needs the full history too.

@@ -201,7 +201,7 @@ mapping are enough.
 
 | What | Where |
 |---|---|
-| A status `qualor/<project key>` | On the pull request, `succeeded` when the gate passes and `failed` otherwise. It sits on the iteration that was analysed |
+| A status `qualor/<project key>` | On the pull request, on the iteration that was analysed. `succeeded` when the gate passes or the project has no gate, `failed` otherwise |
 | A summary | One closed thread, edited in place on each analysis |
 | A thread on each new issue | On a line the pull request added, at most 50 |
 | A commit status of the same name | On each analysed branch. It is informational: a commit status does not satisfy a branch policy |
@@ -213,29 +213,39 @@ Under **Repos → Branches → Branch policies** of the target branch, add a **S
 | Field | Value |
 |---|---|
 | Status to check | `qualor/<project key>` |
-| Genre | `qualor` |
+| Authorized identity | Qualor's identity: the connection's service principal, or the owner of its personal access token |
 | Reset conditions | **Reset status whenever there are new changes** |
+
+Set the authorized identity. Without it, anyone who may contribute to the pull request can post a
+passing status of that name, the pull request's own pipeline included.
 
 ### The identity's permissions
 
-Give Qualor's identity **Contribute to pull requests** on the repository. Without it, the summary
-counts the threads Qualor could not resolve or reopen. A personal access token also needs the
-right [scope](#a-personal-access-token).
+Give Qualor's identity **Contribute to pull requests** on the repository. A personal access token
+also needs the right [scope](#a-personal-access-token). Without the permission, Azure DevOps refuses
+the status, the threads and the summary, so none of them appears. **Settings → Azure DevOps** then
+shows the problem.
 
 ### Threads
 
 - Inline threads need the pipeline to check out the pull request's head. The Qualor task and the
   head checkout of the examples do. Otherwise the summary says why there are none.
-- Qualor resolves its thread with a comment when the issue is fixed, and reopens it if the issue
-  returns.
+- Qualor resolves its thread with a comment when the issue is no longer open, and reopens it if the
+  issue returns.
 - Qualor never reopens a thread a person resolved.
 - When someone replied in a thread, Qualor leaves it open and adds a note that the issue is fixed.
 
 ### When Azure DevOps refuses Qualor
 
-When Azure DevOps refuses the connection's credential or a permission, or the server no longer
-allows the address, **Settings → Azure DevOps** shows the problem and since when. A passing **Test**, or the next successful comment run,
-clears it.
+When a problem of the connection stops the status or the comments, **Settings → Azure DevOps**
+shows it and since when. Such a problem is a refused credential, a missing permission, a stored
+credential that can no longer be read, or an address the server no longer allows.
+
+The messages and fixes are those of a [failing test](#test-the-connection), with one exception. A
+missing permission there means **Contribute to pull requests** on the repository, and for a personal
+access token also **Code: Read & write**.
+
+A passing **Test**, or the next decoration that succeeds, clears the problem.
 
 ## Roles and audit
 
