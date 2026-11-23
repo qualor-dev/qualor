@@ -401,6 +401,74 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(threadWrites()).toEqual([expect.stringMatching(/^PATCH .*\/threads\/\d+$/)]);
   });
 
+  const reopenedMarkerOf = (issueId: string) => `<!-- qualor:reopened ${issueId} -->`;
+
+  it('writes the lost reopened comment alone, so a person’s later silent resolution stays', async () => {
+    const s = await setup('thr/reopen-lost', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const issue = await s.issueAt('src/a.ts', 3);
+    await s.ingest([]);
+    await decorate();
+    const [thread] = s.ownThreads();
+    expect(thread?.status).toBe('fixed');
+    // The issue returns: the thread is reopened, and its comment fails.
+    fake.inject('POST', /\/threads\/\d+\/comments$/, { status: 503, body: {} });
+    const analysisId = await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    expect(await decorateOnce(s, analysisId)).toMatchObject({ kind: 'failed', retry: true });
+    expect(thread?.status).toBe('active');
+    expect(markerOf(lastComment(thread!))?.kind).toBe('fixed');
+    // The next job writes the reopened comment only: no status change.
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    fake.clearRequests();
+    await decorate();
+    expect(threadWrites()).toEqual([expect.stringMatching(/^POST .*\/threads\/\d+\/comments$/)]);
+    expect(thread?.status).toBe('active');
+    expect(lastComment(thread!).split('\n')[0]).toBe(reopenedMarkerOf(issue.id));
+    expect(s.summary()).toContain('1 new issue is commented inline');
+    // A person resolves it without a word: it is theirs, and stays resolved.
+    thread!.status = 'fixed';
+    const comments = thread!.comments.length;
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    fake.clearRequests();
+    await decorate();
+    expect(thread?.status).toBe('fixed');
+    expect(thread?.comments).toHaveLength(comments);
+    expect(threadWrites()).toEqual([]);
+  });
+
+  it('writes only the reopened comment when the issue returns after a resolution whose status change failed', async () => {
+    const s = await setup('thr/resolve-lost', {
+      files: { 'src/a.ts': HEAD_A },
+      base: { 'src/a.ts': BASE_A },
+    });
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    await decorate();
+    const issue = await s.issueAt('src/a.ts', 3);
+    const [thread] = s.ownThreads();
+    // The fixed comment is written, the status change fails.
+    fake.inject('PATCH', /\/threads\/\d+$/, { status: 503, body: {} });
+    const analysisId = await s.ingest([]);
+    expect(await decorateOnce(s, analysisId)).toMatchObject({ kind: 'failed', retry: true });
+    expect(thread?.status).toBe('active');
+    expect(markerOf(lastComment(thread!))?.kind).toBe('fixed');
+    // The issue returns before a retry: the reopened comment only.
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    fake.clearRequests();
+    await decorate();
+    expect(threadWrites()).toEqual([expect.stringMatching(/^POST .*\/threads\/\d+\/comments$/)]);
+    expect(thread?.status).toBe('active');
+    expect(lastComment(thread!).split('\n')[0]).toBe(reopenedMarkerOf(issue.id));
+    // Decorated again: nothing more.
+    await s.ingest([{ path: 'src/a.ts', line: 3 }]);
+    fake.clearRequests();
+    await decorate();
+    expect(threadWrites()).toEqual([]);
+  });
+
   it('leaves a thread a person replied in open, with one fixed note per revision', async () => {
     const s = await setup('thr/reply', {
       files: { 'src/a.ts': HEAD_A },
@@ -534,6 +602,39 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     await s.ingest([]);
     await decorate();
     expect(status()).toBe(count);
+  });
+
+  it(`counts a lost reopened comment as one of the ${MAX_AZURE_THREAD_UPDATES} updates of a job`, async () => {
+    const count = MAX_AZURE_THREAD_UPDATES + 1;
+    const s = await setup('thr/note-bound', {
+      files: { 'src/a.ts': 'x\n'.repeat(count + 5) },
+      base: { 'src/a.ts': '' },
+    });
+    const findings = Array.from({ length: count }, (_, i) => ({ path: 'src/a.ts', line: i + 1 }));
+    await s.ingest(findings, { checkout: 'other' });
+    await decorate();
+    // Each open issue's active thread ends with Qualor's fixed comment: its reopened one was lost.
+    for (const row of await s.issueRows()) {
+      fake.addThread(s.repository.id, PR, {
+        filePath: 'src/a.ts',
+        line: row.line!,
+        comments: [
+          { content: issueMarker(row.id) },
+          { content: `${fixedMarker(row.id, s.sourceCommit)}\nThe issue is no longer open.` },
+        ],
+      });
+    }
+    await s.ingest(findings);
+    fake.clearRequests();
+    await decorate();
+    const repaired = () =>
+      s.ownThreads().filter((t) => lastComment(t).startsWith('<!-- qualor:reopened ')).length;
+    expect(repaired()).toBe(MAX_AZURE_THREAD_UPDATES);
+    expect(threadWrites().filter((w) => w.startsWith('PATCH'))).toEqual([]);
+    await s.ingest(findings);
+    await decorate();
+    expect(repaired()).toBe(count);
+    expect(s.ownThreads().every((t) => t.status === 'active')).toBe(true);
   });
 
   it('creates nothing when the changes are cut by their page bound', async () => {
