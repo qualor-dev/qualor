@@ -1,6 +1,6 @@
 import type { GateResult } from '@qualor/shared';
 import { marked } from 'marked';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { safeCodeSpan, safePlainValue } from '@qualor/shared';
 import {
   badSectionLine,
@@ -1315,6 +1315,13 @@ const REFERENCES: readonly (readonly [string, RegExp])[] = [
   // GitHub links `www.` wherever it follows a space, a bracket or `*`, `_` or `~`, whatever follows
   // it (a space, a closing mark): `www. x`, `(www. x`, `www.) x`, `www.… x`.
   ['a www address', /(?:^|[\s(*_~])www\./iu],
+  // What Azure DevOps's renderer adds (probe item 21): math, task lists, headings, a mention by id
+  // and the HTML of a collapsible block.
+  ['math', /\$[^$\s]/],
+  ['a task list item', /^\s*[-*]\s+\[[ x]\]/i],
+  ['a heading', /^#{1,6}\s/],
+  ['a mention by id', /@[0-9a-f]{8}-/i],
+  ['a details block', /<details/i],
 ];
 
 /** What the model's text may be made of, for the corpus and the fuzz of `safeProse`. */
@@ -2333,3 +2340,108 @@ function seededRandom(seed: number): () => number {
     return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
   };
 }
+
+/**
+ * Azure DevOps's renderer (probe item 21): the 40-case corpus the probe posted to real
+ * organisations (tools/azure/items/11-markdown-corpus.ts) goes through every slot of the
+ * summary and the inline note with the Azure vocabulary. The probe found the code-span and
+ * `safeProse` rules held on both deployments; this keeps it so. The corpus is loaded at run time:
+ * `tools/` references the server's project, so a static import would cross the server's rootDir.
+ * Qualor's other Azure-only notes (`resolvedNote`, `reopenedNote`) hold only an issue id and a
+ * full revision, never an analyzer's text, so they take no corpus value.
+ */
+describe('Azure DevOps renderer (probe item 21)', () => {
+  const GUID = '8f2c1a4e-5b7d-4c3a-9e10-2d6f7a8b9c0d';
+  const corpusModule = '../../../tools/azure/items/11-markdown-corpus';
+  const AZURE_PATTERNS = REFERENCES.filter(([name]) =>
+    ['math', 'a task list item', 'a heading', 'a mention by id', 'a details block'].includes(name),
+  );
+  let cases: readonly (readonly [string, string])[] = [];
+
+  beforeAll(async () => {
+    const mod = (await import(/* @vite-ignore */ corpusModule)) as {
+      corpus: (userId: string) => (readonly [string, string])[];
+    };
+    cases = mod.corpus(GUID);
+  });
+
+  /** Outside code spans, Azure DevOps has nothing live to render: no pattern of REFERENCES is left. */
+  function expectInertOutside(body: string, label: string, maxBytes: number): void {
+    checkBody(body, maxBytes);
+    const lines = body.split('\n');
+    for (const [index, line] of lines.entries()) {
+      if (index === 0) continue; // the marker
+      const isMessage =
+        maxBytes === SUMMARY_MAX_BYTES
+          ? line.startsWith('   ') && lines[index - 1]?.endsWith('\\') === true
+          : index === 3 && lines[1]?.startsWith('**') === true;
+      if (isMessage) {
+        expectInertProse(line.trimStart(), label);
+        continue;
+      }
+      const outside = outsideCodeSpans(line)
+        .replace(OWN_LINK, ' ')
+        .replace(/^#{3,4} /, ''); // the fixed headings
+      for (const [name, pattern] of AZURE_PATTERNS)
+        expect(outside, `${label} → ${JSON.stringify(line)}: ${name}`).not.toMatch(pattern);
+    }
+  }
+
+  it('has the whole corpus', () => {
+    expect(cases.length).toBe(40);
+  });
+
+  it('keeps every value inert as message, rule key, path and package name', () => {
+    const url = `https://q.example/projects/${PROJECT}/issues/${ISSUE}`;
+    for (const [name, value] of cases) {
+      const slots = {
+        message: { ruleKey: 'k', path: 'a.ts', message: value },
+        'rule key': { ruleKey: value, path: 'a.ts', message: 'm' },
+        path: { ruleKey: 'k', path: value, message: 'm' },
+        'package name': {
+          ruleKey: 'license:forbidden',
+          path: 'package-lock.json',
+          message: `${value} 2.1.0 is licensed GPL-3.0-only, which the organisation's licence policy forbids (Strong copyleft).`,
+        },
+      };
+      for (const [slot, fields] of Object.entries(slots)) {
+        const label = `${name} as ${slot}`;
+        const body = summary({
+          vocabulary: 'azure',
+          topIssues: Array.from({ length: 3 }, () => ({
+            id: ISSUE,
+            severity: 'high' as const,
+            quality: 'security' as const,
+            line: 7,
+            url,
+            ...fields,
+          })),
+          topIssuesTotal: 3,
+        });
+        expectInertOutside(body, label, SUMMARY_MAX_BYTES);
+        expectInertOutside(
+          inlineBody({
+            issueId: ISSUE,
+            severity: 'blocker',
+            quality: 'security',
+            ruleKey: fields.ruleKey,
+            message: fields.message,
+            url,
+          }),
+          label,
+          INLINE_MAX_BYTES,
+        );
+      }
+    }
+  });
+
+  it('keeps a hostile gate name inert in the Azure summary', () => {
+    for (const [name, value] of cases) {
+      expectInertOutside(
+        summary({ vocabulary: 'azure', gate: { ...failed, gate: { id: 'g1', name: value } } }),
+        name,
+        SUMMARY_MAX_BYTES,
+      );
+    }
+  });
+});
