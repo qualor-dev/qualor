@@ -324,7 +324,8 @@ const threadAnswer = z.looseObject({
 const threadList = z.looseObject({ value: z.array(threadAnswer) });
 const createdComment = z.looseObject({ id: z.number().int() });
 const identityList = z.looseObject({
-  value: z.array(z.looseObject({ descriptor: z.string().nullish() })),
+  // The identity service may answer an id it does not know with a positional null.
+  value: z.array(z.looseObject({ descriptor: z.string().nullish() }).nullable()),
 });
 const aclList = z.looseObject({
   value: z.array(
@@ -915,6 +916,9 @@ export class AzureDevOpsClient {
         '/_apis/hooks/subscriptions',
         subscriptionAnswer,
         this.#subscriptionBody(input),
+        AZURE_API_VERSION,
+        'base',
+        [input.password],
       ),
     );
   }
@@ -930,6 +934,9 @@ export class AzureDevOpsClient {
         `/_apis/hooks/subscriptions/${id.toLowerCase()}`,
         subscriptionAnswer,
         { ...this.#subscriptionBody(input), id: id.toLowerCase() },
+        AZURE_API_VERSION,
+        'base',
+        [input.password],
       ),
     );
   }
@@ -973,6 +980,8 @@ export class AzureDevOpsClient {
     body?: unknown,
     apiVersion: string = AZURE_API_VERSION,
     host: 'base' | 'identities' = 'base',
+    /** Secrets of this request's body (a hook's password): cut from Azure DevOps' error text too. */
+    bodySecrets: readonly string[] = [],
   ): Promise<T> {
     const max = this.#options.maxRequests ?? MAX_AZURE_REQUESTS;
     if (this.#requestCount >= max) {
@@ -994,7 +1003,7 @@ export class AzureDevOpsClient {
         body,
         apiVersion,
         authorization,
-        secrets,
+        [...secrets, ...bodySecrets],
         now,
         host,
       );

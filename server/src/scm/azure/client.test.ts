@@ -1613,3 +1613,55 @@ describe('replies, rights and service hooks (sub-plan 5, task 2)', () => {
     });
   });
 });
+
+describe('task 2 fix round 1', () => {
+  const repo = () => services.repositories[0]!;
+
+  it('F1: an identity the service does not find is null, as a positional null or an empty list', async () => {
+    for (const body of [
+      { count: 1, value: [null] },
+      { count: 0, value: [] },
+    ]) {
+      services.inject('GET', /\/_apis\/identities$/, { status: 200, body });
+      expect(await clientOf(services).identityDescriptor(services.patUser.id)).toBeNull();
+    }
+  });
+
+  it('F2: the hook password is cut from an error text that echoes it, on create and replace', async () => {
+    const password = 'echoed-hook-password-77f1';
+    const input = {
+      eventType: 'ms.vss-code.git-pullrequest-comment-event',
+      resourceVersion: '2.0',
+      projectId: repo().projectId,
+      repositoryId: repo().id,
+      url: 'https://qualor.example/hook',
+      password,
+    };
+    const echo = { message: `Bad inputs: basicAuthPassword=${password}` };
+    const made = await clientOf(services).createSubscription(input);
+    services.inject('POST', /hooks\/subscriptions$/, { status: 400, body: echo });
+    services.inject('PUT', /hooks\/subscriptions\//, { status: 400, body: echo });
+    const errors = [
+      await failure(clientOf(services).createSubscription(input)),
+      await failure(clientOf(services).replaceSubscription(made.id, input)),
+    ];
+    for (const err of errors) {
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+      expect((err as AzureError).azureMessage).toContain('[credential]');
+      expect(written(err)).not.toContain(password);
+      expect(err.request).not.toContain(password);
+    }
+  });
+
+  it('F3: a Services client without the identities mapping cannot look an identity up', async () => {
+    services.clearRequests();
+    const client = new AzureDevOpsClient(
+      { baseUrl: services.url, credential: patOf(services), allowInternalHosts: true },
+      { timeoutMs: 2_000 },
+    );
+    expect(await failure(client.identityDescriptor(services.patUser.id))).toMatchObject({
+      kind: 'not_found',
+    });
+    expect(services.requests.at(-1)?.path).toBe('/_apis/identities');
+  });
+});

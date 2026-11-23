@@ -1307,7 +1307,10 @@ export async function createFakeAzureDevOps(options: {
     };
 
     if (req.path.startsWith('/vssps/') || req.path === '/_apis/identities') {
-      if (req.method !== 'GET' || !/^(\/vssps)?\/_apis\/identities$/.test(req.path)) {
+      // Services answers on the vssps host only (probe item 20: 404 on the organisation); Server on the collection.
+      const identitiesPath =
+        deployment === 'services' ? '/vssps/_apis/identities' : '/_apis/identities';
+      if (req.method !== 'GET' || req.path !== identitiesPath) {
         wrapped(res, 404, 'fake Azure DevOps: no such route', 'NotFound');
         return true;
       }
