@@ -305,7 +305,9 @@ async function decorateAzureSteps(
     // live diff at the reviewed head, whatever was analysed.
     const analyzers = payload.azure?.checkout === 'head';
     if (analysed === null || analysed.id !== newest) {
-      inline = { ...NO_INLINE, skipped: 'stale' };
+      // The checkout is a lasting setting of the pipeline, a stale head clears with the next analysis:
+      // the checkout is what the summary says (the order GitHub has too).
+      inline = { ...NO_INLINE, skipped: analyzers ? 'stale' : 'checkout_other' };
     } else {
       inline =
         (await attempt(failures, () =>

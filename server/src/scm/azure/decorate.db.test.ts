@@ -289,6 +289,19 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     ]);
   });
 
+  it('says the checkout, not the stale head, when both hold', async () => {
+    const s = await setup('az/stale-other');
+    fake.addIteration(s.repository.id, PR, {
+      sourceRefCommit: azureCommitId('az/stale-other-newer'),
+      commonRefCommit: s.baseCommit,
+    });
+    await s.ingest({ azure: { repositoryId: s.repository.id, checkout: 'other' } });
+    await decorate();
+    const content = summaries(s.repository.id)[0]?.comments[0]?.content;
+    expect(content).toContain(CHECKOUT_OTHER);
+    expect(content).not.toContain(STALE);
+  });
+
   it('posts no status when no iteration has the analysed commit, and still the summary', async () => {
     const s = await setup('az/no-iteration');
     await s.ingest({ revision: azureCommitId('az/elsewhere') });

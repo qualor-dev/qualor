@@ -1018,7 +1018,6 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     const fixed = await s.aiFinding({ line: 4 });
     const fresh = await s.aiFinding({ line: 5 });
     // A thread of an earlier job for the finding that is fixed since.
-    const old = s.pr().threads.length;
     s.pr().threads.push({
       id: 5000,
       status: 'active',
@@ -1039,7 +1038,6 @@ old`,
         },
       ],
     });
-    expect(old).toBeGreaterThanOrEqual(0);
     await h.ctx.db
       .update(issues)
       .set({ status: 'closed', closedAt: new Date() })
