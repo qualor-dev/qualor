@@ -545,6 +545,15 @@ export function fixedMarker(issueId: string, sha: string): string {
   return `<!-- qualor:fixed ${uuid(issueId)} ${sha} -->`;
 }
 
+/**
+ * Azure DevOps only: the first line of Qualor's comment in a thread it reopened because its issue
+ * came back. Thread properties cannot be changed there, so the comment is how a reopening is
+ * recorded; {@link markerOf} does not know it.
+ */
+export function reopenedMarker(issueId: string): string {
+  return `<!-- qualor:reopened ${uuid(issueId)} -->`;
+}
+
 /** A note body's first line, without the carriage return of a CRLF end: where a marker is. */
 export function firstLineOf(body: string): string {
   return (body.split('\n', 1)[0] ?? '').replace(/\r$/, '');

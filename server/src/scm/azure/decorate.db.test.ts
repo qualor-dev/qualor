@@ -209,12 +209,16 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
       sourceRefCommit: azureCommitId('az/stale-newer'),
       commonRefCommit: s.baseCommit,
     });
-    await s.ingest();
+    // A new issue the head would get a thread for, were the analysis of the newest iteration.
+    await s.ingest({ findings: 1 });
     await decorate();
     expect(iterationStatus(s.repository.id, 1)).toEqual([
-      expect.objectContaining({ state: 'succeeded' }),
+      expect.objectContaining({ state: 'failed' }),
     ]);
     expect(iterationStatus(s.repository.id, 2)).toEqual([]);
+    // Nothing of the threads is read or written: no changes, no file, only the summary's listing.
+    expect(requestsOf().filter((r) => /\/changes|\/items/.test(r))).toEqual([]);
+    expect(requestsOf().filter((r) => /GET .*\/threads$/.test(r))).toHaveLength(1);
     const [summary] = summaries(s.repository.id);
     expect(summary?.comments[0]?.content).toContain(STALE);
     // No thread but the summary was asked for or written.

@@ -25,6 +25,7 @@ import {
   type AzureThread,
 } from './client';
 import { azureClientFor } from './connections';
+import { reconcileAzureThreads } from './threads';
 import { azureWebBase } from './url';
 
 export const AZURE_REPOSITORY_MISMATCH =
@@ -35,31 +36,6 @@ type Inline = SummaryInput['inline'];
 const NO_INLINE: Inline = { commented: 0, unplaced: 0, skipped: null };
 /** Reading or changing the threads failed: the summary says they could not be updated this time. */
 const NOT_UPDATED: Inline = { commented: 0, unplaced: 0, skipped: 'failed' };
-
-/** What Task 6's thread reconciliation is given: everything the decoration has read so far. */
-export interface AzureThreadsInput {
-  deps: DecorationDeps;
-  client: AzureDevOpsClient;
-  loaded: Loaded;
-  repositoryId: string;
-  prId: number;
-  pullRequest: AzurePullRequest;
-  /** The iteration holding the analysed commit (the pull request's newest). */
-  analysed: AzureIteration;
-  /** Qualor's identity in Azure DevOps (the author of its threads). */
-  identityId: string;
-}
-
-/**
- * Where Task 6 plugs in `reconcileAzureThreads`: Qualor's inline threads for the analysed
- * iteration, between the status and the summary. Called only when the analysis is the pull
- * request's newest iteration and the pipeline checked out its head. Until then it changes nothing
- * and reports no inline comments.
- */
-function reconcileThreads(input: AzureThreadsInput): Promise<Inline> {
-  void input;
-  return Promise.resolve(NO_INLINE);
-}
 
 /** The newest iteration (the highest id) whose source commit is `revision`, or null. */
 function iterationOf(
@@ -178,7 +154,7 @@ function finish(
 /**
  * One Azure DevOps decoration: the client and the repository check; a branch analysis gets a
  * commit status. A pull request gets, in this order, its status on the analysed iteration (the one
- * a "Status check" branch policy reads), Qualor's threads (Task 6), and the summary thread. A
+ * a "Status check" branch policy reads), Qualor's inline threads, and the summary thread. A
  * completed or abandoned pull request only has its title recorded and its snapshots deleted.
  */
 export async function decorateAzure(
@@ -245,16 +221,16 @@ export async function decorateAzure(
     } else {
       inline =
         (await attempt(failures, () =>
-          reconcileThreads({
+          reconcileAzureThreads({
             deps,
             client,
             loaded,
             repositoryId,
             prId,
-            pullRequest: pull,
             analysed,
             identityId: identity.id,
-          }),
+            failures,
+          }).then((result) => ({ ...result, skipped: null })),
         )) ?? NOT_UPDATED;
       if (failures.stop !== null) return failed(failures.stop);
     }
