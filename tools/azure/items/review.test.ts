@@ -5,6 +5,7 @@ import {
   deliveries,
   isAiNote,
   isReplyNote,
+  notificationsRecording,
   ownSubscriptions,
   reviewSource,
   withoutProvider,
@@ -112,5 +113,44 @@ describe('deliveries', () => {
       readable: true,
     });
     expect(deliveries('nonsense', 0).readable).toBe(false);
+  });
+});
+
+describe('notificationsRecording', () => {
+  it('keeps only the id, status, result and date of each notification, never its details', () => {
+    const basic = `Basic ${Buffer.from('qualor:hook-password-value-0123456789').toString('base64')}`;
+    const json = {
+      count: 2,
+      value: [
+        {
+          id: 41,
+          subscriptionId: ID,
+          status: 'completed',
+          result: 'succeeded',
+          createdDate: '2026-11-23T10:00:10Z',
+          details: {
+            request: `POST https://qualor.example.com/api/v0/azure-devops/webhooks/${ID}\nAuthorization: ${basic}`,
+            requestAttempts: 1,
+            messages: { authorization: basic },
+          },
+        },
+        { id: 42, status: 'processing', details: { request: basic } },
+      ],
+    };
+    const recorded = notificationsRecording(json);
+    expect(recorded).toEqual({
+      count: 2,
+      value: [
+        { id: 41, status: 'completed', result: 'succeeded', createdDate: '2026-11-23T10:00:10Z' },
+        { id: 42, status: 'processing' },
+      ],
+    });
+    expect(JSON.stringify(recorded)).not.toContain('Basic');
+    expect(JSON.stringify(recorded)).not.toContain(basic.slice(6));
+  });
+
+  it('records nothing of an answer it does not read', () => {
+    expect(notificationsRecording({ message: 'Basic abc' })).toEqual({ value: [] });
+    expect(notificationsRecording('Basic abc')).toEqual({ value: [] });
   });
 });

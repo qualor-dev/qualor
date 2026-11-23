@@ -180,6 +180,29 @@ export function deliveries(json: unknown, sinceMs: number) {
   };
 }
 
+/**
+ * What is recorded of a subscription's notification history: each notification's id, status,
+ * result and date, nothing else. Its `details` can hold the request Azure DevOps sent, Basic
+ * header and all, so they never reach a recording; an answer of another shape records no entry.
+ */
+export function notificationsRecording(json: unknown): {
+  count?: number;
+  value: Record<string, unknown>[];
+} {
+  const parsed = NotificationList.safeParse(json);
+  if (!parsed.success) return { value: [] };
+  const value = parsed.data.value.map((n) => {
+    const kept: Record<string, unknown> = {};
+    for (const field of ['id', 'status', 'result', 'createdDate'] as const) {
+      const v = (n as Record<string, unknown>)[field];
+      if (typeof v === 'string' || typeof v === 'number') kept[field] = v;
+    }
+    return kept;
+  });
+  const count = (json as { count?: unknown }).count;
+  return typeof count === 'number' ? { count, value } : { value };
+}
+
 /** What `PUT /system/llm` takes to store the settings as they are now, without the provider (and so its key). */
 export function withoutProvider(current: unknown): Record<string, unknown> {
   const c = (current ?? {}) as Record<string, unknown>;
@@ -664,7 +687,11 @@ export const item: ProbeItem = {
             'GET',
             `${SUBSCRIPTIONS}/${commentSub.id}/notifications?maxResults=20`,
           );
-          await rec(ctx, 'reply-notifications', answerOf(history));
+          // Never the notifications' details: they can hold the delivery's Basic header.
+          await rec(ctx, 'reply-notifications', {
+            ...answerOf(history),
+            body: notificationsRecording(history.json),
+          });
           const d = deliveries(history.json, postedAt - 5000);
           notes.push(
             d.readable
