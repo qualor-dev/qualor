@@ -58,9 +58,11 @@ from the server only.
 
 ### A personal access token
 
-Create the token in Azure DevOps under **User settings → Personal access tokens**, with the scope
-**Code: Read**. It sees what its owner sees, and it stops working when it expires or its owner
-loses access.
+Create the token in Azure DevOps under **User settings → Personal access tokens**. The scope
+**Code: Read** is enough for the test. For
+[comments and status on pull requests](#comments-and-status-on-pull-requests) the token needs
+**Code: Read & write**. It sees what its owner sees, and it stops working when it expires or its
+owner loses access.
 
 If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
 `NODE_EXTRA_CA_CERTS`.
@@ -216,9 +218,9 @@ Under **Repos → Branches → Branch policies** of the target branch, add a **S
 
 ### The identity's permissions
 
-Give Qualor's identity **Contribute to pull requests** on the repository. A personal access token
-needs the scopes **Code: Read & write** and **Code: Status**. Without the permission, the summary
-counts the threads Qualor could not resolve or reopen.
+Give Qualor's identity **Contribute to pull requests** on the repository. Without it, the summary
+counts the threads Qualor could not resolve or reopen. A personal access token also needs the
+right [scope](#a-personal-access-token).
 
 ### Threads
 
