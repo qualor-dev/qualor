@@ -2,11 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AZURE_TEST_PRINCIPAL, identitiesOf, patOf } from '../../../test/azure';
 import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../../test/fake-azure-devops';
 import { trustTestCa } from '../../../test/tls';
-import { MAX_AUTHORS_LOOKED_UP } from '../../review/reply-sides';
+import { MAX_AUTHORS_LOOKED_UP } from '../rights-limits';
 import { AzureDevOpsClient } from './client';
 import { azureMayTriage } from './rights';
 
 const MARKER = 'azure-answer-marker-91c2';
+const ACL = /[/]_apis[/]accesscontrollists[/]/;
 
 let fake: FakeAzureDevOps;
 let untrust: () => void;
@@ -96,21 +97,61 @@ describe('azureMayTriage', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
-  it('is false on a 500 from the ACL, with one warn that holds no text of the answer', async () => {
-    const user = fake.addUser({ role: 'owner' });
-    fake.inject(
-      'GET',
-      /\/_apis\/accesscontrollists\//,
-      ...Array(4).fill({
-        status: 500,
-        body: { message: MARKER },
-      }),
+  it('counts a GUID that differs only in case once', async () => {
+    const user = fake.addUser({ role: 'contributor' });
+    fake.clearRequests();
+    const ok = await azureMayTriage(clientOf(), repositoryId(), [user.id, user.id.toUpperCase()]);
+    expect(ok).toBe(true);
+    expect(fake.requests.filter((r) => r.path.endsWith('/_apis/identities'))).toHaveLength(1);
+  });
+
+  it('is false for an unknown identity and asks no ACL after it', async () => {
+    fake.clearRequests();
+    const unknown = '11111111-2222-4333-8444-555555555555';
+    expect(await azureMayTriage(clientOf(), repositoryId(), [unknown])).toBe(false);
+    expect(fake.requests.filter((r) => r.path.includes('/_apis/accesscontrollists/'))).toHaveLength(
+      0,
     );
+  });
+
+  it('is false on a 403 from the ACL, with one warn that holds no text of the answer', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    // The client never retries: the one injected answer is the one ACL request of this call.
+    fake.inject('GET', ACL, {
+      status: 403,
+      body: { message: MARKER },
+    });
     const log = logger();
     expect(await azureMayTriage(clientOf(), repositoryId(), [user.id], log)).toBe(false);
     expect(log.warn).toHaveBeenCalledTimes(1);
     const line = JSON.stringify(log.warn.mock.calls[0]);
     expect(line).toContain('kind');
     expect(line).not.toContain(MARKER);
+  });
+
+  it('rejects, so the job retries, on a 503 (transient)', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    fake.inject('GET', ACL, { status: 503 });
+    await expect(azureMayTriage(clientOf(), repositoryId(), [user.id])).rejects.toMatchObject({
+      kind: 'transient',
+    });
+  });
+
+  it('rejects on a timeout', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    fake.inject('GET', ACL, { status: 200, hang: true });
+    const client = new AzureDevOpsClient(
+      {
+        baseUrl: fake.url,
+        credential: patOf(fake),
+        allowInternalHosts: true,
+        identities: identitiesOf(fake)!,
+      },
+      { timeoutMs: 300 },
+    );
+    await expect(azureMayTriage(client, repositoryId(), [user.id])).rejects.toMatchObject({
+      kind: 'transient',
+      reason: 'timeout',
+    });
   });
 });

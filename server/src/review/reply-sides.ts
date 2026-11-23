@@ -22,6 +22,7 @@ import {
 import { MAX_DISCUSSION_PAGES } from '../scm/inline';
 import { firstLineOf, markerOf, replyMarker } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
+import { MAX_AUTHORS_LOOKED_UP } from '../scm/rights-limits';
 import type { ReviewJobDeps } from './job';
 import type { ReplyRow } from './replies';
 import { githubRounds, type Round } from './reply-detect';
@@ -45,11 +46,6 @@ import type { ReplyWindow } from './reply-queue';
  * whose note may ask for a review.
  */
 const GITLAB_DEVELOPER = 30;
-/**
- * The most authors of a round whose rights are asked for, each once: a round of more changes no
- * status.
- */
-export const MAX_AUTHORS_LOOKED_UP = 5;
 /**
  * GitHub's roles of a repository whose people may change a finding's status through a reply, or
  * ask for a review.
