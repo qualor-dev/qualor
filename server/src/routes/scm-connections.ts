@@ -1,5 +1,5 @@
 import { assertNever, SCM_PROVIDERS, type ScmProvider } from '@qualor/shared';
-import { and, asc, count, eq, gt, isNotNull, isNull, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, sql, type AnyColumn } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -22,9 +22,9 @@ import { grantInOrganization, memberOf, organizationFacts } from '../auth/facts'
 import { organizationPermissions } from '../auth/policy';
 import type { UserPrincipal } from '../auth/principal';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
-import type { Executor } from '../db/client';
+import type { Db, Executor } from '../db/client';
 import { first } from '../db/rows';
-import { memberships, organizations, projects, scmConnections } from '../db/schema';
+import { memberships, organizations, scmConnections } from '../db/schema';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import {
   conflict,
@@ -37,6 +37,7 @@ import { idParams, iso, noContent, noNul, timestamp } from '../http/schemas';
 import { queueSnapshotPurge } from '../review/jobs';
 import { AZURE_AUTH_KINDS } from '../scm/azure/auth-kinds';
 import { MAX_AZURE_CERTIFICATE_BYTES } from '../scm/azure/certificate';
+import type { AzureDevOpsClient } from '../scm/azure/client';
 import {
   azureCreate,
   azureCredentialField,
@@ -45,10 +46,13 @@ import {
   azureClientFor,
   azureViewOf,
   mappedAzureProjects,
+  mappedRepositoryRefs,
+  markHookPasswordHeld,
   testAzureConnection,
 } from '../scm/azure/connections';
-import { generateHookPassword, subscribeProjects } from '../scm/azure/hooks';
+import { generateHookPassword, subscribeProjects, type SubscribeResult } from '../scm/azure/hooks';
 import { LOCKS } from '../db/locks';
+import { withSessionLock } from '../db/session-lock';
 import { AZURE_REPOSITORY_ID, azureBaseUrlProblem, azureWebhookUrl } from '../scm/azure/url';
 import { ScmError } from '../scm/provider';
 import {
@@ -129,6 +133,15 @@ const azureSchema = z.object({
 });
 
 const HOOK_OUTCOMES = ['created', 'replaced', 'unchanged', 'refused'] as const;
+
+/** What a subscribe sends Azure DevOps: through which client, with which password, known or not. */
+interface HookCall {
+  row: ScmConnectionRow;
+  client: AzureDevOpsClient;
+  password: string;
+  /** Whether Azure DevOps already holds `password` (the stored mark). */
+  known: boolean;
+}
 
 const ciSetupSchema = z.object({
   available: z.boolean(),
@@ -563,17 +576,6 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
   });
   const dto = async (row: ScmConnectionRow) =>
     connectionDto(row, key, publicUrl, await ciSetupOf(row));
-  /** The repository ids the connection's projects are mapped to. */
-  const mappedRefs = async (
-    connectionId: string,
-    executor: Executor = deps.db,
-  ): Promise<string[]> =>
-    (
-      await executor
-        .select({ ref: projects.scmProjectRef })
-        .from(projects)
-        .where(and(eq(projects.scmConnectionId, connectionId), isNotNull(projects.scmProjectRef)))
-    ).flatMap((p) => (p.ref === null ? [] : [p.ref]));
   /** The Azure DevOps connection of the path; any other provider's is not found. */
   const azureConnectionFor = async (request: FastifyRequest<{ Params: { id: string } }>) => {
     const row = await connectionFor(accessOf(deps), requireUser(request), request.params.id);
@@ -581,16 +583,38 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     return row;
   };
   /**
-   * Stores a new webhook password for the Azure DevOps connection and returns it: the only time
-   * it is seen. Azure DevOps does not hold it until the subscriptions are written again.
+   * Stores a new webhook password for the Azure DevOps connection and returns it with the row
+   * written: the only time it is seen. Azure DevOps does not hold it until the subscriptions are
+   * written again. The write is conditional on the stored password still being `row`'s; a 503 when
+   * it is not (an address move cleared it meanwhile).
    */
-  const storeNewHookPassword = async (tx: Executor, row: ScmConnectionRow): Promise<string> => {
+  const storeNewHookPassword = async (
+    tx: Executor,
+    row: ScmConnectionRow,
+  ): Promise<{ password: string; written: ScmConnectionRow }> => {
     const password = generateHookPassword();
-    await tx
+    const stored = row.webhookSecretEnc;
+    const [written] = await tx
       .update(scmConnections)
       .set({ webhookSecretEnc: encryptWebhookSecret(key, password) })
-      .where(eq(scmConnections.id, row.id));
-    return password;
+      .where(
+        and(
+          eq(scmConnections.id, row.id),
+          stored === null
+            ? isNull(scmConnections.webhookSecretEnc)
+            : sql`${scmConnections.webhookSecretEnc} ->> 'ct' = ${stored.ct}`,
+        ),
+      )
+      .returning();
+    if (!written) {
+      throw new ProblemError(
+        503,
+        'CONCURRENCY_CONFLICT',
+        'The connection changed while this request was handled; reload it and try again',
+        { headers: { 'retry-after': '1' } },
+      );
+    }
+    return { password, written };
   };
   const checkedBaseUrl = (raw: string, provider: ScmProvider): string => {
     const problem = scmBaseUrlProblem(raw, deps.config.scmInternalHosts);
@@ -917,20 +941,28 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     },
   );
 
-  /** One subscribe or rotation of a connection's hooks at a time; held until the transaction ends. */
-  const lockHooks = (tx: Executor, id: string) =>
-    tx.execute(sql`SELECT pg_advisory_xact_lock(${LOCKS.azureHooks}, hashtext(${id}))`);
+  /**
+   * One subscribe or rotation of a connection's hooks at a time (`LOCKS.azureHooks`): a session
+   * lock on a connection reserved for the call. It holds no row and no audit lock, and no
+   * transaction stays open across the calls to Azure DevOps; `run`'s short transactions use the
+   * reserved connection.
+   */
+  const hooksLocked = <T>(id: string, run: (db: Db) => Promise<T>): Promise<T> =>
+    withSessionLock(deps.db, LOCKS.azureHooks, id, run);
   /** The connection as stored now (after the lock), or not found. */
   const freshRow = async (tx: Executor, id: string): Promise<ScmConnectionRow> => {
     const [fresh] = await tx.select().from(scmConnections).where(eq(scmConnections.id, id));
     if (!fresh) throw notFound('SCM connection');
     return fresh;
   };
+  const changedMeanwhile = {
+    503: 'The connection changed while the request was handled (CONCURRENCY_CONFLICT); see Retry-After',
+  };
 
   app.post(
     '/scm-connections/:id/azure-hooks/secret',
     {
-      config: { openapi: { problems: [404] } },
+      config: { openapi: { problems: [404, 503], problemDescriptions: changedMeanwhile } },
       schema: {
         tags: ['scm'],
         summary:
@@ -941,12 +973,15 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     },
     async (request) => {
       const row = await azureConnectionFor(request);
-      const password = await deps.db.transaction(async (tx) => {
-        await lockHooks(tx, row.id);
-        const created = await storeNewHookPassword(tx, await freshRow(tx, row.id));
-        await audit(tx, request, row, 'scm_connection.updated', { changed: ['webhookSecret'] });
-        return created;
-      });
+      const password = await hooksLocked(row.id, (db) =>
+        db.transaction(async (tx) => {
+          const created = await storeNewHookPassword(tx, await freshRow(tx, row.id));
+          await audit(tx, request, created.written, 'scm_connection.updated', {
+            changed: ['webhookSecret'],
+          });
+          return created.password;
+        }),
+      );
       return {
         url: publicUrl === null ? null : azureWebhookUrl(publicUrl, row.id),
         user: 'qualor' as const,
@@ -958,7 +993,9 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
   app.post(
     '/scm-connections/:id/azure-hooks',
     {
-      config: { openapi: { problems: [404, 409, 502] } },
+      config: {
+        openapi: { problems: [404, 409, 502, 503], problemDescriptions: changedMeanwhile },
+      },
       schema: {
         tags: ['scm'],
         summary:
@@ -975,58 +1012,67 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           'Azure DevOps sends the hooks with a password only to an https address: set QUALOR_PUBLIC_URL to one',
         );
       }
-      // One call at a time per connection: the lock is held across the calls to Azure DevOps.
-      const outcome = await deps.db.transaction(async (tx) => {
-        await lockHooks(tx, first.id);
-        const row = await freshRow(tx, first.id);
-        const made = azureClientFor(row, scmDeps);
-        if ('problem' in made) return { problem: made.problem };
-        let password = decryptWebhookSecret(key, row.webhookSecretEnc);
-        let passwordKnownToAzure = row.webhookSecretEnc?.hooksPushed === true;
-        let current = row;
-        if (password === null) {
-          password = await storeNewHookPassword(tx, row);
-          passwordKnownToAzure = false;
-          await audit(tx, request, row, 'scm_connection.updated', { changed: ['webhookSecret'] });
-          current = await freshRow(tx, row.id);
-        }
-        const refs = await mappedRefs(row.id, tx);
-        let result;
+      const url = azureWebhookUrl(publicUrl, first.id);
+      const outcome = await hooksLocked(first.id, async (db) => {
+        // The password Azure DevOps gets: the stored one, else a new one stored and audited in a
+        // short transaction of its own, committed before the first call to Azure DevOps.
+        const prepared = await db.transaction(
+          async (tx): Promise<HookCall | { problem: string }> => {
+            const row = await freshRow(tx, first.id);
+            const made = azureClientFor(row, scmDeps);
+            if ('problem' in made) return { problem: made.problem };
+            const stored = decryptWebhookSecret(key, row.webhookSecretEnc);
+            if (stored !== null) {
+              const known = row.webhookSecretEnc?.hooksPushed === true;
+              return { row, client: made.client, password: stored, known };
+            }
+            const created = await storeNewHookPassword(tx, row);
+            await audit(tx, request, created.written, 'scm_connection.updated', {
+              changed: ['webhookSecret'],
+            });
+            return {
+              row: created.written,
+              client: made.client,
+              password: created.password,
+              known: false,
+            };
+          },
+        );
+        if ('problem' in prepared) return { problem: prepared.problem };
+        const { row, client } = prepared;
+        // The calls to Azure DevOps, with no transaction open.
+        let result: SubscribeResult;
         try {
+          const refs = await mappedRepositoryRefs(db, row.id);
           result = await subscribeProjects({
-            client: made.client,
-            url: azureWebhookUrl(publicUrl, row.id),
-            password,
-            passwordKnownToAzure,
+            client,
+            url,
+            password: prepared.password,
+            passwordKnownToAzure: prepared.known,
             projectIds:
-              refs.length === 0 ? [] : mappedAzureProjects(await made.client.repositories(), refs),
+              refs.length === 0 ? [] : mappedAzureProjects(await client.repositories(), refs),
           });
         } catch (err) {
           if (err instanceof ScmError) return { problem: err.message };
           throw err;
         }
+        // A second short transaction: the mark and the audit of what was written, also when
+        // Azure DevOps failed part-way. Only a call that wrote or checked every subscription of
+        // at least one project, none refused, sets the mark.
         const complete =
           result.failure === null &&
+          result.projects.length > 0 &&
           result.projects.every((p) => p.comment !== 'refused' && p.updated !== 'refused');
-        if (complete && current.webhookSecretEnc) {
-          // Azure DevOps holds this password now, unless a move of the address (which clears it)
-          // or a rotation ran meanwhile (neither takes the lock): then no mark is written.
-          await tx
-            .update(scmConnections)
-            .set({ webhookSecretEnc: { ...current.webhookSecretEnc, hooksPushed: true } })
-            .where(
-              and(
-                eq(scmConnections.id, row.id),
-                eq(scmConnections.baseUrl, row.baseUrl),
-                sql`${scmConnections.webhookSecretEnc}->>'ct' = ${current.webhookSecretEnc.ct}`,
-              ),
-            );
-        }
-        if (result.failure === null || result.wrote) {
-          await audit(tx, request, row, 'scm_connection.hooks_updated', {
-            projects: result.projects.length,
-          });
-        }
+        await db.transaction(async (tx) => {
+          // Azure DevOps holds this password now, unless the address moved meanwhile (a PATCH,
+          // which does not take the hooks lock, clears the password): then no mark is written.
+          if (complete) await markHookPasswordHeld(tx, row);
+          if (result.failure === null || result.wrote) {
+            await audit(tx, request, row, 'scm_connection.hooks_updated', {
+              projects: result.projects.length,
+            });
+          }
+        });
         return result;
       });
       if ('problem' in outcome) throw hooksUnavailable(outcome.problem);
@@ -1091,7 +1137,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         case 'azure': {
           const url = publicUrl === null ? null : azureWebhookUrl(publicUrl, row.id);
           const result = await testAzureConnection(row, scmDeps, ref, {
-            repositoryRefs: await mappedRefs(row.id),
+            repositoryRefs: await mappedRepositoryRefs(deps.db, row.id),
             url,
             current:
               row.webhookSecretEnc?.hooksPushed === true &&

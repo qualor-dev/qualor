@@ -433,20 +433,22 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
     );
     expect(gh!.azure).toBeNull();
   });
-  describe('fix round 1', () => {
-    const dtoOf = async (id: string) =>
+  const dtoOf = async (id: string, harness: IngestHarness = h) =>
+    (
       (
-        (await call(h, 'GET', `/scm-connections?organizationId=${h.organizationId}`)).json() as {
-          items: { id: string; azure: Record<string, unknown> }[];
-        }
-      ).items.find((c) => c.id === id)!.azure;
-    const hooksOf = async (id: string) =>
-      (
-        (await call(h, 'POST', `/scm-connections/${id}/test`, {})).json() as {
-          hooks: { projectId: string; state: string }[] | null;
-        }
-      ).hooks;
+        await call(harness, 'GET', `/scm-connections?organizationId=${harness.organizationId}`)
+      ).json() as {
+        items: { id: string; azure: Record<string, unknown> }[];
+      }
+    ).items.find((c) => c.id === id)!.azure;
+  const hooksOf = async (id: string) =>
+    (
+      (await call(h, 'POST', `/scm-connections/${id}/test`, {})).json() as {
+        hooks: { projectId: string; state: string }[] | null;
+      }
+    ).hooks;
 
+  describe('fix round 1', () => {
     it('R1: moving the address clears the hook password; the old one is refused; a subscribe makes a new one', async () => {
       const id = await connect();
       await mapRepository(h, 'hooks/api', id, api);
@@ -657,6 +659,83 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
         { projectId: api.projectId, comment: 'created', updated: 'created' },
       ]);
       expect(await hooksOf(id)).toEqual([{ projectId: api.projectId, state: 'enabled' }]);
+    });
+  });
+
+  describe('final review', () => {
+    /** `work`, or 'blocked' when it has not settled within `ms`. */
+    const within = <T>(work: Promise<T>, ms = 5_000): Promise<T | 'blocked'> =>
+      Promise.race([
+        work,
+        new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), ms)),
+      ]);
+
+    it('FW1: a first subscribe holds no row or audit lock while Azure DevOps answers; a rotation waits for it', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/fw1', id, api);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      let arrived!: () => void;
+      const waiting = new Promise<void>((resolve) => (arrived = resolve));
+      fake.inject('GET', /hooks\/publishers\/tfs\/eventTypes$/, {
+        status: 200,
+        passThrough: true,
+        before: async () => {
+          arrived();
+          await gate;
+        },
+      });
+      const subscribing = subscribe(id);
+      let rotating: Promise<unknown> | undefined;
+      try {
+        await waiting;
+        // The call made the password, audited it and committed before it asked Azure DevOps.
+        expect(await auditOf('scm_connection.updated', id)).toEqual([
+          { changed: ['webhookSecret'] },
+        ]);
+        // A change of the same row, and another audited change, go through meanwhile.
+        const patched = await within(
+          call(h, 'PATCH', `/scm-connections/${id}`, { azureAuth: 'pat', token: fake.pat }),
+        );
+        expect(patched === 'blocked' ? patched : patched.statusCode).toBe(200);
+        expect(await within(connect())).not.toBe('blocked');
+        // A rotation of the same connection waits for the subscribe.
+        rotating = rotate(id);
+        expect(await within(rotating, 300)).toBe('blocked');
+      } finally {
+        release();
+      }
+      const res = await subscribing;
+      expect(res.statusCode, res.body).toBe(200);
+      expect(outcomes(res)).toEqual([
+        { projectId: api.projectId, comment: 'created', updated: 'created' },
+      ]);
+      await rotating;
+      expect(await auditOf('scm_connection.hooks_updated', id)).toEqual([{ projects: 1 }]);
+      expect(await auditOf('scm_connection.updated', id)).toEqual([
+        { changed: ['webhookSecret'] },
+        { changed: ['token'] },
+        { changed: ['webhookSecret'] },
+      ]);
+      // The rotation ran after the subscribe: Azure DevOps holds the older password.
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+    });
+
+    it('FW7: a subscribe that processed no project sets no mark', async () => {
+      const id = await connect();
+      const nothingMapped = await subscribe(id);
+      expect(nothingMapped.statusCode, nothingMapped.body).toBe(200);
+      expect(outcomes(nothingMapped)).toEqual([]);
+      expect(await storedPassword(id)).not.toBeNull();
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+      // A mapped repository the identity does not see: nothing processed either.
+      const project = await h.project('hooks/fw7');
+      await h.ctx.db
+        .update(projects)
+        .set({ scmConnectionId: id, scmProjectRef: 'aaaaaaaa-0000-4000-8000-000000000007' })
+        .where(eq(projects.id, project.id));
+      expect(outcomes(await subscribe(id))).toEqual([]);
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
     });
   });
 });

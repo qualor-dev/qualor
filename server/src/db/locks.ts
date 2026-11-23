@@ -154,9 +154,12 @@ export const LOCKS = {
    */
   organizationDeletes: 7_310_040,
   /**
-   * `pg_advisory_xact_lock(key, hashtext(connectionId))`: one subscribe or password rotation of an
-   * Azure DevOps connection's service hooks at a time (sub-plan 5, task 7). Held across the calls to
-   * Azure DevOps, so a double click never makes two passwords or duplicate subscriptions.
+   * `pg_advisory_lock(key, hashtext(connectionId))`, a session lock on a reserved connection
+   * (db/session-lock.ts): one subscribe or password rotation of an Azure DevOps connection's
+   * service hooks at a time (sub-plan 5), so a double click never makes two passwords or duplicate
+   * subscriptions. Held across the calls to Azure DevOps with no transaction open: the routes'
+   * short transactions under it take the connection's row and the audit chain only briefly, and
+   * nothing else waits for it.
    */
   azureHooks: 7_310_041,
   /** `pg_advisory_xact_lock(key)`: schedule lock of the Azure DevOps backstop passes (sub-plan 5, task 9). */

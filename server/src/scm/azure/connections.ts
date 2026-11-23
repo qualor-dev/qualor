@@ -1,6 +1,8 @@
 import { assertNever } from '@qualor/shared';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { decryptSecret, encryptionKey } from '../../crypto/secrets';
-import type { scmConnections } from '../../db/schema';
+import type { Executor } from '../../db/client';
+import { projects, scmConnections } from '../../db/schema';
 import type { FieldError } from '../../http/problem';
 import {
   SCM_TOKEN_AAD,
@@ -558,6 +560,41 @@ export async function testAzureConnection(
     if (err instanceof ScmError) return failed(problemCode(err), err.message);
     throw err;
   }
+}
+
+/** The repository ids the connection's projects are mapped to. */
+export async function mappedRepositoryRefs(db: Executor, connectionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ ref: projects.scmProjectRef })
+    .from(projects)
+    .where(and(eq(projects.scmConnectionId, connectionId), isNotNull(projects.scmProjectRef)));
+  return rows.flatMap((p) => (p.ref === null ? [] : [p.ref]));
+}
+
+/**
+ * Marks the stored hook password as one Azure DevOps holds (`hooksPushed`): a complete subscribe
+ * wrote it, or a delivery came with it. The write is conditional on the address and the password
+ * still being those of `row`, so a move of the address (which clears the password) or a new
+ * password meanwhile is never marked. Returns whether it wrote.
+ */
+export async function markHookPasswordHeld(
+  db: Executor,
+  row: Pick<ScmConnectionRow, 'id' | 'baseUrl' | 'webhookSecretEnc'>,
+): Promise<boolean> {
+  const stored = row.webhookSecretEnc;
+  if (stored === null) return false;
+  const written = await db
+    .update(scmConnections)
+    .set({ webhookSecretEnc: { ...stored, hooksPushed: true } })
+    .where(
+      and(
+        eq(scmConnections.id, row.id),
+        eq(scmConnections.baseUrl, row.baseUrl),
+        sql`${scmConnections.webhookSecretEnc} ->> 'ct' = ${stored.ct}`,
+      ),
+    )
+    .returning({ id: scmConnections.id });
+  return written.length > 0;
 }
 
 /** The Azure project ids (lower case, sorted) of the mapped repositories the identity still sees. */

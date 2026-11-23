@@ -26361,6 +26361,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "The connection changed while the request was handled (CONCURRENCY_CONFLICT); see Retry-After",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -26487,6 +26497,16 @@
           },
           "502": {
             "description": "Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The connection changed while the request was handled (CONCURRENCY_CONFLICT); see Retry-After",
             "content": {
               "application/problem+json": {
                 "schema": {
