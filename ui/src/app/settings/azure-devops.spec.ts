@@ -12,7 +12,12 @@ import {
 } from '../../testing/fake-server';
 import { SessionStore } from '../auth/session';
 import { AzureDevOpsPage } from './azure-devops.page';
-import { azureCertificateExpiredOn, azureProblemText, azureTestText } from './azure-text';
+import {
+  azureBackgroundProblemText,
+  azureCertificateExpiredOn,
+  azureProblemText,
+  azureTestText,
+} from './azure-text';
 import type { Connection } from './gitlab.page';
 
 const TENANT = '11111111-2222-4333-8444-555555555555';
@@ -400,6 +405,35 @@ describe('AzureDevOpsPage', () => {
     button(root.querySelector('section[data-key="a1"]')!, 'Test').click();
     await settle(fixture);
     expect(banner('a1')).toBeNull();
+  });
+
+  it('advises Contribute to pull requests for a permission the decoration lacked, not the Test’s read access', async () => {
+    setup([{ ...PAT, problem: { code: 'permission_missing', at: '2026-11-23T10:00:00.000Z' } }]);
+    const { root } = await render();
+    const banner =
+      root.querySelector('section[data-key="a1"] .connection-problem')?.textContent ?? '';
+    expect(banner).toContain('Problem since');
+    expect(banner).toContain('Contribute to pull requests on the repository');
+    expect(banner).toContain('Code: Read & write');
+    expect(banner).not.toContain('read access to Code');
+    // The Test reads only: its words stay.
+    expect(azureProblemText({ code: 'permission_missing' })).toContain('read access to Code');
+  });
+
+  it('words the other background problems as the Test does', () => {
+    for (const code of [
+      'token_refused',
+      'sign_in_required',
+      'html_answer',
+      'token_endpoint',
+      'undecryptable',
+      'url_not_allowed',
+    ] as const) {
+      expect(azureBackgroundProblemText({ code }), code).toBe(azureProblemText({ code }));
+    }
+    expect(azureBackgroundProblemText({ code: 'token_endpoint' }, '1 Dec 2026')).toBe(
+      azureProblemText({ code: 'token_endpoint' }, '1 Dec 2026'),
+    );
   });
 
   it('names an expired certificate and its day when Entra refuses the service principal', async () => {

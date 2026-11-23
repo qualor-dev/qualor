@@ -2320,6 +2320,7 @@
     "azure.problem.httpError": "Azure DevOps answered with an error.",
     "azure.problem.badAnswer": "Azure DevOps' answer was not understood. Check the address.",
     "azure.problem.unknown": "The test failed.",
+    "azure.problem.permissionBackground": "The credential lacks a permission in Azure DevOps. Give Qualor's identity Contribute to pull requests on the repository; a personal access token also needs Code: Read & write.",
     "azure.testOkRepository": "Connected as {$user}; the repository {$repository} is reachable.",
     "azure.testOkVisible": "Connected as {$user}; {$repositories} in {$projects} visible.",
     "azure.testOk": "Connected as {$user}.",

@@ -35,6 +35,8 @@ import {
   INLINE_MAX_BYTES,
   inlineBody,
   mergeRequestTitle,
+  reopenedNote,
+  resolvedNote,
   STATUS_NAME_MAX_CHARS,
   statusName,
   SUMMARY_MAX_BYTES,
@@ -451,6 +453,16 @@ describe('summary, inline note and commit status (scm.md §5)', () => {
         'could not be resolved',
       );
     }
+  });
+
+  it('has no such sentence on Azure DevOps, where a refused write fails the decoration (FW4)', () => {
+    const azure = summary({
+      vocabulary: 'azure',
+      inline: { commented: 2, unplaced: 0, skipped: null, unresolved: 2 },
+    });
+    expect(azure).not.toContain('could not be resolved');
+    expect(azure).not.toContain('Contribute to pull requests');
+    expect(azure).not.toContain('GitHub');
   });
 
   it('ends with how many more issues there are, where they are, and the link', () => {
@@ -929,6 +941,35 @@ describe('the note of a fixed issue in a thread a person replied in', () => {
     ];
     expect(notedFixes(notes, ISSUE)).toEqual(new Set([SHA, 'b'.repeat(40)]));
     expect(notedFixes(notes, OTHER_ISSUE)).toEqual(new Set(['c'.repeat(40)]));
+  });
+});
+
+describe('Azure DevOps thread notes (FW8)', () => {
+  const SHA = 'abcdef0123456789abcdef0123456789abcdef01';
+
+  it('a resolution says the issue is no longer open in the analysis, whatever closed it', () => {
+    expect(resolvedNote(ISSUE, SHA).split('\n')).toEqual([
+      `<!-- qualor:fixed ${ISSUE} ${SHA} -->`,
+      'The issue is no longer open in the analysis of ` abcdef0 `.',
+    ]);
+    expect(markerOf(resolvedNote(ISSUE, SHA))).toEqual({ kind: 'fixed', issueId: ISSUE, sha: SHA });
+  });
+
+  it('a reopening says the issue is open again in the analysis, whoever reopened the thread', () => {
+    expect(reopenedNote(ISSUE, SHA).split('\n')).toEqual([
+      `<!-- qualor:reopened ${ISSUE} -->`,
+      'The issue is open again in the analysis of ` abcdef0 `.',
+    ]);
+    // A reopened note is no fixed one: it ends what the fixed comment said.
+    expect(markerOf(reopenedNote(ISSUE, SHA))).toBeNull();
+  });
+
+  it('holds only fixed words and the commit in a code span', () => {
+    for (const note of [resolvedNote(ISSUE, SHA), reopenedNote(ISSUE, SHA)]) {
+      const [, sentence = ''] = note.split('\n');
+      expect(outsideCodeSpans(sentence)).toMatch(FIXED_TEXT);
+    }
+    expect(() => reopenedNote(ISSUE, 'not a sha')).toThrow();
   });
 });
 

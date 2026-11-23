@@ -17,6 +17,7 @@ import type { CommitState } from './gitlab/client';
 import {
   codeSpan,
   fixedMarker,
+  isFullSha,
   issueMarker,
   linesWithinBytes,
   MAX_MESSAGE_CHARS,
@@ -24,6 +25,7 @@ import {
   MAX_VALUE_CHARS,
   plainValue,
   qualorLink,
+  reopenedMarker,
   ruleKeyMarkdown,
   summaryMarker,
 } from './markdown';
@@ -266,16 +268,13 @@ const AZURE_CHECKOUT_OTHER =
 
 /**
  * GitHub: how many of Qualor's conversations stay as they are because the App may not resolve or
- * reopen them, and what to give it; null when there is none.
+ * reopen them, and what to give it; null when there is none. Azure DevOps has no such sentence: a
+ * refused write there fails the decoration, and the connection's settings show why.
  */
 function unresolvedSentence(input: SummaryInput): string | null {
   const n = count(input.inline.unresolved ?? 0);
-  if (n === 0) return null;
-  const grant =
-    input.vocabulary === 'azure'
-      ? 'Give Qualor’s identity the Contribute to pull requests permission.'
-      : 'give the GitHub App Contents: Read and write.';
-  return `${n} ${plural(n, 'conversation', 'conversations')} could not be resolved or reopened: ${grant}`;
+  if (n === 0 || input.vocabulary === 'azure') return null;
+  return `${n} ${plural(n, 'conversation', 'conversations')} could not be resolved or reopened: give the GitHub App Contents: Read and write.`;
 }
 
 /** The headline's marker of a gate status; one this code does not know is a warning. */
@@ -619,6 +618,30 @@ export function fixedNote(issueId: string, sha: string): string {
   return [
     fixedMarker(issueId, sha),
     `Fixed in ${codeSpan(sha.slice(0, 7))}. Qualor leaves this thread open because someone replied in it.`,
+  ].join('\n');
+}
+
+/**
+ * Azure DevOps: Qualor's comment that goes with its resolution of an issue's thread, its marker
+ * and fixed text with the revision in a code span. The words fit every way an issue leaves the
+ * analysis: fixed, marked false positive, won't fix or resolved.
+ */
+export function resolvedNote(issueId: string, sha: string): string {
+  return [
+    fixedMarker(issueId, sha),
+    `The issue is no longer open in the analysis of ${codeSpan(sha.slice(0, 7))}.`,
+  ].join('\n');
+}
+
+/**
+ * Azure DevOps: Qualor's comment in an issue's thread when the issue is open again in the
+ * analysis of `sha`, whoever reopened the thread (Qualor, or a person without a word).
+ */
+export function reopenedNote(issueId: string, sha: string): string {
+  if (!isFullSha(sha)) throw new Error('a Qualor note names a full commit SHA only');
+  return [
+    reopenedMarker(issueId),
+    `The issue is open again in the analysis of ${codeSpan(sha.slice(0, 7))}.`,
   ].join('\n');
 }
 

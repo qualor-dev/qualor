@@ -15,6 +15,7 @@ import { issues, jobs, projects } from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
 import { MAX_FIXED_NOTES } from '../inline';
 import { fixedMarker, issueMarker, markerOf } from '../markdown';
+import { reopenedNote, resolvedNote } from '../render';
 import { parseInternalHosts } from '../url';
 import { MAX_AZURE_THREAD_UPDATES } from './threads';
 
@@ -280,6 +281,8 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(lastComment(thread!)).toMatch(
       new RegExp(`^<!-- qualor:fixed ${issue.id} ${s.sourceCommit} -->`),
     );
+    expect(lastComment(thread!)).toBe(resolvedNote(issue.id, s.sourceCommit));
+    expect(lastComment(thread!)).toContain('The issue is no longer open in the analysis of');
     expect(thread?.comments[1]?.authorId).toBe(thread?.comments[0]?.authorId);
     // The first comment is never edited.
     expect(
@@ -302,6 +305,7 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(thread?.status).toBe('active');
     expect(thread?.comments).toHaveLength(3);
     expect(lastComment(thread!).split('\n')[0]).toBe(`<!-- qualor:reopened ${issue.id} -->`);
+    expect(lastComment(thread!)).toBe(reopenedNote(issue.id, s.sourceCommit));
     expect(s.summary()).toContain('1 new issue is commented inline');
   });
 

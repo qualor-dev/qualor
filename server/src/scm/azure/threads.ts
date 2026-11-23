@@ -8,9 +8,9 @@ import { closingRevisions, desiredInlineIssues, issueUrl, type Loaded } from '..
 import type { Failures } from '../failures';
 import { MAX_FIXED_NOTES, MAX_INLINE_THREADS, type InlineResult } from '../inline';
 import { addedLines } from '../line-diff';
-import { fixedMarker, isFullSha, markerOf, notedFixes, reopenedMarker } from '../markdown';
+import { isFullSha, markerOf, notedFixes } from '../markdown';
 import { ScmError } from '../provider';
-import { fixedNote, inlineBody } from '../render';
+import { fixedNote, inlineBody, reopenedNote, resolvedNote } from '../render';
 import type { AzureChange, AzureDevOpsClient, AzureIteration, AzureThread } from './client';
 
 /**
@@ -140,19 +140,6 @@ function threadUpdate(own: OwnThread, open: boolean): ThreadUpdate | null {
   return null;
 }
 
-/** Fixed text of the comment that goes with a resolution: its marker, and the revision it was found at. */
-function resolvedNote(issueId: string, sha: string): string {
-  return [
-    fixedMarker(issueId, sha),
-    `Fixed in \`${sha.slice(0, 7)}\`. Qualor resolved this thread because the issue is gone.`,
-  ].join('\n');
-}
-
-/** Fixed text of the comment that goes with a reopening. */
-function reopenedNote(issueId: string): string {
-  return [reopenedMarker(issueId), 'The issue is back, so Qualor reopened this thread.'].join('\n');
-}
-
 /**
  * One write of the job: its failure is kept (a rate limit or the request budget stops the job),
  * except a thread that is gone (a person deleted it after the listing). True when it was done.
@@ -226,16 +213,22 @@ async function applyUpdates(
   revisions: ReadonlyMap<string, string>,
 ): Promise<number> {
   const { client, repositoryId, prId, failures } = ctx;
+  const revision = ctx.loaded.revision.toLowerCase();
   const reopenedComment = (update: Plan['updates'][number]) =>
     write(failures, () =>
-      client.addComment(repositoryId, prId, update.thread.id, reopenedNote(update.issueId)),
+      client.addComment(
+        repositoryId,
+        prId,
+        update.thread.id,
+        reopenedNote(update.issueId, revision),
+      ),
     );
   let lost = 0;
   for (const update of plan.updates) {
     if (failures.stop !== null) break;
     const id = update.thread.id;
     if (update.action === 'resolve') {
-      const sha = revisions.get(update.issueId) ?? ctx.loaded.revision.toLowerCase();
+      const sha = revisions.get(update.issueId) ?? revision;
       // No full revision to name (a marker holds one only): the thread waits.
       if (!update.fixedLast && !isFullSha(sha)) continue;
       // Qualor's fixed comment is already the last (an earlier job's status change failed, or a

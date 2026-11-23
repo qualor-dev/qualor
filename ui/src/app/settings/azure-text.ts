@@ -68,6 +68,21 @@ export function azureProblemText(
   }
 }
 
+/**
+ * A problem the server recorded while it decorated a pull request, in the UI's own words. A
+ * missing permission there is one a pull request needs, not the Test's read access; every other
+ * code reads as the Test's.
+ */
+export function azureBackgroundProblemText(
+  problem: { code: Problem['code'] },
+  expiredOn: string | null = null,
+): string {
+  if (problem.code === 'permission_missing') {
+    return $localize`:@@azure.problem.permissionBackground:The credential lacks a permission in Azure DevOps. Give Qualor's identity Contribute to pull requests on the repository; a personal access token also needs Code: Read & write.`;
+  }
+  return azureProblemText(problem, expiredOn);
+}
+
 /** An Azure DevOps test answer as the pages show it: who connected, and what that identity sees. */
 export function azureTestText(result: TestResult, expiredOn: string | null = null): string {
   if (!result.ok || !result.user) {

@@ -782,7 +782,9 @@ export const item: ProbeItem = {
           lastOfIssue?.author.id === spId &&
           markerKind(lastOfIssue.content) === 'fixed' &&
           fixedLine.includes(head2) &&
-          (lastOfIssue.content ?? '').includes(`Fixed in \`${head2.slice(0, 7)}\``),
+          new RegExp(`no longer open in the analysis of \` ?${head2.slice(0, 7)} ?\``).test(
+            lastOfIssue.content ?? '',
+          ),
         `${issue2 ? threadStatusName(issue2.status) : 'thread missing'}; last comment ${markerKind(lastOfIssue?.content) ?? 'not a Qualor marker'}`,
       ),
     );

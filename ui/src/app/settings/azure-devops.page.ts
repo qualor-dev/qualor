@@ -20,7 +20,7 @@ import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
-import { azureCertificateExpiredOn, azureProblemText, azureTestText } from './azure-text';
+import { azureBackgroundProblemText, azureCertificateExpiredOn, azureTestText } from './azure-text';
 import type { Connection } from './gitlab.page';
 
 type AuthKind = 'pat' | 'service_principal_secret' | 'service_principal_certificate';
@@ -213,7 +213,7 @@ export class AzureDevOpsPage {
   /** The words of a connection's recorded background problem, null without one. */
   protected problemText(c: Connection): string | null {
     return c.problem
-      ? azureProblemText(c.problem, azureCertificateExpiredOn(c, this.locale))
+      ? azureBackgroundProblemText(c.problem, azureCertificateExpiredOn(c, this.locale))
       : null;
   }
 
