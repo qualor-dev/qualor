@@ -2277,6 +2277,7 @@
     "azure.factCertificate": "Certificate",
     "azure.expires": "expires {$INTERPOLATION}",
     "azure.unreadable": " The stored credential can no longer be read: set it again. ",
+    "azure.problemSince": "Problem since {$INTERPOLATION}.",
     "azure.certExpired": " The certificate has expired. Upload a new one to keep Qualor connected. ",
     "azure.certSoon": "The certificate expires soon. Upload a new one before then.",
     "azure.replace": " Replace the credential or change the connection ",

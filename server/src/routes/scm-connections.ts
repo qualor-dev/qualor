@@ -79,6 +79,7 @@ import {
 } from '../scm/github/credentials';
 import { CI_SETUP_MISSING, createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import { githubBaseUrlProblem } from '../scm/github/url';
+import { clearScmProblem } from '../scm/problems';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
 const githubSchema = z.object({
@@ -142,6 +143,8 @@ const connectionSchema = z.object({
   ciSetup: ciSetupSchema,
   /** Whether Qualor may open fix merge or pull requests in this connection's repositories. */
   fixMrsAllowed: z.boolean(),
+  /** The credential or permission failure of the last decoration (Azure DevOps); null when none. */
+  problem: z.object({ code: z.enum(TEST_PROBLEM_CODES), at: timestamp }).nullable(),
 });
 
 const testResultSchema = z.object({
@@ -225,6 +228,7 @@ function connectionDto(
     azure,
     ciSetup,
     fixMrsAllowed: row.fixMrsAllowed,
+    problem: row.problem && { code: row.problem.code, at: row.problem.at },
   };
 }
 
@@ -475,6 +479,11 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     await deps.audit.record(tx, actorOf(request), [event]);
   };
   const scmDeps = scmDepsOf(deps.config);
+  /** A passing test says the credential works again: the background problem it recorded is gone. */
+  const clearedByPass = async <T extends { ok: boolean }>(result: T, id: string): Promise<T> => {
+    if (result.ok) await clearScmProblem(deps.db, id);
+    return result;
+  };
   const ciSetupOf = createCiSetupStatus({
     deps: scmDeps,
     publicUrl,
@@ -858,7 +867,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         case 'gitlab':
           return testConnection(row, scmDeps, ref);
         case 'azure':
-          return testAzureConnection(row, scmDeps, ref);
+          return clearedByPass(await testAzureConnection(row, scmDeps, ref), row.id);
         default:
           return assertNever(row.provider, 'provider');
       }

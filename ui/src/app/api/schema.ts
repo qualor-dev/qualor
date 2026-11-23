@@ -11319,6 +11319,12 @@ export interface paths {
                                     missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                                 };
                                 fixMrsAllowed: boolean;
+                                problem: {
+                                    /** @enum {string} */
+                                    code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error";
+                                    /** Format: date-time */
+                                    at: string;
+                                } | null;
                             }[];
                             nextCursor: string | null;
                         };
@@ -11481,6 +11487,12 @@ export interface paths {
                                 missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
                             fixMrsAllowed: boolean;
+                            problem: {
+                                /** @enum {string} */
+                                code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error";
+                                /** Format: date-time */
+                                at: string;
+                            } | null;
                         };
                     };
                 };
@@ -11695,6 +11707,12 @@ export interface paths {
                                 missing: ("contents_write" | "workflows_write" | "secrets_write")[];
                             };
                             fixMrsAllowed: boolean;
+                            problem: {
+                                /** @enum {string} */
+                                code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error";
+                                /** Format: date-time */
+                                at: string;
+                            } | null;
                         };
                     };
                 };

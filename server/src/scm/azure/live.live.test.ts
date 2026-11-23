@@ -60,6 +60,7 @@ function rowOf(
     azureAuth: kind,
     azureTenantId: ids?.tenantId.toLowerCase() ?? null,
     azureClientId: ids?.clientId.toLowerCase() ?? null,
+    problem: null,
     createdAt: new Date(),
   };
 }

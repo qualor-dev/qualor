@@ -427,13 +427,13 @@ export function azureClientFor(
   };
 }
 
-function clientProblemCode(problem: string): TestProblemCode {
+export function clientProblemCode(problem: string): TestProblemCode {
   if (problem === AZURE_CONNECTION_TEXT.unreadable) return 'undecryptable';
   if (problem === AZURE_CONNECTION_TEXT.certificateExpired) return 'token_endpoint';
   return 'url_not_allowed';
 }
 
-function problemCode(err: ScmError): TestProblemCode {
+export function problemCode(err: ScmError): TestProblemCode {
   switch (err.reason) {
     case 'sign_in_required':
     case 'html_answer':

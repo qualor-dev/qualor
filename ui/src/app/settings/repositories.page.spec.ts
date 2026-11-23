@@ -31,6 +31,7 @@ const CONNECTION: Connection = {
   azure: null,
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
+  problem: null,
 };
 
 const GITHUB: Connection = {
@@ -50,6 +51,7 @@ const GITHUB: Connection = {
   azure: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
   fixMrsAllowed: false,
+  problem: null,
 };
 
 function project(id: string, overrides: Record<string, unknown> = {}) {

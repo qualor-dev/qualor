@@ -37,6 +37,7 @@ const GITHUB: Connection = {
   azure: null,
   ciSetup: { available: false, reason: 'missing_permissions', missing: [] },
   fixMrsAllowed: false,
+  problem: null,
 };
 const GITLAB: Connection = {
   ...GITHUB,

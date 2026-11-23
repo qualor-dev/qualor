@@ -1,0 +1,1 @@
+ALTER TABLE "scm_connections" ADD COLUMN "problem" jsonb;

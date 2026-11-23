@@ -338,6 +338,14 @@
                 The stored credential can no longer be read: set it again.
               </p>
             }
+            @if (c.problem; as stored) {
+              <p class="alert alert-error connection-problem" role="alert">
+                <strong i18n="@@azure.problemSince"
+                  >Problem since {{ stored.at | dateTime }}.</strong
+                >
+                {{ problemText(c) }}
+              </p>
+            }
             @switch (certificateState(c)) {
               @case ('expired') {
                 <p class="alert alert-error" i18n="@@azure.certExpired">

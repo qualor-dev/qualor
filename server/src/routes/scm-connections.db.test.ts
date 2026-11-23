@@ -154,6 +154,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       azure: null,
       ciSetup: { available: false, reason: 'no_public_url', missing: [] },
       fixMrsAllowed: false,
+      problem: null,
     });
     const [row] = await h.ctx.db
       .select()
@@ -1712,6 +1713,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       },
       ciSetup: { available: false, reason: 'not_allowed', missing: [] },
       fixMrsAllowed: false,
+      problem: null,
     });
     // The ids arrive in any case and are kept lower-cased.
     const secret = await created({
@@ -2313,6 +2315,40 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       ]);
     }
     await expectNoCredential();
+  });
+
+  it('shows the background problem of a connection, and a passing test clears it', async () => {
+    const pat = await created({ azureAuth: 'pat', token: services.pat });
+    const at = '2026-11-23T10:00:00.000Z';
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ problem: { code: 'token_refused', at } })
+      .where(eq(scmConnections.id, pat.id));
+    const listed = (
+      await inject('GET', `/scm-connections?organizationId=${h.organizationId}`)
+    ).json() as {
+      items: { id: string; problem: unknown }[];
+    };
+    expect(listed.items.find((c) => c.id === pat.id)?.problem).toEqual({
+      code: 'token_refused',
+      at,
+    });
+    // A failing test leaves it; a passing one clears it.
+    const wrong = await created({ azureAuth: 'pat', token: 'wrong-pat' });
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ problem: { code: 'token_refused', at } })
+      .where(eq(scmConnections.id, wrong.id));
+    expect((await test(wrong.id)).json()).toMatchObject({ ok: false });
+    expect((await rowOf(wrong.id)).problem).toEqual({ code: 'token_refused', at });
+    expect((await test(pat.id)).json()).toMatchObject({ ok: true });
+    expect((await rowOf(pat.id)).problem).toBeNull();
+    const after = (
+      await inject('GET', `/scm-connections?organizationId=${h.organizationId}`)
+    ).json() as {
+      items: { id: string; problem: unknown }[];
+    };
+    expect(after.items.find((c) => c.id === pat.id)?.problem).toBeNull();
   });
 
   it('names each refusal with its code, in fixed texts', async () => {

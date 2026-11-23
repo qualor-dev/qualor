@@ -58,6 +58,7 @@ function connection(
     azure: null,
     ciSetup,
     fixMrsAllowed: false,
+    problem: null,
   };
 }
 

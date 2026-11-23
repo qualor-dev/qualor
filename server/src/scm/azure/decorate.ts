@@ -24,7 +24,8 @@ import {
   type AzureStatus,
   type AzureThread,
 } from './client';
-import { azureClientFor } from './connections';
+import { clearScmProblem, isScmBackgroundProblem, recordScmProblem } from '../problems';
+import { azureClientFor, clientProblemCode, problemCode } from './connections';
 import { reconcileAzureThreads } from './threads';
 import { azureWebBase } from './url';
 
@@ -152,10 +153,10 @@ function finish(
 }
 
 /**
- * One Azure DevOps decoration: the client and the repository check; a branch analysis gets a
- * commit status. A pull request gets, in this order, its status on the analysed iteration (the one
- * a "Status check" branch policy reads), Qualor's inline threads, and the summary thread. A
- * completed or abandoned pull request only has its title recorded and its snapshots deleted.
+ * One Azure DevOps decoration, and what it says of the connection: a credential or permission
+ * failure that decided the job is recorded on the connection (its settings page shows it), and a
+ * decoration in which every step succeeded clears it. A transient failure, a rate limit or a
+ * mismatch of repositories leaves it as it was.
  */
 export async function decorateAzure(
   deps: DecorationDeps,
@@ -163,9 +164,47 @@ export async function decorateAzure(
   loaded: Loaded,
   failed: (error: ScmError, circuit?: boolean) => DecorationOutcome,
 ): Promise<DecorationOutcome> {
+  const seen: { decisive: ScmError | null } = { decisive: null };
+  const outcome = await decorateAzureSteps(deps, payload, loaded, (error, circuit) => {
+    seen.decisive = error;
+    return failed(error, circuit);
+  });
+  const connectionId = loaded.connection.id;
+  if (outcome.kind === 'done') {
+    await clearScmProblem(deps.db, connectionId);
+  } else if (seen.decisive !== null) {
+    const code = problemCodeOf(seen.decisive);
+    if (code !== null) await recordScmProblem(deps.db, connectionId, code);
+  }
+  return outcome;
+}
+
+/** The code a failure records, or null when it passes by itself or is not the connection's. */
+function problemCodeOf(error: ScmError) {
+  const code = problemCode(error);
+  return isScmBackgroundProblem(code) ? code : null;
+}
+
+/**
+ * The steps of one Azure DevOps decoration: the client and the repository check; a branch analysis gets a
+ * commit status. A pull request gets, in this order, its status on the analysed iteration (the one
+ * a "Status check" branch policy reads), Qualor's inline threads, and the summary thread. A
+ * completed or abandoned pull request only has its title recorded and its snapshots deleted.
+ */
+async function decorateAzureSteps(
+  deps: DecorationDeps,
+  payload: DecorationPayload,
+  loaded: Loaded,
+  failed: (error: ScmError, circuit?: boolean) => DecorationOutcome,
+): Promise<DecorationOutcome> {
   const { connection, branch, project, analysis } = loaded;
   const found = azureClientFor(connection, deps.scm, deps.runtime);
-  if ('problem' in found) return failed(new AzureError('refused', found.problem), false);
+  if ('problem' in found) {
+    // The stored credential cannot be read, or the address is no longer allowed: no request is made.
+    const code = clientProblemCode(found.problem);
+    if (isScmBackgroundProblem(code)) await recordScmProblem(deps.db, connection.id, code);
+    return failed(new AzureError('refused', found.problem), false);
+  }
   const client = found.client;
   const repositoryId = project.scmProjectRef ?? '';
   if (

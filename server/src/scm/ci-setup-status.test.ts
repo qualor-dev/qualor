@@ -37,6 +37,7 @@ describe('the CI-setup status of an Azure DevOps connection: not available yet (
       azureAuth: 'pat',
       azureTenantId: null,
       azureClientId: null,
+      problem: null,
       createdAt: new Date(),
     };
   });

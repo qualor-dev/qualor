@@ -8,6 +8,7 @@ import type {
 import { FIX_FAMILIES, type FixFamily } from '@qualor/shared/fix';
 import { sql } from 'drizzle-orm';
 import type { AzureAuthKind } from '../scm/azure/auth-kinds';
+import type { TestProblemCode } from '../scm/connections';
 import {
   type AnyPgColumn,
   bigint,
@@ -57,6 +58,11 @@ export type JiraLinkOrigin = 'manual' | 'auto';
 /** Jira's own status categories (`new` = To Do, `indeterminate` = In Progress). */
 export type JiraStatusCategory = 'new' | 'indeterminate' | 'done';
 export type JiraAutoSeverity = 'critical' | 'high' | 'medium' | 'low';
+/** A credential or permission failure of an SCM connection's background job: a code, no text (the UI owns the words). */
+export interface ScmProblemValue {
+  code: TestProblemCode;
+  at: string;
+}
 /** A credential or transient problem of the connection: a code and its fixed text. */
 export interface JiraProblemValue {
   code: string;
@@ -258,6 +264,8 @@ export const scmConnections = pgTable(
     /** Azure DevOps (migration 0034): the Entra tenant and application of a service principal; NULL for a PAT. */
     azureTenantId: text('azure_tenant_id'),
     azureClientId: text('azure_client_id'),
+    /** Migration 0035: the credential or permission failure of the last decoration; NULL when none. */
+    problem: jsonb('problem').$type<ScmProblemValue>(),
     createdAt: createdAt(),
   },
   (t) => [

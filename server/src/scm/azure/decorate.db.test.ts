@@ -9,7 +9,14 @@ import {
 import { createIngestHarness, type IngestHarness } from '../../../test/ingest';
 import { engine, file, finding, reportWith } from '../../../test/reports';
 import { decorationDeps, PUBLIC_URL, runDecorations } from '../../../test/scm';
-import { analyses, branches, jobs, projects, reviewSnapshots } from '../../db/schema';
+import {
+  analyses,
+  branches,
+  jobs,
+  projects,
+  reviewSnapshots,
+  scmConnections,
+} from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
 import { markerOf, summaryMarker } from '../markdown';
 import { statusName } from '../render';
@@ -370,5 +377,83 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
       error: { kind: 'refused', message: AZURE_REPOSITORY_MISMATCH },
     });
     expect(fake.requests).toEqual([]);
+  });
+
+  describe('the connection’s background problem', () => {
+    const problemOf = async () =>
+      (await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, connectionId)))[0]!
+        .problem;
+
+    it('records a refused credential, and a later successful decoration clears it', async () => {
+      const s = await setup('az/problem-refused');
+      fake.inject('GET', /\/connectionData$/, { status: 401, body: {} });
+      const analysisId = await s.ingest();
+      const outcome = await decorateAnalysis(decorationDeps(h), {
+        analysisId,
+        attempt: 0,
+        gitlab: null,
+        azure: { repositoryId: s.repository.id, checkout: 'head' },
+      });
+      await h.ctx.db.delete(jobs);
+      expect(outcome).toMatchObject({ kind: 'failed', retry: false });
+      expect(await problemOf()).toEqual({ code: 'token_refused', at: expect.any(String) });
+      await s.ingest();
+      expect(await decorate()).toBe(1);
+      expect(await problemOf()).toBeNull();
+    });
+
+    it('records a refused status step as the decisive failure, and never a transient failure', async () => {
+      const s = await setup('az/problem-transient');
+      fake.inject('POST', /\/statuses$/, { status: 503, body: {} });
+      await s.ingest();
+      await decorate();
+      // The retry its failure queued is not run here.
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toBeNull();
+      const t = await setup('az/problem-forbidden');
+      fake.inject('POST', /\/statuses$/, { status: 401, body: {} });
+      await t.ingest();
+      await decorate();
+      expect(await problemOf()).toMatchObject({ code: 'token_refused' });
+      await (await setup('az/problem-clear')).ingest();
+      expect(await decorate()).toBe(1);
+      expect(await problemOf()).toBeNull();
+    });
+
+    it('records an unreadable credential', async () => {
+      const [row] = await h.ctx.db
+        .select()
+        .from(scmConnections)
+        .where(eq(scmConnections.id, connectionId));
+      const s = await setup('az/problem-unreadable');
+      await s.ingest();
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ tokenEnc: { ...row!.tokenEnc, ct: 'AAAA' } })
+        .where(eq(scmConnections.id, connectionId));
+      try {
+        await decorate();
+        expect(await problemOf()).toMatchObject({ code: 'undecryptable' });
+      } finally {
+        await h.ctx.db
+          .update(scmConnections)
+          .set({ tokenEnc: row!.tokenEnc, problem: null })
+          .where(eq(scmConnections.id, connectionId));
+      }
+    });
+
+    it('does not record a repository mismatch', async () => {
+      const s = await setup('az/problem-mismatch');
+      const other = fake.addRepository({ name: 'other2', projectName: 'Payments' });
+      const analysisId = await s.ingest({ azure: { repositoryId: other.id, checkout: 'head' } });
+      await decorateAnalysis(decorationDeps(h), {
+        analysisId,
+        attempt: 0,
+        gitlab: null,
+        azure: { repositoryId: other.id, checkout: 'head' },
+      });
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toBeNull();
+    });
   });
 });

@@ -22,7 +22,10 @@ export function azureCertificateExpiredOn(
  * A failed Azure DevOps test in the UI's own words, never the server's. `expiredOn` (see
  * {@link azureCertificateExpiredOn}) makes a token failure say that the certificate expired.
  */
-export function azureProblemText(problem: Problem, expiredOn: string | null = null): string {
+export function azureProblemText(
+  problem: { code: Problem['code']; message?: string },
+  expiredOn: string | null = null,
+): string {
   switch (problem.code) {
     case 'undecryptable':
       return $localize`:@@azure.problem.undecryptable:The stored credential can no longer be read (the server key changed). Set it again.`;

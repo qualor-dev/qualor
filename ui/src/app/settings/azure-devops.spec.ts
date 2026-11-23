@@ -36,6 +36,7 @@ const PAT: Connection = {
   },
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
+  problem: null,
 };
 
 const CERTIFICATE: Connection = {
@@ -372,6 +373,33 @@ describe('AzureDevOpsPage', () => {
     expect(root.querySelector('section')?.textContent).not.toContain('HTTP 401');
     expect(root.querySelector('p[role="alert"]')?.textContent).toContain('refused the credential');
     expect(root.querySelector('[role="status"]')?.textContent?.trim()).toBe('');
+  });
+
+  it('shows the background problem of a connection in the UI’s own words, and a passing test clears it', async () => {
+    const server = setup([
+      { ...PAT, problem: { code: 'token_refused', at: '2026-11-23T10:00:00.000Z' } },
+      { ...CERTIFICATE, problem: null },
+    ]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: {
+        ok: true,
+        user: { username: 'Qualor Bot' },
+        project: null,
+        problem: null,
+        missingAccess: null,
+        visible: { repositories: 1, projects: 1 },
+      },
+    }));
+    const { fixture, root } = await render();
+    const banner = (key: string) =>
+      root.querySelector(`section[data-key="${key}"] .connection-problem`)?.textContent ?? null;
+    expect(banner('a1')).toContain('Problem since');
+    expect(banner('a1')).toContain('refused the credential');
+    expect(banner('a1')).not.toContain('token_refused');
+    expect(banner('a2')).toBeNull();
+    button(root.querySelector('section[data-key="a1"]')!, 'Test').click();
+    await settle(fixture);
+    expect(banner('a1')).toBeNull();
   });
 
   it('names an expired certificate and its day when Entra refuses the service principal', async () => {

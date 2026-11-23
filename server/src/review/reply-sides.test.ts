@@ -577,6 +577,7 @@ describe('the side of a reply on Azure DevOps: not available yet (Azure sub-plan
         azureAuth: 'pat' as const,
         azureTenantId: null,
         azureClientId: null,
+        problem: null,
         createdAt: new Date(),
       };
       const scm = {

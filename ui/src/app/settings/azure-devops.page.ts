@@ -20,7 +20,7 @@ import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
-import { azureCertificateExpiredOn, azureTestText } from './azure-text';
+import { azureCertificateExpiredOn, azureProblemText, azureTestText } from './azure-text';
 import type { Connection } from './gitlab.page';
 
 type AuthKind = 'pat' | 'service_principal_secret' | 'service_principal_certificate';
@@ -210,6 +210,13 @@ export class AzureDevOpsPage {
     }
   }
 
+  /** The words of a connection's recorded background problem, null without one. */
+  protected problemText(c: Connection): string | null {
+    return c.problem
+      ? azureProblemText(c.problem, azureCertificateExpiredOn(c, this.locale))
+      : null;
+  }
+
   /** The state of a connection's certificate: expired, ending within a month, or fine. */
   protected certificateState(c: Connection): 'expired' | 'soon' | 'ok' | null {
     const notAfter = c.azure?.certificate?.notAfter;
@@ -383,6 +390,12 @@ export class AzureDevOpsPage {
       const text = azureTestText(result, azureCertificateExpiredOn(connection, this.locale));
       this.results.update((all) => ({ ...all, [connection.id]: text }));
       const passed = result.ok && !!result.user;
+      // A passing test clears the background problem the server recorded.
+      if (result.ok) {
+        this.connections.items.update((items) =>
+          items.map((c) => (c.id === connection.id ? { ...c, problem: null } : c)),
+        );
+      }
       this.outcomes.update((all) => ({ ...all, [connection.id]: passed ? 'ok' : 'failed' }));
       // A failure reads as one: the error alert, never the green news of a success.
       if (passed) this.announcement.set(text);
