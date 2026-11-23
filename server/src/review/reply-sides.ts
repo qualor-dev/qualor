@@ -49,7 +49,7 @@ const GITLAB_DEVELOPER = 30;
  * The most authors of a round whose rights are asked for, each once: a round of more changes no
  * status.
  */
-const MAX_AUTHORS_LOOKED_UP = 5;
+export const MAX_AUTHORS_LOOKED_UP = 5;
 /**
  * GitHub's roles of a repository whose people may change a finding's status through a reply, or
  * ask for a review.
