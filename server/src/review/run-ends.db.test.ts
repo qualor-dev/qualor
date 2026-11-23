@@ -187,40 +187,66 @@ describe('ending a run for the job that started it (R15)', () => {
   });
 
   describe('decorateRun', () => {
-    it('does not decorate on Azure DevOps, and says it is not available yet (Azure sub-plan 2, Task 2)', async () => {
+    const azureRun = async (azure: Record<string, string> | null) => {
       const listener = await recordingListener();
+      const connection = await azureConnection(t.db, {
+        organizationId,
+        baseUrl: `${listener.url}/DefaultCollection`,
+        secretKey: 'run-ends-test-key-of-at-least-32-characters',
+      });
+      await mapToAzure(t.db, projectId, connection.id);
+      const run = await runningRun();
+      await t.db
+        .update(analyses)
+        .set({ scmContext: { provider: 'azure', mergeRequestId: '1', gitlab: null, azure } })
+        .where(eq(analyses.id, run.analysisId));
+      await t.db
+        .update(branches)
+        .set({ lastAnalysisId: run.analysisId })
+        .where(eq(branches.id, run.branchId));
+      await t.db.delete(jobs).where(eq(jobs.queue, SCM_QUEUE));
+      const warnings: { details: unknown; message: string }[] = [];
+      const logger = {
+        info: () => undefined,
+        warn: (details: unknown, message: string) => {
+          warnings.push({ details, message });
+        },
+      } as unknown as WorkerLogger;
+      return { run, listener, warnings, logger };
+    };
+
+    it('decorates on Azure DevOps with the stored Azure Pipelines context (Azure sub-plan 4)', async () => {
+      const azure = {
+        projectId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+        repositoryId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001',
+        buildId: '77',
+      };
+      const { run, listener, warnings, logger } = await azureRun(azure);
       try {
-        const connection = await azureConnection(t.db, {
-          organizationId,
-          baseUrl: `${listener.url}/DefaultCollection`,
-          secretKey: 'run-ends-test-key-of-at-least-32-characters',
-        });
-        await mapToAzure(t.db, projectId, connection.id);
-        const run = await runningRun();
-        await t.db
-          .update(analyses)
-          .set({ scmContext: { provider: 'azure', mergeRequestId: '1', gitlab: null } })
-          .where(eq(analyses.id, run.analysisId));
-        await t.db
-          .update(branches)
-          .set({ lastAnalysisId: run.analysisId })
-          .where(eq(branches.id, run.branchId));
-        const warnings: { details: unknown; message: string }[] = [];
-        const logger = {
-          info: () => undefined,
-          warn: (details: unknown, message: string) => {
-            warnings.push({ details, message });
-          },
-        } as unknown as WorkerLogger;
+        await decorateRun(t.db, run, logger);
+        expect(warnings).toEqual([]);
+        const queued = await t.db.select().from(jobs).where(eq(jobs.queue, SCM_QUEUE));
+        expect(queued.map((j) => j.payload)).toEqual([
+          { analysisId: run.analysisId, attempt: 0, gitlab: null, azure },
+        ]);
+        expect(listener.requests).toEqual([]);
+      } finally {
+        await listener.close();
+      }
+    });
+
+    it('does not decorate on Azure DevOps without a stored Azure Pipelines context, and says so', async () => {
+      const { run, listener, warnings, logger } = await azureRun(null);
+      try {
         await decorateRun(t.db, run, logger);
         expect(warnings).toEqual([
           {
             details: { runId: run.id, analysisId: run.analysisId },
-            message: 'Azure DevOps decoration is not available yet',
+            message:
+              'AI review ended but not decorated: the analysis has no stored Azure Pipelines context',
           },
         ]);
         expect(await t.db.select().from(jobs).where(eq(jobs.queue, SCM_QUEUE))).toEqual([]);
-        expect(listener.requests).toEqual([]);
       } finally {
         await listener.close();
       }

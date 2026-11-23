@@ -3,6 +3,8 @@ import { eq } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { projects, scmConnections } from '../db/schema';
 import { gitlabClientFor, type ScmConnectionRow, type ScmDeps } from './connections';
+import { AZURE_PR_ID } from './azure/client';
+import { azureClientFor } from './azure/connections';
 import { GITHUB_PR_NUMBER } from './github/client';
 import { githubClientFor } from './github/connections';
 import { parseRepoRef } from './github/url';
@@ -95,6 +97,34 @@ function githubAsk(
   };
 }
 
+/** Azure DevOps' pull request statuses: abandoned is closed without a merge. */
+const AZURE_STATES = {
+  active: 'open',
+  completed: 'merged',
+  abandoned: 'closed',
+} as const satisfies Record<string, MergeRequestState['state']>;
+
+/**
+ * The Azure DevOps question, or null when there is nothing to ask (as {@link gitlabAsk}): the
+ * branch's name is no pull request id, or the connection cannot be used. The repository's id is the
+ * project's ref.
+ */
+function azureAsk(
+  connection: ScmConnectionRow,
+  ref: string,
+  id: string,
+  scm: ScmDeps,
+  runtime: ScmRuntime | undefined,
+): Ask | null {
+  if (!AZURE_PR_ID.test(id)) return null;
+  const found = azureClientFor(connection, scm, runtime);
+  if ('problem' in found) return null;
+  return async () => {
+    const pull = await found.client.pullRequest(ref, Number(id));
+    return { state: AZURE_STATES[pull.status], draft: pull.isDraft, headSha: pull.headSha };
+  };
+}
+
 /**
  * `ask` made as the `scm` worker's jobs make theirs (scm.md §4.2): it takes a slot of the
  * project's organisation and passes the connection's circuit, and waits for neither, so a read that
@@ -165,8 +195,8 @@ export async function readMergeRequestState(
     case 'github':
       ask = githubAsk(connection, found.ref, mergeRequestId, scm, runtime ?? deps.tokens);
       break;
-    case 'azure': // azure-pending(4): the state of an Azure DevOps pull request
-      ask = null;
+    case 'azure':
+      ask = azureAsk(connection, found.ref, mergeRequestId, scm, runtime);
       break;
     default:
       return assertNever(connection.provider, 'provider');

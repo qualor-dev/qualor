@@ -7,6 +7,9 @@ import { retryAfterSeconds } from '../retry-after';
 import { scmRefusedAddress } from '../url';
 import { AZURE_REPOSITORY_ID, azurePullRequestWebUrl } from './url';
 
+/** The id of an Azure DevOps pull request, as an Azure analysis names its branch (digits only). */
+export const AZURE_PR_ID = /^[0-9]{1,10}$/;
+
 /** Azure DevOps design §7.4, as for GitLab: every request has 10 s in all ... */
 export const AZURE_TIMEOUT_MS = 10_000;
 /** ... answers over 8 MiB are refused ... */

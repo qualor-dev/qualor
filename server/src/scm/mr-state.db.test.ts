@@ -1,15 +1,13 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  azureConnection,
-  mapToAzure,
-  recordingListener,
-  type RecordingListener,
-} from '../../test/azure-pending';
+import { azureCommitId, seedAzurePullRequest } from '../../test/azure';
+import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { mappedGitHubProject } from '../../test/github';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { decorationDeps, mappedProject, PUBLIC_URL } from '../../test/scm';
+import { projects } from '../db/schema';
 import { readMergeRequestState } from './mr-state';
 import {
   createScmRuntime,
@@ -264,38 +262,88 @@ describe('readMergeRequestState (6I-3)', () => {
   });
 });
 
-describe('readMergeRequestState on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
+describe('readMergeRequestState on Azure DevOps (Azure sub-plan 4)', () => {
   let h: IngestHarness;
-  let listener: RecordingListener;
+  let fake: FakeAzureDevOps;
+  let projectId: string;
+  let connectionId: string;
+
+  const stateOf = (id: string, runtime?: ScmRuntime) =>
+    readMergeRequestState({ db: h.ctx.db, scm: decorationDeps(h).scm, runtime }, projectId, id);
 
   beforeAll(async () => {
-    listener = await recordingListener();
-    h = await createIngestHarness({
-      config: { publicUrl: PUBLIC_URL, scmInternalHosts: parseInternalHosts(listener.host) },
+    fake = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: [{ name: 'prs', projectName: 'Payments' }],
     });
+    h = await createIngestHarness({
+      config: {
+        publicUrl: PUBLIC_URL,
+        scmInternalHosts: parseInternalHosts(new URL(fake.url).host),
+      },
+    });
+    const repositoryId = fake.repositories[0]!.id;
+    seedAzurePullRequest(fake, repositoryId, {
+      pullRequest: { id: 1 },
+      sourceCommit: azureCommitId('one'),
+    });
+    seedAzurePullRequest(fake, repositoryId, { pullRequest: { id: 2, status: 'completed' } });
+    seedAzurePullRequest(fake, repositoryId, { pullRequest: { id: 3, status: 'abandoned' } });
+    seedAzurePullRequest(fake, repositoryId, { pullRequest: { id: 4, isDraft: true } });
+    const project = await h.project('mrs/azure');
+    projectId = project.id;
+    const created = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: fake.url,
+        azureAuth: 'pat',
+        token: fake.pat,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    connectionId = (created.json() as { id: string }).id;
+    await h.ctx.db
+      .update(projects)
+      .set({ scmConnectionId: connectionId, scmProjectRef: repositoryId })
+      .where(eq(projects.id, projectId));
   });
   afterAll(async () => {
     await h.close();
-    await listener.close();
+    await fake.close();
   });
 
-  it('a pull request of an Azure DevOps repository is unknown (null), and nothing is asked', async () => {
-    const project = await h.project('mrs/azure');
-    const connection = await azureConnection(h.ctx.db, {
-      organizationId: h.organizationId,
-      baseUrl: `${listener.url}/DefaultCollection`,
-      secretKey: h.ctx.config.secretKey,
-    });
-    await mapToAzure(h.ctx.db, project.id, connection.id);
-    const scm = decorationDeps(h).scm;
-    expect(await readMergeRequestState({ db: h.ctx.db, scm }, project.id, '1')).toBeNull();
-    // Through the worker's runtime too: no slot is kept and the circuit hears nothing.
+  it('answers open, merged, closed and draft', async () => {
+    const states = await Promise.all(['1', '2', '3', '4'].map((id) => stateOf(id)));
+    expect(states).toEqual([
+      { state: 'open', draft: false, headSha: azureCommitId('one') },
+      { state: 'merged', draft: false, headSha: azureCommitId('source') },
+      { state: 'closed', draft: false, headSha: azureCommitId('source') },
+      { state: 'open', draft: true, headSha: azureCommitId('source') },
+    ]);
+  });
+
+  it('is null for a branch name that is no pull request id, and asks nothing', async () => {
+    fake.clearRequests();
+    for (const id of ['feature/x', '', '12345678901', '1a', '-1']) {
+      expect(await stateOf(id)).toBeNull();
+    }
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('is null for a pull request Azure DevOps does not know', async () => {
+    expect(await stateOf('99')).toBeNull();
+  });
+
+  it('shares the worker runtime: no slot is kept, the circuit hears an answer', async () => {
     const runtime = createScmRuntime();
-    expect(await readMergeRequestState({ db: h.ctx.db, scm, runtime }, project.id, '1')).toBeNull();
+    expect(await stateOf('1', runtime)).toMatchObject({ state: 'open' });
     for (let i = 0; i < MAX_DECORATIONS_PER_ORGANIZATION; i += 1) {
       expect(runtime.slots.tryTake(h.organizationId)).toBe(true);
     }
-    expect(runtime.circuit.inspect(connection.id).failures).toBe(0);
-    expect(listener.requests).toEqual([]);
+    expect(runtime.circuit.inspect(connectionId).failures).toBe(0);
   });
 });

@@ -7,6 +7,7 @@ import type { JobHandlers } from '../queue/worker';
 import { deleteBranchSnapshots, mergeRequestStateHandlers } from '../review/lifecycle';
 import { withMergeRequestHead, withUnplacedFindings } from '../review/render';
 import { queueGitLabAnswers, replyWindow } from '../review/reply-queue';
+import { AzureError } from './azure/client';
 import { AZURE_DECORATION_PENDING } from './azure/pending';
 import { gitlabClientFor, type ScmDeps } from './connections';
 import {
@@ -325,8 +326,8 @@ function circuitError(provider: ScmProvider, text: string): ScmError {
       return new GitLabError('transient', text);
     case 'github':
       return new ScmError('transient', text);
-    case 'azure': // azure-pending(4): the circuit's error in the Azure DevOps client's own class
-      return new ScmError('transient', text);
+    case 'azure':
+      return new AzureError('transient', text);
     default:
       return assertNever(provider, 'provider');
   }

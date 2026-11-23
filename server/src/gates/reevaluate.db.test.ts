@@ -418,7 +418,7 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
       expect(warnings[0]?.message).not.toContain('ingested before');
     });
 
-    it('does not decorate again on Azure DevOps, and says it is not available yet (Azure sub-plan 2, Task 2)', async () => {
+    it('decorates again on Azure DevOps with the stored Azure Pipelines context, and says so when there is none (Azure sub-plan 4)', async () => {
       const listener = await recordingListener();
       try {
         const project = await h.project('reeval/azure');
@@ -428,7 +428,13 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
           secretKey: h.ctx.config.secretKey,
         });
         await mapToAzure(h.ctx.db, project.id, connection.id);
-        await project.ingestOk(withProvider(mainReport(project.key), 'azure'));
+        const azure = {
+          projectId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+          repositoryId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001',
+          buildId: '77',
+        };
+        const report = withProvider(mainReport(project.key), 'azure');
+        await project.ingestOk({ ...report, scm: { ...report.scm, azure } });
         const main = await branchOf(project.id, 'branch');
         const analysis = await latest(main.id);
         await h.ctx.db.delete(jobs).where(eq(jobs.queue, SCM_QUEUE));
@@ -446,14 +452,17 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
         );
         await runGates(logger);
         expect((await latest(main.id)).gateStatus).toBe('passed');
-        expect(await decorationsOf(analysis.id)).toEqual([]);
-        expect(warnings).toEqual([
-          { details: where, message: 'Azure DevOps decoration is not available yet' },
+        expect((await decorationsOf(analysis.id)).map((j) => j.payload)).toEqual([
+          { analysisId: analysis.id, attempt: 0, gitlab: null, azure, reevaluation: true },
         ]);
-        // Without a stored context too.
+        expect(warnings).toEqual([]);
+        // An Azure context the report did not carry: fail closed, and say why.
+        await h.ctx.db.delete(jobs).where(eq(jobs.queue, SCM_QUEUE));
         await h.ctx.db
           .update(analyses)
-          .set({ scmContext: null })
+          .set({
+            scmContext: { provider: 'azure', mergeRequestId: null, gitlab: null, azure: null },
+          })
           .where(eq(analyses.id, analysis.id));
         await transition(
           (await h.ctx.db.select().from(issues).where(eq(issues.branchId, main.id))).map(
@@ -461,12 +470,35 @@ describe('re-evaluating the gate after a transition (scm.md §7)', () => {
           ),
           'open',
         );
-        warnings.length = 0;
         await runGates(logger);
         expect((await latest(main.id)).gateStatus).toBe('failed');
         expect(await decorationsOf(analysis.id)).toEqual([]);
         expect(warnings).toEqual([
-          { details: where, message: 'Azure DevOps decoration is not available yet' },
+          {
+            details: where,
+            message:
+              'quality gate re-evaluated but not decorated again on Azure DevOps: the analysis has no stored Azure Pipelines context',
+          },
+        ]);
+        // Without a stored context at all.
+        await h.ctx.db
+          .update(analyses)
+          .set({ scmContext: null })
+          .where(eq(analyses.id, analysis.id));
+        await transition(
+          (await openIssues(main.id)).map((i) => i.id),
+          'resolved',
+        );
+        warnings.length = 0;
+        await runGates(logger);
+        expect(await decorationsOf(analysis.id)).toEqual([]);
+        expect(warnings).toEqual([
+          {
+            details: where,
+            message: expect.stringContaining(
+              'not decorated again on Azure DevOps: the analysis has no stored SCM context',
+            ) as unknown as string,
+          },
         ]);
         expect(listener.requests).toEqual([]);
       } finally {

@@ -34,7 +34,6 @@ import { reviewSummarySchema } from '../review/schemas';
 import type { ReviewSuggestion } from '../review/suggestion';
 import { AI_ENGINE } from '../rules/server-engines';
 import { instanceSetting } from '../settings';
-import { AZURE_DECORATION_PENDING } from './azure/pending';
 import { readScmContext } from './context';
 import { isFullSha } from './markdown';
 import { mergeRequestTitle, SUMMARY_TOP_ISSUES, type IssueLine, type SummaryInput } from './render';
@@ -75,9 +74,8 @@ export async function loadDecoration(db: Db, analysisId: string): Promise<Loaded
   switch (row.connection.provider) {
     case 'gitlab':
     case 'github':
+    case 'azure':
       break;
-    case 'azure': // azure-pending(4): Azure DevOps pull request decoration
-      return AZURE_DECORATION_PENDING;
     default:
       return assertNever(row.connection.provider, 'provider');
   }
@@ -90,6 +88,8 @@ export async function loadDecoration(db: Db, analysisId: string): Promise<Loaded
         return 'the analysis is not from GitLab CI';
       case 'github':
         return 'the analysis is not from GitHub Actions';
+      case 'azure':
+        return 'the analysis is not from Azure Pipelines';
       default:
         return assertNever(row.connection.provider, 'provider');
     }

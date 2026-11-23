@@ -1,4 +1,10 @@
-import { GITHUB_CHECKOUTS, GITHUB_ID, type Report } from '@qualor/shared';
+import {
+  AZURE_BUILD_ID,
+  AZURE_GUID,
+  GITHUB_CHECKOUTS,
+  GITHUB_ID,
+  type Report,
+} from '@qualor/shared';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Executor } from '../db/client';
@@ -20,6 +26,7 @@ export const REDECORATION_INTERVAL_SECONDS = 15;
 
 export type GitLabContext = NonNullable<Report['scm']['gitlab']>;
 export type GitHubContext = NonNullable<Report['scm']['github']>;
+export type AzureContext = NonNullable<Report['scm']['azure']>;
 
 export const decorationPayload = z.object({
   analysisId: z.uuid(),
@@ -38,6 +45,16 @@ export const decorationPayload = z.object({
     .object({
       repositoryId: z.string().regex(GITHUB_ID).optional(),
       runId: z.string().regex(GITHUB_ID).optional(),
+      checkout: z.enum(GITHUB_CHECKOUTS).optional(),
+    })
+    .nullable()
+    .optional(),
+  /** The report's Azure Pipelines context; absent unless an Azure DevOps analysis sent one. */
+  azure: z
+    .object({
+      projectId: z.string().regex(AZURE_GUID).optional(),
+      repositoryId: z.string().regex(AZURE_GUID).optional(),
+      buildId: z.string().regex(AZURE_BUILD_ID).optional(),
       checkout: z.enum(GITHUB_CHECKOUTS).optional(),
     })
     .nullable()
@@ -93,6 +110,8 @@ export async function enqueueDecoration(
     gitlab: GitLabContext | null;
     /** The report's GitHub Actions context (github.md §3); left out of the payload when null. */
     github?: GitHubContext | null;
+    /** The report's Azure Pipelines context; left out of the payload when null. */
+    azure?: AzureContext | null;
     /** A gate re-evaluation's (scm.md §7): runs no sooner than the interval after the last one. */
     reevaluation?: boolean;
   },
@@ -114,6 +133,7 @@ export async function enqueueDecoration(
       gitlab: input.gitlab,
       // Only when there is one: a GitLab decoration's payload stays byte for byte plan 2A's.
       ...(input.github ? { github: input.github } : {}),
+      ...(input.azure ? { azure: input.azure } : {}),
       ...(reevaluation ? { reevaluation: true as const } : {}),
     } satisfies DecorationPayload,
     maxAttempts: DECORATION_JOB_MAX_ATTEMPTS,

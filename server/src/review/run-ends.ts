@@ -12,7 +12,6 @@ import {
   type ReviewSkipReason,
 } from '../db/schema';
 import type { WorkerLogger } from '../queue/worker';
-import { AZURE_NOT_DECORATED } from '../scm/azure/pending';
 import { readScmContext } from '../scm/context';
 import { enqueueLatestDecoration, lockBranchQueue } from '../scm/queue';
 
@@ -150,7 +149,7 @@ export function logRunEnd(logger: Logger, runId: string, end: RunEnd): void {
  * review ended. Only while the analysis is the branch's newest: a newer one has a decoration of
  * its own (enqueueLatestDecoration). An analysis of a project without a connection is not
  * decorated; one whose context is missing or not valid, of another provider than the project's
- * connection, or of GitHub without its Actions context is not decorated either, each said once
+ * connection, or of GitHub or Azure DevOps without its CI context is not decorated either, each said once
  * (as a re-evaluation fails closed). In the transaction that ended the run.
  */
 export async function decorateRun(db: Executor, run: RunRef, logger: Logger): Promise<void> {
@@ -200,9 +199,19 @@ export async function decorateRun(db: Executor, run: RunRef, logger: Logger): Pr
       await enqueueLatestDecoration(db, { ...target, gitlab: null, github });
       return;
     }
-    case 'azure': // azure-pending(4): the decoration of an Azure DevOps pull request after a review
-      logger.warn(where, AZURE_NOT_DECORATED);
+    case 'azure': {
+      const azure = stored.context.azure ?? null;
+      if (azure === null) {
+        // Without the Azure Pipelines context, which revision was checked out is unknown: fail closed.
+        logger.warn(
+          where,
+          'AI review ended but not decorated: the analysis has no stored Azure Pipelines context',
+        );
+        return;
+      }
+      await enqueueLatestDecoration(db, { ...target, gitlab: null, azure });
       return;
+    }
     default:
       return assertNever(stored.context.provider, 'provider');
   }
