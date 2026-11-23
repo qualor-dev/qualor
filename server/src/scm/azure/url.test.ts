@@ -6,6 +6,7 @@ import {
   azureIdentitiesBase,
   azurePullRequestWebUrl,
   azureWebBase,
+  azureWebhookUrl,
 } from './url.js';
 
 const SERVICES_HINT = 'Use https://dev.azure.com/<organization>';
@@ -125,5 +126,23 @@ describe('azureIdentitiesBase (the identities host, approved 2026-11-23)', () =>
     'https://ado.example.com:8443/tfs/DefaultCollection',
   ])('keeps a Server collection URL as it is: %s', (url) => {
     expect(azureIdentitiesBase(url, 'server')).toBe(url);
+  });
+});
+
+describe('azureWebhookUrl', () => {
+  const id = '11111111-2222-4333-8444-555555555555';
+  it('is the public URL plus the service hook route', () => {
+    expect(azureWebhookUrl('https://qualor.example.com', id)).toBe(
+      `https://qualor.example.com/api/v0/azure-devops/webhooks/${id}`,
+    );
+  });
+
+  it('trims trailing slashes and keeps a path prefix', () => {
+    expect(azureWebhookUrl('https://qualor.example.com//', id)).toBe(
+      `https://qualor.example.com/api/v0/azure-devops/webhooks/${id}`,
+    );
+    expect(azureWebhookUrl('https://example.com/qualor/', id)).toBe(
+      `https://example.com/qualor/api/v0/azure-devops/webhooks/${id}`,
+    );
   });
 });

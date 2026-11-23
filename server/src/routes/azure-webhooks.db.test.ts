@@ -11,7 +11,7 @@ import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
 import { createFakeLlm, type FakeLlm } from '../../test/fake-llm';
 import { githubConnection } from '../../test/github';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
-import { queuedAnswers, reviewOff, reviewOn } from '../../test/replies';
+import { queuedAnswers, refuseAnswerJobs, reviewOff, reviewOn } from '../../test/replies';
 import { mergeRequestReport, PUBLIC_URL } from '../../test/scm';
 import { encryptionKey } from '../crypto/secrets';
 import { branches, jobs, projects, scmConnections } from '../db/schema';
@@ -100,7 +100,7 @@ describe('Azure DevOps service hooks (sub-plan 5, task 6)', () => {
       } as never,
       options.connection ?? connectionId,
       name,
-      options.overrides ?? {},
+      { id: randomUUID(), ...options.overrides },
       options.password === null
         ? undefined
         : {
@@ -251,6 +251,78 @@ describe('Azure DevOps service hooks (sub-plan 5, task 6)', () => {
         .statusCode,
     ).toBe(204);
     expect(await allJobs()).toEqual([]);
+  });
+
+  it('a payload whose two repository fields disagree is 204 and queues nothing', async () => {
+    const other = randomUUID();
+    // The comment event is read by the pull request's repository, the updated one by the resource's.
+    expect(
+      (
+        await deliver('comment-created', {
+          overrides: {
+            resource: {
+              repository: { id: REPOSITORY },
+              pullRequest: { repository: { id: other } },
+            },
+          },
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(await allJobs()).toEqual([]);
+    await clearJobs();
+    expect(
+      (
+        await deliver('pr-updated', {
+          overrides: {
+            resource: {
+              repository: { id: other },
+              pullRequest: { repository: { id: REPOSITORY } },
+            },
+          },
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(await allJobs()).toEqual([]);
+  });
+
+  it('an envelope without an id is processed, and so is a delivery with an id that is no UUID, both without dedupe', async () => {
+    for (const id of [undefined, 'not-a-uuid', 'x'.repeat(200)]) {
+      for (let i = 0; i < 2; i++) {
+        await clearJobs();
+        const rest: Record<string, unknown> = { ...recorded('9-event-comment-created') };
+        delete rest.id;
+        const body = id === undefined ? rest : { ...rest, id };
+        const res = await raw(
+          { ...asJson, authorization: basic(`qualor:${SECRET}`) },
+          JSON.stringify(body),
+        );
+        expect(res.statusCode).toBe(204);
+        expect(await scans()).toHaveLength(1);
+      }
+    }
+  });
+
+  it('forgets the delivery id when processing fails, so its retry is processed', async () => {
+    const id = randomUUID();
+    const restore = await refuseAnswerJobs(h.ctx.db, branchId);
+    try {
+      expect((await deliver('comment-created', { overrides: { id } })).statusCode).toBe(500);
+    } finally {
+      await restore();
+    }
+    expect(await allJobs()).toEqual([]);
+    expect((await deliver('comment-created', { overrides: { id } })).statusCode).toBe(204);
+    expect(await scans()).toHaveLength(1);
+  });
+
+  it('does not count right deliveries: after 70 of them, one wrong one from the address is 401', async () => {
+    const ip = '203.0.113.50';
+    for (let i = 0; i < 70; i++) {
+      expect((await deliver('comment-created', { ip })).statusCode).toBe(204);
+    }
+    expect((await deliver('comment-created', { ip, password: 'not-the-secret' })).statusCode).toBe(
+      401,
+    );
   });
 
   it('is 415 for a body that is not JSON, 400 for broken JSON, 204 for an event it does not read', async () => {

@@ -37,8 +37,6 @@ const UPDATED_EVENT = 'git.pullrequest.updated';
 /** The user name of the Basic credential; the password is the connection's webhook secret. */
 const BASIC_USER = 'qualor';
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
-/** A delivery id: the envelope's `id`, a GUID. */
-const DELIVERY_ID = /^[A-Za-z0-9-]{1,64}$/;
 
 /** What is read of a delivery: the event, which pull request it is on, never the comment itself. */
 const envelope = z.looseObject({
@@ -129,7 +127,7 @@ export const azureWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = async
       }
       // A delivery id is kept per connection: another connection's hook is another delivery.
       const remembered =
-        event.id !== undefined && DELIVERY_ID.test(event.id) ? `${row.id}:${event.id}` : null;
+        event.id !== undefined && UUID.test(event.id) ? `${row.id}:${event.id}` : null;
       if (remembered !== null && !deliveries.remember(remembered)) {
         return reply.code(204).send();
       }
