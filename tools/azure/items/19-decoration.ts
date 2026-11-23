@@ -50,18 +50,18 @@ import {
 
 /** Azure DevOps's Status check policy type (item 7). */
 const STATUS_POLICY = 'cbdc66da-9728-4af8-aada-9a5a32e4a226';
-const DOCKER_PATH = '.azure-pipelines/qualor-docker.yml';
+export const DOCKER_PATH = '.azure-pipelines/qualor-docker.yml';
 const DOTNET_PATHS: Record<Form, string> = {
   docker: '.azure-pipelines/qualor-dotnet-docker.yml',
   task: '.azure-pipelines/qualor-dotnet-task.yml',
 };
 const FIXTURE = new URL('../../../fixtures/csharp-basic/', import.meta.url);
 /** The finding's file: one empty function on line 2 (sonarjs S1186, as the js-sonar fixture). */
-const FINDING_LINE = 2;
+export const FINDING_LINE = 2;
 const FINDING_TEXT = 'export function emptyHandler() {';
 /** The commit that removes it: the same file with a body. */
 const FIXED_TEXT = 'export function emptyHandler() {\n  return 0;\n}\n';
-const DECORATION_WAIT_MS = 10 * 60_000;
+export const DECORATION_WAIT_MS = 10 * 60_000;
 
 // ---------------------------------------------------------------------------------------------
 // Pure helpers (unit-tested)
@@ -204,7 +204,7 @@ const Thread = z
     comments: z.array(Comment),
   })
   .loose();
-type Thr = z.infer<typeof Thread>;
+export type Thr = z.infer<typeof Thread>;
 const Iterations = z.object({
   value: z.array(
     z.object({ id: z.number(), sourceRefCommit: z.object({ commitId: z.string() }) }).loose(),
@@ -230,7 +230,7 @@ const Statuses = z.object({
 // Calls
 
 /** Records `value` after a last look for what no recording may hold; throws before anything is written. */
-async function rec(ctx: ProbeContext, call: string, value: unknown): Promise<void> {
+export async function rec(ctx: ProbeContext, call: string, value: unknown): Promise<void> {
   const org = (() => {
     try {
       return new URL(process.env['AZURE_PROBE_SERVICES_URL'] ?? '').pathname
@@ -248,7 +248,7 @@ async function rec(ctx: ProbeContext, call: string, value: unknown): Promise<voi
 }
 
 /** Qualor's comments are the service principal's: its names join the redaction table, and its id is returned. */
-async function servicePrincipalId(ctx: ProbeContext): Promise<string> {
+export async function servicePrincipalId(ctx: ProbeContext): Promise<string> {
   if (!ctx.entra)
     throw new Error('no Entra client on this target: the bench Qualor acts as a service principal');
   const res = ok(
@@ -262,14 +262,14 @@ async function servicePrincipalId(ctx: ProbeContext): Promise<string> {
   return data.authenticatedUser.id;
 }
 
-async function listThreads(ctx: ProbeContext, repo: Repo, prId: number) {
+export async function listThreads(ctx: ProbeContext, repo: Repo, prId: number) {
   const res = ok(await ctx.bot.request('GET', threadsPath(ctx, repo, prId)), 'threads');
   const list = shape(z.object({ value: z.array(Thread) }), res.json, 'threads').value;
   return { res, threads: list.filter((t) => t.isDeleted !== true) };
 }
 
 /** The threads whose first comment is the service principal's and carries `kind`'s marker. */
-function ownThreads(threads: Thr[], spId: string, kind: 'summary' | 'issue') {
+export function ownThreads(threads: Thr[], spId: string, kind: 'summary' | 'issue') {
   return threads.filter((t) => {
     const first = t.comments[0];
     return first !== undefined && first.author.id === spId && markerKind(first.content) === kind;
@@ -319,7 +319,7 @@ async function pushEdit(
  * and the source commit, lower case; item 18 reads the same field). `commits` empty: any build, the newest.
  * A re-queue of an older iteration is another commit and never matches.
  */
-async function buildAt(ctx: ProbeContext, definitionId: number, commits: string[]) {
+export async function buildAt(ctx: ProbeContext, definitionId: number, commits: string[]) {
   return waitFor(
     async () => {
       const res = ok(
@@ -362,8 +362,8 @@ async function iterationStatuses(ctx: ProbeContext, repo: Repo, prId: number, it
   return { res, list: shape(Statuses, res.json, 'iteration statuses').value };
 }
 
-type Check = { what: string; pass: boolean; got: string };
-const check = (what: string, pass: boolean, got: string): Check => ({ what, pass, got });
+export type Check = { what: string; pass: boolean; got: string };
+export const check = (what: string, pass: boolean, got: string): Check => ({ what, pass, got });
 
 /** The state of Qualor's newest status of that name on the iteration (highest id). */
 function newestStatus(list: z.infer<typeof Statuses>['value'], name: string) {
@@ -473,7 +473,7 @@ function fixtureFiles(): { path: string; content: string }[] {
   return out;
 }
 
-function needEnv(key: string): string {
+export function needEnv(key: string): string {
   const v = process.env[key];
   if (!v) throw new Error(`${key} is not set (scripts/seed-qualor.mjs writes it into bench.env)`);
   return v;

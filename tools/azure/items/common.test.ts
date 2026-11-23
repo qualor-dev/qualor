@@ -73,6 +73,18 @@ describe('buildRedactionTable', () => {
     expect(t.tenantIds).toEqual(['11111111-2222-3333-4444-555555555555']);
   });
 
+  it("lists the model key (item 21) but not the model's kind, name or address", () => {
+    const t = buildRedactionTable({
+      AZURE_PROBE_LLM_KEY: 'sk-test-key-value',
+      AZURE_PROBE_LLM_KIND: 'anthropic',
+      AZURE_PROBE_LLM_MODEL: 'some-model',
+    });
+    expect(t.secrets).toContain('sk-test-key-value');
+    expect(t.secrets).toContain(Buffer.from(':sk-test-key-value').toString('base64'));
+    expect(t.secrets).not.toContain('anthropic');
+    expect(t.secrets).not.toContain('some-model');
+  });
+
   it('lists the hosts with the IPs their names carry, the organisation and the project', () => {
     const t = buildRedactionTable(env);
     expect(t.hosts).toContain('ec2-16-1-2-3.eu-north-1.compute.amazonaws.com');

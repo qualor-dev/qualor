@@ -109,7 +109,7 @@ export function nameKind(value: unknown): string {
   return `a plain name (${value.length} characters)`;
 }
 
-const SECRET_KEY = /(?:PAT|PASSWORD|SECRET|TOKEN|API_KEY)$/;
+const SECRET_KEY = /(?:PAT|PASSWORD|SECRET|TOKEN|API_KEY|LLM_KEY)$/;
 
 function hostsOf(url: string | undefined): string[] {
   if (!url) return [];

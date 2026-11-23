@@ -18,6 +18,7 @@ import { item as headCheckout } from './17-head-checkout.js';
 import { item as ci } from './18-ci.js';
 import { item as decoration } from './19-decoration.js';
 import { item as rightsReplies } from './20-rights-replies.js';
+import { item as review } from './21-review.js';
 
 /** The probe items, by number (14, the Marketplace publisher verification, is done by hand). */
 export const ITEMS: readonly ProbeItem[] = [
@@ -40,4 +41,5 @@ export const ITEMS: readonly ProbeItem[] = [
   ci,
   decoration,
   rightsReplies,
+  review,
 ];
