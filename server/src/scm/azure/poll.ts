@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, max, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Db } from '../../db/client';
 import { LOCKS } from '../../db/locks';
@@ -101,40 +101,33 @@ export async function ensureAzurePollScheduled(db: Db): Promise<number> {
  */
 async function candidates(db: Db, connectionId: string, now: Date): Promise<string[]> {
   const cutoff = new Date(now.getTime() - REPLY_MAX_AGE_DAYS * 86_400_000);
-  const newest = max(analyses.createdAt);
+  const mapped = await db
+    .select({ id: projects.id, organizationId: projects.organizationId })
+    .from(projects)
+    .where(eq(projects.scmConnectionId, connectionId));
+  if (mapped.length === 0) return [];
+  const settings = await readLlmSettings(db);
+  const activeIds = mapped
+    .filter((p) => reviewActive(settings, { ...p, scmConnectionId: connectionId }).active)
+    .map((p) => p.id);
+  if (activeIds.length === 0) return [];
   const rows = await db
-    .select({
-      branchId: branches.id,
-      projectId: projects.id,
-      organizationId: projects.organizationId,
-    })
+    .select({ branchId: branches.id })
     .from(reviewRuns)
     .innerJoin(analyses, eq(analyses.id, reviewRuns.analysisId))
     .innerJoin(branches, eq(branches.id, reviewRuns.branchId))
-    .innerJoin(projects, eq(projects.id, branches.projectId))
     .where(
       and(
-        eq(projects.scmConnectionId, connectionId),
+        inArray(branches.projectId, activeIds),
         eq(branches.kind, 'merge_request'),
         eq(reviewRuns.status, 'done'),
         gte(analyses.createdAt, cutoff),
       ),
     )
-    .groupBy(branches.id, projects.id)
-    .orderBy(desc(newest), desc(branches.id));
-  if (rows.length === 0) return [];
-  const settings = await readLlmSettings(db);
-  return rows
-    .filter(
-      (r) =>
-        reviewActive(settings, {
-          id: r.projectId,
-          organizationId: r.organizationId,
-          scmConnectionId: connectionId,
-        }).active,
-    )
-    .slice(0, MAX_POLLED_BRANCHES)
-    .map((r) => r.branchId);
+    .groupBy(branches.id)
+    .orderBy(desc(max(analyses.createdAt)), desc(branches.id))
+    .limit(MAX_POLLED_BRANCHES);
+  return rows.map((r) => r.branchId);
 }
 
 /**
@@ -148,6 +141,8 @@ async function recordHookState(
   deps: AzurePollDeps,
   connection: typeof scmConnections.$inferSelect,
 ): Promise<void> {
+  // A credential problem is recorded by the decorator, not by this pass: a connection without
+  // decoration traffic never shows one from here, and a failed read below records nothing.
   if (deps.publicUrl === null || !deps.publicUrl.startsWith('https://')) return;
   const found = azureClientFor(connection, deps.scm, deps.runtime);
   if ('problem' in found) return;
@@ -189,7 +184,12 @@ export async function runAzurePass(
     deps.logger?.warn({ connectionId }, 'could not read the Azure DevOps service hooks');
   }
   for (const branchId of await candidates(deps.db, connectionId, now)) {
-    await queueScan(deps.db, branchId);
+    try {
+      await queueScan(deps.db, branchId);
+    } catch {
+      // One scan that cannot be queued never skips the others; the next pass tries it again.
+      deps.logger?.warn({ connectionId, branchId }, 'could not queue an Azure DevOps reply scan');
+    }
   }
 }
 

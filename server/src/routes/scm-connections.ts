@@ -84,7 +84,7 @@ import {
 } from '../scm/github/credentials';
 import { CI_SETUP_MISSING, createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import { githubBaseUrlProblem } from '../scm/github/url';
-import { clearScmProblem } from '../scm/problems';
+import { clearScmProblem, SCM_CREDENTIAL_PROBLEM_CODES } from '../scm/problems';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
 const githubSchema = z.object({
@@ -548,9 +548,12 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     await deps.audit.record(tx, actorOf(request), [event]);
   };
   const scmDeps = scmDepsOf(deps.config);
-  /** A passing test says the credential works again: the background problem it recorded is gone. */
+  /**
+   * A passing test says the credential works again: the credential problem recorded is gone. A
+   * hook problem stays: the Test shows the hook states live, and the backstop pass owns the code.
+   */
   const clearedByPass = async <T extends { ok: boolean }>(result: T, id: string): Promise<T> => {
-    if (result.ok) await clearScmProblem(deps.db, id);
+    if (result.ok) await clearScmProblem(deps.db, id, SCM_CREDENTIAL_PROBLEM_CODES);
     return result;
   };
   const ciSetupOf = createCiSetupStatus({

@@ -405,6 +405,24 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
     expect((res.json() as { hooks: unknown }).hooks).toEqual([]);
   });
 
+  it('a passing Test clears a credential problem but keeps a hook problem', async () => {
+    const id = await connect();
+    const problemOf = async () => (await rowOf(id)).problem;
+    const at = '2026-11-20T10:00:00.000Z';
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ problem: { code: 'hook_probation', at } })
+      .where(eq(scmConnections.id, id));
+    expect((await call(h, 'POST', `/scm-connections/${id}/test`, {})).statusCode).toBe(200);
+    expect(await problemOf()).toEqual({ code: 'hook_probation', at });
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ problem: { code: 'token_refused', at } })
+      .where(eq(scmConnections.id, id));
+    await call(h, 'POST', `/scm-connections/${id}/test`, {});
+    expect(await problemOf()).toBeNull();
+  });
+
   it('a GitHub connection answers hooks null in its Test result', async () => {
     const connection = await githubConnection(h, github);
     const res = await call(h, 'POST', `/scm-connections/${connection}/test`, {});

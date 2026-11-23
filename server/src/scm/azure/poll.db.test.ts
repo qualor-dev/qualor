@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { azureServerConfig, servicesUrlOf, AZURE_TEST_PRINCIPAL } from '../../../test/azure';
 import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../../test/fake-azure-devops';
@@ -198,6 +198,81 @@ describe('the Azure DevOps backstop pass (sub-plan 5, task 9)', () => {
       expect(await scanned()).toEqual(ids.slice(0, 50).sort());
     });
 
+    it('limits the candidate query itself to 50 rows and reads none without an active project', async () => {
+      await start();
+      const p = await mapped();
+      for (let i = 0; i < 60; i += 1) await branchWithReview(p, String(300 + i), i / 3);
+      const queries: string[] = [];
+      const spy = new Proxy(h.ctx.db, {
+        get: (target, key, receiver) =>
+          key === 'select'
+            ? (...args: unknown[]) => {
+                const query = (target.select as (...a: unknown[]) => { from: unknown })(...args);
+                queries.push('select');
+                return query;
+              }
+            : Reflect.get(target, key, receiver),
+      });
+      // The candidate statement's own row count, read off the pool's answer.
+      const pool = (h.ctx.db as unknown as { $client: { query: (...a: unknown[]) => unknown } })
+        .$client;
+      const original = pool.query.bind(pool);
+      const counts: number[] = [];
+      pool.query = (...args: unknown[]) => {
+        const result = original(...args) as Promise<{ rowCount: number }>;
+        const text =
+          typeof args[0] === 'string' ? args[0] : ((args[0] as { text?: string })?.text ?? '');
+        if (text.includes('"review_runs"') && text.includes('group by')) {
+          void result.then((r) => counts.push(r.rowCount));
+        }
+        return result;
+      };
+      try {
+        await runAzurePass(deps({ db: spy }), connectionId);
+      } finally {
+        pool.query = original;
+      }
+      expect(counts).toEqual([50]);
+      expect(await scanned()).toHaveLength(50);
+      const withCandidates = queries.length;
+      queries.length = 0;
+      await h.ctx.db.delete(jobs);
+      await reviewOff(h);
+      await runAzurePass(deps({ db: spy }), connectionId);
+      // The candidate query is the one read less when no project has AI review active.
+      expect(withCandidates - queries.length).toBe(1);
+      expect(await scanned()).toEqual([]);
+    });
+
+    it('one failing scan does not skip the other candidates', async () => {
+      await start();
+      const p = await mapped();
+      const ids = [await branchWithReview(p, '51', 1), await branchWithReview(p, '52', 2)];
+      const warnings: unknown[] = [];
+      const logger = {
+        info: () => undefined,
+        error: () => undefined,
+        warn: (o: unknown) => warnings.push(o),
+      };
+      // The newest candidate's scan fails: its branch row is locked out by a failing insert.
+      await h.ctx.db.execute(
+        sql.raw(
+          `CREATE OR REPLACE FUNCTION poll_fail() RETURNS trigger AS $$ BEGIN IF NEW.payload->>'branchId' = '${ids[0]}' THEN RAISE EXCEPTION 'no'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`,
+        ),
+      );
+      await h.ctx.db.execute(
+        sql`CREATE TRIGGER poll_fail BEFORE INSERT ON jobs FOR EACH ROW EXECUTE FUNCTION poll_fail()`,
+      );
+      try {
+        await runAzurePass(deps({ logger }), connectionId);
+      } finally {
+        await h.ctx.db.execute(sql`DROP TRIGGER poll_fail ON jobs`);
+        await h.ctx.db.execute(sql`DROP FUNCTION poll_fail()`);
+      }
+      expect(await scanned()).toEqual([ids[1]!]);
+      expect(warnings).toEqual([{ connectionId, branchId: ids[0] }]);
+    });
+
     it('leaves the pull requests of another connection alone', async () => {
       await start();
       const other = await connect();
@@ -309,12 +384,21 @@ describe('the Azure DevOps backstop pass (sub-plan 5, task 9)', () => {
       expect(delay).toBeGreaterThan(880);
       expect(delay).toBeLessThanOrEqual(901);
       await h.ctx.db.delete(jobs);
-      const failing = {
-        ...deps(),
-        runtime: undefined as never,
-        scm: undefined as never,
-      } satisfies AzurePollDeps;
-      await expect(azurePollHandlers(failing)[AZURE_POLL_QUEUE]!(job)).resolves.toBeUndefined();
+      // The pass itself rejects: its second read of the database (the candidates) throws.
+      let reads = 0;
+      const failing = new Proxy(h.ctx.db, {
+        get: (target, key, receiver) =>
+          key === 'select'
+            ? (...args: unknown[]) => {
+                reads += 1;
+                if (reads > 1) throw new Error('boom');
+                return (target.select as (...a: unknown[]) => unknown)(...args);
+              }
+            : Reflect.get(target, key, receiver),
+      });
+      await expect(
+        azurePollHandlers(deps({ db: failing }))[AZURE_POLL_QUEUE]!(job),
+      ).rejects.toThrow('boom');
       expect(await passJobs()).toHaveLength(1);
     });
 
