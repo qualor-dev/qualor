@@ -208,8 +208,8 @@ export interface NewAzureSubscription {
   /** The event's newest released version, from {@link AzureDevOpsClient.hookEventTypes}. */
   resourceVersion: string;
   projectId: string;
-  /** Narrows the deliveries to this repository (`publisherInputs.repository`). */
-  repositoryId: string;
+  /** Narrows the deliveries to this repository (`publisherInputs.repository`); none: the whole project. */
+  repositoryId?: string;
   /** A ref name filter (`publisherInputs.branch`); none: every branch. */
   branch?: string;
   url: string;
@@ -966,7 +966,7 @@ export class AzureDevOpsClient {
       consumerActionId: 'httpRequest',
       publisherInputs: {
         projectId: input.projectId,
-        repository: input.repositoryId,
+        ...(input.repositoryId === undefined ? {} : { repository: input.repositoryId }),
         ...(input.branch === undefined ? {} : { branch: input.branch }),
       },
       consumerInputs: {
@@ -974,8 +974,9 @@ export class AzureDevOpsClient {
         basicAuthUsername: HOOK_USER,
         basicAuthPassword: input.password,
         resourceDetailsToSend: 'all',
-        messagesToSend: 'all',
-        detailedMessagesToSend: 'all',
+        // Qualor reads the resource only; the texts Azure DevOps would compose are never sent.
+        messagesToSend: 'none',
+        detailedMessagesToSend: 'none',
       },
     };
   }

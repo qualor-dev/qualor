@@ -24962,6 +24962,15 @@
                                         "type": "null"
                                       }
                                     ]
+                                  },
+                                  "webhookSecretSet": {
+                                    "type": "boolean"
+                                  },
+                                  "webhookUrl": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -24970,7 +24979,9 @@
                                   "tenantId",
                                   "clientId",
                                   "credentialReadable",
-                                  "certificate"
+                                  "certificate",
+                                  "webhookSecretSet",
+                                  "webhookUrl"
                                 ],
                                 "additionalProperties": false
                               },
@@ -25502,6 +25513,15 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "webhookSecretSet": {
+                              "type": "boolean"
+                            },
+                            "webhookUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -25510,7 +25530,9 @@
                             "tenantId",
                             "clientId",
                             "credentialReadable",
-                            "certificate"
+                            "certificate",
+                            "webhookSecretSet",
+                            "webhookUrl"
                           ],
                           "additionalProperties": false
                         },
@@ -25933,6 +25955,15 @@
                                   "type": "null"
                                 }
                               ]
+                            },
+                            "webhookSecretSet": {
+                              "type": "boolean"
+                            },
+                            "webhookUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
                             }
                           },
                           "required": [
@@ -25941,7 +25972,9 @@
                             "tenantId",
                             "clientId",
                             "credentialReadable",
-                            "certificate"
+                            "certificate",
+                            "webhookSecretSet",
+                            "webhookUrl"
                           ],
                           "additionalProperties": false
                         },
@@ -26195,6 +26228,236 @@
         }
       }
     },
+    "/api/v0/scm-connections/{id}/azure-hooks/secret": {
+      "post": {
+        "summary": "Azure DevOps: generate a new webhook password (the service hooks' Basic password) and show it once. The subscriptions keep the old one until `POST /scm-connections/{id}/azure-hooks` writes them again",
+        "tags": [
+          "scm"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "description": "The address Azure DevOps delivers to; null without QUALOR_PUBLIC_URL.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "user": {
+                      "type": "string",
+                      "enum": [
+                        "qualor"
+                      ]
+                    },
+                    "password": {
+                      "type": "string",
+                      "description": "The new webhook password. Shown only in this answer; Qualor cannot show it again."
+                    }
+                  },
+                  "required": [
+                    "url",
+                    "user",
+                    "password"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/scm-connections/{id}/azure-hooks": {
+      "post": {
+        "summary": "Azure DevOps: create Qualor's two service hook subscriptions in each Azure project that holds a mapped repository, or rewrite them when their version, status or password differ. 409 `PUBLIC_URL_NOT_HTTPS` unless QUALOR_PUBLIC_URL is an https address",
+        "tags": [
+          "scm"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "projectId": {
+                            "type": "string"
+                          },
+                          "comment": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "replaced",
+                              "unchanged",
+                              "refused"
+                            ]
+                          },
+                          "updated": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "replaced",
+                              "unchanged",
+                              "refused"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "projectId",
+                          "comment",
+                          "updated"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "projects"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicts with the current state; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v0/scm-connections/{id}/test": {
       "post": {
         "summary": "Check the connection (and a GitLab project, GitHub owner/repo or Azure DevOps repository id) with the stored credentials",
@@ -26397,6 +26660,39 @@
                         }
                       ],
                       "description": "Azure DevOps: the repositories the identity sees, and the projects that hold them. Null for GitLab and GitHub, and when the test failed."
+                    },
+                    "hooks": {
+                      "anyOf": [
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "projectId": {
+                                "type": "string"
+                              },
+                              "state": {
+                                "type": "string",
+                                "enum": [
+                                  "enabled",
+                                  "onProbation",
+                                  "disabled",
+                                  "missing"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "projectId",
+                              "state"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Azure DevOps: the state of Qualor's service hook subscriptions in each Azure project that holds a mapped repository (`missing`: Qualor does not have both of its subscriptions there; `disabled`: Azure DevOps or a person switched one off). Null for GitLab and GitHub, and when the test failed or the subscriptions could not be read."
                     }
                   },
                   "required": [
@@ -26405,7 +26701,8 @@
                     "project",
                     "problem",
                     "missingAccess",
-                    "visible"
+                    "visible",
+                    "hooks"
                   ],
                   "additionalProperties": false
                 }

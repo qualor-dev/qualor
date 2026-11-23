@@ -142,6 +142,12 @@ export interface ConnectionTest {
    * them. Null for GitLab and GitHub, and when the test failed.
    */
   visible: { repositories: number; projects: number } | null;
+  /**
+   * Azure DevOps: the state of Qualor's service hook subscriptions in each Azure project that holds
+   * a mapped repository. Absent (null in the API) for GitLab and GitHub, and when the test failed
+   * or the subscriptions could not be read.
+   */
+  hooks?: { projectId: string; state: 'enabled' | 'onProbation' | 'disabled' | 'missing' }[] | null;
 }
 
 function problemCode(err: GitLabError): TestProblemCode {

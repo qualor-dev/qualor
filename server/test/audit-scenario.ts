@@ -111,6 +111,7 @@ export async function startAuditScenarioEnv(): Promise<AuditScenarioEnv> {
     jira,
     signer: testSigner(),
     config: {
+      publicUrl: 'https://qualor.example.com',
       scmInternalHosts: parseInternalHosts(new URL(gitlab.url).host),
       jiraInternalHosts: parseInternalHosts(new URL(jira.url).host),
       llmInternalHosts: parseInternalHosts(llm.host),
@@ -531,6 +532,23 @@ export async function runAuditScenario(
   // 0.16 fix MRs B2: an organisation admin allows fix merge requests on the connection.
   await call('PATCH', `/scm-connections/${scm}`, 200, { fixMrsAllowed: true });
   await call('DELETE', `/scm-connections/${scm}`, 204);
+
+  // scm_connection.updated (the generated Azure DevOps webhook password) and .hooks_updated; no
+  // repository is mapped, so nothing calls Azure DevOps.
+  const azure = (
+    (
+      await call('POST', '/scm-connections', 201, {
+        organizationId: org,
+        provider: 'azure',
+        baseUrl: 'https://dev.azure.com/scenario',
+        azureAuth: 'pat',
+        token: S.scmToken,
+      })
+    ).json() as { id: string }
+  ).id;
+  await call('POST', `/scm-connections/${azure}/azure-hooks/secret`, 200);
+  await call('POST', `/scm-connections/${azure}/azure-hooks`, 200);
+  await call('DELETE', `/scm-connections/${azure}`, 204);
 
   // scm_connection.created, .updated (App id, private key and webhook secret), .deleted for a
   // GitHub App. Creating and changing one calls nothing (only the connection test does).

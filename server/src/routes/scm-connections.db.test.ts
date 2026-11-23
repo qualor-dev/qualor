@@ -269,6 +269,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       missingAccess: null,
       // An Azure DevOps connection's alone.
       visible: null,
+      hooks: null,
     });
     const missing = await call('POST', `/scm-connections/${connection.id}/test`, h.orgAdmin, {
       projectRef: 'acme/nope',
@@ -315,6 +316,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
       problem: { code: 'token_refused', message: 'GitLab refused the token (HTTP 401)' },
       missingAccess: null,
       visible: null,
+      hooks: null,
     });
     // A token encrypted under another key (QUALOR_SECRET_KEY rotated) is named, not sent.
     await h.ctx.db
@@ -481,6 +483,7 @@ describe('SCM connections API and project mapping (scm.md §2)', () => {
         user: null,
         project: null,
         problem: { code: 'http_error', message: `GitLab answered HTTP ${status}` },
+        hooks: null,
         missingAccess: null,
         visible: null,
       });
@@ -1007,6 +1010,7 @@ describe('GitHub App connections (github.md §2.2, §2.5, D1)', () => {
       problem: null,
       // The documented App lacks nothing.
       missingAccess: [],
+      hooks: null,
       visible: null,
     });
     expect((await test('acme/bare')).json()).toMatchObject({
@@ -1710,6 +1714,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         clientId: null,
         credentialReadable: true,
         certificate: null,
+        webhookSecretSet: false,
+        webhookUrl: null,
       },
       ciSetup: { available: false, reason: 'not_allowed', missing: [] },
       fixMrsAllowed: false,
@@ -1728,6 +1734,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: null,
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     const certificate = await created(SP_CERTIFICATE);
     expect(certificate.azure).toEqual({
@@ -1737,6 +1745,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: certificateOf(TEST_IDP.certPem),
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     const onServer = await created({ baseUrl: server.url, azureAuth: 'pat', token: server.pat });
     expect([onServer.baseUrl, onServer.azure]).toEqual([
@@ -1985,6 +1995,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: certificateOf(TEST_IDP.certPem),
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     expect(await storedCredential(id)).toBe(CERTIFICATE);
     expect((await patch(id, { certificate: CERTIFICATE })).statusCode).toBe(200);
@@ -1997,6 +2009,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId: null,
       credentialReadable: true,
       certificate: null,
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     expect(await rowOf(id)).toMatchObject({
       azureAuth: 'pat',
@@ -2049,6 +2063,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: certificateOf(TEST_IDP.certPem),
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     expect(await storedCredential(id)).toBe(CERTIFICATE);
     expect((await test(id)).json()).toMatchObject({
@@ -2068,6 +2084,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: null,
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     expect(await storedCredential(id)).toBe(SECRET);
     expect((await test(id)).json()).toMatchObject({ ok: true });
@@ -2107,6 +2125,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId,
       credentialReadable: true,
       certificate: { ...certificateOf(expiredCertificate), notAfter: '2001-01-01T00:00:00.000Z' },
+      webhookSecretSet: false,
+      webhookUrl: null,
     });
     services.clearRequests();
     expect((await test(id)).json()).toEqual({
@@ -2118,6 +2138,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         message: 'The stored certificate has expired; upload a new one',
       },
       missingAccess: null,
+      hooks: null,
       visible: null,
     });
     expect([services.requests, services.tokenRequests]).toEqual([[], []]);
@@ -2274,6 +2295,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         problem: null,
         missingAccess: null,
         visible: { repositories: 3, projects: 2 },
+        hooks: [],
       });
     }
     expect((await test(onServer.id)).json()).toEqual({
@@ -2283,6 +2305,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       problem: null,
       missingAccess: null,
       visible: { repositories: 1, projects: 1 },
+      hooks: [],
     });
     // The stored organisation's routes, at design §7.9's versions; one Entra token per test.
     const asked = services.requests.map(
@@ -2300,6 +2323,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       problem: null,
       missingAccess: null,
       visible: { repositories: 3, projects: 2 },
+      hooks: [],
     });
     expect((await test(secret.id, OTHER_ID)).json()).toMatchObject({
       ok: false,

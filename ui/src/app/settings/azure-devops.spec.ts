@@ -38,6 +38,8 @@ const PAT: Connection = {
     clientId: null,
     credentialReadable: true,
     certificate: null,
+    webhookSecretSet: false,
+    webhookUrl: null,
   },
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
@@ -54,6 +56,8 @@ const CERTIFICATE: Connection = {
     clientId: CLIENT,
     credentialReadable: true,
     certificate: { thumbprint: 'AB12CD34', notAfter: '2099-01-01T00:00:00.000Z' },
+    webhookSecretSet: false,
+    webhookUrl: null,
   },
 };
 
@@ -473,6 +477,7 @@ describe('AzureDevOpsPage', () => {
         problem: null,
         missingAccess: null,
         visible: { repositories, projects },
+        hooks: [],
       });
     expect(text(1, 1)).toBe('Connected as Bot; 1 repository in 1 project visible.');
     expect(text(0, 0)).toBe('Connected as Bot; 0 repositories in 0 projects visible.');
@@ -549,7 +554,15 @@ describe('AzureDevOpsPage', () => {
       'The certificate expired on Mar 4, 2025. Replace it, then test again.',
     );
     const result = azureTestText(
-      { ok: false, user: null, project: null, problem: entra, missingAccess: null, visible: null },
+      {
+        ok: false,
+        user: null,
+        project: null,
+        problem: entra,
+        missingAccess: null,
+        visible: null,
+        hooks: null,
+      },
       'Mar 4, 2025',
     );
     expect(result).toContain('expired on Mar 4, 2025');

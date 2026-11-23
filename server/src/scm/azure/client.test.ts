@@ -1499,8 +1499,8 @@ describe('replies, rights and service hooks (sub-plan 5, task 2)', () => {
           basicAuthUsername: 'qualor',
           basicAuthPassword: PASSWORD,
           resourceDetailsToSend: 'all',
-          messagesToSend: 'all',
-          detailedMessagesToSend: 'all',
+          messagesToSend: 'none',
+          detailedMessagesToSend: 'none',
         },
       });
       expect(made).toEqual({

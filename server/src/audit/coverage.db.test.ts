@@ -356,6 +356,8 @@ describe('the audit catalogue end to end (rbac-audit.md §19 criteria 7–8)', (
     expect(rows.rows.map((r) => r.changed)).toEqual([
       ['token', 'webhookSecret'],
       ['fixMrsAllowed'],
+      // An Azure DevOps connection's generated webhook password.
+      ['webhookSecret'],
       ['appId', 'privateKey', 'webhookSecret'],
     ]);
   });

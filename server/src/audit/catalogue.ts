@@ -655,6 +655,11 @@ export const AUDIT_CATALOGUE = {
         .max(SCM_CONNECTION_CHANGED_FIELDS.length),
     }),
   },
+  'scm_connection.hooks_updated': {
+    target: 'scm_connection',
+    // Azure DevOps service hooks: how many Azure projects were subscribed (never a password).
+    details: z.strictObject({ projects: z.number().int().nonnegative() }),
+  },
   'scm_connection.deleted': {
     target: 'scm_connection',
     details: z.strictObject({ provider, baseUrl: url }),

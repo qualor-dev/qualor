@@ -366,6 +366,8 @@ describe('RepositoriesPage with Azure DevOps', () => {
       clientId: null,
       credentialReadable: true,
       certificate: null,
+      webhookSecretSet: false,
+      webhookUrl: null,
     },
   };
 

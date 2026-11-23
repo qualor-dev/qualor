@@ -160,6 +160,14 @@ export interface EncryptedValue {
   ct: string;
   tag: string;
 }
+/**
+ * `webhook_secret_enc`: the envelope, and for an Azure DevOps connection whether Azure DevOps was
+ * given this very secret as its subscriptions' password (set by a subscribe call, gone with a new
+ * secret). Azure DevOps never returns the password, so Qualor has to remember it.
+ */
+export interface WebhookSecretValue extends EncryptedValue {
+  hooksPushed?: true;
+}
 export type NewCodeDefinition =
   | { type: 'days'; value: number }
   | { type: 'previous_version' }
@@ -254,7 +262,7 @@ export const scmConnections = pgTable(
      * `scm_connections.webhook_secret_enc`; NULL when unset. Either provider may hold one: GitHub's
      * for its App's webhook, and since migration 0017 GitLab's for the note webhook.
      */
-    webhookSecretEnc: jsonb('webhook_secret_enc').$type<EncryptedValue>(),
+    webhookSecretEnc: jsonb('webhook_secret_enc').$type<WebhookSecretValue>(),
     /** Onboarding (migration 0019): whether Qualor may open CI-setup merge requests; GitLab only. */
     ciSetupAllowed: boolean('ci_setup_allowed').notNull().default(false),
     /** Fix MRs (migration 0033): whether Qualor may open fix merge requests; an org admin sets it. */

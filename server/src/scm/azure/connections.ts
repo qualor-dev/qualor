@@ -15,6 +15,7 @@ import { isInternalHostAllowed, scmBaseUrlProblem } from '../url';
 import type { AzureAuthKind } from './auth-kinds';
 import { AZURE_CERTIFICATE_PROBLEM_TEXT, parseAzureCertificate } from './certificate';
 import { AzureDevOpsClient, type AzureCredential } from './client';
+import { ownSubscriptions, projectHookState } from './hooks';
 import {
   entraCacheKey,
   entraToken,
@@ -497,6 +498,14 @@ export function problemCode(err: ScmError): TestProblemCode {
   }
 }
 
+/** What the Test needs to report the hooks: the mapped repositories and Qualor's webhook address. */
+export interface HookTestInput {
+  /** The repository ids the connection's projects are mapped to. */
+  repositoryRefs: readonly string[];
+  /** Null without `QUALOR_PUBLIC_URL`: nothing can be Qualor's own, every project is `missing`. */
+  url: string | null;
+}
+
 /**
  * `POST /scm-connections/{id}/test` for Azure DevOps (design §7.1): who the credential is
  * (`connectionData`, its display name), the repositories it sees and the projects that hold them,
@@ -507,6 +516,7 @@ export async function testAzureConnection(
   row: ScmConnectionRow,
   deps: ScmDeps,
   projectRef: string | null,
+  hookInput: HookTestInput = { repositoryRefs: [], url: null },
 ): Promise<ConnectionTest> {
   const failed = (code: TestProblemCode, message: string): ConnectionTest => ({
     ok: false,
@@ -522,6 +532,7 @@ export async function testAzureConnection(
     const identity = await found.client.connectionData();
     const repositories = await found.client.repositories();
     const repository = projectRef === null ? null : await found.client.repository(projectRef);
+    const hooks = await hookStates(found.client, repositories, hookInput);
     return {
       ok: true,
       user: { username: identity.displayName },
@@ -539,9 +550,40 @@ export async function testAzureConnection(
         repositories: repositories.length,
         projects: new Set(repositories.map((r) => r.projectId)).size,
       },
+      hooks,
     };
   } catch (err) {
     if (err instanceof ScmError) return failed(problemCode(err), err.message);
+    throw err;
+  }
+}
+
+/** The Azure project ids (lower case, sorted) of the mapped repositories the identity still sees. */
+export function mappedAzureProjects(
+  repositories: readonly { id: string; projectId: string }[],
+  refs: readonly string[],
+): string[] {
+  const wanted = new Set(refs.map((r) => r.toLowerCase()));
+  const projectIds = repositories
+    .filter((r) => wanted.has(r.id.toLowerCase()))
+    .map((r) => r.projectId.toLowerCase());
+  return [...new Set(projectIds)].sort();
+}
+
+/** Qualor's hook state per mapped Azure project; null when the subscriptions cannot be read. */
+async function hookStates(
+  client: AzureDevOpsClient,
+  repositories: readonly { id: string; projectId: string }[],
+  input: HookTestInput,
+): Promise<NonNullable<ConnectionTest['hooks']> | null> {
+  const projectIds = mappedAzureProjects(repositories, input.repositoryRefs);
+  if (projectIds.length === 0) return [];
+  if (input.url === null) return projectIds.map((projectId) => ({ projectId, state: 'missing' }));
+  try {
+    const own = ownSubscriptions(await client.subscriptions(), input.url);
+    return projectIds.map((projectId) => ({ projectId, state: projectHookState(own, projectId) }));
+  } catch (err) {
+    if (err instanceof ScmError) return null;
     throw err;
   }
 }
