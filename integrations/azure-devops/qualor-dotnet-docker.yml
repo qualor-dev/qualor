@@ -126,4 +126,4 @@ steps:
         -e SYSTEM_PULLREQUEST_SOURCECOMMITID \
         $(QUALOR_SCANNER_IMAGE) dotnet abort
     displayName: Qualor abort
-    condition: failure()
+    condition: or(failed(), canceled())

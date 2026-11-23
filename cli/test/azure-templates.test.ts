@@ -179,7 +179,7 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     expect(found.every((run) => run.slice(0, 3).join(' ') === 'run --rm --user')).toBe(true);
     // `abort` is the last step of the .NET form, after a failure only.
     const abort = scripts.find((s) => /dotnet abort/.test(s.script ?? ''));
-    if (dotnet) expect(abort?.condition).toBe('failure()');
+    if (dotnet) expect(abort?.condition).toBe('or(failed(), canceled())');
     else expect(abort).toBeUndefined();
     for (const s of scripts) if (s !== abort) expect(s.condition).toBeUndefined();
   });
