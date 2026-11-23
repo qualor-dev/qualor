@@ -215,7 +215,8 @@ const Statuses = z.object({
     z
       .object({
         id: z.number(),
-        state: z.string(),
+        // Absent while notSet: Azure Pipelines' own statuses of the pull request come so.
+        state: z.string().nullish(),
         description: z.string().nullish(),
         targetUrl: z.string().nullish(),
         context: z.object({ name: z.string(), genre: z.string().nullish() }).loose(),

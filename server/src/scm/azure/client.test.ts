@@ -913,6 +913,27 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       expect(await client.iterationStatuses(repo().id, pullRequest.id, 1)).toHaveLength(1);
     });
 
+    it('reads the recorded listing of a pipeline-built pull request: a status of another genre without a state', async () => {
+      // Probe item 19: Azure Pipelines' own status carries no `state` while it is notSet.
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.inject(
+        'GET',
+        /\/iterations\/1\/statuses$/,
+        recordedAnswer('services', '19-iteration-statuses'),
+      );
+      expect(await clientOf(services).iterationStatuses(repo().id, pullRequest.id, 1)).toEqual([]);
+    });
+
+    it("reads a status of Qualor's genre without a state as notSet", async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.inject('GET', /\/iterations\/1\/statuses$/, {
+        status: 200,
+        body: { count: 1, value: [{ id: 4, context: { genre: 'qualor', name: 'gate' } }] },
+      });
+      const listed = await clientOf(services).iterationStatuses(repo().id, pullRequest.id, 1);
+      expect(listed.map((s) => [s.id, s.state])).toEqual([[4, 'notSet']]);
+    });
+
     it('reads who posted a status, and null when the answer names nobody', async () => {
       const { pullRequest } = seedAzurePullRequest(services, repo().id);
       services.inject('GET', /\/iterations\/1\/statuses$/, {

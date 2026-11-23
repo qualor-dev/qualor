@@ -164,7 +164,8 @@ export interface NewAzureThread {
 
 export type AzureStatus = {
   iterationId: number;
-  state: 'succeeded' | 'failed' | 'error' | 'pending';
+  /** `notSet` only when read: Azure DevOps omits `state` of a status that has none (probe item 19). */
+  state: 'succeeded' | 'failed' | 'error' | 'pending' | 'notSet';
   description: string;
   targetUrl: string | null;
   genre: 'qualor';
@@ -181,7 +182,7 @@ const CHANGES_PAGE = 100;
 export const AZURE_FILE_MAX_BYTES = 1024 * 1024;
 /** Thread status as the REST body takes it. */
 const THREAD_STATUS = { active: 1, fixed: 2, closed: 4 } as const;
-const STATUS_STATES: readonly string[] = ['succeeded', 'failed', 'error', 'pending'];
+const STATUS_STATES: readonly string[] = ['succeeded', 'failed', 'error', 'pending', 'notSet'];
 const COMMIT_ID = /^[0-9a-f]{40,64}$/i;
 
 // ─── Response shapes (the fields Qualor reads; server/test/azure-shapes/ holds recorded ones) ──
@@ -272,7 +273,8 @@ const statusList = z.looseObject({
     z.looseObject({
       id: z.number().int(),
       iterationId: z.number().int().nullish(),
-      state: z.string(),
+      // Absent while the state is the default, notSet: statuses of other tools come so (probe item 19).
+      state: z.string().nullish(),
       description: z.string().nullish(),
       targetUrl: z.string().nullish(),
       context: z.looseObject({ genre: z.string().nullish(), name: z.string() }),
@@ -659,11 +661,12 @@ export class AzureDevOpsClient {
     );
     const ours: (AzureStatus & { id: number; authorId: string | null })[] = [];
     for (const s of answer.value) {
-      if (s.context.genre !== 'qualor' || !STATUS_STATES.includes(s.state)) continue;
+      const state = s.state ?? 'notSet';
+      if (s.context.genre !== 'qualor' || !STATUS_STATES.includes(state)) continue;
       ours.push({
         id: s.id,
         iterationId: s.iterationId ?? iterationId,
-        state: s.state as AzureStatus['state'],
+        state: state as AzureStatus['state'],
         description: s.description ?? '',
         targetUrl: s.targetUrl ?? null,
         genre: 'qualor',

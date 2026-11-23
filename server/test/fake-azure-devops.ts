@@ -182,7 +182,8 @@ export interface FakeAzureStatus {
   /** Assigned on a POST (rising); a test that seeds a status by hand may set it. */
   id?: number;
   iterationId: number | null;
-  state: string;
+  /** null: the answer omits `state`, as Azure DevOps does for notSet (probe item 19). */
+  state: string | null;
   description: string;
   targetUrl: string | null;
   genre: string;
@@ -701,7 +702,8 @@ export async function createFakeAzureDevOps(options: {
     ...recordedPrStatus,
     ...(s.iterationId === null ? { iterationId: undefined } : { iterationId: s.iterationId }),
     id,
-    state: s.state,
+    // undefined drops out of the JSON: the answer has no `state` (it overlays the recording's).
+    state: s.state ?? undefined,
     description: s.description,
     ...(s.targetUrl === null ? {} : { targetUrl: s.targetUrl }),
     context: { name: s.name, genre: s.genre },

@@ -1,0 +1,107 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "iterationId": 1,
+        "id": 1,
+        "description": "Coverage status check queued for Qualor probe item 19 decoration 20261123122425",
+        "context": {
+          "name": "codecoverage",
+          "genre": "qualor probe item 19 decoration 20261123122425"
+        },
+        "creationDate": "2026-11-23T12:24:39.8787178Z",
+        "updatedDate": "2026-11-23T12:24:39.8787178Z",
+        "createdBy": {
+          "displayName": "Azure Pipelines Test Service",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000054-0000-8888-8000-000000000000",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+            }
+          },
+          "id": "00000054-0000-8888-8000-000000000000",
+          "uniqueName": "",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+          "descriptor": "s2s.<secret>"
+        },
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/17/iterations/1/statuses/1"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "iterationId": 1,
+        "id": 2,
+        "state": "pending",
+        "description": "Coverage status check in progress for Qualor probe item 19 decoration 20261123122425",
+        "context": {
+          "name": "codecoverage",
+          "genre": "qualor probe item 19 decoration 20261123122425"
+        },
+        "creationDate": "2026-11-23T12:26:13.3785255Z",
+        "updatedDate": "2026-11-23T12:26:13.3785255Z",
+        "createdBy": {
+          "displayName": "Azure Pipelines Test Service",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000054-0000-8888-8000-000000000000",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+            }
+          },
+          "id": "00000054-0000-8888-8000-000000000000",
+          "uniqueName": "",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+          "descriptor": "s2s.<secret>"
+        },
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/17/iterations/1/statuses/2"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "iterationId": 1,
+        "id": 3,
+        "state": "notApplicable",
+        "description": "Coverage status check not applicable for Qualor probe item 19 decoration 20261123122425",
+        "context": {
+          "name": "codecoverage",
+          "genre": "qualor probe item 19 decoration 20261123122425"
+        },
+        "creationDate": "2026-11-23T12:26:13.5126659Z",
+        "updatedDate": "2026-11-23T12:26:13.5126659Z",
+        "createdBy": {
+          "displayName": "Azure Pipelines Test Service",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000054-0000-8888-8000-000000000000",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+            }
+          },
+          "id": "00000054-0000-8888-8000-000000000000",
+          "uniqueName": "",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+          "descriptor": "s2s.<secret>"
+        },
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/17/iterations/1/statuses/3"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      }
+    ],
+    "count": 3
+  }
+}

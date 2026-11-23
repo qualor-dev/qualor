@@ -228,6 +228,27 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     expect(writesOf().filter((w) => w.includes('/statuses'))).toEqual([]);
   });
 
+  it('decorates normally when a pipeline status of another genre has no state', async () => {
+    // Probe item 19: Azure Pipelines' own status omits `state` while it is notSet.
+    const s = await setup('az/foreign-no-state');
+    s.iteration.statuses.push({
+      id: 50,
+      iterationId: 1,
+      state: null,
+      description: 'Coverage status check queued',
+      targetUrl: null,
+      genre: 'a-pipeline-definition',
+      name: 'codecoverage',
+      authorId: 'a-pipeline',
+    });
+    await s.ingest();
+    await decorate();
+    const posted = iterationStatus(s.repository.id, 1).filter((x) => x.id !== 50);
+    expect(posted).toEqual([
+      expect.objectContaining({ state: 'succeeded', authorId: fake.patUser.id }),
+    ]);
+  });
+
   it('posts failed for a failed gate', async () => {
     const s = await setup('az/fail');
     await s.ingest({ findings: 1 });
