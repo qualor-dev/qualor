@@ -808,5 +808,41 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
         await noUrl.close();
       }
     });
+
+    it("FW4: the Test reads its own identity and one mapped repository's permissions, and says when it cannot", async () => {
+      const id = await connect();
+      const testOf = async () =>
+        (await call(h, 'POST', `/scm-connections/${id}/test`, {})).json() as {
+          ok: boolean;
+          missingAccess: string[] | null;
+        };
+      const IDENTITIES = /\/_apis\/identities$/;
+      const ACL = /\/_apis\/accesscontrollists\//;
+      // Nothing mapped: nothing to check.
+      expect(await testOf()).toMatchObject({ ok: true, missingAccess: null });
+      await mapRepository(h, 'hooks/fw4', id, api);
+      fake.clearRequests();
+      expect(await testOf()).toMatchObject({ ok: true, missingAccess: [] });
+      expect(fake.requests.filter((r) => IDENTITIES.test(r.path))).toHaveLength(1);
+      expect(fake.requests.filter((r) => ACL.test(r.path))).toHaveLength(1);
+      for (const [path, status] of [
+        [IDENTITIES, 403],
+        [IDENTITIES, 401],
+        [ACL, 403],
+        [ACL, 401],
+      ] as const) {
+        fake.inject('GET', path, { status, body: { message: 'no' } });
+        expect(await testOf(), `${String(path)} ${status}`).toMatchObject({
+          ok: true,
+          missingAccess: ['read_permissions'],
+        });
+      }
+      // The identities host does not know the identity itself.
+      fake.inject('GET', IDENTITIES, { status: 200, body: { count: 0, value: [] } });
+      expect(await testOf()).toMatchObject({ ok: true, missingAccess: ['read_permissions'] });
+      // A transient failure says nothing either way.
+      fake.inject('GET', IDENTITIES, { status: 503, body: {} });
+      expect(await testOf()).toMatchObject({ ok: true, missingAccess: null });
+    });
   });
 });

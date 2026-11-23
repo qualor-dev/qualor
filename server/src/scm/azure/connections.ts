@@ -7,6 +7,7 @@ import type { FieldError } from '../../http/problem';
 import {
   SCM_TOKEN_AAD,
   type ConnectionTest,
+  type MissingAccess,
   type ScmConnectionRow,
   type ScmDeps,
   type TestProblemCode,
@@ -18,6 +19,7 @@ import type { AzureAuthKind } from './auth-kinds';
 import { AZURE_CERTIFICATE_PROBLEM_TEXT, parseAzureCertificate } from './certificate';
 import { AzureDevOpsClient, type AzureCredential } from './client';
 import { ownSubscriptions, projectHookState } from './hooks';
+import { azureRightsReadable } from './rights';
 import {
   entraCacheKey,
   entraToken,
@@ -513,8 +515,9 @@ export interface HookTestInput {
 /**
  * `POST /scm-connections/{id}/test` for Azure DevOps (design §7.1): who the credential is
  * (`connectionData`, its display name), the repositories it sees and the projects that hold them,
- * and with a repository id that repository as `<project>/<repository>`. Fixed texts and codes only,
- * never Azure DevOps' or Entra's words.
+ * and with a repository id that repository as `<project>/<repository>`; the state of Qualor's hooks;
+ * and whether the identity can read who may change findings (`missingAccess`). Fixed texts and
+ * codes only, never Azure DevOps' or Entra's words.
  */
 export async function testAzureConnection(
   row: ScmConnectionRow,
@@ -537,6 +540,12 @@ export async function testAzureConnection(
     const repositories = await found.client.repositories();
     const repository = projectRef === null ? null : await found.client.repository(projectRef);
     const hooks = await hookStates(found.client, repositories, hookInput);
+    const missingAccess = await rightsAccess(
+      found.client,
+      identity.id,
+      repositories,
+      hookInput.repositoryRefs,
+    );
     return {
       ok: true,
       user: { username: identity.displayName },
@@ -549,7 +558,7 @@ export async function testAzureConnection(
               accessLevel: null,
             },
       problem: null,
-      missingAccess: null,
+      missingAccess,
       visible: {
         repositories: repositories.length,
         projects: new Set(repositories.map((r) => r.projectId)).size,
@@ -560,6 +569,26 @@ export async function testAzureConnection(
     if (err instanceof ScmError) return failed(problemCode(err), err.message);
     throw err;
   }
+}
+
+/**
+ * What replies and commands need of the identity (`azureMayTriage`): to read identities on the
+ * identities host and a repository's permissions. Asked once, of the identity itself and of the
+ * first mapped repository it sees: `['read_permissions']` when it cannot, `[]` when it can; null
+ * without such a repository, or when the answer said nothing either way (a timeout, a 5xx).
+ */
+async function rightsAccess(
+  client: AzureDevOpsClient,
+  identityId: string,
+  repositories: readonly { id: string; projectId: string }[],
+  refs: readonly string[],
+): Promise<MissingAccess[] | null> {
+  const wanted = new Set(refs.map((r) => r.toLowerCase()));
+  const repository = repositories.find((r) => wanted.has(r.id.toLowerCase()));
+  if (repository === undefined) return null;
+  const readable = await azureRightsReadable(client, repository, identityId);
+  if (readable === null) return null;
+  return readable ? [] : ['read_permissions'];
 }
 
 /** The repository ids the connection's projects are mapped to. */

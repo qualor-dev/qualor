@@ -4,10 +4,12 @@ import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../../test/fake-
 import { trustTestCa } from '../../../test/tls';
 import { MAX_AUTHORS_LOOKED_UP } from '../rights-limits';
 import { AzureDevOpsClient } from './client';
-import { azureMayTriage } from './rights';
+import { azureMayTriage, azureRightsReadable } from './rights';
 
 const MARKER = 'azure-answer-marker-91c2';
 const ACL = /[/]_apis[/]accesscontrollists[/]/;
+const IDENTITIES = /[/]_apis[/]identities$/;
+const REPOSITORY = /[/]_apis[/]git[/]repositories[/][^/]+$/;
 
 let fake: FakeAzureDevOps;
 let untrust: () => void;
@@ -129,6 +131,27 @@ describe('azureMayTriage', () => {
     expect(line).not.toContain(MARKER);
   });
 
+  it('is false on a 401 from the identities host or the ACL (a scope the credential lacks), with one warn and no text', async () => {
+    for (const path of [IDENTITIES, ACL]) {
+      const user = fake.addUser({ role: 'owner' });
+      fake.inject('GET', path, { status: 401, body: { message: MARKER } });
+      const log = logger();
+      expect(await azureMayTriage(clientOf(), repositoryId(), [user.id], log), String(path)).toBe(
+        false,
+      );
+      expect(log.warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(log.warn.mock.calls[0])).not.toContain(MARKER);
+    }
+  });
+
+  it('rejects a 401 on the repository read: that is the credential itself', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    fake.inject('GET', REPOSITORY, { status: 401 });
+    await expect(azureMayTriage(clientOf(), repositoryId(), [user.id])).rejects.toMatchObject({
+      kind: 'auth',
+    });
+  });
+
   it('rejects, so the job retries, on a 503 (transient)', async () => {
     const user = fake.addUser({ role: 'owner' });
     fake.inject('GET', ACL, { status: 503 });
@@ -153,5 +176,32 @@ describe('azureMayTriage', () => {
       kind: 'transient',
       reason: 'timeout',
     });
+  });
+});
+
+describe('azureRightsReadable', () => {
+  const repository = () => fake.repositories[0]!;
+
+  it('is true when the identity and the repository’s permissions can be read', async () => {
+    fake.clearRequests();
+    expect(await azureRightsReadable(clientOf(), repository(), fake.patUser.id)).toBe(true);
+    expect(fake.requests.map((r) => r.path).filter((p) => IDENTITIES.test(p))).toHaveLength(1);
+    expect(fake.requests.map((r) => r.path).filter((p) => ACL.test(p))).toHaveLength(1);
+  });
+
+  it('is false on a 401 or 403 of either read, and for an identity the host does not know', async () => {
+    for (const path of [IDENTITIES, ACL]) {
+      for (const status of [401, 403]) {
+        fake.inject('GET', path, { status, body: { message: MARKER } });
+        expect(await azureRightsReadable(clientOf(), repository(), fake.patUser.id)).toBe(false);
+      }
+    }
+    const unknown = '11111111-2222-4333-8444-555555555555';
+    expect(await azureRightsReadable(clientOf(), repository(), unknown)).toBe(false);
+  });
+
+  it('is null on a transient failure', async () => {
+    fake.inject('GET', IDENTITIES, { status: 503 });
+    expect(await azureRightsReadable(clientOf(), repository(), fake.patUser.id)).toBeNull();
   });
 });

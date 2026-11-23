@@ -26697,7 +26697,8 @@
                               "issues_read",
                               "event_check_run",
                               "event_issue_comment",
-                              "event_pull_request_review_comment"
+                              "event_pull_request_review_comment",
+                              "read_permissions"
                             ]
                           }
                         },
@@ -26705,7 +26706,7 @@
                           "type": "null"
                         }
                       ],
-                      "description": "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository, and when the test failed."
+                      "description": "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). Azure DevOps, checked on the first mapped repository the identity sees: `read_permissions` (the identity cannot read identities or the repository's permissions, so no reply changes a status and every command is refused). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository (Azure DevOps: without a mapped repository the identity sees), when the Azure DevOps check got no clear answer, and when the test failed."
                     },
                     "visible": {
                       "anyOf": [

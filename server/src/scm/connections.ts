@@ -113,7 +113,9 @@ export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
  * codes the UI turns into its own words, in the order the test lists them: Contents (write), which
  * resolves and reopens Qualor's conversations; Issues (read), without which GitHub sends no Issue
  * comment event; and the events the App subscribes to: Check run (the Re-run button), Issue
- * comment (commands) and Pull request review comment (replies in Qualor's conversations).
+ * comment (commands) and Pull request review comment (replies in Qualor's conversations). Azure
+ * DevOps (sub-plan 5): `read_permissions`, the identity cannot read identities or a repository's
+ * permissions, so no reply changes a status and every command is refused.
  */
 export const MISSING_ACCESS = [
   'contents_write',
@@ -121,6 +123,7 @@ export const MISSING_ACCESS = [
   'event_check_run',
   'event_issue_comment',
   'event_pull_request_review_comment',
+  'read_permissions',
 ] as const;
 export type MissingAccess = (typeof MISSING_ACCESS)[number];
 
@@ -137,7 +140,9 @@ export interface ConnectionTest {
   problem: { code: TestProblemCode; message: string } | null;
   /**
    * GitHub, with a repository: what its installation lacks ({@link MISSING_ACCESS}), `[]` when
-   * nothing. Null for GitLab, without a repository, and when the test failed.
+   * nothing. Azure DevOps, with a mapped repository the identity sees: `['read_permissions']` or
+   * `[]`. Null for GitLab, without a repository, when the check said nothing, and when the test
+   * failed.
    */
   missingAccess: MissingAccess[] | null;
   /**
