@@ -27,7 +27,8 @@ function splitLines(text: string): string[] {
 
 /**
  * 1-based line numbers of `head` that are added relative to `base` (every line when `base` is
- * null), with their text. Null when either side exceeds `maxLines` or the shortest edit script
+ * null), with their text. The set is that of a minimal edit script (on ties the choice is this
+ * implementation's own; git's may differ). Null when either side exceeds `maxLines` or the shortest edit script
  * is longer than `maxEdits`.
  */
 export function addedLines(
@@ -63,8 +64,9 @@ export function addedLines(
 
 /**
  * Myers' O((N+M)·D) shortest edit script; returns the 0-based indices of `h` that are
- * insertions, or null once D passes `maxEdits`. On ties a deletion is preferred to an
- * insertion (git's choice). `trace[d]` holds the furthest x of every diagonal after round d,
+ * insertions, or null once D passes `maxEdits`. The script is minimal and
+ * deterministic; among equal-length scripts the choice is this implementation's own and git's
+ * may differ. `trace[d]` holds the furthest x of every diagonal after round d,
  * the diagonal k at index (k + d) / 2.
  */
 function shortestScript(b: string[], h: string[], maxEdits: number): number[] | null {

@@ -46,24 +46,10 @@ describe('addedLines fixed cases', () => {
   });
 });
 
-describe('addedLines tie-break (deletions before insertions)', () => {
-  it('swap of two lines keeps the first head line', () => {
+describe('addedLines on moved lines (agrees with git)', () => {
+  it('swap of two lines', () => {
     expect(entries(addedLines('a\nb\n', 'b\na\n'))).toEqual([[2, 'a']]);
     expect(entries(addedLines('a\nb', 'b\na'))).toEqual([[2, 'a']]);
-  });
-
-  it('pins the path chosen among equal-length scripts', () => {
-    const run = (b: string, h: string): [number, string][] =>
-      entries(addedLines(`${[...b].join('\n')}\n`, `${[...h].join('\n')}\n`));
-    expect(run('abb', 'baba')).toEqual([
-      [1, 'b'],
-      [4, 'a'],
-    ]);
-    expect(run('baa', 'abab')).toEqual([
-      [1, 'a'],
-      [4, 'b'],
-    ]);
-    expect(run('aabb', 'baa')).toEqual([[1, 'b']]);
   });
 
   it('a moved line is reported at its new place', () => {
