@@ -1,6 +1,11 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { azureServerConfig, servicesUrlOf, AZURE_TEST_PRINCIPAL } from '../../../test/azure';
+import {
+  deliverAzureEvent,
+  azureServerConfig,
+  servicesUrlOf,
+  AZURE_TEST_PRINCIPAL,
+} from '../../../test/azure';
 import {
   createFakeAzureDevOps,
   type FakeAzureDevOps,
@@ -15,7 +20,7 @@ import { PUBLIC_URL } from '../../../test/scm';
 import { trustTestCa } from '../../../test/tls';
 import { encryptionKey } from '../../crypto/secrets';
 import { auditEvents, projects, scmConnections } from '../../db/schema';
-import { decryptWebhookSecret } from '../github/credentials';
+import { decryptWebhookSecret, encryptWebhookSecret } from '../github/credentials';
 import { WEBHOOK_SECRET_PATTERN } from '../github/app-auth';
 import { azureWebhookUrl } from './url';
 
@@ -424,23 +429,77 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
         }
       ).hooks;
 
-    it('F1: moving a connection that has a hook password is 200; the password stays, the mark goes', async () => {
+    it('R1: moving the address clears the hook password; the old one is refused; a subscribe makes a new one', async () => {
       const id = await connect();
       await mapRepository(h, 'hooks/api', id, api);
       await subscribe(id);
-      const password = await storedPassword(id);
-      expect((await dtoOf(id)).hooksCurrent).toBe(true);
+      const old = (await storedPassword(id))!;
+      const delivery = (password: string) =>
+        deliverAzureEvent(h.ctx.app, id, 'pr-updated', {}, { password });
+      expect((await delivery(old)).statusCode).toBe(204);
       const moved = await call(h, 'PATCH', `/scm-connections/${id}`, {
         baseUrl: 'https://dev.azure.com/other-org',
         azureAuth: 'pat',
         token: fake.pat,
       });
       expect(moved.statusCode, moved.body).toBe(200);
-      expect(await storedPassword(id)).toBe(password);
-      expect(await dtoOf(id)).toMatchObject({ webhookSecretSet: true, hooksCurrent: false });
-      expect(
-        ((await rowOf(id)).webhookSecretEnc as unknown as Record<string, unknown>).hooksPushed,
-      ).toBe(undefined);
+      expect(await dtoOf(id)).toMatchObject({ webhookSecretSet: false, hooksCurrent: false });
+      expect((await rowOf(id)).webhookSecretEnc).toBeNull();
+      expect((await delivery(old)).statusCode).toBe(404);
+      // Back at the organisation the fake serves: the next subscribe makes a new password.
+      const back = await call(h, 'PATCH', `/scm-connections/${id}`, {
+        baseUrl: servicesUrlOf(fake),
+        azureAuth: 'pat',
+        token: fake.pat,
+      });
+      expect(back.statusCode, back.body).toBe(200);
+      expect(outcomes(await subscribe(id))).toEqual([
+        { projectId: api.projectId, comment: 'replaced', updated: 'replaced' },
+      ]);
+      const fresh = (await storedPassword(id))!;
+      expect(fresh).not.toBe(old);
+      for (const sub of fake.subscriptions) expect(sub.password).toBe(fresh);
+      expect(await dtoOf(id)).toMatchObject({ hooksCurrent: true });
+    });
+
+    it('R3: a move or a rotation between the pushes and the final write leaves no mark', async () => {
+      for (const interference of ['move', 'rotate'] as const) {
+        const id = await connect();
+        await mapRepository(h, `hooks/${interference}`, id, api);
+        const through = { status: 200, passThrough: true };
+        const during = async () => {
+          if (interference === 'rotate') {
+            await h.ctx.db
+              .update(scmConnections)
+              .set({
+                webhookSecretEnc: encryptWebhookSecret(
+                  encryptionKey(h.ctx.config.secretKey),
+                  'rotated-meanwhile-0123456789abcdef',
+                ),
+              })
+              .where(eq(scmConnections.id, id));
+          } else {
+            await h.ctx.db
+              .update(scmConnections)
+              .set({ webhookSecretEnc: null, baseUrl: `${servicesUrlOf(fake)}/` })
+              .where(eq(scmConnections.id, id));
+          }
+        };
+        // A password exists, so the call writes no row until its end and the interference is not blocked.
+        await rotate(id);
+        fake.inject('POST', /hooks\/subscriptions$/, through, { ...through, before: during });
+        const res = await subscribe(id);
+        expect(res.statusCode, res.body).toBe(200);
+        const stored = (await rowOf(id)).webhookSecretEnc as unknown as Record<
+          string,
+          unknown
+        > | null;
+        expect(stored?.hooksPushed, interference).toBeUndefined();
+        expect((await dtoOf(id)).hooksCurrent, interference).toBe(false);
+        await h.ctx.db.delete(projects);
+        await h.ctx.db.delete(scmConnections);
+        (fake.subscriptions as unknown[]).length = 0;
+      }
     });
 
     it('F2: hooksCurrent and stale follow the rotation and the secret key', async () => {

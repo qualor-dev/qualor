@@ -561,9 +561,12 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
   const dto = async (row: ScmConnectionRow) =>
     connectionDto(row, key, publicUrl, await ciSetupOf(row));
   /** The repository ids the connection's projects are mapped to. */
-  const mappedRefs = async (connectionId: string): Promise<string[]> =>
+  const mappedRefs = async (
+    connectionId: string,
+    executor: Executor = deps.db,
+  ): Promise<string[]> =>
     (
-      await deps.db
+      await executor
         .select({ ref: projects.scmProjectRef })
         .from(projects)
         .where(and(eq(projects.scmConnectionId, connectionId), isNotNull(projects.scmProjectRef)))
@@ -825,10 +828,9 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       }
       Object.assign(changes, own.columns);
       addFieldChanges(changes, body, key);
-      // Azure DevOps: the new organisation holds no subscription with the kept password.
-      if (moves && row.provider === 'azure') {
-        changes.webhookSecretEnc = sql`${scmConnections.webhookSecretEnc} - 'hooksPushed'` as never;
-      }
+      // Azure DevOps: the old organisation's subscriptions must stop delivering to Qualor, so the
+      // hook password goes with the address (a new one is made by the next subscribe).
+      if (moves && row.provider === 'azure') changes.webhookSecretEnc = null;
       const updated = await deps.db.transaction(async (tx) => {
         // The checks above hold only for the row they read: the write is conditional on the
         // stored address (and Azure DevOps kind and ids), so an address changed by a concurrent
@@ -985,7 +987,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           await audit(tx, request, row, 'scm_connection.updated', { changed: ['webhookSecret'] });
           current = await freshRow(tx, row.id);
         }
-        const refs = await mappedRefs(row.id);
+        const refs = await mappedRefs(row.id, tx);
         let result;
         try {
           result = await subscribeProjects({
@@ -1004,11 +1006,18 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           result.failure === null &&
           result.projects.every((p) => p.comment !== 'refused' && p.updated !== 'refused');
         if (complete && current.webhookSecretEnc) {
-          // Azure DevOps holds this password now. The lock keeps a rotation from running meanwhile.
+          // Azure DevOps holds this password now, unless a move of the address (which clears it)
+          // or a rotation ran meanwhile (neither takes the lock): then no mark is written.
           await tx
             .update(scmConnections)
             .set({ webhookSecretEnc: { ...current.webhookSecretEnc, hooksPushed: true } })
-            .where(eq(scmConnections.id, row.id));
+            .where(
+              and(
+                eq(scmConnections.id, row.id),
+                eq(scmConnections.baseUrl, row.baseUrl),
+                sql`${scmConnections.webhookSecretEnc}->>'ct' = ${current.webhookSecretEnc.ct}`,
+              ),
+            );
         }
         if (result.failure === null || result.wrote) {
           await audit(tx, request, row, 'scm_connection.hooks_updated', {
