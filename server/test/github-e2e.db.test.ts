@@ -340,6 +340,7 @@ describe('GitHub end to end, against the fake GitHub (github.md §11, §12)', ()
       problem: null,
       missingAccess: [],
       visible: null,
+      hooks: null,
     });
     const mapped = await api('PATCH', `/api/v0/projects/${project.id}`, {
       scmConnectionId: connectionId,
