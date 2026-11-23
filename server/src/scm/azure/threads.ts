@@ -187,6 +187,8 @@ interface Plan {
     thread: AzureThread;
     action: ThreadUpdate;
     fixedLast: boolean;
+    /** An AI review thread: never counted in `commented`, so never taken off it either. */
+    reviewed: boolean;
   }[];
   /** The fixed issues whose open threads someone replied in, the oldest thread first. */
   fixed: string[];
@@ -215,7 +217,13 @@ async function planUpdates(
     if (open && !reviewed) plan.commented += 1;
     const action = threadUpdate(mine, open);
     if (action !== null && plan.updates.length < MAX_AZURE_THREAD_UPDATES) {
-      plan.updates.push({ issueId, thread: mine.thread, action, fixedLast: mine.fixedLast });
+      plan.updates.push({
+        issueId,
+        thread: mine.thread,
+        action,
+        fixedLast: mine.fixedLast,
+        reviewed,
+      });
     }
     if (
       onBranch &&
@@ -234,8 +242,8 @@ async function planUpdates(
  * so a failure between the two leaves an active thread that the next job resolves again, never a
  * resolved thread that looks like a person's; a reopening changes the status first, so a failure
  * between them leaves an active thread with Qualor's fixed comment last, which the next job gives
- * its reopened comment alone (`note`). Returns how many issues that count are left without an
- * active thread: their reopening's status change failed.
+ * its reopened comment alone (`note`). Returns how many issues that count (the analyzers', not the
+ * AI review's) are left without an active thread: their reopening's status change failed.
  */
 async function applyUpdates(
   ctx: AzureThreadsContext,
@@ -274,7 +282,7 @@ async function applyUpdates(
     } else if (update.action === 'reopen') {
       if (await write(failures, () => client.setThreadStatus(repositoryId, prId, id, 'active'))) {
         await reopenedComment(update);
-      } else {
+      } else if (!update.reviewed) {
         lost += 1;
       }
     } else {

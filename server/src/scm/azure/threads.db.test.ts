@@ -1013,6 +1013,32 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(keptThread?.comments).toHaveLength(1);
   });
 
+  it('FW5: a failed reopen of an AI thread leaves the analyzers’ "commented inline" count as it is', async () => {
+    const s = await reviewed('ai/lost-reopen', [{ path: 'src/a.ts', line: 3 }]);
+    const id = await s.aiFinding({ line: 4 });
+    await decorate();
+    const close = (status: 'closed' | 'open') =>
+      h.ctx.db
+        .update(issues)
+        .set({ status, closedAt: status === 'closed' ? new Date() : null })
+        .where(eq(issues.id, id));
+    await close('closed');
+    await enqueueDecoration(h.ctx.db, {
+      analysisId: s.analysisId,
+      branchId: s.branchId,
+      gitlab: null,
+      azure: { repositoryId: s.repository.id, checkout: 'head' },
+    });
+    await decorate();
+    expect(s.aiThread(id)?.status).toBe('fixed');
+    // The AI finding returns, and the reopening's status change fails.
+    await close('open');
+    fake.inject('PATCH', /\/threads\/\d+$/, { status: 503, body: {} });
+    expect(await decorateOnce(s, s.analysisId)).toMatchObject({ kind: 'failed', retry: true });
+    expect(s.aiThread(id)?.status).toBe('fixed');
+    expect(s.summary()).toContain('1 new issue is commented inline');
+  });
+
   it('with the head not checked out, posts and resolves the AI threads but no analyzer thread', async () => {
     const s = await reviewed('ai/other', [{ path: 'src/a.ts', line: 3 }], { checkout: 'other' });
     const fixed = await s.aiFinding({ line: 4 });
