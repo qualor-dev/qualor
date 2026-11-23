@@ -148,5 +148,5 @@ configuration, with every default filled in and the token redacted.
 The job fails when the scanner exits with a non-zero code, and code `1` means the gate failed. The
 full table is in the [CLI reference](./cli.md#exit-codes).
 
-Qualor does not comment on Bitbucket or Gerrit reviews, and does not yet comment on Azure DevOps
-pull requests. There, the job's exit code carries the verdict.
+Qualor does not comment on Bitbucket or Gerrit reviews. There, the job's exit code carries the
+verdict.

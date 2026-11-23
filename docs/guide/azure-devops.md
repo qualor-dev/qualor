@@ -4,8 +4,8 @@ Qualor connects to Azure DevOps Services (`dev.azure.com`) and Azure DevOps Serv
 An organisation administrator adds a connection, tests it and maps each Qualor project to a
 repository.
 
-Not yet available in this release: comments and statuses on pull requests, AI review, fix pull
-requests, CI setup, and Azure Boards. A connection and a mapping prepare them.
+Not yet available in this release: AI review, fix pull requests, CI setup, and Azure Boards. A
+connection and a mapping prepare them.
 
 ## Before you start
 
@@ -168,7 +168,8 @@ Azure Repos ignores `pr:` in the YAML. Add the pipeline as a Build validation po
 **Repos → Branches → Branch policies** of the target branch.
 
 The task checks out the pull request's head, not Azure's merge commit. A pipeline that skips this
-checkout still uploads, but later inline comments cannot be placed in it.
+checkout still uploads, but Qualor then posts no inline threads
+([details](#comments-and-status-on-pull-requests)).
 
 ### The default branch
 
@@ -190,6 +191,49 @@ With `dotnet: true` the build runs inside the `qualor/scanner-dotnet` container.
   build restores only from feeds it can reach without them. For a private feed, use the docker
   example and give the build step the feed's credentials yourself, for example in an `-e` variable
   that your `nuget.config` reads.
+
+## Comments and status on pull requests
+
+Qualor reports each analysis of a pull request in Azure DevOps. The connection and the repository
+mapping are enough.
+
+| What | Where |
+|---|---|
+| A status `qualor/<project key>` | On the pull request, `succeeded` when the gate passes and `failed` otherwise. It sits on the iteration that was analysed |
+| A summary | One closed thread, edited in place on each analysis |
+| A thread on each new issue | On a line the pull request added, at most 50 |
+| A commit status of the same name | On each analysed branch. It is informational: a commit status does not satisfy a branch policy |
+
+### Block the merge on the gate
+
+Under **Repos → Branches → Branch policies** of the target branch, add a **Status check**:
+
+| Field | Value |
+|---|---|
+| Status to check | `qualor/<project key>` |
+| Genre | `qualor` |
+| Reset conditions | **Reset status whenever there are new changes** |
+
+### The identity's permissions
+
+Give Qualor's identity **Contribute to pull requests** on the repository. A personal access token
+needs the scopes **Code: Read & write** and **Code: Status**. Without the permission, the summary
+counts the threads Qualor could not resolve or reopen.
+
+### Threads
+
+- Inline threads need the pipeline to check out the pull request's head. The Qualor task and the
+  head checkout of the examples do. Otherwise the summary says why there are none.
+- Qualor resolves its thread with a comment when the issue is fixed, and reopens it if the issue
+  returns.
+- Qualor never reopens a thread a person resolved.
+- When someone replied in a thread, Qualor leaves it open and adds a note that the issue is fixed.
+
+### When Azure DevOps refuses Qualor
+
+When Azure DevOps refuses the connection's credential or a permission, or the server no longer
+allows the address, **Settings → Azure DevOps** shows the problem and since when. A passing **Test**, or the next successful comment run,
+clears it.
 
 ## Roles and audit
 
