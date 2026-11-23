@@ -101,6 +101,9 @@ export const TEST_PROBLEM_CODES = [
   'token_endpoint_unreachable',
   'token_endpoint_timeout',
   'token_endpoint_error',
+  // Azure DevOps service hooks (sub-plan 5): a subscription of Qualor's on probation or disabled.
+  'hook_probation',
+  'hook_disabled',
 ] as const;
 export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
 

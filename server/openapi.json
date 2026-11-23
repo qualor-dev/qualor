@@ -25068,7 +25068,9 @@
                                       "token_endpoint",
                                       "token_endpoint_unreachable",
                                       "token_endpoint_timeout",
-                                      "token_endpoint_error"
+                                      "token_endpoint_error",
+                                      "hook_probation",
+                                      "hook_disabled"
                                     ]
                                   },
                                   "at": {
@@ -25627,7 +25629,9 @@
                                 "token_endpoint",
                                 "token_endpoint_unreachable",
                                 "token_endpoint_timeout",
-                                "token_endpoint_error"
+                                "token_endpoint_error",
+                                "hook_probation",
+                                "hook_disabled"
                               ]
                             },
                             "at": {
@@ -26077,7 +26081,9 @@
                                 "token_endpoint",
                                 "token_endpoint_unreachable",
                                 "token_endpoint_timeout",
-                                "token_endpoint_error"
+                                "token_endpoint_error",
+                                "hook_probation",
+                                "hook_disabled"
                               ]
                             },
                             "at": {
@@ -26628,7 +26634,9 @@
                                 "token_endpoint",
                                 "token_endpoint_unreachable",
                                 "token_endpoint_timeout",
-                                "token_endpoint_error"
+                                "token_endpoint_error",
+                                "hook_probation",
+                                "hook_disabled"
                               ]
                             },
                             "message": {

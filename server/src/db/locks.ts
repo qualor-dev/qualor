@@ -159,4 +159,6 @@ export const LOCKS = {
    * Azure DevOps, so a double click never makes two passwords or duplicate subscriptions.
    */
   azureHooks: 7_310_041,
+  /** `pg_advisory_xact_lock(key)`: schedule lock of the Azure DevOps backstop passes (sub-plan 5, task 9). */
+  azurePollSchedule: 7_310_042,
 } as const;

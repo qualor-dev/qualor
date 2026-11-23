@@ -2332,6 +2332,8 @@
     "azure.problem.badAnswer": "Azure DevOps' answer was not understood. Check the address.",
     "azure.problem.unknown": "The test failed.",
     "azure.problem.permissionBackground": "The credential lacks a permission in Azure DevOps. Give Qualor's identity Contribute to pull requests on the repository; a personal access token also needs Code: Read & write.",
+    "azure.problem.hookProbation": "Azure DevOps put Qualor's service hook subscriptions on probation, so it may skip events. Replies and commands are still read every 15 minutes. Open Settings → Azure DevOps → Service hooks and choose \"Create or update Qualor's subscriptions\".",
+    "azure.problem.hookDisabled": "Azure DevOps disabled Qualor's service hook subscriptions. Replies and commands are read every 15 minutes instead. Open Settings → Azure DevOps → Service hooks and choose \"Create or update Qualor's subscriptions\".",
     "azure.testOkRepository": "Connected as {$user}; the repository {$repository} is reachable.",
     "azure.testOkVisible": "Connected as {$user}; {$repositories} in {$projects} visible.",
     "azure.testOk": "Connected as {$user}.",

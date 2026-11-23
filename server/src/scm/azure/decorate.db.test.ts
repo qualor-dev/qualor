@@ -498,6 +498,21 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
         .set({ problem: SEEDED })
         .where(eq(scmConnections.id, connectionId));
 
+    it('a successful decoration clears a credential problem but keeps a hook problem', async () => {
+      const s = await setup('az/keep-hook');
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: { code: 'hook_disabled', at: '2026-11-20T10:00:00.000Z' } })
+        .where(eq(scmConnections.id, connectionId));
+      await s.ingest();
+      expect(await decorate()).toBe(1);
+      expect(await problemOf()).toEqual({ code: 'hook_disabled', at: '2026-11-20T10:00:00.000Z' });
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: null })
+        .where(eq(scmConnections.id, connectionId));
+    });
+
     it('leaves a recorded problem as it was after a failure that is not the credential’s', async () => {
       await seed();
       // A transient failure.

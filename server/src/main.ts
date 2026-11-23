@@ -49,6 +49,7 @@ import { replyHandlers } from './review/reply-job';
 import { reconcileStuckReplies } from './review/reply-queue';
 import { errorClass } from './review/run-ends';
 import { reconcileStuckReviewRuns } from './review/runs';
+import { azurePollHandlers, ensureAzurePollScheduled } from './scm/azure/poll';
 import { scmDepsOf } from './scm/connections';
 import { scmHandlers } from './scm/decorate';
 import { createScmRuntime } from './scm/runtime';
@@ -427,6 +428,14 @@ async function main(): Promise<void> {
         limits: () => edition.limits(),
         logger,
       }),
+      // Sub-plan 5: the 15-minute backstop pass of each Azure DevOps connection.
+      ...azurePollHandlers({
+        db: database.db,
+        scm: scmDepsOf(config),
+        runtime: scmRuntime,
+        publicUrl: config.publicUrl,
+        logger,
+      }),
     },
     concurrency: SCM_WORKER_CONCURRENCY,
     leaseMs: SCM_LEASE_MS,
@@ -439,6 +448,7 @@ async function main(): Promise<void> {
         logger.warn({ finished }, 'finished repository-setup runs whose job was lost');
       }
       await ensureFixSyncScheduled(db);
+      await ensureAzurePollScheduled(db);
     },
   });
   // Two circuits (6I R40): the AI requests (explain, triage, fix) have the `llm` runtime, AI reviews
@@ -683,6 +693,9 @@ async function main(): Promise<void> {
   );
   await scheduleAtBoot(logger, 'fixes', 'the fix passes could not be scheduled', () =>
     ensureFixSyncScheduled(database.db),
+  );
+  await scheduleAtBoot(logger, 'azure-poll', 'the Azure DevOps passes could not be scheduled', () =>
+    ensureAzurePollScheduled(database.db),
   );
 }
 

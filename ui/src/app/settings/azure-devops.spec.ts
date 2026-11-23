@@ -416,6 +416,22 @@ describe('AzureDevOpsPage', () => {
     expect(banner('a1')).toBeNull();
   });
 
+  it('points a hook problem to the Service hooks button', async () => {
+    setup([
+      { ...PAT, problem: { code: 'hook_probation', at: '2026-11-23T10:00:00.000Z' } },
+      { ...CERTIFICATE, problem: { code: 'hook_disabled', at: '2026-11-23T10:00:00.000Z' } },
+    ]);
+    const { root } = await render();
+    const banner = (key: string) =>
+      root.querySelector(`section[data-key="${key}"] .connection-problem`)?.textContent ?? '';
+    expect(banner('a1')).toContain('on probation');
+    expect(banner('a2')).toContain('disabled');
+    for (const key of ['a1', 'a2']) {
+      expect(banner(key)).toContain('Create or update Qualor');
+      expect(banner(key)).not.toContain('_');
+    }
+  });
+
   it('advises Contribute to pull requests for a permission the decoration lacked, not the Test’s read access', async () => {
     setup([{ ...PAT, problem: { code: 'permission_missing', at: '2026-11-23T10:00:00.000Z' } }]);
     const { root } = await render();

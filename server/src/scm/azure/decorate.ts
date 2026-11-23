@@ -28,7 +28,12 @@ import {
   type AzureStatus,
   type AzureThread,
 } from './client';
-import { clearScmProblem, isScmBackgroundProblem, recordScmProblem } from '../problems';
+import {
+  clearScmProblem,
+  isScmBackgroundProblem,
+  recordScmProblem,
+  SCM_CREDENTIAL_PROBLEM_CODES,
+} from '../problems';
 import { azureClientFor, clientProblemCode, problemCode } from './connections';
 import { reconcileAzureThreads } from './threads';
 import { azureWebBase } from './url';
@@ -194,7 +199,9 @@ export async function decorateAzure(
   });
   const connectionId = loaded.connection.id;
   if (outcome.kind === 'done') {
-    await keepOutcome(deps, connectionId, () => clearScmProblem(deps.db, connectionId));
+    await keepOutcome(deps, connectionId, () =>
+      clearScmProblem(deps.db, connectionId, SCM_CREDENTIAL_PROBLEM_CODES),
+    );
   } else if (seen.decisive !== null) {
     const code = problemCodeOf(seen.decisive);
     if (code !== null) {

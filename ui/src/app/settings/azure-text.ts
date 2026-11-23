@@ -80,6 +80,12 @@ export function azureBackgroundProblemText(
   if (problem.code === 'permission_missing') {
     return $localize`:@@azure.problem.permissionBackground:The credential lacks a permission in Azure DevOps. Give Qualor's identity Contribute to pull requests on the repository; a personal access token also needs Code: Read & write.`;
   }
+  if (problem.code === 'hook_probation') {
+    return $localize`:@@azure.problem.hookProbation:Azure DevOps put Qualor's service hook subscriptions on probation, so it may skip events. Replies and commands are still read every 15 minutes. Open Settings → Azure DevOps → Service hooks and choose "Create or update Qualor's subscriptions".`;
+  }
+  if (problem.code === 'hook_disabled') {
+    return $localize`:@@azure.problem.hookDisabled:Azure DevOps disabled Qualor's service hook subscriptions. Replies and commands are read every 15 minutes instead. Open Settings → Azure DevOps → Service hooks and choose "Create or update Qualor's subscriptions".`;
+  }
   return azureProblemText(problem, expiredOn);
 }
 
