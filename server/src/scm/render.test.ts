@@ -29,6 +29,7 @@ import {
   TRACKER_LIKE,
 } from './markdown';
 import {
+  azureStatusName,
   commitStatusFor,
   fixedNote,
   INLINE_MAX_BYTES,
@@ -951,6 +952,34 @@ describe('commit status name (scm.md §5.1, ruling G4)', () => {
     expect(statusName(other)).not.toBe(statusName(long));
     expect(statusName('k'.repeat(248))).toBe(`qualor/${'k'.repeat(248)}`);
     expect(statusName('k'.repeat(249))).toHaveLength(STATUS_NAME_MAX_CHARS);
+  });
+});
+
+describe('Azure DevOps status name (FW1)', () => {
+  // A Status check policy reads one `genre/name` field: the genre `qualor` and this name make
+  // `qualor/<project key>`, so the name has no `qualor/` of its own.
+  it('is the project key, without the prefix the genre gives', () => {
+    expect(azureStatusName('payments/api')).toBe('payments/api');
+    expect(azureStatusName('acme:web-1.2_x')).toBe('acme:web-1.2_x');
+    expect(azureStatusName('a')).not.toBe(azureStatusName('b'));
+    // GitLab's and GitHub's name stays as it was.
+    expect(statusName('payments/api')).toBe('qualor/payments/api');
+  });
+
+  it('keeps only the characters a project key may hold', () => {
+    expect(azureStatusName('a b\u0000c\n/merge @all')).toBe('a-b-c-/merge--all');
+  });
+
+  it(`is at most ${STATUS_NAME_MAX_CHARS} characters, and two long keys never share one`, () => {
+    const long = 'k'.repeat(300);
+    const other = `${'k'.repeat(299)}x`;
+    expect(azureStatusName(long)).toHaveLength(STATUS_NAME_MAX_CHARS);
+    expect(azureStatusName(long)).toMatch(/^k+~[0-9a-f]{12}$/);
+    expect(azureStatusName(other)).toHaveLength(STATUS_NAME_MAX_CHARS);
+    expect(azureStatusName(other)).not.toBe(azureStatusName(long));
+    expect(azureStatusName('k'.repeat(255))).toBe('k'.repeat(255));
+    expect(azureStatusName('k'.repeat(256))).toHaveLength(STATUS_NAME_MAX_CHARS);
+    expect(azureStatusName('k'.repeat(256))).toMatch(/~[0-9a-f]{12}$/);
   });
 });
 

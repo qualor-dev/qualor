@@ -276,6 +276,7 @@ const statusList = z.looseObject({
       description: z.string().nullish(),
       targetUrl: z.string().nullish(),
       context: z.looseObject({ genre: z.string().nullish(), name: z.string() }),
+      createdBy: z.looseObject({ id: z.string() }).nullish(),
     }),
   ),
 });
@@ -644,18 +645,19 @@ export class AzureDevOpsClient {
 
   /**
    * The statuses of Qualor's genre on an iteration, in the order Azure DevOps lists them (not to be
-   * relied on): each carries its `id`, and the highest id of a context is the newest status.
+   * relied on): each carries its `id`, and the highest id of a context is the newest status, and
+   * who posted it (`createdBy.id`, null when the answer names nobody).
    */
   async iterationStatuses(
     repositoryId: string,
     prId: number,
     iterationId: number,
-  ): Promise<(AzureStatus & { id: number })[]> {
+  ): Promise<(AzureStatus & { id: number; authorId: string | null })[]> {
     const answer = await this.#get(
       `${this.#pullRequestPath(repositoryId, prId)}/iterations/${iterationId}/statuses`,
       statusList,
     );
-    const ours: (AzureStatus & { id: number })[] = [];
+    const ours: (AzureStatus & { id: number; authorId: string | null })[] = [];
     for (const s of answer.value) {
       if (s.context.genre !== 'qualor' || !STATUS_STATES.includes(s.state)) continue;
       ours.push({
@@ -666,6 +668,7 @@ export class AzureDevOpsClient {
         targetUrl: s.targetUrl ?? null,
         genre: 'qualor',
         name: s.context.name,
+        authorId: s.createdBy?.id ?? null,
       });
     }
     return ours;

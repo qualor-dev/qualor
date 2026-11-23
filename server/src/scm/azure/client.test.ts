@@ -887,7 +887,13 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       const listed = await client.iterationStatuses(repo().id, pullRequest.id, 1);
       expect(listed.map((s) => s.state).sort()).toEqual(['failed', 'succeeded']);
       const newest = listed.reduce((a, b) => (b.id > a.id ? b : a));
-      expect(newest).toEqual({ ...STATUS, id: newest.id, state: 'failed', targetUrl: null });
+      expect(newest).toEqual({
+        ...STATUS,
+        id: newest.id,
+        state: 'failed',
+        targetUrl: null,
+        authorId: services.patUser.id,
+      });
       expect(listed.find((s) => s.id !== newest.id)?.id).toBeLessThan(newest.id);
       expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}/iterations/1/statuses`);
     });
@@ -905,6 +911,30 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
         name: 'ci',
       });
       expect(await client.iterationStatuses(repo().id, pullRequest.id, 1)).toHaveLength(1);
+    });
+
+    it('reads who posted a status, and null when the answer names nobody', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.inject('GET', /\/iterations\/1\/statuses$/, {
+        status: 200,
+        body: {
+          count: 2,
+          value: [
+            { id: 2, state: 'failed', context: { genre: 'qualor', name: 'gate' } },
+            {
+              id: 1,
+              state: 'succeeded',
+              context: { genre: 'qualor', name: 'gate' },
+              createdBy: { id: 'a-pipeline', displayName: 'Build Service' },
+            },
+          ],
+        },
+      });
+      const listed = await clientOf(services).iterationStatuses(repo().id, pullRequest.id, 1);
+      expect(listed.map((s) => [s.id, s.authorId])).toEqual([
+        [2, null],
+        [1, 'a-pipeline'],
+      ]);
     });
 
     it('reads the recorded 403 for a status without an iteration as permission_missing', async () => {

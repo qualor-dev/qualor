@@ -72,8 +72,9 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     (no recording holds one; the REST docs name `commentType: 'system'`) has no `status`.
  *   - `threads/{t}/comments` (POST) and `threads/{t}/comments/{c}` (PATCH): the comment object of
  *     the thread recordings. Constructed: the probe never added or edited a comment.
- *   - `pullrequests/{id}/statuses` (POST): `7-pr-status-iteration`; without `iterationId` and with
- *     `statusPolicy: true` on the seeded pull request, the recorded 403 (`7-pr-status-no-iteration`).
+ *   - `pullrequests/{id}/statuses` (POST): `7-pr-status-iteration`, its `createdBy.id` the
+ *     caller's identity; without `iterationId` and with `statusPolicy: true` on the seeded pull
+ *     request, the recorded 403 (`7-pr-status-no-iteration`).
  *   - `.../iterations/{n}/statuses` (GET): `{ count, value }` of the statuses posted on the
  *     iteration, newest first, each with its `id`: a POST adds a status with a higher id, and the newest
  *     of a genre and name supersedes the older ones (the list keeps them). Constructed.
@@ -186,6 +187,8 @@ export interface FakeAzureStatus {
   targetUrl: string | null;
   genre: string;
   name: string;
+  /** Its `createdBy.id`: the caller's identity on a POST; a status seeded without one is the PAT user's. */
+  authorId?: string;
 }
 
 export interface FakeAzureIteration {
@@ -702,6 +705,10 @@ export async function createFakeAzureDevOps(options: {
     description: s.description,
     ...(s.targetUrl === null ? {} : { targetUrl: s.targetUrl }),
     context: { name: s.name, genre: s.genre },
+    createdBy: {
+      ...(recordedPrStatus.createdBy as Record<string, unknown>),
+      id: s.authorId ?? patUser.id,
+    },
   });
 
   const statusOf = (body: Record<string, unknown>): FakeAzureStatus | null => {
@@ -858,8 +865,9 @@ export async function createFakeAzureDevOps(options: {
 
     if (sub === 'statuses' && method === 'POST') {
       const body = jsonBodyOf(req);
-      const status = body && statusOf(body);
-      if (!status) return bad('a status needs a state and a context');
+      const parsed = body && statusOf(body);
+      if (!parsed) return bad('a status needs a state and a context');
+      const status = { ...parsed, authorId };
       const listed = [pr.statuses, ...pr.iterations.map((i) => i.statuses)].flat();
       statusCounter = Math.max(statusCounter, ...listed.map((x) => x.id ?? 0)) + 1;
       if (status.iterationId === null) {

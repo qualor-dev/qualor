@@ -8,6 +8,7 @@ import {
   benchUploadYaml,
   forbiddenIn,
   markerKind,
+  statusPolicySettings,
   threadStatusName,
 } from './19-decoration.js';
 
@@ -42,6 +43,39 @@ describe('item 19 pipelines', () => {
     expect(yaml).toContain('dotnet: true');
     expect(yaml.match(/arguments:/g)).toHaveLength(1);
     expect(yaml.match(/inputs:/g)).toHaveLength(1);
+  });
+});
+
+describe('item 19 Status check policy', () => {
+  const scope = {
+    repositoryId: '4427c1df-aedf-4e1f-8447-fa6e0000ecd2',
+    refName: 'refs/heads/probe/19-x-target',
+  };
+  const sp = '7c429e0c-e3c7-43e0-8633-fa6e0000136d';
+
+  it('checks qualor/<project key> as the guide says: genre qualor, the key as the name', () => {
+    const settings = statusPolicySettings({ projectKey: 'bench', authorId: sp, ...scope }, 'x');
+    expect(settings).toMatchObject({ statusGenre: 'qualor', statusName: 'bench' });
+    expect(`${settings.statusGenre}/${settings.statusName}`).toBe('qualor/bench');
+  });
+
+  it("accepts only the service principal's statuses (the guide's Authorized identity)", () => {
+    const settings = statusPolicySettings({ projectKey: 'bench', authorId: sp, ...scope }, 'x');
+    expect(settings).toMatchObject({
+      authorId: sp,
+      invalidateOnSourceUpdate: true,
+      policyApplicability: null,
+      defaultDisplayName: 'x',
+      scope: [{ ...scope, matchKind: 'exact' }],
+    });
+  });
+
+  it('refuses a key whose status name the server would change', () => {
+    for (const key of ['a b', 'k'.repeat(256), '']) {
+      expect(() => statusPolicySettings({ projectKey: key, authorId: sp, ...scope }, 'x')).toThrow(
+        /AZURE_PROBE_QUALOR_PROJECT_KEY/,
+      );
+    }
   });
 });
 

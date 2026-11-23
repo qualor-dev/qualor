@@ -107,6 +107,34 @@ export function benchDotnetTaskYaml(exampleText: string): string {
   ]);
 }
 
+/** The characters and length that the server posts a project key with unchanged (server/src/scm/render.ts). */
+const SAFE_STATUS_NAME = /^[A-Za-z0-9._/:-]{1,255}$/;
+
+/**
+ * The Status check policy as docs/guide/azure-devops.md has users add it: "Status to check"
+ * `qualor/<project key>` (genre `qualor`, the key as the name), reset on new changes, and the
+ * service principal as the Authorized identity, so a status another identity posts never satisfies it.
+ */
+export function statusPolicySettings(
+  target: { projectKey: string; authorId: string; repositoryId: string; refName: string },
+  displayName: string,
+) {
+  if (!SAFE_STATUS_NAME.test(target.projectKey)) {
+    throw new Error(
+      'AZURE_PROBE_QUALOR_PROJECT_KEY must be 1 to 255 of A-Z a-z 0-9 . _ / : - (the status name is the key as it is)',
+    );
+  }
+  return {
+    statusGenre: 'qualor',
+    statusName: target.projectKey,
+    authorId: target.authorId,
+    invalidateOnSourceUpdate: true,
+    policyApplicability: null,
+    defaultDisplayName: displayName,
+    scope: [{ repositoryId: target.repositoryId, refName: target.refName, matchKind: 'exact' }],
+  };
+}
+
 const THREAD_STATUS: Record<number, string> = {
   1: 'active',
   2: 'fixed',
@@ -191,6 +219,7 @@ const Statuses = z.object({
         description: z.string().nullish(),
         targetUrl: z.string().nullish(),
         context: z.object({ name: z.string(), genre: z.string().nullish() }).loose(),
+        createdBy: z.object({ id: z.string() }).loose().nullish(),
       })
       .loose(),
   ),
@@ -463,7 +492,6 @@ export const item: ProbeItem = {
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
     const qualorToken = needEnv('AZURE_PROBE_QUALOR_TOKEN');
     const projectKey = process.env['AZURE_PROBE_QUALOR_PROJECT_KEY'] ?? 'bench';
-    const statusName = `qualor/${projectKey}`;
     const spId = await servicePrincipalId(ctx);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
@@ -557,18 +585,19 @@ export const item: ProbeItem = {
         scope: [{ repositoryId: repo.id, refName: target, matchKind: 'exact' }],
       },
     });
+    // As the guide has users add it: `qualor/<project key>`, with the service principal as the
+    // Authorized identity. The run proves that the policy still approves Qualor's own status.
+    const policySettings = statusPolicySettings(
+      { projectKey, authorId: spId, repositoryId: repo.id, refName: target },
+      `Qualor probe item 19 ${ctx.stamp}`,
+    );
+    const statusName = policySettings.statusName;
+    const statusLabel = `${policySettings.statusGenre}/${statusName}`;
     const statusPolicy = await createPolicy(ctx, {
       isEnabled: true,
       isBlocking: true,
       type: { id: STATUS_POLICY },
-      settings: {
-        statusName,
-        statusGenre: 'qualor',
-        invalidateOnSourceUpdate: true,
-        policyApplicability: null,
-        defaultDisplayName: `Qualor probe item 19 ${ctx.stamp}`,
-        scope: [{ repositoryId: repo.id, refName: target, matchKind: 'exact' }],
-      },
+      settings: policySettings,
     });
     const created = await createPr(ctx, pushed.refName, { targetRefName: target });
     const prId = created.pr.pullRequestId;
@@ -599,7 +628,7 @@ export const item: ProbeItem = {
     const st1 = await waitStatus(ctx, repo, prId, head1, statusName, 'failed');
     checks.push(
       check(
-        `iteration status ${statusName} failed on the analysed iteration`,
+        `iteration status ${statusLabel} failed on the analysed iteration`,
         st1 !== undefined,
         st1
           ? `iteration ${st1.iteration.id}, ${st1.status.description ?? ''}`.slice(0, 160)
@@ -609,6 +638,11 @@ export const item: ProbeItem = {
     if (st1) {
       await rec(ctx, 'iteration-statuses-first', answerOf(st1.res));
       notes.push(`status target ${st1.status.targetUrl ? 'set' : 'absent'}`);
+      // Qualor reads its own statuses by this id: the listing must carry the service principal's.
+      const author = st1.status.createdBy?.id;
+      notes.push(
+        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? "the service principal's id" : 'another id'}`,
+      );
     }
     const verdict1 = await policyVerdict(ctx, pr1, statusPolicy.id, 'rejected');
     checks.push(
@@ -711,7 +745,7 @@ export const item: ProbeItem = {
     const st2 = await waitStatus(ctx, repo, prId, head2, statusName, 'succeeded');
     checks.push(
       check(
-        `iteration status ${statusName} succeeded on the new iteration`,
+        `iteration status ${statusLabel} succeeded on the new iteration`,
         st2 !== undefined && st2.iteration.id !== st1?.iteration.id,
         st2 ? `iteration ${st2.iteration.id}` : 'no such status within the wait',
       ),

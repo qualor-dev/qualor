@@ -40,7 +40,20 @@ const STATUS_NAME_UNSAFE = /[^A-Za-z0-9._/:-]/g;
  * 12 hex characters of the key's SHA-256, so two long keys never share a name.
  */
 export function statusName(projectKey: string): string {
-  const name = `qualor/${projectKey.replace(STATUS_NAME_UNSAFE, '-')}`;
+  return boundedStatusName('qualor/', projectKey);
+}
+
+/**
+ * The name of Qualor's Azure DevOps status, in the genre `qualor`: the project key, with
+ * {@link statusName}'s characters and bound. A Status check policy reads one `genre/name` field,
+ * so it names this status `qualor/<project key>`, as GitLab and GitHub do.
+ */
+export function azureStatusName(projectKey: string): string {
+  return boundedStatusName('', projectKey);
+}
+
+function boundedStatusName(prefix: string, projectKey: string): string {
+  const name = `${prefix}${projectKey.replace(STATUS_NAME_UNSAFE, '-')}`;
   if (name.length <= STATUS_NAME_MAX_CHARS) return name;
   const hash = createHash('sha256').update(projectKey, 'utf8').digest('hex').slice(0, 12);
   return `${name.slice(0, STATUS_NAME_MAX_CHARS - hash.length - 1)}~${hash}`;

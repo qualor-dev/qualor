@@ -19,7 +19,7 @@ import {
 } from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
 import { markerOf, summaryMarker } from '../markdown';
-import { statusName } from '../render';
+import { azureStatusName } from '../render';
 import { parseInternalHosts } from '../url';
 import { AZURE_REPOSITORY_MISMATCH } from './decorate';
 
@@ -151,9 +151,13 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
         description: 'Quality gate passed',
         targetUrl: `${PUBLIC_URL}/projects/${s.project.id}/branches/${branch!.id}`,
         genre: 'qualor',
-        name: statusName(s.project.key),
+        name: azureStatusName(s.project.key),
+        authorId: fake.patUser.id,
       },
     ]);
+    // A Status check policy reads `genre/name`: `qualor/<project key>` is genre `qualor` and
+    // the key itself as the name (FW1).
+    expect(iterationStatus(s.repository.id, 1)[0]?.name).toBe('az/pass');
     // The same analysis decorated again: nothing is written, the status policy stays satisfied.
     const [analysis] = await h.ctx.db
       .select()
@@ -173,7 +177,7 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
 
   it('a newer status wins over an older one whatever the list’s order, so a failed gate is posted', async () => {
     const s = await setup('az/order');
-    const name = statusName(s.project.key);
+    const name = azureStatusName(s.project.key);
     const base = { iterationId: 1, description: 'old', targetUrl: null, genre: 'qualor', name };
     // Seeded out of order: the highest id (the newest) is a succeeded status.
     s.iteration.statuses.push(
@@ -194,6 +198,32 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
     // Decorated again: the newest already says it, nothing is posted.
     fake.clearRequests();
     await s.ingest({ findings: 1 });
+    await decorate();
+    expect(writesOf().filter((w) => w.includes('/statuses'))).toEqual([]);
+  });
+
+  it('posts its own status even when another identity posted the same one in its context', async () => {
+    // A Status check policy with Qualor as its Authorized identity reads only Qualor's statuses.
+    const s = await setup('az/other-author');
+    s.iteration.statuses.push({
+      id: 50,
+      iterationId: 1,
+      state: 'succeeded',
+      description: 'Quality gate passed',
+      targetUrl: null,
+      genre: 'qualor',
+      name: azureStatusName(s.project.key),
+      authorId: 'a-pipeline',
+    });
+    await s.ingest();
+    await decorate();
+    const posted = iterationStatus(s.repository.id, 1).filter((x) => x.id !== 50);
+    expect(posted).toEqual([
+      expect.objectContaining({ state: 'succeeded', authorId: fake.patUser.id }),
+    ]);
+    // Its own newest says it now: the next decoration posts nothing.
+    fake.clearRequests();
+    await s.ingest();
     await decorate();
     expect(writesOf().filter((w) => w.includes('/statuses'))).toEqual([]);
   });
@@ -353,7 +383,7 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
         status: expect.objectContaining({
           state: 'succeeded',
           genre: 'qualor',
-          name: statusName(s.project.key),
+          name: 'az/branch',
         }),
       },
     ]);

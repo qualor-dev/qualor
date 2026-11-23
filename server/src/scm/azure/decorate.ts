@@ -14,7 +14,7 @@ import { attempt, Failures } from '../failures';
 import { markerOf } from '../markdown';
 import { ScmError } from '../provider';
 import type { DecorationPayload } from '../queue';
-import { azureStatusFor, statusName, summaryBody, type SummaryInput } from '../render';
+import { azureStatusFor, azureStatusName, summaryBody, type SummaryInput } from '../render';
 import {
   AZURE_PR_ID,
   AzureError,
@@ -51,16 +51,24 @@ function iterationOf(
   return found;
 }
 
-/** Posts `status` on the iteration unless the newest status there of this name already says it. */
+/**
+ * Posts `status` on the iteration unless Qualor's own newest status there of its context already
+ * says it. Another identity's status in the context is not Qualor's: a Status check policy whose
+ * Authorized identity is Qualor's reads only Qualor's.
+ */
 async function reconcilePullRequestStatus(
   client: AzureDevOpsClient,
   repositoryId: string,
   prId: number,
   status: AzureStatus,
+  identityId: string,
 ): Promise<void> {
-  // The newest status of this name is the one with the highest id: the list's order says nothing.
+  // The newest status of the context (genre and name) is the one with the highest id: the list's
+  // order says nothing.
+  const own = (authorId: string | null) =>
+    authorId !== null && authorId.toLowerCase() === identityId.toLowerCase();
   const current = (await client.iterationStatuses(repositoryId, prId, status.iterationId))
-    .filter((s) => s.name === status.name)
+    .filter((s) => own(s.authorId) && s.genre === status.genre && s.name === status.name)
     .reduce<{ id: number; state: string; description: string } | null>(
       (newest, s) => (newest === null || s.id > newest.id ? s : newest),
       null,
@@ -133,13 +141,16 @@ function summaryFor(
   });
 }
 
-/** The status of the analysis as Azure DevOps takes it. */
+/**
+ * The status of the analysis as Azure DevOps takes it: the genre `qualor` and the project key, which
+ * a Status check policy names `qualor/<project key>`.
+ */
 function statusOf(deps: DecorationDeps, loaded: Loaded): Omit<AzureStatus, 'iterationId'> {
   return {
     ...azureStatusFor(loaded.gate),
     targetUrl: branchUrl(deps.publicUrl, loaded),
     genre: 'qualor',
-    name: statusName(loaded.project.key),
+    name: azureStatusName(loaded.project.key),
   };
 }
 
@@ -262,10 +273,13 @@ async function decorateAzureSteps(
       );
     } else {
       await attempt(failures, () =>
-        reconcilePullRequestStatus(client, repositoryId, prId, {
-          ...statusOf(deps, loaded),
-          iterationId: analysed.id,
-        }),
+        reconcilePullRequestStatus(
+          client,
+          repositoryId,
+          prId,
+          { ...statusOf(deps, loaded), iterationId: analysed.id },
+          identity.id,
+        ),
       );
       if (failures.stop !== null) return failed(failures.stop);
     }
