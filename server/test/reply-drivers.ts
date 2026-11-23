@@ -22,7 +22,7 @@ import { replyHandlers } from '../src/review/reply-job';
 import { AI_REPLY_MAX_ATTEMPTS, AI_REPLY_QUEUE, replyKey } from '../src/review/reply-queue';
 import { AI_REVIEW_QUEUE } from '../src/review/runs';
 import { SCM_TOKEN_AAD } from '../src/scm/connections';
-import { firstLineOf, issueMarker, markerOf } from '../src/scm/markdown';
+import { firstLineOf, markerOf } from '../src/scm/markdown';
 import { enqueueDecoration, SCM_QUEUE } from '../src/scm/queue';
 import { parseInternalHosts } from '../src/scm/url';
 import { QUIET_AUDIT_LOG } from './audit-log';
@@ -835,34 +835,8 @@ export function createReplyHarness() {
           .slice(1)
           .filter((c) => own(c.authorId))
           .map((c) => ({ id: azureNote(t.id, c.id), body: c.content }));
-      /**
-       * Qualor's thread of each open AI finding that has none, as Qualor's identity writes it: on
-       * its line, with the issue's marker. The decoration does not post the AI review's threads on
-       * Azure DevOps yet (sub-plan 5, Task 5); once it does, it finds them here already.
-       */
-      const postAiThreads = async () => {
-        const open = await h.ctx.db
-          .select({ id: issues.id, line: issues.startLine, message: issues.message })
-          .from(issues)
-          .innerJoin(reviewFindings, eq(reviewFindings.issueId, issues.id))
-          .where(and(eq(issues.branchId, branchId), eq(issues.status, 'open')));
-        for (const issue of open) {
-          if (issueThread(issue.id) !== undefined) continue;
-          azure.addThread(repositoryId, 7, {
-            filePath: PATH,
-            line: issue.line ?? 1,
-            comments: [
-              {
-                content: `${issueMarker(issue.id)}\n**Medium** · ${issue.message}`,
-                authorId: qualor,
-              },
-            ],
-          });
-        }
-      };
       const decorateQueued = async () => {
         await runDecorations(h, decorationDeps(h, { scm: scmDeps() }));
-        await postAiThreads();
       };
       const pullRequestPath = `/repositories/${repositoryId}/pullrequests/7`;
       const commentsPath = new RegExp(`${pullRequestPath}/threads/(\\d+)/comments$`);

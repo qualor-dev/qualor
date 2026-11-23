@@ -1,13 +1,16 @@
 import { deleteBranchSnapshots } from '../../review/lifecycle';
-import { withMergeRequestHead } from '../../review/render';
+import { withMergeRequestHead, withUnplacedFindings } from '../../review/render';
 import { queueAzureAnswers, replyWindow } from '../../review/reply-queue';
 import type { DecorationDeps, DecorationOutcome } from '../decorate';
 import {
   branchUrl,
   comparable,
+  issueUrl,
   loadReviewSummary,
+  unplacedFinding,
   recordMergeRequest,
   summaryData,
+  type DesiredAiIssue,
   type Loaded,
   type SummaryData,
 } from '../decoration-data';
@@ -126,6 +129,7 @@ function summaryFor(
   review: Awaited<ReturnType<typeof loadReviewSummary>>,
   pull: AzurePullRequest,
   inline: Inline,
+  aiNotPosted: readonly DesiredAiIssue[],
 ): string {
   const head = pull.headSha?.toLowerCase() ?? null;
   return summaryBody({
@@ -140,7 +144,12 @@ function summaryFor(
     mergeRequestHead: head !== null && head !== loaded.revision.toLowerCase() ? head : null,
     vocabulary: 'azure',
     smallChangesetLines: data.smallChangesetLines,
-    review: withMergeRequestHead(review, head),
+    review: withUnplacedFindings(
+      withMergeRequestHead(review, head),
+      aiNotPosted.map((issue) =>
+        unplacedFinding(issue, issueUrl(deps.publicUrl, loaded.project.id, issue.id)),
+      ),
+    ),
   });
 }
 
@@ -291,6 +300,7 @@ async function decorateAzureSteps(
     // the summary as they are.
     if (branch.lastAnalysisId !== analysis.id) return finish(connection.id, failures, failed);
     let inline: Inline;
+    let aiNotPosted: readonly DesiredAiIssue[] = [];
     if (payload.azure?.checkout !== 'head') {
       inline = { ...NO_INLINE, skipped: 'checkout_other' };
     } else if (analysed === null || analysed.id !== newest) {
@@ -305,15 +315,19 @@ async function decorateAzureSteps(
             repositoryId,
             prId,
             analysed,
+            liveHead: pull.headSha,
             identityId: identity.id,
             failures,
-          }).then((result) => ({ ...result, skipped: null })),
+          }).then((result) => {
+            aiNotPosted = result.aiNotPosted;
+            return { commented: result.commented, unplaced: result.unplaced, skipped: null };
+          }),
         )) ?? NOT_UPDATED;
       if (failures.stop !== null) return failed(failures.stop);
     }
     const data = await summaryData(deps.db, loaded, deps.publicUrl);
     const review = await loadReviewSummary(deps.db, analysis.id, deps.publicUrl);
-    const body = summaryFor(deps, loaded, data, review, pull, inline);
+    const body = summaryFor(deps, loaded, data, review, pull, inline, aiNotPosted);
     const threads = await attempt(failures, () =>
       reconcileSummary(client, repositoryId, prId, loaded, identity.id, body),
     );

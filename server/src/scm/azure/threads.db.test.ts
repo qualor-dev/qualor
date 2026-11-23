@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { azureCommitId, seedAzurePullRequest } from '../../../test/azure';
 import {
@@ -10,10 +10,20 @@ import {
 } from '../../../test/fake-azure-devops';
 import { createIngestHarness, type IngestHarness } from '../../../test/ingest';
 import { engine, file, finding, reportWith } from '../../../test/reports';
+import { seedAiIssue, storeTestSnapshot } from '../../../test/review';
 import { decorationDeps, PUBLIC_URL, runDecorations } from '../../../test/scm';
-import { issues, jobs, projects } from '../../db/schema';
+import {
+  branches,
+  issues,
+  jobs,
+  projects,
+  reviewFindings,
+  reviewRuns,
+  type AiCategory,
+} from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
 import { MAX_FIXED_NOTES } from '../inline';
+import { enqueueDecoration } from '../queue';
 import { fixedMarker, issueMarker, markerOf } from '../markdown';
 import { reopenedNote, resolvedNote } from '../render';
 import { parseInternalHosts } from '../url';
@@ -817,5 +827,185 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(outcome).toMatchObject({ kind: 'failed', retry: true, error: { kind: 'rate_limited' } });
     expect(s.ownThreads()).toEqual([]);
     expect(s.summary()).toBe('');
+  });
+
+  // The AI review's threads (sub-plan 5, task 5).
+  type Suggestion = { startLine: number; endLine: number; lines: string[] };
+  const THREE: Suggestion = { startLine: 3, endLine: 3, lines: ['THREE'] };
+  const THREE_TO_FIVE: Suggestion = { startLine: 3, endLine: 5, lines: ['3', '4', '5'] };
+
+  /** A project with pull request #7 whose review of the source commit is done, its snapshot stored. */
+  const reviewed = async (key: string, findings: At[] = []) => {
+    const s = await setup(key, { files: { 'src/a.ts': HEAD_A }, base: { 'src/a.ts': BASE_A } });
+    const analysisId = await s.ingest(findings);
+    const [branch] = await h.ctx.db
+      .select()
+      .from(branches)
+      .where(and(eq(branches.projectId, s.project.id), eq(branches.kind, 'merge_request')));
+    const branchId = branch!.id;
+    await h.ctx.db.insert(reviewRuns).values({
+      projectId: s.project.id,
+      branchId,
+      analysisId,
+      status: 'done',
+      deadlineAt: new Date(),
+      headSha: s.sourceCommit,
+      summary: { verdict: 'It has problems.', walkthrough: [], notes: [] },
+    });
+    await storeTestSnapshot(
+      h.ctx.db,
+      analysisId,
+      [
+        {
+          type: 'change',
+          path: 'src/a.ts',
+          oldPath: null,
+          status: 'modified',
+          patch: '@@ -2,0 +3,3 @@\n+three\n+four\n+five',
+          since: null,
+        },
+        { type: 'file', path: 'src/a.ts', text: HEAD_A },
+      ],
+      {
+        headSha: s.sourceCommit,
+        mergeRequest: { id: String(PR), title: 'A change', description: null },
+      },
+    );
+    const aiFinding = async (o: {
+      line: number;
+      severity?: 'blocker' | 'high' | 'medium' | 'low' | 'info';
+      anchorLine?: number;
+      suggestion?: Suggestion | null;
+      category?: AiCategory;
+    }) => {
+      const category = o.category ?? 'logic';
+      const id = await seedAiIssue(h.ctx.db, {
+        branchId,
+        category,
+        path: 'src/a.ts',
+        line: o.line,
+        severity: o.severity ?? 'high',
+      });
+      await h.ctx.db
+        .update(issues)
+        .set({ message: `Line ${o.line} is wrong` })
+        .where(eq(issues.id, id));
+      await h.ctx.db.insert(reviewFindings).values({
+        issueId: id,
+        category,
+        body: `Why line ${o.line} is wrong.`,
+        assumption: null,
+        suggestion: o.suggestion ?? null,
+        anchorLine: o.anchorLine ?? o.line,
+        reviewedHeadSha: s.sourceCommit,
+      });
+      return id;
+    };
+    const aiThread = (issueId: string) =>
+      s.ownThreads().find((t) => t.comments[0]?.content.startsWith(issueMarker(issueId)));
+    return { ...s, analysisId, branchId, aiFinding, aiThread };
+  };
+
+  it('posts a high AI finding at the reviewed head as one active thread on its line', async () => {
+    const s = await reviewed('ai/posted');
+    const id = await s.aiFinding({ line: 4 });
+    await decorate();
+    const thread = s.aiThread(id);
+    expect(thread).toMatchObject({ status: 'active', filePath: 'src/a.ts', line: 4 });
+    expect(thread?.threadContext).toEqual({
+      filePath: '/src/a.ts',
+      rightFileStart: { line: 4, offset: 1 },
+      rightFileEnd: { line: 4, offset: 'four'.length + 1 },
+    });
+    expect(thread?.comments[0]?.content.split('\n')[0]).toBe(issueMarker(id));
+    expect(thread?.comments[0]?.content).not.toContain('```suggestion');
+    // Decorated again: no second thread.
+    fake.clearRequests();
+    await decorate();
+    expect(s.ownThreads()).toHaveLength(1);
+    expect(writesOf().filter((w) => /threads$/.test(w))).toEqual([]);
+  });
+
+  it('does not count AI threads in the summary’s "commented inline"', async () => {
+    const s = await reviewed('ai/count', [{ path: 'src/a.ts', line: 3 }]);
+    await s.aiFinding({ line: 4 });
+    await decorate();
+    expect(s.ownThreads()).toHaveLength(2);
+    expect(s.summary()).toContain('1 new issue is commented inline');
+  });
+
+  it('writes a one-line suggestion as a suggestion fence', async () => {
+    const s = await reviewed('ai/fence');
+    const id = await s.aiFinding({ line: 3, suggestion: THREE });
+    await decorate();
+    expect(s.aiThread(id)?.comments[0]?.content).toContain('```suggestion\nTHREE\n```');
+  });
+
+  it('drops a suggestion over several lines, and posts the finding without it', async () => {
+    const s = await reviewed('ai/multi');
+    const id = await s.aiFinding({ line: 3, suggestion: THREE_TO_FIVE });
+    await decorate();
+    const thread = s.aiThread(id);
+    expect(thread).toMatchObject({ line: 3 });
+    expect(thread?.comments[0]?.content).not.toContain('```suggestion');
+  });
+
+  it('posts no AI thread once the pull request head moved, and the summary says it waits', async () => {
+    const s = await reviewed('ai/moved');
+    const id = await s.aiFinding({ line: 4 });
+    s.pr().headSha = azureCommitId('ai/moved-newer');
+    await decorate();
+    expect(s.aiThread(id)).toBeUndefined();
+    expect(s.summary()).toContain('the pull request is now at');
+    expect(s.summary()).toContain('Line 4 is wrong');
+  });
+
+  it('lists an AI finding anchored on a context line as not posted', async () => {
+    const s = await reviewed('ai/context');
+    const id = await s.aiFinding({ line: 1 });
+    await decorate();
+    expect(s.aiThread(id)).toBeUndefined();
+    expect(s.summary()).toContain('**Not on changed lines:**');
+    expect(s.summary()).toContain('Line 1 is wrong');
+  });
+
+  it('lists an AI finding whose thread Azure DevOps refuses with a 400, and goes on', async () => {
+    const s = await reviewed('ai/refused');
+    const refused = await s.aiFinding({ line: 3 });
+    const accepted = await s.aiFinding({ line: 4, severity: 'medium' });
+    fake.inject('POST', /\/threads$/, { status: 400, body: { message: 'TF401019: no' } });
+    const outcome = await decorateOnce(s, s.analysisId);
+    expect(outcome).toMatchObject({ kind: 'done' });
+    expect(s.aiThread(refused)).toBeUndefined();
+    expect(s.aiThread(accepted)).toBeDefined();
+    expect(s.summary()).toContain('**Not on changed lines:**');
+    expect(s.summary()).toContain('Line 3 is wrong');
+  });
+
+  it('resolves the thread of a fixed AI finding, and never reopens one a person resolved', async () => {
+    const s = await reviewed('ai/cycle');
+    const fixed = await s.aiFinding({ line: 3 });
+    const kept = await s.aiFinding({ line: 4 });
+    await decorate();
+    const fixedThread = s.aiThread(fixed);
+    const keptThread = s.aiThread(kept);
+    expect([fixedThread?.status, keptThread?.status]).toEqual(['active', 'active']);
+    keptThread!.status = 'fixed';
+    await h.ctx.db
+      .update(issues)
+      .set({ status: 'closed', closedAt: new Date() })
+      .where(eq(issues.id, fixed));
+    fake.clearRequests();
+    await enqueueDecoration(h.ctx.db, {
+      analysisId: s.analysisId,
+      branchId: s.branchId,
+      gitlab: null,
+      azure: { repositoryId: s.repository.id, checkout: 'head' },
+    });
+    await decorate();
+    expect(fixedThread?.status).toBe('fixed');
+    expect(lastComment(fixedThread!)).toMatch(new RegExp(`^<!-- qualor:fixed ${fixed} `));
+    expect(keptThread?.status).toBe('fixed');
+    expect(keptThread?.comments).toHaveLength(1);
   });
 });
