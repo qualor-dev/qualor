@@ -8,7 +8,7 @@ import { deleteBranchSnapshots, mergeRequestStateHandlers } from '../review/life
 import { withMergeRequestHead, withUnplacedFindings } from '../review/render';
 import { queueGitLabAnswers, replyWindow } from '../review/reply-queue';
 import { AzureError } from './azure/client';
-import { AZURE_DECORATION_PENDING } from './azure/pending';
+import { decorateAzure } from './azure/decorate';
 import { gitlabClientFor, type ScmDeps } from './connections';
 import {
   branchUrl,
@@ -410,8 +410,8 @@ async function decorateThroughCircuit(
         return await decorateGitLab(deps, payload, loaded, failed);
       case 'github':
         return await decorateGitHub(deps, payload, loaded, failed);
-      case 'azure': // azure-pending(4): Azure DevOps pull request decoration (loadDecoration ends it first)
-        return { kind: 'nothing', reason: AZURE_DECORATION_PENDING };
+      case 'azure':
+        return await decorateAzure(deps, payload, loaded, failed);
       default:
         return assertNever(loaded.connection.provider, 'provider');
     }

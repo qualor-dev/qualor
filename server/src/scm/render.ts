@@ -144,6 +144,15 @@ export function commitStatusFor(gate: GateResult): { state: CommitState; descrip
   }
 }
 
+/** The Azure DevOps status of a gate verdict (the pull request status and the commit status). */
+export function azureStatusFor(gate: GateResult): {
+  state: 'succeeded' | 'failed';
+  description: string;
+} {
+  const { state, description } = commitStatusFor(gate);
+  return { state: state === 'success' ? 'succeeded' : 'failed', description };
+}
+
 export interface IssueLine {
   id: string;
   severity: Severity;
@@ -225,7 +234,6 @@ const WORDS: Record<ScmProvider, Words> = {
     stale: 'Inline comments wait for the analysis of the pull request’s latest commit.',
   },
   azure: {
-    // azure-pending(4): the words of an Azure DevOps pull request's summary
     request: 'pull request',
     placed: 'commented inline',
     stale: 'Inline comments wait for the analysis of the pull request’s latest commit.',
@@ -239,6 +247,9 @@ const CHECKOUT_OTHER =
   'The analyzers’ issues are not commented inline: the workflow analysed a commit other than the pull request’s head (GitHub’s merge commit, by default); check out the head to get them (`ref: ${{ github.event.pull_request.head.sha }}`).';
 /** github.md §6.2: the threads could not be read or changed; the next decoration tries again. */
 const NOT_UPDATED = 'Inline comments could not be updated this time.';
+/** The Azure DevOps summary's sentence for a pipeline that did not check out the pull request's head. */
+const AZURE_CHECKOUT_OTHER =
+  'The analyzers’ issues are not commented inline: the pipeline did not check out the pull request’s head. Use the Qualor task or the head checkout of the Azure Pipelines examples.';
 
 /**
  * GitHub: how many of Qualor's conversations stay as they are because the App may not resolve or
@@ -247,7 +258,11 @@ const NOT_UPDATED = 'Inline comments could not be updated this time.';
 function unresolvedSentence(input: SummaryInput): string | null {
   const n = count(input.inline.unresolved ?? 0);
   if (n === 0) return null;
-  return `${n} ${plural(n, 'conversation', 'conversations')} could not be resolved or reopened: give the GitHub App Contents: Read and write.`;
+  const grant =
+    input.vocabulary === 'azure'
+      ? 'Give Qualor’s identity the Contribute to pull requests permission.'
+      : 'give the GitHub App Contents: Read and write.';
+  return `${n} ${plural(n, 'conversation', 'conversations')} could not be resolved or reopened: ${grant}`;
 }
 
 /** The headline's marker of a gate status; one this code does not know is a warning. */
@@ -439,7 +454,9 @@ function inlineSentence(
   if (inline.skipped === 'merged_result') {
     return 'The analyzers’ issues are not commented inline: this was a merged-results pipeline, whose line numbers are not the merge request’s.';
   }
-  if (inline.skipped === 'checkout_other') return CHECKOUT_OTHER;
+  if (inline.skipped === 'checkout_other') {
+    return input.vocabulary === 'azure' ? AZURE_CHECKOUT_OTHER : CHECKOUT_OTHER;
+  }
   if (inline.skipped === 'failed') return NOT_UPDATED;
   if (commented > 0 || unplaced > 0) {
     return `${commented} new ${commented === 1 ? 'issue is' : 'issues are'} ${words.placed}${
