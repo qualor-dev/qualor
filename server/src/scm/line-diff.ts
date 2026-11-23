@@ -6,12 +6,16 @@
 export interface LineDiffOptions {
   /** Either side longer than this gives up (default 20 000 lines). */
   maxLines?: number;
-  /** An edit distance (insertions + deletions) above this gives up (default 10 000). */
+  /** An edit distance (insertions + deletions) above this gives up (default 2 000). */
   maxEdits?: number;
 }
 
+/**
+ * More than 2 000 line edits after trimming is a rewrite, not a change: its findings count as
+ * unplaced. The cap also bounds the O(D^2) trace (about 8 MB) and the search (about 80M steps).
+ */
 const DEFAULT_MAX_LINES = 20_000;
-const DEFAULT_MAX_EDITS = 10_000;
+const DEFAULT_MAX_EDITS = 2_000;
 
 /** Split on `\n`, drop one trailing `\r` per line and the empty piece after a final newline. */
 function splitLines(text: string): string[] {

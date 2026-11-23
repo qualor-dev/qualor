@@ -46,7 +46,41 @@ describe('addedLines fixed cases', () => {
   });
 });
 
+describe('addedLines tie-break (deletions before insertions)', () => {
+  it('swap of two lines keeps the first head line', () => {
+    expect(entries(addedLines('a\nb\n', 'b\na\n'))).toEqual([[2, 'a']]);
+    expect(entries(addedLines('a\nb', 'b\na'))).toEqual([[2, 'a']]);
+  });
+
+  it('pins the path chosen among equal-length scripts', () => {
+    const run = (b: string, h: string): [number, string][] =>
+      entries(addedLines(`${[...b].join('\n')}\n`, `${[...h].join('\n')}\n`));
+    expect(run('abb', 'baba')).toEqual([
+      [1, 'b'],
+      [4, 'a'],
+    ]);
+    expect(run('baa', 'abab')).toEqual([
+      [1, 'a'],
+      [4, 'b'],
+    ]);
+    expect(run('aabb', 'baa')).toEqual([[1, 'b']]);
+  });
+
+  it('a moved line is reported at its new place', () => {
+    expect(entries(addedLines('a\nb\nc\n', 'b\nc\na\n'))).toEqual([[3, 'a']]);
+    expect(entries(addedLines('a\nb\nc\n', 'c\na\nb\n'))).toEqual([[1, 'c']]);
+  });
+});
+
 describe('addedLines limits', () => {
+  it('gives up on two unrelated 20 000-line files at the default limits', () => {
+    const a = Array.from({ length: 20000 }, (_, i) => `a${i}`).join('\n');
+    const b = Array.from({ length: 20000 }, (_, i) => `b${i}`).join('\n');
+    const t = Date.now();
+    expect(addedLines(a, b)).toBeNull();
+    expect(Date.now() - t).toBeLessThan(5000);
+  });
+
   it('returns null over maxLines on either side', () => {
     expect(addedLines('a\nb\nc\n', 'a\n', { maxLines: 2 })).toBeNull();
     expect(addedLines('a\n', 'a\nb\nc\n', { maxLines: 2 })).toBeNull();
