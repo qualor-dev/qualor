@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import { scmConnections, type ScmProblemValue } from '../db/schema';
 import { type TestProblemCode } from './connections';
@@ -67,6 +67,14 @@ export async function recordScmProblem(
       ),
     );
 }
+
+/**
+ * The `problem` column without a hook code, for an update's `set`: a hook problem becomes null, any
+ * other problem stays. An Azure DevOps address move writes it, since the new organisation holds no
+ * subscription of Qualor's yet.
+ */
+export const withoutHookProblem = (): SQL =>
+  sql`CASE WHEN ${inArray(sql`(${scmConnections.problem} ->> 'code')`, [...SCM_HOOK_PROBLEM_CODES])} THEN NULL ELSE ${scmConnections.problem} END`;
 
 /**
  * Clears the recorded problem when its code is one of `codes` (whatever its code, without

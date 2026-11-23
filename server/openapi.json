@@ -24977,6 +24977,9 @@
                                   },
                                   "hooksCurrent": {
                                     "type": "boolean"
+                                  },
+                                  "publicUrlHttps": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
@@ -24989,7 +24992,8 @@
                                   "webhookSecretSet",
                                   "webhookUrl",
                                   "webhookSecretReadable",
-                                  "hooksCurrent"
+                                  "hooksCurrent",
+                                  "publicUrlHttps"
                                 ],
                                 "additionalProperties": false
                               },
@@ -25538,6 +25542,9 @@
                             },
                             "hooksCurrent": {
                               "type": "boolean"
+                            },
+                            "publicUrlHttps": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -25550,7 +25557,8 @@
                             "webhookSecretSet",
                             "webhookUrl",
                             "webhookSecretReadable",
-                            "hooksCurrent"
+                            "hooksCurrent",
+                            "publicUrlHttps"
                           ],
                           "additionalProperties": false
                         },
@@ -25990,6 +25998,9 @@
                             },
                             "hooksCurrent": {
                               "type": "boolean"
+                            },
+                            "publicUrlHttps": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
@@ -26002,7 +26013,8 @@
                             "webhookSecretSet",
                             "webhookUrl",
                             "webhookSecretReadable",
-                            "hooksCurrent"
+                            "hooksCurrent",
+                            "publicUrlHttps"
                           ],
                           "additionalProperties": false
                         },

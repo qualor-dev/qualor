@@ -1,7 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { azureServerConfig, servicesUrlOf, AZURE_TEST_PRINCIPAL } from '../../../test/azure';
-import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../../test/fake-azure-devops';
+import {
+  createFakeAzureDevOps,
+  type FakeAzureDevOps,
+  type FakeAzureSubscription,
+} from '../../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub } from '../../../test/fake-github';
 import { createFakeLlm, type FakeLlm } from '../../../test/fake-llm';
 import { githubConnection } from '../../../test/github';
@@ -348,6 +353,76 @@ describe('the Azure DevOps backstop pass (sub-plan 5, task 9)', () => {
       await runAzurePass(deps(), connectionId);
       expect(await problemOf()).toMatchObject({ code: 'hook_probation' });
       expect(await scanned()).toEqual([b]);
+    });
+
+    const seed = (code: 'hook_probation' | 'hook_disabled') =>
+      h.ctx.db
+        .update(scmConnections)
+        .set({ problem: { code, at: SEEDED.at } })
+        .where(eq(scmConnections.id, connectionId));
+
+    it('FW3: clears a hook problem when no own subscription is left to judge', async () => {
+      await start();
+      await mapped();
+      await seed('hook_disabled');
+      await runAzurePass(deps(), connectionId);
+      expect(await problemOf()).toBeNull();
+    });
+
+    it('FW3: clears a hook problem without an https public URL, and reads no subscriptions', async () => {
+      await start();
+      await mapped();
+      for (const publicUrl of [null, 'http://qualor.example.com']) {
+        await seed('hook_probation');
+        await runAzurePass(deps({ publicUrl }), connectionId);
+        expect(await problemOf(), String(publicUrl)).toBeNull();
+      }
+      expect(fake.requests.filter((r) => r.path.includes('/hooks/'))).toEqual([]);
+    });
+
+    it('FW3: judges only the first own subscription of each event in each mapped project', async () => {
+      await start();
+      await mapped();
+      await subscribe();
+      const listed = fake.subscriptions as FakeAzureSubscription[];
+      const managed = listed[0]!;
+      // A duplicate the button never rewrites, and one of a project with no mapped repository.
+      listed.push({ ...managed, id: randomUUID(), status: 'disabledBySystem' });
+      listed.push({
+        ...managed,
+        id: randomUUID(),
+        projectId: '99999999-0000-4000-8000-000000000003',
+        status: 'onProbation',
+      });
+      await runAzurePass(deps(), connectionId);
+      expect(await problemOf()).toBeNull();
+      await seed('hook_disabled');
+      await runAzurePass(deps(), connectionId);
+      expect(await problemOf()).toBeNull();
+      fake.setSubscriptionStatus(managed.id, 'onProbation');
+      await runAzurePass(deps(), connectionId);
+      expect(await problemOf()).toMatchObject({ code: 'hook_probation' });
+    });
+
+    it('FW3: the pass after the last project was unmapped clears the hook problem, and none follows', async () => {
+      await start();
+      const p = await mapped();
+      await subscribe();
+      fake.setSubscriptionStatus(fake.subscriptions[0]!.id, 'disabledBySystem');
+      await runAzurePass(deps(), connectionId);
+      expect(await problemOf()).toMatchObject({ code: 'hook_disabled' });
+      await h.ctx.db
+        .update(projects)
+        .set({ scmConnectionId: null, scmProjectRef: null })
+        .where(eq(projects.id, p));
+      fake.clearRequests();
+      const handler = azurePollHandlers(deps())[AZURE_POLL_QUEUE]!;
+      await handler({ payload: { connectionId } } as Parameters<typeof handler>[0]);
+      expect(await problemOf()).toBeNull();
+      expect(fake.requests).toEqual([]);
+      expect(
+        (await h.ctx.db.select().from(jobs)).filter((j) => j.queue === AZURE_POLL_QUEUE),
+      ).toEqual([]);
     });
   });
 

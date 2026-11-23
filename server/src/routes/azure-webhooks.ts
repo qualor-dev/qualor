@@ -10,6 +10,7 @@ import { notFound, ProblemError } from '../http/problem';
 import { readLlmSettings } from '../llm/settings';
 import { queueScan } from '../review/reply-queue';
 import { reviewActive } from '../review/settings';
+import { markHookPasswordHeld } from '../scm/azure/connections';
 import { decryptWebhookSecret } from '../scm/github/credentials';
 import {
   DeliveryIds,
@@ -110,6 +111,17 @@ export const azureWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = async
           'UNAUTHENTICATED',
           'The credential does not match the webhook secret',
         );
+      }
+      // The delivery proves that Azure DevOps holds this password (a subscription made by hand,
+      // say): it is marked so, as a complete subscribe marks it. Not awaited, so it never delays
+      // or fails the answer; a failure is logged without its text.
+      if (row.webhookSecretEnc?.hooksPushed !== true) {
+        markHookPasswordHeld(deps.db, row).catch(() => {
+          request.log.warn(
+            { connectionId: row.id },
+            'could not mark the Azure DevOps hook password as held',
+          );
+        });
       }
       let payload: unknown;
       try {

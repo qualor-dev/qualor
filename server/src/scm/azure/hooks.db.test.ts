@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   deliverAzureEvent,
   azureServerConfig,
@@ -663,6 +663,7 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
   });
 
   describe('final review', () => {
+    const AT = '2026-11-20T10:00:00.000Z';
     /** `work`, or 'blocked' when it has not settled within `ms`. */
     const within = <T>(work: Promise<T>, ms = 5_000): Promise<T | 'blocked'> =>
       Promise.race([
@@ -721,6 +722,64 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
       expect((await dtoOf(id)).hooksCurrent).toBe(false);
     });
 
+    it('FW2: a delivery with the current password marks it as held by Azure DevOps; a new password clears the mark', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/fw2', id, api);
+      // Subscribed by hand: the password shown, never pushed by the button.
+      const { password } = await rotate(id);
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+      const wrong = await deliverAzureEvent(
+        h.ctx.app,
+        id,
+        'pr-updated',
+        {},
+        { password: 'not-the-password-0123456789abcdef' },
+      );
+      expect(wrong.statusCode).toBe(401);
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+      const delivered = await deliverAzureEvent(h.ctx.app, id, 'pr-updated', {}, { password });
+      expect(delivered.statusCode).toBe(204);
+      await vi.waitFor(async () => expect((await dtoOf(id)).hooksCurrent).toBe(true));
+      expect(await storedPassword(id)).toBe(password);
+      await rotate(id);
+      expect((await dtoOf(id)).hooksCurrent).toBe(false);
+    });
+
+    it('FW3, FW6: an address move clears the hook problem with the password, and its audit names the password', async () => {
+      const id = await connect();
+      await mapRepository(h, 'hooks/fw6', id, api);
+      await subscribe(id);
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: { code: 'hook_disabled', at: AT } })
+        .where(eq(scmConnections.id, id));
+      const moved = await call(h, 'PATCH', `/scm-connections/${id}`, {
+        baseUrl: 'https://dev.azure.com/other-org',
+        azureAuth: 'pat',
+        token: fake.pat,
+      });
+      expect(moved.statusCode, moved.body).toBe(200);
+      expect((await rowOf(id)).problem).toBeNull();
+      expect((await auditOf('scm_connection.updated', id)).at(-1)).toEqual({
+        changed: ['baseUrl', 'token', 'webhookSecret'],
+      });
+      // A move without a password names none, and a credential problem is not a hook problem.
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: { code: 'token_refused', at: AT } })
+        .where(eq(scmConnections.id, id));
+      const back = await call(h, 'PATCH', `/scm-connections/${id}`, {
+        baseUrl: servicesUrlOf(fake),
+        azureAuth: 'pat',
+        token: fake.pat,
+      });
+      expect(back.statusCode, back.body).toBe(200);
+      expect((await auditOf('scm_connection.updated', id)).at(-1)).toEqual({
+        changed: ['baseUrl', 'token'],
+      });
+      expect((await rowOf(id)).problem).toEqual({ code: 'token_refused', at: AT });
+    });
+
     it('FW7: a subscribe that processed no project sets no mark', async () => {
       const id = await connect();
       const nothingMapped = await subscribe(id);
@@ -736,6 +795,18 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
         .where(eq(projects.id, project.id));
       expect(outcomes(await subscribe(id))).toEqual([]);
       expect((await dtoOf(id)).hooksCurrent).toBe(false);
+    });
+
+    it('FW14: the DTO says whether the public URL is https', async () => {
+      expect((await dtoOf(await connect())).publicUrlHttps).toBe(true);
+      const plain = await connect(http);
+      expect((await dtoOf(plain, http)).publicUrlHttps).toBe(false);
+      const noUrl = await createIngestHarness({ config: azureServerConfig(fake) });
+      try {
+        expect((await dtoOf(await connect(noUrl), noUrl)).publicUrlHttps).toBe(false);
+      } finally {
+        await noUrl.close();
+      }
     });
   });
 });

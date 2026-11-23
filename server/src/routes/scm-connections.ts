@@ -88,7 +88,7 @@ import {
 } from '../scm/github/credentials';
 import { CI_SETUP_MISSING, createCiSetupStatus, type CiSetupStatus } from '../scm/ci-setup-status';
 import { githubBaseUrlProblem } from '../scm/github/url';
-import { clearScmProblem, SCM_CREDENTIAL_PROBLEM_CODES } from '../scm/problems';
+import { clearScmProblem, SCM_CREDENTIAL_PROBLEM_CODES, withoutHookProblem } from '../scm/problems';
 import { normalBaseUrl, scmBaseUrlProblem } from '../scm/url';
 
 const githubSchema = z.object({
@@ -128,8 +128,16 @@ const azureSchema = z.object({
   webhookUrl: z.string().nullable(),
   /** False when the stored webhook password no longer decrypts (QUALOR_SECRET_KEY changed). */
   webhookSecretReadable: z.boolean(),
-  /** Whether Azure DevOps holds the stored password: set by a complete subscribe, gone with a new password. */
+  /**
+   * Whether Azure DevOps holds the stored password: set by a complete subscribe or by a delivery
+   * that came with it, gone with a new password.
+   */
   hooksCurrent: z.boolean(),
+  /**
+   * Whether `QUALOR_PUBLIC_URL` is an https address: Azure DevOps sends the hooks' password only to
+   * one, and Qualor subscribes only then.
+   */
+  publicUrlHttps: z.boolean(),
 });
 
 const HOOK_OUTCOMES = ['created', 'replaced', 'unchanged', 'refused'] as const;
@@ -284,6 +292,7 @@ function connectionDto(
         webhookUrl: secretSet && publicUrl !== null ? azureWebhookUrl(publicUrl, row.id) : null,
         webhookSecretReadable: secretReadable,
         hooksCurrent: secretReadable && row.webhookSecretEnc?.hooksPushed === true,
+        publicUrlHttps: publicUrl?.startsWith('https://') ?? false,
         certificate: view.certificate && {
           ...view.certificate,
           notAfter: iso(view.certificate.notAfter),
@@ -856,8 +865,10 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       Object.assign(changes, own.columns);
       addFieldChanges(changes, body, key);
       // Azure DevOps: the old organisation's subscriptions must stop delivering to Qualor, so the
-      // hook password goes with the address (a new one is made by the next subscribe).
-      if (moves && row.provider === 'azure') changes.webhookSecretEnc = null;
+      // hook password goes with the address (a new one is made by the next subscribe), and so does
+      // a hook problem: the new organisation holds no subscription of Qualor's yet.
+      const azureMove = moves && row.provider === 'azure';
+      if (azureMove) changes.webhookSecretEnc = null;
       const updated = await deps.db.transaction(async (tx) => {
         // The checks above hold only for the row they read: the write is conditional on the
         // stored address (and Azure DevOps kind and ids), so an address changed by a concurrent
@@ -866,7 +877,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         // to be still unset.
         const [written] = await tx
           .update(scmConnections)
-          .set(changes)
+          .set(azureMove ? { ...changes, problem: withoutHookProblem() } : changes)
           .where(
             and(
               eq(scmConnections.id, row.id),
@@ -925,6 +936,8 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           if (field === 'tenantId') return written.azureTenantId !== row.azureTenantId;
           if (field === 'clientId') return written.azureClientId !== row.azureClientId;
           if (field === 'webhookSecret') {
+            // Azure DevOps: a move drops Qualor's own hook password (above).
+            if (azureMove) return row.webhookSecretEnc !== null;
             return (
               body.webhookSecret !== undefined &&
               (body.webhookSecret !== null || row.webhookSecretEnc !== null)

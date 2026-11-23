@@ -38,6 +38,30 @@ export function ownSubscriptions(
   return subscriptions.filter((s) => s.url === url && isHookEvent(s.eventType));
 }
 
+/**
+ * The own subscription the subscribe button manages for one event in one Azure project: the first
+ * listed. Any further one of the same event and project is left alone by the button, so the Test
+ * and the backstop pass leave it alone too.
+ */
+export function managedSubscription(
+  own: readonly AzureSubscription[],
+  projectId: string,
+  eventType: HookEventType,
+): AzureSubscription | undefined {
+  const project = projectId.toLowerCase();
+  return own.find((s) => s.eventType === eventType && s.projectId.toLowerCase() === project);
+}
+
+/** The subscriptions the button manages in these Azure projects: for each, one per event at most. */
+export function managedSubscriptions(
+  own: readonly AzureSubscription[],
+  projectIds: readonly string[],
+): AzureSubscription[] {
+  return projectIds.flatMap((projectId) =>
+    HOOK_EVENTS.flatMap((eventType) => managedSubscription(own, projectId, eventType) ?? []),
+  );
+}
+
 /** `disabledByUser`, `disabledBySystem` and `disabledByInactiveIdentity` are all `disabled`. */
 export function hookState(status: string): HookState {
   if (status === 'enabled') return 'enabled';
@@ -66,9 +90,7 @@ export function projectHookState(
 ): ProjectHookState {
   const states: ProjectHookState[] = current ? [] : ['stale'];
   for (const eventType of HOOK_EVENTS) {
-    const found = own.find(
-      (s) => s.eventType === eventType && s.projectId.toLowerCase() === projectId.toLowerCase(),
-    );
+    const found = managedSubscription(own, projectId, eventType);
     if (!found) return 'missing';
     states.push(hookState(found.status));
   }
@@ -137,9 +159,7 @@ export async function subscribeProjects(input: SubscribeInput): Promise<Subscrib
           continue;
         }
         const subscription = { eventType, resourceVersion, projectId, url, password };
-        const existing = own.find(
-          (s) => s.eventType === eventType && s.projectId.toLowerCase() === projectId.toLowerCase(),
-        );
+        const existing = managedSubscription(own, projectId, eventType);
         try {
           if (
             existing &&

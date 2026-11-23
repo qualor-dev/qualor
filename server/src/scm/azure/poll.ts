@@ -13,8 +13,8 @@ import type { ScmDeps } from '../connections';
 import { ScmError } from '../provider';
 import { clearScmProblem, recordScmProblem, SCM_HOOK_PROBLEM_CODES } from '../problems';
 import type { ScmRuntime } from '../runtime';
-import { azureClientFor } from './connections';
-import { hookState, ownSubscriptions } from './hooks';
+import { azureClientFor, mappedAzureProjects, mappedRepositoryRefs } from './connections';
+import { hookState, managedSubscriptions, ownSubscriptions } from './hooks';
 import { azureWebhookUrl } from './url';
 
 /**
@@ -131,37 +131,49 @@ async function candidates(db: Db, connectionId: string, now: Date): Promise<stri
 }
 
 /**
- * Reads Qualor's own subscriptions once and records what they say: `hook_disabled` when any is
- * disabled, else `hook_probation` when any is on probation, else the hook codes are cleared. No
- * subscription of Qualor's (or no `https` public URL, which Azure DevOps needs for the password)
- * records nothing. A failure of the read records nothing either: a credential failure is the
- * decorator's to record, and a transient one passes by itself.
+ * Reads Qualor's own subscriptions once and records what the ones the subscribe button manages say
+ * (in each Azure project that holds a mapped repository, the first of each event:
+ * `managedSubscriptions`): `hook_disabled` when any is disabled, else `hook_probation` when any is
+ * on probation, else the hook codes are cleared. They are cleared too when there is nothing to
+ * judge: no mapped repository (the pass after the last one was unmapped is the connection's last),
+ * no `https` public URL (Azure DevOps needs one for the password), or no such subscription. A
+ * failure of the reads records nothing: a credential failure is the decorator's to record, and a
+ * transient one passes by itself.
  */
 async function recordHookState(
   deps: AzurePollDeps,
   connection: typeof scmConnections.$inferSelect,
 ): Promise<void> {
+  const clear = () => clearScmProblem(deps.db, connection.id, SCM_HOOK_PROBLEM_CODES);
+  const refs = await mappedRepositoryRefs(deps.db, connection.id);
+  if (refs.length === 0 || deps.publicUrl === null || !deps.publicUrl.startsWith('https://')) {
+    await clear();
+    return;
+  }
   // A credential problem is recorded by the decorator, not by this pass: a connection without
   // decoration traffic never shows one from here, and a failed read below records nothing.
-  if (deps.publicUrl === null || !deps.publicUrl.startsWith('https://')) return;
   const found = azureClientFor(connection, deps.scm, deps.runtime);
   if ('problem' in found) return;
-  let own;
+  let managed;
   try {
-    own = ownSubscriptions(
-      await found.client.subscriptions(),
-      azureWebhookUrl(deps.publicUrl, connection.id),
-    );
+    const projectIds = mappedAzureProjects(await found.client.repositories(), refs);
+    const own =
+      projectIds.length === 0
+        ? []
+        : ownSubscriptions(
+            await found.client.subscriptions(),
+            azureWebhookUrl(deps.publicUrl, connection.id),
+          );
+    managed = managedSubscriptions(own, projectIds);
   } catch (err) {
     if (err instanceof ScmError) return;
     throw err;
   }
-  if (own.length === 0) return;
-  const states = own.map((s) => hookState(s.status));
+  const states = managed.map((s) => hookState(s.status));
   if (states.includes('disabled')) await recordScmProblem(deps.db, connection.id, 'hook_disabled');
   else if (states.includes('onProbation')) {
     await recordScmProblem(deps.db, connection.id, 'hook_probation');
-  } else await clearScmProblem(deps.db, connection.id, SCM_HOOK_PROBLEM_CODES);
+  } else await clear();
 }
 
 /**
