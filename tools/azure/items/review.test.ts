@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aiInProgress,
   aiSection,
+  deliveries,
   isAiNote,
   isReplyNote,
   ownSubscriptions,
@@ -92,5 +93,24 @@ describe('withoutProvider', () => {
     expect(body['budgets']).toEqual({ tokensPerDay: 1 });
     expect(body).not.toHaveProperty('lastTest');
     expect(JSON.stringify(body)).not.toContain('apiKey');
+  });
+});
+
+describe('deliveries', () => {
+  it('counts the succeeded notifications, and those since a time', () => {
+    const json = {
+      value: [
+        { status: 'completed', result: 'succeeded', createdDate: '2026-11-23T10:00:10Z' },
+        { status: 'completed', result: 'succeeded', createdDate: '2026-11-23T09:00:00Z' },
+        { status: 'completed', result: 'failed', createdDate: '2026-11-23T10:00:20Z' },
+      ],
+    };
+    expect(deliveries(json, Date.parse('2026-11-23T10:00:00Z'))).toEqual({
+      total: 3,
+      succeeded: 2,
+      since: 1,
+      readable: true,
+    });
+    expect(deliveries('nonsense', 0).readable).toBe(false);
   });
 });

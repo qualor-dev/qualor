@@ -110,6 +110,8 @@ type Subscription = {
   eventType: string;
   projectId: string;
   url: string;
+  /** The entry as Azure DevOps answered it (what the recording keeps). */
+  raw: unknown;
 };
 
 const SubscriptionList = z.object({
@@ -137,10 +139,45 @@ export function ownSubscriptions(json: unknown, projectId: string): Subscription
       eventType: s.eventType,
       projectId: s.publisherInputs?.projectId ?? '',
       url: s.consumerInputs?.url ?? '',
+      raw: s,
     }))
     .filter(
       (s) => s.url.includes(WEBHOOK_PATH) && s.projectId.toLowerCase() === projectId.toLowerCase(),
     );
+}
+
+const NotificationList = z.object({
+  value: z.array(
+    z
+      .object({
+        status: z.string().optional(),
+        result: z.string().optional(),
+        createdDate: z.string().optional(),
+      })
+      .loose(),
+  ),
+});
+
+/**
+ * A subscription's notification history, read loosely (no recording shows it yet): how many were
+ * delivered (`status` completed, `result` succeeded) and how many of those were created at or after `sinceMs`.
+ */
+export function deliveries(json: unknown, sinceMs: number) {
+  const parsed = NotificationList.safeParse(json);
+  if (!parsed.success) return { total: 0, succeeded: 0, since: 0, readable: false };
+  const succeeded = parsed.data.value.filter(
+    (n) => n.status === 'completed' && n.result === 'succeeded',
+  );
+  const since = succeeded.filter((n) => {
+    const at = Date.parse(n.createdDate ?? '');
+    return Number.isFinite(at) && at >= sinceMs;
+  });
+  return {
+    total: parsed.data.value.length,
+    succeeded: succeeded.length,
+    since: since.length,
+    readable: true,
+  };
 }
 
 /** What `PUT /system/llm` takes to store the settings as they are now, without the provider (and so its key). */
@@ -296,32 +333,27 @@ async function postAsUser(
   return res;
 }
 
-/** Waits for a comment of Qualor's with the reply marker in a thread of `threadIds` (after `afterCommentId`, in its own thread). */
+/** Waits for a comment of Qualor's with the reply marker in thread `threadId`, after comment `afterCommentId`. */
 async function waitForAnswer(
   ctx: ProbeContext,
   repo: Repo,
   prId: number,
   spId: string,
-  wanted: { threadId: number; afterCommentId: number } | { fromThreadId: number },
+  wanted: { threadId: number; afterCommentId: number },
   timeoutMs: number,
 ) {
   return waitFor(
     async () => {
       const got = await listThreads(ctx, repo, prId);
-      for (const t of got.threads) {
-        const inScope =
-          'threadId' in wanted ? t.id === wanted.threadId : t.id >= wanted.fromThreadId;
-        if (!inScope) continue;
-        const answer = t.comments.find(
-          (c) =>
-            c.isDeleted !== true &&
-            c.author.id === spId &&
-            isReplyNote(c.content) &&
-            ('threadId' in wanted ? c.id > wanted.afterCommentId : true),
-        );
-        if (answer) return { thread: t, answer, res: got.res };
-      }
-      return undefined;
+      const t = got.threads.find((x) => x.id === wanted.threadId);
+      const answer = t?.comments.find(
+        (c) =>
+          c.isDeleted !== true &&
+          c.author.id === spId &&
+          isReplyNote(c.content) &&
+          c.id > wanted.afterCommentId,
+      );
+      return t && answer ? { thread: t, answer, res: got.res } : undefined;
     },
     { timeoutMs, intervalMs: 5000 },
   );
@@ -426,7 +458,11 @@ export const item: ProbeItem = {
       { timeoutMs: 60_000, intervalMs: 5000 },
     );
     const seen = enabled ?? (await azureSubscriptions(ctx, repo));
-    await rec(ctx, 'subscriptions', answerOf(seen.res));
+    // Only Qualor's own entries: the organisation's other hooks are none of the recording's business.
+    await rec(ctx, 'subscriptions', {
+      ...answerOf(seen.res),
+      body: { count: seen.own.length, value: seen.own.map((x) => x.raw) },
+    });
     checks.push(
       check(
         'two Qualor subscriptions in the Azure project, both enabled, one per event',
@@ -576,7 +612,7 @@ export const item: ProbeItem = {
       );
     }
 
-    // ---- Step 4: a reply in the analyzer thread, answered over the hook path.
+    // ---- Step 4: a reply in the analyzer thread, answered (the delivery is looked up after the answer).
     if (a) {
       const root = a.comments[0];
       if (!root) throw new Error('the analyzer thread has no comment');
@@ -611,7 +647,7 @@ export const item: ProbeItem = {
           "Qualor's answer to the reply: a comment of the service principal with the reply marker, within 3 minutes",
           answered !== undefined,
           answered
-            ? `answered in ${seconds} s (the hook path; the scan job was queued by the delivery)`
+            ? `answered in ${seconds} s`
             : `no answer within ${REPLY_WAIT_MS / 60000} minutes`,
         ),
       );
@@ -620,6 +656,22 @@ export const item: ProbeItem = {
           `answer author id ${answered.answer.author.id.toLowerCase() === spId.toLowerCase() ? 'equals' : 'differs from'} the service principal's identity id`,
         );
         notes.push(`reply to answer: ${seconds} s`);
+        // Whether the answer rode the hook: the comment-event subscription's history shows a delivery after the reply.
+        // Noted, not asserted: no recording shows this call's shape yet.
+        const commentSub = seen.own.find((x) => x.eventType === HOOK_EVENTS[1]);
+        if (commentSub) {
+          const history = await ctx.bot.request(
+            'GET',
+            `${SUBSCRIPTIONS}/${commentSub.id}/notifications?maxResults=20`,
+          );
+          await rec(ctx, 'reply-notifications', answerOf(history));
+          const d = deliveries(history.json, postedAt - 5000);
+          notes.push(
+            d.readable
+              ? `comment-event subscription history (HTTP ${history.status}): ${d.total} notification(s), ${d.succeeded} succeeded, ${d.since} succeeded since the reply${d.since > 0 ? ' (the answer rode the hook path)' : ' (none after the reply: the hook path is not shown; the poll may have answered)'}`
+              : `comment-event subscription history: HTTP ${history.status}, shape not read`,
+          );
+        }
       }
     }
 
@@ -633,16 +685,16 @@ export const item: ProbeItem = {
       repo,
       prId,
       spId,
-      { fromThreadId: command.id },
+      { threadId: command.id, afterCommentId: command.comments[0]?.id ?? 0 },
       COMMAND_WAIT_MS,
     );
     if (commandAnswer) await rec(ctx, 'command-threads', answerOf(commandAnswer.res));
     checks.push(
       check(
-        'an answer to `qualor review` with the reply marker, in the new thread or a thread after it',
+        'an answer to `qualor review` with the reply marker, in the thread of the command itself',
         commandAnswer !== undefined,
         commandAnswer
-          ? `answered in ${Math.round((Date.now() - commandAt) / 1000)} s, ${commandAnswer.thread.id === command.id ? 'in the command thread' : 'in another thread'}`
+          ? `answered in ${Math.round((Date.now() - commandAt) / 1000)} s`
           : `no answer within ${COMMAND_WAIT_MS / 60000} minutes`,
       ),
     );

@@ -161,10 +161,22 @@ export function markerKind(content: string | undefined): 'summary' | 'issue' | '
   return null;
 }
 
-/** Strings no recording may hold, whatever the table says. */
-export function forbiddenIn(text: string, organisation: string | undefined): string[] {
+/** A credential header's value: the scheme and a token-shaped string (prose such as "Basic input" is not one). */
+const CREDENTIAL_HEADER = /\b(?:Basic|Bearer) [A-Za-z0-9+/=._~-]{16,}/;
+
+/**
+ * Strings no recording may hold, whatever the table says. `keyPrefix` (the model key's first 8
+ * characters, item 21) is looked for as it is; a hit names it only as "the model key".
+ */
+export function forbiddenIn(
+  text: string,
+  organisation: string | undefined,
+  keyPrefix?: string,
+): string[] {
   const hits: string[] = [];
-  for (const word of ['X-Amz-', 'Bearer ', 'Basic ']) if (text.includes(word)) hits.push(word);
+  if (text.includes('X-Amz-')) hits.push('X-Amz-');
+  if (CREDENTIAL_HEADER.test(text)) hits.push('a Basic or Bearer credential');
+  if (keyPrefix && keyPrefix.length >= 8 && text.includes(keyPrefix)) hits.push('the model key');
   if (
     organisation &&
     organisation.length >= 3 &&
@@ -241,7 +253,8 @@ export async function rec(ctx: ProbeContext, call: string, value: unknown): Prom
     }
   })();
   const text = JSON.stringify(redact(value, ctx.redaction));
-  const hits = forbiddenIn(text, org);
+  const key = process.env['AZURE_PROBE_LLM_KEY'];
+  const hits = forbiddenIn(text, org, key?.slice(0, 8));
   if (hits.length > 0)
     throw new Error(`recording ${call} would hold ${hits.join(', ')}; not written`);
   await ctx.record(call, value);

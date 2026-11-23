@@ -97,12 +97,27 @@ describe('item 19 readers', () => {
 
   it('flags what no recording may hold', () => {
     expect(forbiddenIn('clean text', 'acme')).toEqual([]);
-    expect(forbiddenIn('X-Amz-Signature Bearer abc Basic xyz in ACME', 'acme')).toEqual([
+    const header = `Authorization: Basic ${Buffer.from('qualor:0123456789abcdef').toString('base64')}`;
+    expect(forbiddenIn(`X-Amz-Signature ${header} in ACME`, 'acme')).toEqual([
       'X-Amz-',
-      'Bearer ',
-      'Basic ',
+      'a Basic or Bearer credential',
       'the organisation name',
     ]);
+    expect(forbiddenIn('Bearer abcdefghijklmnopqrstuvwxyz0123456789', undefined)).toEqual([
+      'a Basic or Bearer credential',
+    ]);
+  });
+
+  it('lets prose through that only says Basic or Bearer', () => {
+    expect(
+      forbiddenIn('Basic input validation is missing; the Bearer token is checked.', 'acme'),
+    ).toEqual([]);
+  });
+
+  it("flags the model key's first 8 characters without naming them", () => {
+    expect(forbiddenIn('a sk-ant-a1b2 b', undefined, 'sk-ant-a')).toEqual(['the model key']);
+    expect(forbiddenIn('nothing here', undefined, 'sk-ant-a')).toEqual([]);
+    expect(forbiddenIn('sk-ant', undefined, 'short')).toEqual([]);
   });
 
   it('redacts the bench Qualor host and token', () => {
