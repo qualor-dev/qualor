@@ -540,7 +540,8 @@ gets the answer above.
   events) or [GitHub](./github.md#turn-on-the-webhook-recommended) (Issue comment and Pull request
   review comment events, and the Issues permission).
 - **On Azure DevOps**, set up [service hooks](./azure-devops.md#service-hooks). Without them,
-  Qualor reads the comments of recent pull requests every 15 minutes.
+  Qualor reads the comments every 15 minutes
+  ([which pull requests](./azure-devops.md#service-hooks)).
 - **Without one**, Qualor reads a merge request's comments when it updates its own: when the merge
   request is analysed again, when a review ends, when an issue's status changes in Qualor, and on
   GitHub when someone presses **Re-run**. A reply waits until then.

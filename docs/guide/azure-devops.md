@@ -61,8 +61,9 @@ from the server only.
 Create the token in Azure DevOps under **User settings → Personal access tokens**. The scope
 **Code: Read** is enough for the test. For
 [comments and status on pull requests](#comments-and-status-on-pull-requests) the token needs
-**Code: Read & write**. It sees what its owner sees, and it stops working when it expires or its
-owner loses access.
+**Code: Read & write**. Replies and commands need more: see
+[the identity's permissions](#the-identitys-permissions). It sees what its owner sees, and it stops
+working when it expires or its owner loses access.
 
 If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
 `NODE_EXTRA_CA_CERTS`.
@@ -73,6 +74,9 @@ Press **Test** on the connection. A passing test shows who connected and how muc
 sees:
 
 > Connected as Qualor; 12 repositories in 3 projects visible.
+
+With a mapped repository, a passing test can add that the identity cannot read who may change
+findings. Fix it as [the identity's permissions](#the-identitys-permissions) say.
 
 A failing test shows one of these:
 
@@ -226,6 +230,18 @@ also needs the right [scope](#a-personal-access-token). Without the permission, 
 the status, the threads and the summary, so none of them appears. **Settings → Azure DevOps** then
 shows the problem.
 
+[Replies and commands](#ai-review-replies-and-commands) need two more reads. Qualor looks up each
+commenter on the identities host, and reads the repository's permissions. Members of **Project
+Administrators** may read both. Whether a Contributor alone may, and which personal access token
+scopes are enough, is not verified yet.
+
+If `qualor review` is refused for everyone, the identity cannot read permissions. **Test** then
+says that it cannot read who may change findings. Add the identity to **Project Administrators** in
+that project.
+
+The service hooks need **Edit subscriptions**
+([Let Qualor subscribe](#let-qualor-subscribe)).
+
 ### Threads
 
 - Inline threads need the pipeline to check out the pull request's head. The Qualor task and the
@@ -245,7 +261,8 @@ The messages and fixes are those of a [failing test](#test-the-connection), with
 missing permission there means **Contribute to pull requests** on the repository, and for a personal
 access token also **Code: Read & write**.
 
-A passing **Test**, or the next decoration that succeeds, clears the problem.
+A passing **Test**, or the next decoration that succeeds, clears such a problem. A hook problem
+clears differently: see [the states](#the-states).
 
 ## AI review, replies and commands
 
@@ -268,11 +285,11 @@ Server needs no extra host.
 ## Service hooks
 
 With service hooks, Azure DevOps tells Qualor at once that someone commented. Without them, Qualor
-reads replies and commands every 15 minutes. Open **Settings → Azure DevOps** and find **Service
-hooks** under the connection.
+reads replies and commands every 15 minutes, in the 50 most recently analysed AI-reviewed pull
+requests. Open **Settings → Azure DevOps** and find **Service hooks** under the connection.
 
 Qualor needs `QUALOR_PUBLIC_URL` set to an `https` address. Azure DevOps sends the hooks' password
-only there.
+only there. Without one, **Create or update Qualor's subscriptions** is disabled and says why.
 
 ### Let Qualor subscribe
 
@@ -291,7 +308,9 @@ A personal access token may not be allowed to create subscriptions. If the butto
 3. Add a second one for **Pull request updated** (`git.pullrequest.updated`).
 4. In both, enter the URL, choose basic authentication, and enter the user and the password.
 
-A new password replaces the old one. Azure DevOps keeps the old one until you subscribe again.
+A new password replaces the old one. Azure DevOps keeps the old one until you subscribe again, and
+Qualor refuses its deliveries until then. While the hooks work, Qualor asks before it makes a new
+password.
 
 ### The states
 
@@ -303,10 +322,13 @@ A new password replaces the old one. Azure DevOps keeps the old one until you su
 | On probation | Azure DevOps is retrying failed deliveries and may skip events |
 | Switched off in Azure DevOps | A person or Azure DevOps disabled one |
 | Not subscribed | A subscription of Qualor's is missing |
-| Older password | Azure DevOps may hold another password than Qualor. Subscribe again |
+| Older password | Azure DevOps may hold another password than Qualor. It clears with the first delivery that brings Qualor's password, or when you press **Create or update Qualor's subscriptions** |
 
 Probation and switched-off hooks also show as a problem on **Settings → Azure DevOps**. Replies are
 still read every 15 minutes. Press **Create or update Qualor's subscriptions** to fix them.
+
+Qualor checks the subscriptions every 15 minutes. The problem clears when that check finds them
+active, or finds none to check. Changing the connection's address clears it too.
 
 ### Change or delete a connection
 
