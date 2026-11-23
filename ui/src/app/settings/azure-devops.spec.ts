@@ -43,6 +43,7 @@ const PAT: Connection = {
     webhookUrl: null,
     webhookSecretReadable: false,
     hooksCurrent: false,
+    publicUrlHttps: true,
   },
   ciSetup: { available: false, reason: 'not_allowed', missing: [] },
   fixMrsAllowed: false,
@@ -63,6 +64,7 @@ const CERTIFICATE: Connection = {
     webhookUrl: null,
     webhookSecretReadable: false,
     hooksCurrent: false,
+    publicUrlHttps: true,
   },
 };
 
@@ -688,6 +690,11 @@ describe('AzureDevOpsPage service hooks', () => {
       webhookUrl: HTTPS_URL,
     },
   };
+  /** Subscribed by hand, or a new password not yet given to Azure DevOps. */
+  const NOT_CURRENT: Connection = {
+    ...WITH_SECRET,
+    azure: { ...WITH_SECRET.azure!, hooksCurrent: false },
+  };
   const TEST_OK = {
     ok: true,
     user: { username: 'Qualor Bot' },
@@ -754,7 +761,7 @@ describe('AzureDevOpsPage service hooks', () => {
   });
 
   it('shows a new password once, with the address and the user, and forgets it on Done', async () => {
-    const server = setup([WITH_SECRET]);
+    const server = setup([NOT_CURRENT]);
     server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
       body: { url: HTTPS_URL, user: 'qualor', password: PASSWORD },
     }));
@@ -775,12 +782,20 @@ describe('AzureDevOpsPage service hooks', () => {
     expect(root.textContent).not.toContain(PASSWORD);
   });
 
-  it('disables the button without an https public URL and says why', async () => {
+  it('FW14: disables the button without an https public URL and says why, with or without a password', async () => {
     const reason =
       'Azure DevOps sends service hooks with a password only to an https address. Set QUALOR_PUBLIC_URL to one; until then Qualor reads replies every 15 minutes.';
-    for (const webhookUrl of ['http://qualor.example.com/x', null]) {
+    const plain = { publicUrlHttps: false };
+    for (const connection of [
+      {
+        ...WITH_SECRET,
+        azure: { ...WITH_SECRET.azure!, ...plain, webhookUrl: 'http://q.example/x' },
+      },
+      { ...WITH_SECRET, azure: { ...WITH_SECRET.azure!, ...plain, webhookUrl: null } },
+      { ...PAT, azure: { ...PAT.azure!, ...plain } },
+    ]) {
       TestBed.resetTestingModule();
-      const server = setup([{ ...WITH_SECRET, azure: { ...WITH_SECRET.azure!, webhookUrl } }]);
+      const server = setup([connection]);
       const { fixture, root } = await render();
       const subscribe = button(hooks(root), SUBSCRIBE);
       expect(subscribe.disabled).toBe(true);
@@ -884,7 +899,7 @@ describe('AzureDevOpsPage service hooks', () => {
   });
 
   it('forgets a shown password on subscribe, and a second one replaces the first', async () => {
-    const server = setup([WITH_SECRET]);
+    const server = setup([NOT_CURRENT]);
     const passwords = [PASSWORD, PASSWORD + '-2'];
     server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
       body: { url: HTTPS_URL, user: 'qualor', password: passwords.shift()! },
@@ -916,5 +931,117 @@ describe('AzureDevOpsPage service hooks', () => {
     expect(text(hooks(root))).toContain('Older password');
     expect(button(hooks(root), SUBSCRIBE)).toBeUndefined();
     expect(button(hooks(root), 'Show a new password')).toBeUndefined();
+  });
+
+  it('FW8: a passing Test clears a credential problem on the page but keeps a hook problem', async () => {
+    const AT = '2026-11-23T10:00:00.000Z';
+    const server = setup([
+      { ...WITH_SECRET, problem: { code: 'hook_disabled', at: AT } },
+      { ...WITH_SECRET, id: 'a5', problem: { code: 'sign_in_required', at: AT } },
+    ]);
+    for (const id of ['a1', 'a5']) {
+      server.on('POST', `/api/v0/scm-connections/${id}/test`, () => ({
+        body: { ...TEST_OK, hooks: [] },
+      }));
+    }
+    const { fixture, root } = await render();
+    const banner = (key: string) =>
+      root.querySelector(`section[data-key="${key}"] .connection-problem`)?.textContent ?? null;
+    for (const id of ['a1', 'a5']) {
+      button(root.querySelector(`section[data-key="${id}"]`)!, 'Test').click();
+      await settle(fixture);
+    }
+    expect(banner('a1')).toContain('disabled');
+    expect(banner('a5')).toBeNull();
+  });
+
+  it('FW9: after a passing Test whose subscriptions could not be read, says so instead of asking for a Test', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: { ...TEST_OK, hooks: null },
+    }));
+    const { fixture, root } = await render();
+    button(root, 'Test').click();
+    await settle(fixture);
+    expect(text(hooks(root))).toContain(
+      'Qualor could not read the subscriptions from Azure DevOps.',
+    );
+    expect(text(hooks(root))).not.toContain('Test the connection to see');
+  });
+
+  it('FW10: asks before a new password replaces one Azure DevOps holds, and sends nothing on Cancel', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
+      body: { url: HTTPS_URL, user: 'qualor', password: PASSWORD },
+    }));
+    const confirm = vi.spyOn(window, 'confirm');
+    const { fixture, root } = await render();
+    const ask = root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!;
+    const secrets = () =>
+      server.requestsTo('POST', '/api/v0/scm-connections/a1/azure-hooks/secret');
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    expect(ask.open).toBe(true);
+    expect(text(ask)).toContain('Qualor refuses every delivery');
+    expect(secrets()).toHaveLength(0);
+    button(root, 'Cancel', ask).click();
+    await settle(fixture);
+    expect(ask.open).toBe(false);
+    expect(secrets()).toHaveLength(0);
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    button(root, 'Show a new password', ask).click();
+    await settle(fixture);
+    expect(secrets()).toHaveLength(1);
+    expect(root.querySelector<HTMLInputElement>('#hook-password-a1')!.value).toBe(PASSWORD);
+    expect(server.requestsTo('DELETE', '/api/v0/scm-connections/a1')).toHaveLength(0);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('FW10: shows a new password at once while Azure DevOps may hold another', async () => {
+    const server = setup([NOT_CURRENT]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
+      body: { url: HTTPS_URL, user: 'qualor', password: PASSWORD },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLDialogElement>('dialog#confirm-dialog')!.open).toBe(false);
+    expect(root.querySelector<HTMLInputElement>('#hook-password-a1')!.value).toBe(PASSWORD);
+  });
+
+  it('FW14: a new password with an address that is not https says why next to it, once', async () => {
+    const httpUrl = 'http://qualor.example.com/api/v0/azure-devops/webhooks/a1';
+    const plain = { ...NOT_CURRENT, azure: { ...NOT_CURRENT.azure!, publicUrlHttps: false } };
+    const server = setup([plain]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
+      body: { url: httpUrl, user: 'qualor', password: PASSWORD },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLInputElement>('#hook-url-a1')!.value).toBe(httpUrl);
+    const block = hooks(root).querySelector('.webhook-address')!;
+    expect(text(block)).toContain('only to an https address');
+    expect(text(hooks(root)).match(/only to an https address/g)).toHaveLength(1);
+    const reason = root.querySelector('#hooks-reason-a1');
+    expect(button(hooks(root), SUBSCRIBE).getAttribute('aria-describedby')).toBe('hooks-reason-a1');
+    expect(block.contains(reason)).toBe(true);
+  });
+
+  it('FW4: a passing Test says when the identity cannot read who may change findings', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: { ...TEST_OK, missingAccess: ['read_permissions'], hooks: [] },
+    }));
+    const { fixture, root } = await render();
+    button(root, 'Test').click();
+    await settle(fixture);
+    const result = text(root.querySelector('section[data-key="a1"] .connection-result')!);
+    expect(result).toContain('Connected as Qualor Bot');
+    expect(result).toContain('cannot read who may change findings');
+    expect(result).toContain('Project Administrators');
+    expect(result).not.toContain('read_permissions');
   });
 });

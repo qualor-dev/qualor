@@ -11314,6 +11314,7 @@ export interface paths {
                                     webhookUrl: string | null;
                                     webhookSecretReadable: boolean;
                                     hooksCurrent: boolean;
+                                    publicUrlHttps: boolean;
                                 } | null;
                                 ciSetup: {
                                     available: boolean;
@@ -11486,6 +11487,7 @@ export interface paths {
                                 webhookUrl: string | null;
                                 webhookSecretReadable: boolean;
                                 hooksCurrent: boolean;
+                                publicUrlHttps: boolean;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11710,6 +11712,7 @@ export interface paths {
                                 webhookUrl: string | null;
                                 webhookSecretReadable: boolean;
                                 hooksCurrent: boolean;
+                                publicUrlHttps: boolean;
                             } | null;
                             ciSetup: {
                                 available: boolean;
@@ -11868,6 +11871,15 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
+                /** @description The connection changed while the request was handled (CONCURRENCY_CONFLICT); see Retry-After */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -11968,6 +11980,15 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
+                /** @description The connection changed while the request was handled (CONCURRENCY_CONFLICT); see Retry-After */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
             };
         };
         delete?: never;
@@ -12024,8 +12045,8 @@ export interface paths {
                                 code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error" | "hook_probation" | "hook_disabled";
                                 message: string;
                             } | null;
-                            /** @description GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository, and when the test failed. */
-                            missingAccess: ("contents_write" | "issues_read" | "event_check_run" | "event_issue_comment" | "event_pull_request_review_comment")[] | null;
+                            /** @description GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). Azure DevOps, checked on the first mapped repository the identity sees: `read_permissions` (the identity cannot read identities or the repository's permissions, so no reply changes a status and every command is refused). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository (Azure DevOps: without a mapped repository the identity sees), when the Azure DevOps check got no clear answer, and when the test failed. */
+                            missingAccess: ("contents_write" | "issues_read" | "event_check_run" | "event_issue_comment" | "event_pull_request_review_comment" | "read_permissions")[] | null;
                             /** @description Azure DevOps: the repositories the identity sees, and the projects that hold them. Null for GitLab and GitHub, and when the test failed. */
                             visible: {
                                 repositories: number;

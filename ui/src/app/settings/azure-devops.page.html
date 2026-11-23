@@ -413,6 +413,8 @@
                       }
                     </ul>
                   }
+                } @else if (hooksUnread()[c.id]) {
+                  <p class="muted">{{ hooksUnreadText() }}</p>
                 } @else {
                   <p class="muted" i18n="@@azure.hooks.untested">
                     Test the connection to see the hooks of each project.
@@ -447,6 +449,9 @@
                     Azure DevOps keeps the old password until you create or update Qualor's
                     subscriptions.
                   </p>
+                  @if (httpsReasonBySecret(c)) {
+                    <p class="hint" [id]="'hooks-reason-' + c.id">{{ hooksNeedHttps() }}</p>
+                  }
                 </div>
               }
               @if (canManage()) {
@@ -472,7 +477,7 @@
                     Show a new password
                   </button>
                 </div>
-                @if (hooksBlocked(c)) {
+                @if (hooksBlocked(c) && !httpsReasonBySecret(c)) {
                   <p class="hint" [id]="'hooks-reason-' + c.id">{{ hooksNeedHttps() }}</p>
                 }
               }
@@ -559,26 +564,47 @@
       class="dialog"
       aria-labelledby="confirm-title"
       aria-describedby="confirm-text"
-      (close)="cancelDelete()"
+      (close)="cancelConfirm()"
     >
       <div class="dialog-head">
-        <h2 id="confirm-title" i18n="@@azure.deleteTitle">Delete the connection</h2>
+        @if (pending()?.action === 'password') {
+          <h2 id="confirm-title" i18n="@@azure.hooks.newPasswordTitle">Show a new password</h2>
+        } @else {
+          <h2 id="confirm-title" i18n="@@azure.deleteTitle">Delete the connection</h2>
+        }
       </div>
       <div class="dialog-body">
-        <p id="confirm-text">{{ pendingDelete()?.question }}</p>
+        <p id="confirm-text">{{ pending()?.question }}</p>
       </div>
       <div class="dialog-actions">
-        <button type="button" class="btn" autofocus (click)="cancelDelete()" i18n="@@dialog.cancel">
-          Cancel
-        </button>
         <button
           type="button"
-          class="btn btn-danger-solid"
-          (click)="confirmDelete()"
-          i18n="@@azure.delete"
+          class="btn"
+          autofocus
+          (click)="cancelConfirm()"
+          i18n="@@dialog.cancel"
         >
-          Delete
+          Cancel
         </button>
+        @if (pending()?.action === 'password') {
+          <button
+            type="button"
+            class="btn btn-primary"
+            (click)="confirm()"
+            i18n="@@azure.hooks.newPassword"
+          >
+            Show a new password
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="btn btn-danger-solid"
+            (click)="confirm()"
+            i18n="@@azure.delete"
+          >
+            Delete
+          </button>
+        }
       </div>
     </dialog>
   }

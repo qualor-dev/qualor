@@ -89,6 +89,25 @@ export function azureBackgroundProblemText(
   return azureProblemText(problem, expiredOn);
 }
 
+/**
+ * The background problems a passing Test clears, as the server does: the credential's. A hook
+ * problem stays until the backstop pass finds the hooks working again.
+ */
+const CLEARED_BY_TEST: readonly Problem['code'][] = [
+  'token_refused',
+  'sign_in_required',
+  'html_answer',
+  'token_endpoint',
+  'permission_missing',
+  'undecryptable',
+  'url_not_allowed',
+];
+
+/** Whether a passing Test clears a recorded background problem with this code. */
+export function azureClearedByTest(code: Problem['code']): boolean {
+  return CLEARED_BY_TEST.includes(code);
+}
+
 /** An Azure DevOps test answer as the pages show it: who connected, and what that identity sees. */
 export function azureTestText(result: TestResult, expiredOn: string | null = null): string {
   if (!result.ok || !result.user) {
@@ -96,7 +115,13 @@ export function azureTestText(result: TestResult, expiredOn: string | null = nul
       ? azureProblemText(result.problem, expiredOn)
       : $localize`:@@azure.problem.unknown:The test failed.`;
   }
-  const name = result.user.username;
+  const connected = connectedText(result, result.user.username);
+  return result.missingAccess?.includes('read_permissions')
+    ? `${connected} ${azureReadPermissionsText()}`
+    : connected;
+}
+
+function connectedText(result: TestResult, name: string): string {
   if (result.project) {
     const repository = result.project.pathWithNamespace;
     return $localize`:@@azure.testOkRepository:Connected as ${name}:user:; the repository ${repository}:repository: is reachable.`;
@@ -107,6 +132,21 @@ export function azureTestText(result: TestResult, expiredOn: string | null = nul
     return $localize`:@@azure.testOkVisible:Connected as ${name}:user:; ${repositories}:repositories: in ${projects}:projects: visible.`;
   }
   return $localize`:@@azure.testOk:Connected as ${name}:user:.`;
+}
+
+/** A passing Test's `read_permissions`: the identity cannot look up commenters or read the repository's permissions. */
+export function azureReadPermissionsText(): string {
+  return $localize`:@@azure.missing.readPermissions:The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. Add it to Project Administrators in the project, which may read identities and permissions.`;
+}
+
+/** A passing Test that could not read the service hook subscriptions. */
+export function azureHooksUnread(): string {
+  return $localize`:@@azure.hooks.unread:Qualor could not read the subscriptions from Azure DevOps. Replies and commands are still read every 15 minutes.`;
+}
+
+/** The question before a new password replaces one Azure DevOps holds. */
+export function azureNewPasswordQuestion(): string {
+  return $localize`:@@azure.hooks.confirmNewPassword:Azure DevOps keeps sending the current password, so Qualor refuses every delivery until you create or update Qualor's subscriptions with the new one.`;
 }
 
 export type HookState = NonNullable<TestResult['hooks']>[number]['state'];

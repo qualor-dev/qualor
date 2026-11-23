@@ -24,10 +24,13 @@ import { KeysetList } from '../shared/keyset';
 import {
   azureBackgroundProblemText,
   azureCertificateExpiredOn,
+  azureClearedByTest,
   azureHookOutcomeText,
   azureHookStateText,
   azureHooksNeedHttps,
   azureHooksPartial,
+  azureHooksUnread,
+  azureNewPasswordQuestion,
   azureTestText,
 } from './azure-text';
 import { CopyValue } from './copy-value';
@@ -41,6 +44,13 @@ type HookStates = NonNullable<ResponseBody<'/api/v0/scm-connections/{id}/test', 
 type HookProjects = ResponseBody<'/api/v0/scm-connections/{id}/azure-hooks', 'post'>['projects'];
 /** The new hook password as the server shows it, once. */
 type HookSecret = ResponseBody<'/api/v0/scm-connections/{id}/azure-hooks/secret', 'post'>;
+
+/** What the page's confirmation dialog asks about: deleting a connection, or a new hook password. */
+interface Confirmation {
+  action: 'delete' | 'password';
+  connection: Connection;
+  question: string;
+}
 
 /** The certificate and key of a service principal: a PEM of at most 16 KiB, as the server takes. */
 const PEM_MAX_BYTES = 16 * 1024;
@@ -123,6 +133,8 @@ export class AzureDevOpsPage {
   protected readonly outcomes = signal<Record<string, 'ok' | 'failed'>>({});
   /** The hook states each connection's last Test read, and what its last subscribe did. */
   protected readonly hookStates = signal<Record<string, HookStates>>({});
+  /** Connections whose last Test passed but could not read the subscriptions. */
+  protected readonly hooksUnread = signal<Record<string, true>>({});
   protected readonly hookOutcomes = signal<Record<string, HookProjects>>({});
   protected readonly hookErrors = signal<Record<string, string>>({});
   /** A new hook password: held only until "Done", never stored or logged. */
@@ -130,11 +142,11 @@ export class AzureDevOpsPage {
   protected readonly hookStateText = azureHookStateText;
   protected readonly hookOutcomeText = azureHookOutcomeText;
   protected readonly hooksNeedHttps = azureHooksNeedHttps;
+  protected readonly hooksUnreadText = azureHooksUnread;
   /** A refused addition other than its fields, shown in the dialog that is still open. */
   protected readonly createError = signal<string | null>(null);
-  protected readonly pendingDelete = signal<{ connection: Connection; question: string } | null>(
-    null,
-  );
+  /** What the confirmation dialog asks about; null while it is closed. */
+  protected readonly pending = signal<Confirmation | null>(null);
   /** What the connections' own forms hold that the page must know: kind and address typed. */
   private readonly rowKinds = signal<Record<string, AuthKind>>({});
   private readonly rowUrls = signal<Record<string, string>>({});
@@ -181,6 +193,7 @@ export class AzureDevOpsPage {
         this.results.set({});
         this.outcomes.set({});
         this.hookStates.set({});
+        this.hooksUnread.set({});
         this.hookOutcomes.set({});
         this.hookErrors.set({});
         this.hookSecrets.set({});
@@ -421,11 +434,21 @@ export class AzureDevOpsPage {
       this.hookStates.update((all) =>
         result.hooks ? { ...all, [connection.id]: result.hooks } : without(all, connection.id),
       );
+      // A Test that passed without the hooks could not read them; a failed Test read nothing.
+      this.hooksUnread.update((all) =>
+        result.ok && result.hooks === null
+          ? { ...all, [connection.id]: true }
+          : without(all, connection.id),
+      );
       const passed = result.ok && !!result.user;
-      // A passing test clears the background problem the server recorded.
+      // A passing test clears a credential problem, as the server does; a hook problem stays.
       if (result.ok) {
         this.connections.items.update((items) =>
-          items.map((c) => (c.id === connection.id ? { ...c, problem: null } : c)),
+          items.map((c) =>
+            c.id === connection.id && c.problem && azureClearedByTest(c.problem.code)
+              ? { ...c, problem: null }
+              : c,
+          ),
         );
       }
       this.outcomes.update((all) => ({ ...all, [connection.id]: passed ? 'ok' : 'failed' }));
@@ -435,13 +458,18 @@ export class AzureDevOpsPage {
     });
   }
 
-  /**
-   * Whether Qualor knows the public address is not https: only then is subscribing refused up
-   * front. Without a password the address is not shown either, so the server (409) decides.
-   */
+  /** Whether the public address is not https, so Azure DevOps would refuse the hooks' password. */
   protected hooksBlocked(c: Connection): boolean {
-    const az = c.azure;
-    return !!az && az.webhookSecretSet && !(az.webhookUrl ?? '').startsWith('https://');
+    return !!c.azure && !c.azure.publicUrlHttps;
+  }
+
+  /**
+   * Whether the new password shown has an address that is not https: the reason Azure DevOps
+   * would refuse it is then shown beside it, and only there.
+   */
+  protected httpsReasonBySecret(c: Connection): boolean {
+    const secret = this.hookSecrets()[c.id];
+    return !!secret && !(secret.url ?? '').startsWith('https://');
   }
 
   /** "Create or update Qualor's subscriptions" in each project that holds a mapped repository. */
@@ -459,6 +487,7 @@ export class AzureDevOpsPage {
         if (generation !== this.orgGeneration) return;
         this.hookOutcomes.update((all) => ({ ...all, [connection.id]: answer.projects }));
         this.hookStates.update((all) => without(all, connection.id));
+        this.hooksUnread.update((all) => without(all, connection.id));
         this.hookSecrets.update((all) => without(all, connection.id));
         await this.connections.refresh();
       },
@@ -469,6 +498,7 @@ export class AzureDevOpsPage {
         // A failure part-way may have written subscriptions and a password.
         if (err instanceof ApiError && err.status === 502) {
           this.hookStates.update((all) => without(all, connection.id));
+          this.hooksUnread.update((all) => without(all, connection.id));
           this.hookOutcomes.update((all) => without(all, connection.id));
           void this.connections.refresh();
         }
@@ -477,8 +507,21 @@ export class AzureDevOpsPage {
     );
   }
 
-  /** "Show a new password": the server makes one and shows it only in this answer. */
-  protected async newHookPassword(connection: Connection): Promise<void> {
+  /**
+   * "Show a new password". While Azure DevOps holds the current one, every delivery is refused
+   * until the subscriptions get the new one, so the page asks first.
+   */
+  protected newHookPassword(connection: Connection): void {
+    if (this.busy()) return;
+    if (connection.azure?.hooksCurrent) {
+      this.ask({ action: 'password', connection, question: azureNewPasswordQuestion() });
+      return;
+    }
+    void this.applyNewHookPassword(connection);
+  }
+
+  /** The server makes a new password and shows it only in this answer. */
+  private async applyNewHookPassword(connection: Connection): Promise<void> {
     if (this.busy()) return;
     const generation = this.orgGeneration;
     this.hookErrors.update((all) => without(all, connection.id));
@@ -501,29 +544,36 @@ export class AzureDevOpsPage {
 
   protected remove(connection: Connection): void {
     if (this.busy()) return;
-    this.pendingDelete.set({
+    this.ask({
+      action: 'delete',
       connection,
       question: $localize`:@@azure.confirmDelete:Delete the Azure DevOps connection to ${connection.baseUrl}:url:? Projects mapped to it are no longer linked to their repositories.`,
     });
+  }
+
+  /** Opens the page's confirmation dialog with `confirmation`. */
+  private ask(confirmation: Confirmation): void {
+    this.pending.set(confirmation);
     openAfterRender(
       this.injector,
       () => this.confirmDialog()?.nativeElement,
-      () => this.pendingDelete() !== null,
+      () => this.pending() !== null,
     );
   }
 
-  protected async confirmDelete(): Promise<void> {
-    const pending = this.pendingDelete();
+  protected async confirm(): Promise<void> {
+    const pending = this.pending();
     if (!pending) return;
     // Cleared first: the dialog's close event then finds nothing to cancel.
-    this.pendingDelete.set(null);
+    this.pending.set(null);
     const dialog = this.confirmDialog()?.nativeElement;
     if (dialog) closeModal(dialog);
-    await this.applyDelete(pending.connection);
+    if (pending.action === 'password') await this.applyNewHookPassword(pending.connection);
+    else await this.applyDelete(pending.connection);
   }
 
-  protected cancelDelete(): void {
-    this.pendingDelete.set(null);
+  protected cancelConfirm(): void {
+    this.pending.set(null);
     const dialog = this.confirmDialog()?.nativeElement;
     if (dialog?.open) closeModal(dialog);
   }
