@@ -1,6 +1,7 @@
 import { assertNever } from '@qualor/shared';
 import type { ReviewJobDeps } from './job';
 import {
+  queueAzureAnswers,
   queueGitHubAnswers,
   queueGitLabAnswers,
   queueScanAfterCircuit,
@@ -8,6 +9,7 @@ import {
   type ReplyWindow,
 } from './reply-queue';
 import {
+  azureScanSide,
   githubScanSide,
   gitlabScanSide,
   GONE,
@@ -108,6 +110,9 @@ class ScanFlow extends JobSteps {
       case 'github':
         queued = await queueGitHubAnswers(db, ids, window, found.login, found);
         break;
+      case 'azure':
+        queued = await queueAzureAnswers(db, ids, window, found.identityId, found.threads);
+        break;
       default:
         return assertNever(found, 'provider');
     }
@@ -138,6 +143,8 @@ class ScanFlow extends JobSteps {
         return githubScanSide(connection.id, found.client, found.repo, found.number);
       case 'gitlab':
         return gitlabScanSide(connection.id, found.client, found.ref, found.iid);
+      case 'azure':
+        return azureScanSide(connection.id, found.client, found.repositoryId, found.prId);
       default:
         return assertNever(found, 'provider');
     }

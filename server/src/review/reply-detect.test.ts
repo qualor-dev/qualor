@@ -1,8 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { identitiesOf, patOf } from '../../test/azure';
+import {
+  azureShape,
+  createFakeAzureDevOps,
+  type FakeAzureDevOps,
+} from '../../test/fake-azure-devops';
+import { AzureDevOpsClient, type AzureThread, type AzureThreadComment } from '../scm/azure/client';
 import type { GitHubComment, GitHubReviewComment, GitHubReviewThread } from '../scm/github/client';
 import type { GitLabDiscussion, GitLabNote } from '../scm/gitlab/client';
 import { issueMarker, summaryMarker } from '../scm/markdown';
 import {
+  azureCommands,
+  azureNoteId,
+  azureRounds,
   githubCommands,
   githubRounds,
   gitlabCommands,
@@ -690,6 +700,469 @@ describe('githubCommands', () => {
     ).toEqual([]);
   });
 });
+
+// ─── Azure DevOps ──────────────────────────────────────────────────────────
+
+/**
+ * Qualor's identity in the recordings of the live decoration (`19-threads-*`) and of probe items 15
+ * and 20 (the bench's service principal), and the PAT user who replied in item 20's thread.
+ */
+const AZURE_QUALOR = '7c429e0c-e3c7-43e0-8633-fa6e0000136d';
+const AZURE_PERSON = '8bcb5100-06e4-4ee5-865f-fa6e00005496';
+/** The recordings' name of both, as the bench's redaction left it. */
+const PROBE_USER = 'Probe User';
+
+/** A thread's comment as an Azure DevOps answer holds it: the fields detection reads. */
+interface RecordedComment {
+  id: number;
+  parentCommentId?: number;
+  author?: { id?: string; displayName?: string };
+  content?: string;
+  commentType?: string;
+  publishedDate?: string;
+  isDeleted?: boolean;
+}
+interface RecordedThread {
+  id: number;
+  status?: string;
+  comments: RecordedComment[];
+}
+
+function azureOptions(fields: Partial<DetectOptions> = {}): DetectOptions {
+  return {
+    qualor: { azureIdentityId: AZURE_QUALOR },
+    largestNoteIds: new Map(),
+    since: SINCE,
+    ...fields,
+  };
+}
+
+/** A comment by a person, made after `SINCE`; each case changes what it is about. */
+function comment(fields: Partial<AzureThreadComment> & { id: number }): AzureThreadComment {
+  return {
+    authorId: AZURE_PERSON,
+    authorName: 'Ann Smith',
+    content: 'This is intended.',
+    commentType: 'text',
+    parentCommentId: 1,
+    publishedDate: AFTER,
+    isDeleted: false,
+    ...fields,
+  };
+}
+
+/** Qualor's first comment of a thread: its issue marker on the first line. */
+const qualorFirst = (fields: Partial<AzureThreadComment> = {}): AzureThreadComment =>
+  comment({
+    id: 1,
+    authorId: AZURE_QUALOR,
+    authorName: 'Qualor',
+    content: `${issueMarker(ISSUE)}\n**Medium** · a finding`,
+    parentCommentId: 0,
+    ...fields,
+  });
+
+/** An active thread on a line, of `comments`. */
+const azureThread = (
+  id: number,
+  comments: AzureThreadComment[],
+  fields: Partial<AzureThread> = {},
+): AzureThread => ({
+  id,
+  status: 'active',
+  filePath: 'src/cart.ts',
+  rightLine: 9,
+  publishedDate: AFTER,
+  comments,
+  ...fields,
+});
+
+describe('Azure DevOps detection', () => {
+  /** A fake that serves the recordings, and a client that reads them as it reads any answer. */
+  let fake: FakeAzureDevOps;
+  let client: AzureDevOpsClient;
+  let repositoryId: string;
+
+  beforeAll(async () => {
+    fake = await createFakeAzureDevOps({
+      deployment: 'services',
+      repositories: [{ name: 'api', projectName: 'Payments' }],
+    });
+    repositoryId = fake.repositories[0]!.id;
+    fake.addPullRequest(repositoryId, { id: 7 });
+    const identities = identitiesOf(fake);
+    client = new AzureDevOpsClient(
+      {
+        baseUrl: fake.url,
+        credential: patOf(fake),
+        allowInternalHosts: true,
+        ...(identities ? { identities } : {}),
+      },
+      { timeoutMs: 2_000 },
+    );
+  });
+  afterAll(async () => {
+    await fake.close();
+  });
+
+  /**
+   * The threads of the recording `name` (`azure-shapes/services/<name>.json`: a listing, or one
+   * thread), changed by `edit`, as the client reads them from an answer of Azure DevOps.
+   */
+  async function recorded(
+    name: string,
+    edit: (threads: RecordedThread[]) => void = () => undefined,
+  ): Promise<AzureThread[]> {
+    const shape = azureShape<{
+      status: number;
+      contentType: string;
+      body: RecordedThread | { value: RecordedThread[] };
+    }>('services', name);
+    const headers = { 'content-type': shape.contentType };
+    if ('value' in shape.body) {
+      edit(shape.body.value);
+      fake.inject('GET', /\/threads$/, { status: 200, headers, body: shape.body });
+      return client.threads(repositoryId, 7);
+    }
+    edit([shape.body]);
+    fake.inject('GET', /\/threads\/\d+$/, { status: 200, headers, body: shape.body });
+    return [await client.thread(repositoryId, 7, shape.body.id)];
+  }
+  /** `edit` with the first comment of each thread made Qualor's first comment of an issue's thread. */
+  const issueThreads =
+    (issues: readonly string[], edit: (threads: RecordedThread[]) => void = () => undefined) =>
+    (threads: RecordedThread[]) => {
+      threads.forEach((thread, i) => {
+        thread.comments[0]!.content = `${issueMarker(issues[i] ?? ISSUE)}\n**Medium** · a finding`;
+      });
+      edit(threads);
+    };
+  /** A person's comment `id`, as Azure DevOps lists one, in reply to the thread's first. */
+  const personsComment = (id: number, fields: Partial<RecordedComment> = {}): RecordedComment => ({
+    id,
+    parentCommentId: 1,
+    author: { id: AZURE_PERSON, displayName: 'Ann Smith' },
+    content: 'We accept this for now.',
+    commentType: 'text',
+    publishedDate: '2026-11-23T14:00:00.123Z',
+    ...fields,
+  });
+  /** `edit` that adds a person's reply (comment 2) to each recorded thread. */
+  const withReply = (threads: RecordedThread[]) => {
+    for (const thread of threads) thread.comments.push(personsComment(2));
+  };
+
+  describe('azureNoteId', () => {
+    it('is the thread id times 65 536 plus the comment id: one counter for every thread', () => {
+      expect(azureNoteId(83, 2)).toBe(83 * 65_536 + 2);
+      // Comment ids start at 1 in each thread: comment 1 of two threads is two notes.
+      expect(azureNoteId(14, 1)).not.toBe(azureNoteId(15, 1));
+      // Within a thread the note ids grow with the comment ids, and the last comment Azure DevOps
+      // can number (its ids are 16-bit) comes before the next thread's first.
+      expect(azureNoteId(83, 2)).toBeLessThan(azureNoteId(83, 3));
+      expect(azureNoteId(14, 32_767)).toBeLessThan(azureNoteId(15, 1));
+      // A thread id of a hundred billion still gives an exact number.
+      expect(Number.isSafeInteger(azureNoteId(100_000_000_000, 32_767))).toBe(true);
+    });
+  });
+
+  describe('azureRounds', () => {
+    const rounds = (threads: AzureThread[], fields: Partial<DetectOptions> = {}) =>
+      azureRounds(threads, azureOptions(fields));
+
+    it("a person's reply in Qualor's thread is a round (probe item 20's thread)", async () => {
+      const threads = await recorded('20-thread-get', issueThreads([ISSUE]));
+      expect(threads[0]!.comments.map((c) => [c.id, c.parentCommentId])).toEqual([
+        [1, 0],
+        [2, 1],
+      ]);
+      expect(rounds(threads)).toEqual([
+        {
+          threadId: '83',
+          issueId: ISSUE,
+          noteIds: [azureNoteId(83, 2)],
+          newest: azureNoteId(83, 2),
+          author: PROBE_USER,
+        },
+      ]);
+      // As the recording is, its first comment carries no marker: no thread of Qualor's.
+      expect(rounds(await recorded('20-thread-get'))).toEqual([]);
+    });
+
+    it("the live decoration's threads: Qualor's issue thread has a round once a person replies; the summary never", async () => {
+      // The issue's thread (76) and the summary's (77), as Qualor left them: nobody replied.
+      expect(rounds(await recorded('19-threads-first'))).toEqual([]);
+      const replied = await recorded('19-threads-first', withReply);
+      expect(rounds(replied)).toEqual([
+        {
+          threadId: '76',
+          issueId: markerIssueOf(replied[0]!),
+          noteIds: [azureNoteId(76, 2)],
+          newest: azureNoteId(76, 2),
+          author: 'Ann Smith',
+        },
+      ]);
+    });
+
+    it('a resolved thread has no round: the fixed one of the live decoration, and any status but active', async () => {
+      const fixed = await recorded('19-threads-fixed', (threads) => {
+        threads[0]!.comments.push(personsComment(3));
+      });
+      // Thread 76 is fixed, 77 the summary's, 78 Azure DevOps' own (a push), with no status.
+      expect(fixed.map((t) => [t.id, t.status])).toEqual([
+        [76, 'fixed'],
+        [77, 'closed'],
+        [78, null],
+      ]);
+      expect(rounds(fixed)).toEqual([]);
+      const withStatus = (status: string | null) =>
+        rounds([azureThread(5, [qualorFirst(), comment({ id: 2 })], { status })]);
+      // The control: the same thread, active.
+      expect(withStatus('active')).toHaveLength(1);
+      for (const status of ['fixed', 'wontFix', 'closed', 'byDesign', 'pending', null]) {
+        expect(withStatus(status), String(status)).toEqual([]);
+      }
+    });
+
+    it("Qualor's own answers, comments Azure DevOps made and deleted comments are never replies", () => {
+      expect(
+        rounds([
+          azureThread(5, [
+            qualorFirst(),
+            // Qualor's answer to an earlier round, and its note of a fix.
+            comment({ id: 2, authorId: AZURE_QUALOR, content: 'An answer' }),
+            // Azure DevOps' own comments in the thread.
+            comment({ id: 3, commentType: 'system', content: 'Ann Smith updated the thread' }),
+            comment({ id: 4, commentType: 'codeChange', content: 'The line changed' }),
+            // A person's comment that was deleted, with its author and without one.
+            comment({ id: 5, isDeleted: true }),
+            comment({ id: 6, isDeleted: true, authorId: '', authorName: '', content: '' }),
+            // A comment with no author at all.
+            comment({ id: 7, authorId: '', authorName: '' }),
+            comment({ id: 8 }),
+          ]),
+        ]),
+      ).toEqual([
+        {
+          threadId: '5',
+          issueId: ISSUE,
+          noteIds: [azureNoteId(5, 8)],
+          newest: azureNoteId(5, 8),
+          author: 'Ann Smith',
+        },
+      ]);
+    });
+
+    it("tells Qualor's identity by its id, in either case, not by its name", () => {
+      const shouted = AZURE_QUALOR.toUpperCase();
+      // Qualor's identity in upper case is still Qualor's: its comment is no reply ...
+      expect(
+        rounds([azureThread(5, [qualorFirst(), comment({ id: 2, authorId: shouted })])]),
+      ).toEqual([]);
+      // ... and the thread it opened is Qualor's.
+      expect(
+        rounds([azureThread(5, [qualorFirst({ authorId: shouted }), comment({ id: 2 })])]),
+      ).toHaveLength(1);
+      // A person whose name is Qualor's replies, and opens no thread of Qualor's.
+      expect(
+        rounds([azureThread(5, [qualorFirst(), comment({ id: 2, authorName: 'Qualor' })])]),
+      ).toHaveLength(1);
+      expect(
+        rounds([
+          azureThread(5, [
+            qualorFirst({ authorId: AZURE_PERSON }),
+            comment({ id: 2, authorId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000009' }),
+          ]),
+        ]),
+      ).toEqual([]);
+    });
+
+    it('comment 2 of two threads of one pull request makes two rounds, by their own note ids (probe item 15)', async () => {
+      const a = await recorded('15-thread-a1');
+      const b = await recorded('15-threads-b');
+      // Probe item 15: thread ids come from one counter, comment ids start at 1 in each thread.
+      expect([...a, ...b].map((t) => [t.id, t.comments.map((c) => c.id)])).toEqual([
+        [14, [1]],
+        [15, [1]],
+      ]);
+      const replied = [
+        ...(await recorded('15-thread-a1', issueThreads([ISSUE], withReply))),
+        ...(await recorded('15-threads-b', issueThreads([OTHER_ISSUE], withReply))),
+      ];
+      expect(rounds(replied)).toEqual([
+        {
+          threadId: '14',
+          issueId: ISSUE,
+          noteIds: [azureNoteId(14, 2)],
+          newest: azureNoteId(14, 2),
+          author: 'Ann Smith',
+        },
+        {
+          threadId: '15',
+          issueId: OTHER_ISSUE,
+          noteIds: [azureNoteId(15, 2)],
+          newest: azureNoteId(15, 2),
+          author: 'Ann Smith',
+        },
+      ]);
+    });
+
+    it("only comments newer than the ledger's largest note of the thread count", () => {
+      const thread = azureThread(5, [
+        qualorFirst(),
+        comment({ id: 2 }),
+        comment({ id: 3 }),
+        comment({ id: 4 }),
+      ]);
+      const ledger = (largest: number, of = '5') =>
+        ({ largestNoteIds: new Map([[of, largest]]) }) satisfies Partial<DetectOptions>;
+      const all = [2, 3, 4].map((id) => azureNoteId(5, id));
+      // The control: the ledger holds nothing of this thread, or only a later thread's notes.
+      expect(rounds([thread])[0]?.noteIds).toEqual(all);
+      expect(rounds([thread], ledger(azureNoteId(6, 1), '6'))[0]?.noteIds).toEqual(all);
+      // It holds up to comment 3: that one and the ones before it are done.
+      expect(rounds([thread], ledger(azureNoteId(5, 3)))[0]?.noteIds).toEqual([azureNoteId(5, 4)]);
+      // It holds the newest: nothing is left.
+      expect(rounds([thread], ledger(azureNoteId(5, 4)))).toEqual([]);
+    });
+
+    it('a comment before the consent or older than 30 days, or whose date cannot be read, is ignored', () => {
+      const madeAt = (publishedDate: string) =>
+        rounds([azureThread(5, [qualorFirst(), comment({ id: 2, publishedDate })])]);
+      expect(madeAt(SINCE.toISOString())).toHaveLength(1);
+      // Azure DevOps writes two, three or seven digits of a second.
+      expect(madeAt('2026-11-23T13:51:47.48Z')).toHaveLength(1);
+      expect(madeAt('2026-11-23T13:51:47.4812345Z')).toHaveLength(1);
+      expect(madeAt(new Date(SINCE.getTime() - 1).toISOString())).toEqual([]);
+      expect(madeAt('2026-09-01T10:00:00.000Z')).toEqual([]);
+      for (const unreadable of UNREADABLE) expect(madeAt(unreadable)).toEqual([]);
+    });
+
+    it('an edited comment is the same note: its id is kept, whatever its text says now', () => {
+      const before = rounds([azureThread(5, [qualorFirst(), comment({ id: 2 })])]);
+      const after = rounds([
+        azureThread(5, [qualorFirst(), comment({ id: 2, content: 'Edited: we fix it later.' })]),
+      ]);
+      expect(after).toEqual(before);
+      expect(after).toHaveLength(1);
+    });
+
+    it("a thread a person started, or one whose first comment is Azure DevOps' own, is no thread of Qualor's", () => {
+      const marked = `${issueMarker(ISSUE)}\nA marker typed by a person`;
+      expect(
+        rounds([
+          azureThread(5, [
+            comment({ id: 1, parentCommentId: 0, content: marked }),
+            comment({ id: 2, authorId: AZURE_QUALOR }),
+            comment({ id: 3, authorId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000009' }),
+          ]),
+          azureThread(6, [qualorFirst({ commentType: 'system' }), comment({ id: 2 })]),
+          azureThread(7, [qualorFirst({ content: `${summaryMarker(PROJECT)}\nThe summary` })]),
+        ]),
+      ).toEqual([]);
+    });
+
+    it("finds nothing when Qualor does not know its own identity; a person's reply without a display name is named by the id", () => {
+      const thread = azureThread(5, [qualorFirst(), comment({ id: 2, authorName: '' })]);
+      expect(rounds([thread], { qualor: {} })).toEqual([]);
+      expect(rounds([thread])[0]?.author).toBe(AZURE_PERSON);
+    });
+  });
+
+  describe('azureCommands', () => {
+    const commands = (threads: AzureThread[], fields: Partial<DetectOptions> = {}) =>
+      azureCommands(threads, azureOptions(fields));
+    /** A thread a person opened with `content`, on the pull request as a whole. */
+    const opened = (id: number, fields: Partial<AzureThreadComment> = {}) =>
+      azureThread(
+        id,
+        [comment({ id: 1, parentCommentId: 0, content: 'qualor review', ...fields })],
+        {
+          filePath: null,
+          rightLine: null,
+        },
+      );
+
+    it('the first comment of a thread a person opened is a command: comment 1 of two threads gives two (probe item 15)', async () => {
+      const asPerson = (threads: RecordedThread[]) => {
+        for (const thread of threads) {
+          thread.comments[0]!.author = { id: AZURE_PERSON, displayName: 'Ann Smith' };
+          thread.comments[0]!.content = 'qualor review';
+        }
+      };
+      const threads = [
+        ...(await recorded('15-thread-a1', asPerson)),
+        ...(await recorded('15-threads-b', asPerson)),
+      ];
+      expect(commands(threads)).toEqual([
+        { noteId: azureNoteId(14, 1), threadId: '14', command: 'review', author: 'Ann Smith' },
+        { noteId: azureNoteId(15, 1), threadId: '15', command: 'review', author: 'Ann Smith' },
+      ]);
+      // As recorded, the threads are Qualor's own and say no command.
+      expect(
+        commands([...(await recorded('15-thread-a1')), ...(await recorded('15-threads-b'))]),
+      ).toEqual([]);
+    });
+
+    it('reads the command the comment gives, as on GitLab and GitHub', () => {
+      for (const content of BODIES)
+        expect(commands([opened(5, { content })]), content).toHaveLength(1);
+      expect(commands([opened(5, { content: 'qualor fix' })])[0]?.command).toBe('fix');
+      expect(commands([opened(5, { content: 'Qualor STOP' })])[0]?.command).toBe('stop');
+      expect(commands([opened(5, { content: 'qualor reviewer' })])).toEqual([]);
+      expect(commands([opened(5, { content: 'please qualor review' })])).toEqual([]);
+    });
+
+    it("Qualor's own comments, Azure DevOps' own and deleted comments are never commands", async () => {
+      // The control: a person's comment.
+      expect(commands([opened(5)])).toHaveLength(1);
+      expect(commands([opened(5, { authorId: AZURE_QUALOR.toUpperCase() })])).toEqual([]);
+      expect(commands([opened(5, { commentType: 'system' })])).toEqual([]);
+      expect(commands([opened(5, { commentType: 'codeChange' })])).toEqual([]);
+      expect(commands([opened(5, { isDeleted: true })])).toEqual([]);
+      expect(commands([opened(5, { authorId: '', authorName: '' })])).toEqual([]);
+      // The live decoration's threads, Azure DevOps' own thread of a push among them, with the
+      // command's words in each: Qualor's threads and Azure DevOps' are nobody's command.
+      const said = await recorded('19-threads-fixed', (threads) => {
+        for (const thread of threads) thread.comments[0]!.content = 'qualor review';
+      });
+      expect(said.map((t) => t.comments[0]?.commentType)).toEqual(['text', 'text', 'system']);
+      expect(commands(said)).toEqual([]);
+    });
+
+    it('a command inside a thread is a reply in a thread of Qualor’s, and nothing in a person’s', () => {
+      const inQualors = azureThread(5, [
+        qualorFirst(),
+        comment({ id: 2, content: 'qualor review' }),
+      ]);
+      expect(commands([inQualors])).toEqual([]);
+      expect(azureRounds([inQualors], azureOptions())).toHaveLength(1);
+      const inTheirs = azureThread(6, [
+        comment({ id: 1, parentCommentId: 0, content: 'A question' }),
+        comment({ id: 2, content: 'qualor review' }),
+      ]);
+      expect(commands([inTheirs])).toEqual([]);
+    });
+
+    it('a command before the consent or older than 30 days is ignored', () => {
+      const madeAt = (publishedDate: string) => commands([opened(5, { publishedDate })]);
+      expect(madeAt(SINCE.toISOString())).toHaveLength(1);
+      expect(madeAt(new Date(SINCE.getTime() - 1).toISOString())).toEqual([]);
+      for (const unreadable of UNREADABLE) expect(madeAt(unreadable)).toEqual([]);
+    });
+
+    it('finds nothing when Qualor does not know its own identity', () => {
+      expect(commands([opened(5)], { qualor: {} })).toEqual([]);
+    });
+  });
+});
+
+/** The issue named by the marker of a thread's first comment. */
+function markerIssueOf(thread: AzureThread): string {
+  const found = /qualor:issue ([0-9a-f-]+)/.exec(thread.comments[0]?.content ?? '');
+  if (found === null) throw new Error(`thread ${thread.id} has no issue marker`);
+  return found[1]!;
+}
 
 // ─── Both ──────────────────────────────────────────────────────────────────
 

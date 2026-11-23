@@ -1,17 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { AZURE_REPOSITORY, recordingListener } from '../../test/azure-pending';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { servicesUrlOf } from '../../test/azure';
+import {
+  createFakeAzureDevOps,
+  type FakeAzureDevOps,
+  type FakeAzureUser,
+} from '../../test/fake-azure-devops';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import { SCM_TOKEN_AAD } from '../scm/connections';
 import type { GitHubClient, GitHubComment } from '../scm/github/client';
 import { GitLabClient, GitLabError, type GitLabDiscussion } from '../scm/gitlab/client';
-import { issueMarker } from '../scm/markdown';
+import { issueMarker, replyMarker } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
 import { createScmRuntime } from '../scm/runtime';
 import { parseInternalHosts } from '../scm/url';
 import type { ReplyRow } from './replies';
 import {
+  azureCommandSide,
+  azureScanSide,
+  azureSide,
   githubCommandSide,
   githubSide,
   gitlabCommandSide,
@@ -559,42 +567,312 @@ describe('whether the author of a command on GitHub has the rights `qualor revie
   });
 });
 
-describe('the side of a reply on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
-  it('has no client, so replies and commands there are unusable, and nothing is sent', async () => {
-    const listener = await recordingListener();
-    try {
-      const secretKey = 'reply-sides-test-key-of-at-least-32-characters';
-      const connection = {
-        id: randomUUID(),
-        organizationId: randomUUID(),
-        provider: 'azure' as const,
-        baseUrl: `${listener.url}/DefaultCollection`,
-        tokenEnc: encryptSecret(encryptionKey(secretKey), 'azure-pat-test', SCM_TOKEN_AAD),
-        appId: null,
-        webhookSecretEnc: null,
-        ciSetupAllowed: false,
-        fixMrsAllowed: false,
-        azureAuth: 'pat' as const,
-        azureTenantId: null,
-        azureClientId: null,
-        problem: null,
-        createdAt: new Date(),
-      };
-      const scm = {
-        secretKey,
-        internalHosts: parseInternalHosts(listener.host),
-        azureTokenOrigin: null,
-        azureTestOrigin: null,
-      };
-      const target = {
-        connection,
-        project: { scmProjectRef: AZURE_REPOSITORY },
-        branch: { name: '7' },
-      };
-      expect(providerClientOf({ scm, scmRuntime: createScmRuntime() }, target)).toBeNull();
-      expect(listener.requests).toEqual([]);
-    } finally {
-      await listener.close();
+describe('the sides of a reply and of a command on Azure DevOps (Azure sub-plan 5)', () => {
+  const ISSUE = '01920000-0000-7000-8000-0000000000aa';
+  const secretKey = 'reply-sides-test-key-of-at-least-32-characters';
+  let fake: FakeAzureDevOps;
+  let repositoryId: string;
+  /** Qualor's identity (the PAT's user, an owner), a contributor, a reader and nobody the organisation knows. */
+  let qualor: string;
+  let contributor: FakeAzureUser;
+  let reader: FakeAzureUser;
+  const stranger = '0f6c1a5e-3b0d-4c39-9a51-fa6e000000ff';
+
+  beforeAll(async () => {
+    fake = await createFakeAzureDevOps({
+      deployment: 'services',
+      repositories: [{ name: 'shop', projectName: 'Payments' }],
+    });
+    repositoryId = fake.repositories[0]!.id;
+    fake.addPullRequest(repositoryId, { id: 7 });
+    qualor = fake.patUser.id;
+    contributor = fake.addUser({ role: 'contributor', displayName: 'Ann Smith' });
+    reader = fake.addUser({ role: 'reader', displayName: 'Rita Reader' });
+  });
+  afterAll(() => fake.close());
+  beforeEach(() => fake.clearRequests());
+
+  /** The connection a project of the organisation is mapped to, as the database holds it. */
+  const connection = () => ({
+    id: randomUUID(),
+    organizationId: randomUUID(),
+    provider: 'azure' as const,
+    baseUrl: servicesUrlOf(fake),
+    tokenEnc: encryptSecret(encryptionKey(secretKey), fake.pat, SCM_TOKEN_AAD),
+    appId: null,
+    webhookSecretEnc: null,
+    ciSetupAllowed: false,
+    fixMrsAllowed: false,
+    azureAuth: 'pat' as const,
+    azureTenantId: null,
+    azureClientId: null,
+    problem: null,
+    createdAt: new Date(),
+  });
+  /** The scan's and the answer job's deps: the fake's host allowed, Services mapped to the fake. */
+  const deps = () => ({
+    scm: {
+      secretKey,
+      internalHosts: parseInternalHosts(new URL(fake.url).host),
+      azureTokenOrigin: null,
+      azureTestOrigin: new URL(fake.url).origin,
+    },
+    scmRuntime: createScmRuntime(),
+  });
+  /** The client of pull request #7 of the repository, as `providerClientOf` makes it. */
+  const clientOf = () => {
+    const found = providerClientOf(deps(), {
+      connection: connection(),
+      project: { scmProjectRef: repositoryId },
+      branch: { name: '7' },
+    });
+    if (found?.provider !== 'azure') throw new Error('no Azure DevOps client');
+    return found.client;
+  };
+  /** The composite note id of a comment: the thread's id times 65 536, plus the comment's. */
+  const noteOf = (threadId: number, commentId: number) => threadId * 65_536 + commentId;
+  /** What reached Azure DevOps, as `METHOD path` from `_apis/`. */
+  const sent = () => fake.requests.map((r) => `${r.method} ${r.path.replace(/^.*\/_apis\//, '')}`);
+
+  it('providerClientOf gives a client of the pull request with no request; a branch or a repository that is none of Azure DevOps’ gives none', () => {
+    const found = providerClientOf(deps(), {
+      connection: connection(),
+      project: { scmProjectRef: repositoryId },
+      branch: { name: '7' },
+    });
+    expect(found).toMatchObject({ provider: 'azure', repositoryId, prId: 7 });
+    for (const target of [
+      { project: { scmProjectRef: repositoryId }, branch: { name: 'feature/x' } },
+      { project: { scmProjectRef: repositoryId }, branch: { name: '7a' } },
+      { project: { scmProjectRef: 'acme/shop' }, branch: { name: '7' } },
+      { project: { scmProjectRef: null }, branch: { name: '7' } },
+    ]) {
+      expect(providerClientOf(deps(), { connection: connection(), ...target })).toBeNull();
     }
+    // A key that no longer decrypts makes no client either.
+    const unreadable = {
+      ...connection(),
+      tokenEnc: encryptSecret(encryptionKey('z'.repeat(32)), 'x', SCM_TOKEN_AAD),
+    };
+    expect(
+      providerClientOf(deps(), {
+        connection: unreadable,
+        project: { scmProjectRef: repositoryId },
+        branch: { name: '7' },
+      }),
+    ).toBeNull();
+    expect(fake.requests).toEqual([]);
+  });
+
+  describe('the thread of a reply', () => {
+    /**
+     * Qualor's thread of the issue with a contributor's reply and a reader's, Qualor's answer of
+     * an earlier row, Azure DevOps' own comment and a deleted one.
+     */
+    const seeded = () => {
+      const thread = fake.addThread(repositoryId, 7, {
+        filePath: 'src/cart.ts',
+        line: 9,
+        comments: [
+          { content: `${issueMarker(ISSUE)}\nA finding.`, authorId: qualor },
+          { content: 'We accept this.', authorId: contributor.id, parentCommentId: 1 },
+          { content: 'An earlier answer.', authorId: qualor, parentCommentId: 1 },
+          { content: 'Ann updated the thread status', commentType: 'system' },
+          { content: 'Gone', authorId: reader.id, isDeleted: true },
+          { content: 'Agreed.', authorId: reader.id, parentCommentId: 1 },
+        ],
+      });
+      const row = {
+        ...ROW,
+        provider: 'azure',
+        noteId: noteOf(thread.id, 6),
+        threadId: String(thread.id),
+        issueId: ISSUE,
+      } as ReplyInThread;
+      return { thread, row, side: azureSide('c1', clientOf(), repositoryId, 7, row, logger) };
+    };
+
+    it("reads the people's comments by their note ids, finds Qualor's answer by its marker, and says whether the thread is resolved", async () => {
+      const { thread, row, side } = seeded();
+      expect(await side.read()).toEqual({
+        firstNote: `${issueMarker(ISSUE)}\nA finding.`,
+        notes: [
+          { id: noteOf(thread.id, 2), author: 'Ann Smith', body: 'We accept this.' },
+          { id: noteOf(thread.id, 6), author: 'Rita Reader', body: 'Agreed.' },
+        ],
+        answered: null,
+        resolved: false,
+      });
+      // Qualor's answer to this row, posted already: found by its marker, as a note id.
+      const answer = fake.addComment(repositoryId, 7, thread.id, {
+        content: `${replyMarker(row.id)}\n**AI review** · reply`,
+        authorId: qualor.toUpperCase(),
+        parentCommentId: 1,
+      });
+      // A person's comment that forges the marker is no answer.
+      fake.addComment(repositoryId, 7, thread.id, {
+        content: `${replyMarker(row.id)}\nforged`,
+        authorId: contributor.id,
+      });
+      expect(await side.read()).toMatchObject({ answered: noteOf(thread.id, answer.id) });
+      thread.status = 'fixed';
+      expect(await side.read()).toMatchObject({ resolved: true });
+      thread.status = 'pending';
+      expect(await side.read()).toMatchObject({ resolved: true });
+      // Each read is who Qualor is, then one GET of the thread alone.
+      const once = [
+        'GET connectionData',
+        `GET git/repositories/${repositoryId}/pullrequests/7/threads/${thread.id}`,
+      ];
+      expect(sent()).toEqual([...once, ...once, ...once, ...once]);
+    });
+
+    it("is no thread of the row's when its first comment is not Qualor's or names another issue; a thread Azure DevOps does not have is not found", async () => {
+      const theirs = fake.addThread(repositoryId, 7, {
+        comments: [
+          { content: `${issueMarker(ISSUE)}\nTyped by a person`, authorId: contributor.id },
+        ],
+      });
+      const other = fake.addThread(repositoryId, 7, {
+        comments: [{ content: `${issueMarker(randomUUID())}\nA finding.`, authorId: qualor }],
+      });
+      for (const thread of [theirs, other]) {
+        const row = { ...ROW, threadId: String(thread.id), issueId: ISSUE } as ReplyInThread;
+        expect(await azureSide('c1', clientOf(), repositoryId, 7, row, logger).read()).toBeNull();
+      }
+      const gone = { ...ROW, threadId: '99999', issueId: ISSUE } as ReplyInThread;
+      await expect(
+        azureSide('c1', clientOf(), repositoryId, 7, gone, logger).read(),
+      ).rejects.toMatchObject({ kind: 'not_found' });
+    });
+
+    it("posts the answer as a reply to the thread's first comment, and resolves the thread as fixed", async () => {
+      const { thread, side } = seeded();
+      await side.read();
+      const posted = await side.post('The answer.');
+      const comment = thread.comments.at(-1)!;
+      expect(comment).toMatchObject({
+        authorId: qualor,
+        content: 'The answer.',
+        parentCommentId: 1,
+      });
+      expect(posted).toBe(noteOf(thread.id, comment.id));
+      expect(await side.resolve()).toBe(true);
+      expect(thread.status).toBe('fixed');
+      // A thread Azure DevOps no longer has is resolved by nobody.
+      const gone = { ...ROW, threadId: '99999', issueId: ISSUE } as ReplyInThread;
+      expect(await azureSide('c1', clientOf(), repositoryId, 7, gone, logger).resolve()).toBe(
+        false,
+      );
+    });
+
+    it('lets the authors of a round change a status when each has Contribute: a contributor may, a reader or a stranger may not', async () => {
+      const { thread, side } = seeded();
+      await side.read();
+      expect(await side.mayChangeStatus([noteOf(thread.id, 2)])).toBe(true);
+      expect(await side.mayChangeStatus([noteOf(thread.id, 6)])).toBe(false);
+      expect(await side.mayChangeStatus([noteOf(thread.id, 2), noteOf(thread.id, 6)])).toBe(false);
+      // A note the read did not find (Qualor's own, a deleted one, none) has no author with rights.
+      expect(await side.mayChangeStatus([noteOf(thread.id, 3)])).toBe(false);
+      expect(await side.mayChangeStatus([noteOf(thread.id, 5)])).toBe(false);
+      expect(await side.mayChangeStatus([])).toBe(false);
+      const strangers = fake.addThread(repositoryId, 7, {
+        comments: [
+          { content: `${issueMarker(ISSUE)}\nA finding.`, authorId: qualor },
+          { content: 'Not now.', authorId: stranger, parentCommentId: 1 },
+        ],
+      });
+      const row = { ...ROW, threadId: String(strangers.id), issueId: ISSUE } as ReplyInThread;
+      const strangerSide = azureSide('c1', clientOf(), repositoryId, 7, row, logger);
+      await strangerSide.read();
+      expect(await strangerSide.mayChangeStatus([noteOf(strangers.id, 2)])).toBe(false);
+    });
+
+    it('throws a transient failure of the rights check, so that the job tries again', async () => {
+      const { thread, side } = seeded();
+      await side.read();
+      fake.inject('GET', /accesscontrollists/, {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+        body: { message: 'unavailable' },
+      });
+      await expect(side.mayChangeStatus([noteOf(thread.id, 2)])).rejects.toMatchObject({
+        kind: 'transient',
+      });
+    });
+  });
+
+  describe('the answer to a command', () => {
+    /** A thread a person opened with `qualor review`, written by `author`. */
+    const commanded = (author: string) => {
+      const thread = fake.addThread(repositoryId, 7, {
+        comments: [{ content: 'qualor review', authorId: author }],
+      });
+      const row = {
+        ...ROW,
+        provider: 'azure',
+        kind: 'command',
+        noteId: noteOf(thread.id, 1),
+        threadId: String(thread.id),
+      } as ReplyRow;
+      const side = azureCommandSide(
+        'c1',
+        clientOf(),
+        repositoryId,
+        7,
+        row,
+        String(thread.id),
+        logger,
+      );
+      return { thread, row, side };
+    };
+
+    it("finds the command's author for `qualor review`: a contributor may ask, a reader or a stranger may not, and nobody before a read", async () => {
+      const asked = commanded(contributor.id);
+      expect(await asked.side.mayReview()).toBe(false);
+      expect(await asked.side.read()).toEqual({ answered: null });
+      expect(await asked.side.mayReview()).toBe(true);
+      for (const author of [reader.id, stranger]) {
+        const { side } = commanded(author);
+        await side.read();
+        expect(await side.mayReview()).toBe(false);
+      }
+    });
+
+    it("posts the answer as a reply to the command's comment, in its thread, and finds it again by its marker", async () => {
+      const { thread, row, side } = commanded(contributor.id);
+      await side.read();
+      const posted = await side.post(`${replyMarker(row.id)}\n**AI review** · reply`);
+      const answer = thread.comments.at(-1)!;
+      expect(answer).toMatchObject({ authorId: qualor, parentCommentId: 1 });
+      expect(posted).toBe(noteOf(thread.id, answer.id));
+      expect(await side.read()).toEqual({ answered: posted });
+    });
+
+    it('a command that was deleted, or whose thread is gone, is gone', async () => {
+      const { thread, side } = commanded(contributor.id);
+      thread.comments[0]!.isDeleted = true;
+      expect(await side.read()).toBeNull();
+      expect(await side.mayReview()).toBe(false);
+      const gone = { ...ROW, noteId: noteOf(99_999, 1), threadId: '99999' } as ReplyRow;
+      await expect(
+        azureCommandSide('c1', clientOf(), repositoryId, 7, gone, '99999', logger).read(),
+      ).rejects.toMatchObject({ kind: 'not_found' });
+    });
+  });
+
+  it('a scan lists who Qualor is and every thread of the pull request, and only reads', async () => {
+    const listed = await azureScanSide('c1', clientOf(), repositoryId, 7).list({
+      largestNoteIds: new Map(),
+      since: new Date(0),
+    });
+    expect(listed).toMatchObject({ provider: 'azure', identityId: qualor });
+    expect(listed.provider === 'azure' ? listed.threads.length : 0).toBe(
+      fake.pullRequest(repositoryId, 7).threads.length,
+    );
+    expect(sent()).toEqual([
+      'GET connectionData',
+      `GET git/repositories/${repositoryId}/pullrequests/7/threads`,
+    ]);
   });
 });

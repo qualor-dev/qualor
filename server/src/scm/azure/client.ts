@@ -175,6 +175,14 @@ export interface AzureThread {
   comments: AzureThreadComment[];
 }
 
+/** Whether two identity ids name one identity: Azure DevOps writes a GUID in either case. */
+export const sameAzureIdentity = (a: string, b: string): boolean =>
+  a.toLowerCase() === b.toLowerCase();
+
+/** Comments Azure DevOps writes itself (a push, a changed file) are nobody's reply. */
+export const machineMadeComment = (commentType: string): boolean =>
+  commentType === 'system' || commentType === 'codeChange';
+
 /** A service hook subscription, as far as Qualor reads it. */
 export interface AzureSubscription {
   id: string;

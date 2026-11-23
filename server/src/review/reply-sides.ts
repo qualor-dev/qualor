@@ -1,5 +1,9 @@
 import { assertNever } from '@qualor/shared';
 import type { WorkerLogger } from '../queue/worker';
+import { AZURE_PR_ID, type AzureDevOpsClient, type AzureThread } from '../scm/azure/client';
+import { azureClientFor } from '../scm/azure/connections';
+import { azureMayTriage } from '../scm/azure/rights';
+import { AZURE_REPOSITORY_ID } from '../scm/azure/url';
 import { gitlabClientFor, type ScmConnectionRow } from '../scm/connections';
 import {
   GITHUB_PR_NUMBER,
@@ -25,20 +29,30 @@ import { ScmError } from '../scm/provider';
 import { MAX_AUTHORS_LOOKED_UP } from '../scm/rights-limits';
 import type { ReviewJobDeps } from './job';
 import type { ReplyRow } from './replies';
-import { githubRounds, type Round } from './reply-detect';
+import {
+  azureAuthor,
+  azureCommentsInOrder,
+  azureNoteId,
+  githubRounds,
+  writtenByPerson,
+  writtenByQualor,
+  type Round,
+} from './reply-detect';
 import type { ReplyWindow } from './reply-queue';
 
 /*
  * The thread of a reply on its provider (6I-4), as the `ai-reply` job (reply-job.ts) reads it,
  * asks who may change a finding's status, posts its answer and resolves it: GitLab's discussion of
- * the merge request, or GitHub's review thread of the pull request, each through the job's own
- * client and its request budget. Beside them, where the answer to a command goes: a reply in the
- * discussion the command's note opened on GitLab, a comment on the page of the pull request on
+ * the merge request, GitHub's review thread of the pull request, or Azure DevOps' thread of the
+ * pull request, each through the job's own client and its request budget. Beside them, where the
+ * answer to a command goes: a reply in the discussion the command's note opened on GitLab, or in
+ * the thread its comment opened on Azure DevOps, a comment on the page of the pull request on
  * GitHub; and whether the command's author has the rights a review asks for, which are the rights a
  * reply needs to change a status, by the same functions. And what a scan lists of a merge request's
  * notes, to find the replies and commands nobody has queued yet. All three are made of the same
  * parts: the client of the connection the project is mapped to (`providerClientOf`), Qualor's
- * identity on the provider and the listings, each with the page bounds decoration reads by.
+ * identity on the provider and the listings, each with the page bounds decoration reads by (Azure
+ * DevOps lists a pull request's threads in one answer, with no pages).
  */
 
 /**
@@ -120,15 +134,16 @@ async function githubPermissionOf(client: GitHubClient, login: string, unparsed:
 /** The client of a merge request's connection, with the ids of the merge request on its provider. */
 export type ProviderClient =
   | { provider: 'gitlab'; client: GitLabClient; ref: string; iid: string }
-  | { provider: 'github'; client: GitHubClient; repo: GitHubRepoRef; number: string };
+  | { provider: 'github'; client: GitHubClient; repo: GitHubRepoRef; number: string }
+  | { provider: 'azure'; client: AzureDevOpsClient; repositoryId: string; prId: number };
 
 /**
  * The client for the merge request of `target`, with its own request budget (one client for each
  * job), as the `scm` worker's jobs make theirs: the key decrypted and the address checked against
- * the rules of now, a GitHub client sharing the worker's installation tokens and pacer. Null when
- * there is none: the project is not mapped (the connection is null), the client cannot be made (a
- * key that no longer decrypts, an address the rules no longer allow) or the ids are none of the
- * provider's.
+ * the rules of now, a GitHub client sharing the worker's installation tokens and pacer, an Azure
+ * DevOps client its Microsoft Entra tokens. Null when there is none: the project is not mapped
+ * (the connection is null), the client cannot be made (a key that no longer decrypts, an address
+ * the rules no longer allow) or the ids are none of the provider's.
  */
 export function providerClientOf(
   deps: Pick<ReviewJobDeps, 'scm' | 'scmRuntime'>,
@@ -157,8 +172,18 @@ export function providerClientOf(
         iid: branch.name,
       };
     }
-    case 'azure': // azure-pending(5): replies and commands in Azure DevOps pull request threads
-      return null;
+    case 'azure': {
+      const ref = project.scmProjectRef;
+      if (!AZURE_REPOSITORY_ID.test(ref) || !AZURE_PR_ID.test(branch.name)) return null;
+      const found = azureClientFor(connection, deps.scm, deps.scmRuntime);
+      if ('problem' in found) return null;
+      return {
+        provider: 'azure',
+        client: found.client,
+        repositoryId: ref,
+        prId: Number(branch.name),
+      };
+    }
     default:
       return assertNever(connection.provider, 'provider');
   }
@@ -394,6 +419,81 @@ export function githubSide(
   };
 }
 
+/**
+ * The thread on Azure DevOps: the pull request's thread of the row (its id is the thread's). It
+ * is read alone (`GET …/threads/<id>`), with who Qualor is; the people's comments are the notes
+ * `azureNoteId` names, as detection counts them (reply-detect.ts), and the answer is a reply to
+ * the thread's first comment. A thread that is not active is resolved, and resolving sets it
+ * `fixed`: with a person's reply in it, decoration then reads it as a person's resolution, so a
+ * finding that comes back does not reopen it (sub-plan 4's rule G3, plan ruling 8). Whether the
+ * authors may change a status is whether each has Contribute on the repository
+ * (`azureMayTriage`); a transient failure of that is thrown, so that the job tries again.
+ */
+export function azureSide(
+  connectionId: string,
+  client: AzureDevOpsClient,
+  repositoryId: string,
+  prId: number,
+  row: ReplyInThread,
+  logger: Pick<WorkerLogger, 'warn'>,
+): ThreadSide {
+  const threadId = Number(row.threadId);
+  /** The identity of each person's note the last read found. */
+  const authorOf = new Map<number, string>();
+  /** The first comment of the thread, which the answer replies to; comment ids start at 1. */
+  let firstCommentId = 1;
+  return {
+    connectionId,
+    async read() {
+      const me = await client.connectionData();
+      const thread = await client.thread(repositoryId, prId, threadId);
+      const [first, ...later] = azureCommentsInOrder(thread);
+      if (first === undefined || thread.status === null || !writtenByQualor(first, me.id)) {
+        return null;
+      }
+      if (!marksIssue(first.content, row.issueId)) return null;
+      firstCommentId = first.id;
+      authorOf.clear();
+      const people = later.filter((comment) => writtenByPerson(comment, me.id));
+      for (const comment of people) {
+        authorOf.set(azureNoteId(thread.id, comment.id), comment.authorId);
+      }
+      const marker = replyMarker(row.id);
+      const answer = later.find(
+        (comment) => writtenByQualor(comment, me.id) && firstLineOf(comment.content) === marker,
+      );
+      return {
+        firstNote: first.content,
+        notes: people.map((comment) => ({
+          id: azureNoteId(thread.id, comment.id),
+          author: azureAuthor(comment),
+          body: comment.content,
+        })),
+        answered: answer === undefined ? null : azureNoteId(thread.id, answer.id),
+        resolved: thread.status !== 'active',
+      };
+    },
+    async mayChangeStatus(noteIds) {
+      const authors: string[] = [];
+      for (const id of noteIds) {
+        const author = authorOf.get(id);
+        // A note the last read did not find has no author to ask about: no rights.
+        if (author === undefined) return false;
+        authors.push(author);
+      }
+      return azureMayTriage(client, repositoryId, authors, logger);
+    },
+    post: async (body) =>
+      azureNoteId(threadId, await client.reply(repositoryId, prId, threadId, firstCommentId, body)),
+    async resolve() {
+      const done = await orGone(() =>
+        client.setThreadStatus(repositoryId, prId, threadId, 'fixed'),
+      );
+      return done !== GONE;
+    },
+  };
+}
+
 /** Where the answer to a command goes, through the job's own client and its request budget. */
 export interface CommandSide {
   /** The SCM connection the requests are made through, whose circuit they pass. */
@@ -521,6 +621,51 @@ export function githubCommandSide(
 }
 
 /**
+ * The answer to a command on Azure DevOps: a reply to the command's comment, in the thread it
+ * opened (`threadId`), which is read alone. A thread Azure DevOps no longer has is not found (the
+ * job's `orGone`); a command's comment that was deleted, or that its thread no longer holds, is
+ * gone. Whether its author may ask for a review is whether they have Contribute on the repository
+ * (`azureMayTriage`), as for a reply's status change.
+ */
+export function azureCommandSide(
+  connectionId: string,
+  client: AzureDevOpsClient,
+  repositoryId: string,
+  prId: number,
+  row: ReplyRow,
+  threadId: string,
+  logger: Pick<WorkerLogger, 'warn'>,
+): CommandSide {
+  const marker = replyMarker(row.id);
+  const thread = Number(threadId);
+  /** The command's comment in its thread: its note id is the thread's and the comment's. */
+  const commandId = row.noteId - azureNoteId(thread, 0);
+  /** The identity that wrote the command's comment, as the last read found it: none until it did. */
+  let author: string | undefined;
+  return {
+    connectionId,
+    async read() {
+      author = undefined;
+      const me = await client.connectionData();
+      const found = await client.thread(repositoryId, prId, thread);
+      const command = found.comments.find((comment) => comment.id === commandId);
+      if (command === undefined || command.isDeleted) return null;
+      author = command.authorId === '' ? undefined : command.authorId;
+      const answer = found.comments.find(
+        (comment) => writtenByQualor(comment, me.id) && firstLineOf(comment.content) === marker,
+      );
+      return { answered: answer === undefined ? null : azureNoteId(found.id, answer.id) };
+    },
+    async mayReview() {
+      if (author === undefined) return false;
+      return azureMayTriage(client, repositoryId, [author], logger);
+    },
+    post: async (body) =>
+      azureNoteId(thread, await client.reply(repositoryId, prId, thread, commandId, body)),
+  };
+}
+
+/**
  * What a scan lists of a merge request's notes: Qualor's identity there, and the notes, or for
  * GitHub the new replies of its review threads, which are found where the review comments and the
  * threads are listed (`githubRounds`), and the comments on the pull request's own page.
@@ -532,7 +677,8 @@ export type Listing =
       login: string;
       rounds: readonly Round[];
       comments: readonly GitHubComment[];
-    };
+    }
+  | { provider: 'azure'; identityId: string; threads: readonly AzureThread[] };
 
 /** The merge request's notes on its provider, through the job's own client and its request budget. */
 export interface ScanSide {
@@ -585,6 +731,23 @@ export function githubScanSide(
         rounds: githubRounds(reviewComments.items, threads.items, options),
         comments: comments.items,
       };
+    },
+  };
+}
+
+/** The notes of an Azure DevOps pull request: who Qualor is, then every thread with its comments. */
+export function azureScanSide(
+  connectionId: string,
+  client: AzureDevOpsClient,
+  repositoryId: string,
+  prId: number,
+): ScanSide {
+  return {
+    connectionId,
+    async list() {
+      const me = await client.connectionData();
+      const threads = await client.threads(repositoryId, prId);
+      return { provider: 'azure', identityId: me.id, threads };
     },
   };
 }

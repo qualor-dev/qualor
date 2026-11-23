@@ -41,6 +41,7 @@ import {
 } from './reply-queue';
 import { scanMergeRequest } from './reply-scan';
 import {
+  azureSide,
   GONE,
   githubSide,
   gitlabSide,
@@ -642,6 +643,8 @@ class ReplyJob extends JobSteps {
         return githubSide(connection.id, found.client, found.repo, found.number, row, logger);
       case 'gitlab':
         return gitlabSide(connection.id, found.client, found.ref, found.iid, row, logger);
+      case 'azure':
+        return azureSide(connection.id, found.client, found.repositoryId, found.prId, row, logger);
       default:
         return assertNever(found, 'provider');
     }

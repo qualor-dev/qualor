@@ -11,7 +11,14 @@ import { addedLines } from '../line-diff';
 import { isFullSha, markerOf, notedFixes } from '../markdown';
 import { ScmError } from '../provider';
 import { fixedNote, inlineBody, reopenedNote, resolvedNote } from '../render';
-import type { AzureChange, AzureDevOpsClient, AzureIteration, AzureThread } from './client';
+import {
+  machineMadeComment as machineMade,
+  sameAzureIdentity as sameId,
+  type AzureChange,
+  type AzureDevOpsClient,
+  type AzureIteration,
+  type AzureThread,
+} from './client';
 
 /**
  * Ruling P2: at most this many threads are resolved, reopened or given a lost reopened comment by
@@ -57,12 +64,6 @@ interface OwnThread {
   /** The revisions Qualor's comments in the thread say its issue was fixed at. */
   notedFixes: ReadonlySet<string>;
 }
-
-const sameId = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
-
-/** Comments the server writes itself (a push, a changed file) are nobody's reply. */
-const machineMade = (commentType: string): boolean =>
-  commentType === 'system' || commentType === 'codeChange';
 
 /**
  * Qualor's threads by issue id: a thread whose first comment is by the identity and starts with an

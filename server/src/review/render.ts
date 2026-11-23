@@ -143,7 +143,7 @@ interface Words {
 const WORDS: Record<ScmProvider, Words> = {
   gitlab: { request: 'merge request', run: 'pipeline', note: 'note' },
   github: { request: 'pull request', run: 'workflow run', note: 'comment' },
-  azure: { request: 'pull request', run: 'pipeline run', note: 'comment' }, // azure-pending(5): the AI review's words on Azure DevOps
+  azure: { request: 'pull request', run: 'pipeline run', note: 'comment' },
 };
 
 const HEADING = '#### AI review';
@@ -580,7 +580,8 @@ export interface AiThreadInput {
 const SUGGESTION_FENCE: Record<ScmProvider, (extraLines: number) => string> = {
   gitlab: (extraLines) => `\`\`\`suggestion:-0+${extraLines}`,
   github: () => '```suggestion',
-  azure: () => '```suggestion', // azure-pending(5): a suggestion block in an Azure DevOps thread
+  // Azure DevOps offers GitHub's block to apply as GitHub does (probe item 5).
+  azure: () => '```suggestion',
 };
 
 /**

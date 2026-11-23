@@ -9,6 +9,7 @@ import {
   issueChanges,
   issues,
   jobs,
+  projects,
   reviewFindings,
   reviewReplies,
   reviewRuns,
@@ -21,17 +22,24 @@ import { replyHandlers } from '../src/review/reply-job';
 import { AI_REPLY_MAX_ATTEMPTS, AI_REPLY_QUEUE, replyKey } from '../src/review/reply-queue';
 import { AI_REVIEW_QUEUE } from '../src/review/runs';
 import { SCM_TOKEN_AAD } from '../src/scm/connections';
-import { firstLineOf, markerOf } from '../src/scm/markdown';
+import { firstLineOf, issueMarker, markerOf } from '../src/scm/markdown';
 import { enqueueDecoration, SCM_QUEUE } from '../src/scm/queue';
 import { parseInternalHosts } from '../src/scm/url';
 import { QUIET_AUDIT_LOG } from './audit-log';
+import { seedAzurePullRequest, servicesUrlOf } from './azure';
+import {
+  createFakeAzureDevOps,
+  type FakeAzureDevOps,
+  type FakeAzureRole,
+  type FakeAzureThread,
+} from './fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub } from './fake-github';
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
 import { createFakeLlm, type FakeLlm, type RecordedLlmRequest } from './fake-llm';
 import { githubConnection, githubDeps, mappedGitHubProject, pullRequestReport } from './github';
 import { createIngestHarness, type IngestHarness, type IngestProject } from './ingest';
 import { reviewOff } from './replies';
-import { engine, file } from './reports';
+import { engine, file, reportWith } from './reports';
 import { seedAiIssue, storeTestSnapshot } from './review';
 import {
   decorationDeps,
@@ -43,11 +51,12 @@ import {
 } from './scm';
 
 /*
- * What the tests of the `ai-reply` jobs share (6I-4): a GitLab merge request or a GitHub pull request
- * of a project of its own, analysed and reviewed, as a driver sets it up (`Driver`, `Mr`), and the app,
- * the fakes and the helpers around them (`createReplyHarness`). The answer job's tests
- * (review/reply-job.db.test.ts) and the scan's (review/reply-scan.db.test.ts) run on both providers
- * through the same drivers.
+ * What the tests of the `ai-reply` jobs share (6I-4): a GitLab merge request, a GitHub pull request
+ * or an Azure DevOps pull request of a project of its own, analysed and reviewed, as a driver sets
+ * it up (`Driver`, `Mr`), and the app, the fakes and the helpers around them
+ * (`createReplyHarness`). The answer job's tests (review/reply-job.db.test.ts) and the scan's
+ * (review/reply-scan.db.test.ts) run on GitLab and GitHub through the same drivers, and their
+ * Azure DevOps cases (Azure sub-plan 5) through the Azure DevOps driver.
  */
 
 export const HEAD = '1'.repeat(40);
@@ -120,6 +129,28 @@ export const GITHUB_USERS: Readonly<
   customReader: { login: 'auditor', permission: { permission: 'read', roleName: 'auditor' } },
   refused: { login: '-refused-', permission: null },
 };
+/**
+ * Azure DevOps' people: each an identity of the fake organisation with a role, whose Contribute bit
+ * the Git ACL answers. The people with the rights to triage are contributors (the owner an
+ * owner), the others readers; `refused` is an identity the organisation does not know, so its
+ * lookup finds none.
+ */
+const AZURE_ROLES: Readonly<Record<Exclude<Person, 'refused'>, FakeAzureRole>> = {
+  member: 'contributor',
+  maintainer: 'contributor',
+  owner: 'owner',
+  triager: 'contributor',
+  customWriter: 'contributor',
+  outsider: 'reader',
+  reporter: 'reader',
+  customReader: 'reader',
+};
+/** The identity of `refused` on Azure DevOps: a GUID the fake organisation never added. */
+const AZURE_STRANGER = '0f6c1a5e-3b0d-4c39-9a51-fa6e0000beef';
+/** An Azure DevOps note id: the thread's id times 65 536, plus the comment's (probe item 12). */
+export const azureNote = (threadId: number, commentId: number): number =>
+  threadId * 65_536 + commentId;
+
 /** What the model answers, as the reply's prompt asks for it. */
 export const decision = (
   verdict: 'keep' | 'wont_fix' | 'false_positive',
@@ -226,6 +257,20 @@ export interface Driver {
   clearRequests(): void;
 }
 
+/** An Azure DevOps pull request, with what the Azure DevOps cases read of the fake. */
+export interface AzureMr extends Mr {
+  /** The repository's id (a GUID), which the project is mapped to. */
+  repositoryId: string;
+  /** The fake's thread of the id, as the ledger names it. */
+  thread(threadId: string): FakeAzureThread;
+  /** The identity id of a person, which the identities lookup and the ACL are asked about. */
+  identityOf(who: Person): string;
+}
+
+export interface AzureDriver extends Driver {
+  setup(key: string, findings?: Report['findings']): Promise<AzureMr>;
+}
+
 /**
  * The app, the fakes of GitLab, GitHub and the model, and the drivers and helpers that act on them.
  * `start` brings them up (once, in a `beforeAll`) and answers the ones a test reaches into; `close`
@@ -237,6 +282,11 @@ export function createReplyHarness() {
   let github: FakeGitHub;
   let llm: FakeLlm;
   let githubConnectionId: string;
+  let azure: FakeAzureDevOps;
+  let azureConnectionId: string;
+  /** The identity of each person on Azure DevOps (`AZURE_ROLES`), and of each colleague by number. */
+  const azurePeople = new Map<Person, string>();
+  const azureColleagues = new Map<number, string>();
   let nextGitLabProject = 900;
   let nextRepository = 9_900;
   let day = 1;
@@ -707,6 +757,263 @@ export function createReplyHarness() {
     clearRequests: () => github.clearRequests(),
   };
 
+  /** The `scm` deps of the jobs and decorations: a Services organisation is sent to the fake. */
+  const scmDeps = () => ({
+    ...decorationDeps(h).scm,
+    azureTestOrigin: h.ctx.config.azureTestOrigin,
+  });
+  /** The identity of a person on Azure DevOps. */
+  const azureIdentityOf = (who: Person): string => {
+    const id = azurePeople.get(who);
+    if (id === undefined) throw new Error(`no Azure DevOps identity for ${who}`);
+    return id;
+  };
+
+  const azureDriver: AzureDriver = {
+    async setup(key, findings = []) {
+      // Analysed with AI review off: the test seeds the review that is done.
+      await reviewOff(h);
+      const { id: repositoryId } = azure.addRepository({
+        name: key.replace(/\W/g, '-'),
+        projectName: 'Shop',
+      });
+      const { pullRequest } = seedAzurePullRequest(azure, repositoryId, {
+        pullRequest: { id: 7, title: 'Add the cart', sourceRefName: 'refs/heads/feature/cart' },
+        sourceCommit: HEAD,
+        baseCommit: BASE,
+        changes: [{ path: PATH, changeType: 'add' }],
+        files: { [PATH]: `${LINES.join('\n')}\n` },
+      });
+      const project = await h.project(key);
+      await h.ctx.db
+        .update(projects)
+        .set({ scmConnectionId: azureConnectionId, scmProjectRef: repositoryId })
+        .where(eq(projects.id, project.id));
+      const context = { repositoryId, checkout: 'head' as const };
+      const ingest = (revision: string) => {
+        const report = reportWith({
+          projectKey: project.key,
+          branch: 'feature/cart',
+          mergeRequest: { id: '7', targetBranch: 'main', sourceBranch: 'feature/cart' },
+          revision,
+          baseline: { revision: BASE, kind: 'merge_base', status: 'ok' },
+          analysisDate: new Date(Date.UTC(2026, 8, 1, 10) + 86_400_000 * day++).toISOString(),
+          engines: [engine('eslint')],
+          files: [file(PATH, { lines: LINES.length, newLines: [[1, LINES.length]] })],
+          findings,
+        });
+        return project.ingestOk({
+          ...report,
+          scm: { ...report.scm, provider: 'azure', azure: context },
+        });
+      };
+      const analysisId = await ingest(HEAD);
+      const branchId = await mergeRequestBranch(project.id);
+      await seedReview(project, branchId, analysisId, '7');
+      const qualor = azure.patUser.id;
+      const own = (authorId: string | undefined) =>
+        authorId !== undefined && authorId.toLowerCase() === qualor.toLowerCase();
+      const thread = (threadId: string) => {
+        const found = pullRequest.threads.find((t) => t.id === Number(threadId));
+        if (found === undefined) throw new Error(`no thread ${threadId}`);
+        return found;
+      };
+      const issueThread = (issueId: string) =>
+        pullRequest.threads.find(
+          (t) => own(t.comments[0]?.authorId) && marksIssue(t.comments[0]?.content ?? '', issueId),
+        );
+      const commentOf = (threadId: string, noteId: number) => {
+        const found = thread(threadId).comments.find(
+          (c) => azureNote(Number(threadId), c.id) === noteId,
+        );
+        if (found === undefined) throw new Error(`no note ${noteId} in thread ${threadId}`);
+        return found;
+      };
+      /** Qualor's comments in the thread after its first one. */
+      const qualorsAfterFirst = (t: FakeAzureThread) =>
+        t.comments
+          .slice(1)
+          .filter((c) => own(c.authorId))
+          .map((c) => ({ id: azureNote(t.id, c.id), body: c.content }));
+      /**
+       * Qualor's thread of each open AI finding that has none, as Qualor's identity writes it: on
+       * its line, with the issue's marker. The decoration does not post the AI review's threads on
+       * Azure DevOps yet (sub-plan 5, Task 5); once it does, it finds them here already.
+       */
+      const postAiThreads = async () => {
+        const open = await h.ctx.db
+          .select({ id: issues.id, line: issues.startLine, message: issues.message })
+          .from(issues)
+          .innerJoin(reviewFindings, eq(reviewFindings.issueId, issues.id))
+          .where(and(eq(issues.branchId, branchId), eq(issues.status, 'open')));
+        for (const issue of open) {
+          if (issueThread(issue.id) !== undefined) continue;
+          azure.addThread(repositoryId, 7, {
+            filePath: PATH,
+            line: issue.line ?? 1,
+            comments: [
+              {
+                content: `${issueMarker(issue.id)}\n**Medium** · ${issue.message}`,
+                authorId: qualor,
+              },
+            ],
+          });
+        }
+      };
+      const decorateQueued = async () => {
+        await runDecorations(h, decorationDeps(h, { scm: scmDeps() }));
+        await postAiThreads();
+      };
+      const pullRequestPath = `/repositories/${repositoryId}/pullrequests/7`;
+      const commentsPath = new RegExp(`${pullRequestPath}/threads/(\\d+)/comments$`);
+      const threadPath = new RegExp(`${pullRequestPath}/threads/\\d+$`);
+      const json = { 'content-type': 'application/json; charset=utf-8; api-version=7.0' };
+      const notFound = {
+        status: 404,
+        headers: json,
+        body: { message: 'TF401152: The thread does not exist.', typeKey: 'NotFound' },
+      };
+      const badGateway = { status: 502, headers: json, body: { message: 'Bad Gateway' } };
+      return {
+        project,
+        branchId,
+        connectionId: azureConnectionId,
+        analysisId,
+        repositoryId,
+        analyseNewer: async () => {
+          await reviewOff(h);
+          return ingest(NEWER);
+        },
+        snapshotOf: (id) => storeSnapshot(id, '7'),
+        decorate: async () => {
+          await enqueueDecoration(h.ctx.db, { analysisId, branchId, gitlab: null, azure: context });
+          await decorateQueued();
+        },
+        threadOf: (issueId) => {
+          const found = issueThread(issueId);
+          if (found === undefined) throw new Error(`no thread for ${issueId}`);
+          return String(found.id);
+        },
+        reply: (threadId, body, who = 'member') =>
+          azureNote(
+            Number(threadId),
+            azure.addComment(repositoryId, 7, Number(threadId), {
+              content: body,
+              authorId: azureIdentityOf(who),
+              parentCommentId: 1,
+            }).id,
+          ),
+        colleague: (threadId, body, n) => {
+          let id = azureColleagues.get(n);
+          if (id === undefined) {
+            id = azure.addUser({ role: 'contributor', displayName: `Azure dev ${n}` }).id;
+            azureColleagues.set(n, id);
+          }
+          azure.addComment(repositoryId, 7, Number(threadId), {
+            content: body,
+            authorId: id,
+            parentCommentId: 1,
+          });
+        },
+        command: (body, who = 'member') => {
+          const opened = azure.addThread(repositoryId, 7, {
+            comments: [{ content: body, authorId: azureIdentityOf(who) }],
+          });
+          return { noteId: azureNote(opened.id, 1), threadId: String(opened.id) };
+        },
+        writeBeside: ({ threadId }, body) =>
+          void azure.addComment(repositoryId, 7, Number(threadId), {
+            content: body,
+            authorId: azureIdentityOf('member'),
+            parentCommentId: 1,
+          }),
+        commandAnswers: () =>
+          pullRequest.threads
+            .filter((t) => t.status !== null && !own(t.comments[0]?.authorId))
+            .flatMap((t) => qualorsAfterFirst(t).map((a) => ({ ...a, threadId: String(t.id) }))),
+        summaries: () =>
+          pullRequest.threads.flatMap((t) =>
+            t.comments
+              .filter((c) => own(c.authorId) && markerOf(c.content)?.kind === 'summary')
+              .map((c) => ({ id: azureNote(t.id, c.id), body: c.content })),
+          ),
+        deleteSummaries: () => {
+          const summarised = pullRequest.threads.filter(
+            (t) =>
+              own(t.comments[0]?.authorId) && markerOf(t.comments[0]!.content)?.kind === 'summary',
+          );
+          for (const found of summarised) {
+            pullRequest.threads.splice(pullRequest.threads.indexOf(found), 1);
+          }
+        },
+        setDraft: (draft) => {
+          pullRequest.isDraft = draft;
+        },
+        decorateQueued,
+        answers: (threadId) => qualorsAfterFirst(thread(threadId)),
+        resolved: (threadId) => thread(threadId).status !== 'active',
+        resolveAsPerson: (threadId) => {
+          thread(threadId).status = 'fixed';
+        },
+        deleteThread: (threadId) => {
+          pullRequest.threads.splice(pullRequest.threads.indexOf(thread(threadId)), 1);
+        },
+        // Azure DevOps keeps a deleted comment in its thread, without its author or its text.
+        deleteCommand: ({ threadId }) => {
+          thread(threadId!).comments[0]!.isDeleted = true;
+        },
+        deleteNote: (threadId, noteId) => {
+          commentOf(threadId, noteId).isDeleted = true;
+        },
+        close: () => {
+          pullRequest.status = 'abandoned';
+        },
+        failNextPost: (stored) =>
+          azure.inject('POST', commentsPath, {
+            ...badGateway,
+            ...(stored
+              ? {
+                  // Azure DevOps made the comment, and the answer never came back.
+                  before: () => {
+                    const sent = azure.requests.at(-1)!;
+                    const threadId = Number(commentsPath.exec(sent.path)?.[1]);
+                    const { content, parentCommentId } = JSON.parse(sent.body) as {
+                      content: string;
+                      parentCommentId: number;
+                    };
+                    azure.addComment(repositoryId, 7, threadId, {
+                      content,
+                      authorId: qualor,
+                      parentCommentId,
+                    });
+                    return Promise.resolve();
+                  },
+                }
+              : {}),
+          }),
+        failNextResolve: () => azure.inject('PATCH', threadPath, { ...badGateway, status: 500 }),
+        goneOnNextPost: () => azure.inject('POST', commentsPath, notFound),
+        goneOnNextResolve: () => azure.inject('PATCH', threadPath, notFound),
+        failNextMergeRequestRead: () =>
+          azure.inject('GET', new RegExp(`${pullRequestPath}$`), badGateway),
+        failNextThreadRead: () =>
+          azure.inject('GET', new RegExp(`${pullRequestPath}/threads(?:/\\d+)?$`), badGateway),
+        goneOnNextListing: () =>
+          azure.inject('GET', new RegExp(`${pullRequestPath}/threads$`), {
+            ...notFound,
+            body: { message: 'TF401180: The requested pull request was not found.' },
+          }),
+        username: (who) =>
+          azure.users.find((u) => u.id === azureIdentityOf(who))?.displayName ??
+          azureIdentityOf(who),
+        thread,
+        identityOf: azureIdentityOf,
+      };
+    },
+    requests: () => azure.requests.map((r) => `${r.method} ${r.path}`),
+    clearRequests: () => azure.clearRequests(),
+  };
+
   /** An open finding of the AI review on `line`, as the review of HEAD left it. */
   const aiFinding = async (branchId: string, line: number) => {
     const id = await seedAiIssue(h.ctx.db, {
@@ -768,7 +1075,7 @@ export function createReplyHarness() {
     config: h.ctx.config,
     logger: silentLogger,
     llmCircuit: createLlmRuntime().circuit,
-    scm: decorationDeps(h).scm,
+    scm: scmDeps(),
     scmRuntime: githubDeps(h).runtime,
     shutdown: new AbortController().signal,
     audit: recorder,
@@ -874,27 +1181,53 @@ export function createReplyHarness() {
         ),
       );
 
-  /** Brings up the model's, GitLab's and GitHub's fakes and the app, with a GitHub connection. */
+  /**
+   * Brings up the model's, GitLab's, GitHub's and Azure DevOps' fakes and the app, with a GitHub
+   * connection and an Azure DevOps one (a Services organisation, by PAT, whose user is Qualor's
+   * identity), and the Azure DevOps people of `AZURE_ROLES`.
+   */
   async function start() {
     llm = await createFakeLlm();
     gitlab = await createFakeGitLab();
     github = await createFakeGitHub();
+    azure = await createFakeAzureDevOps({ deployment: 'services' });
     h = await createIngestHarness({
       config: {
         publicUrl: PUBLIC_URL,
         scmInternalHosts: parseInternalHosts(
-          `${new URL(gitlab.url).host},${new URL(github.url).host}`,
+          [gitlab.url, github.url, azure.url].map((url) => new URL(url).host).join(','),
         ),
+        // A Services organisation's requests go to the fake (test/azure.ts, ruling 5).
+        azureTestOrigin: new URL(azure.url).origin,
         llmInternalHosts: parseInternalHosts(llm.host),
       },
     });
     githubConnectionId = await githubConnection(h, github);
-    return { h, gitlab, github, llm };
+    const created = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: servicesUrlOf(azure),
+        azureAuth: 'pat',
+        token: azure.pat,
+      },
+    });
+    if (created.statusCode !== 201) throw new Error(`Azure DevOps connection: ${created.body}`);
+    azureConnectionId = (created.json() as { id: string }).id;
+    for (const [who, role] of Object.entries(AZURE_ROLES)) {
+      azurePeople.set(who as Person, azure.addUser({ role, displayName: `Azure ${who}` }).id);
+    }
+    azurePeople.set('refused', AZURE_STRANGER);
+    return { h, gitlab, github, llm, azure };
   }
   async function close() {
     await h.close();
     await gitlab.close();
     await github.close();
+    await azure.close();
     await llm.close();
   }
 
@@ -903,6 +1236,7 @@ export function createReplyHarness() {
     close,
     gitlabDriver,
     githubDriver,
+    azureDriver,
     aiFinding,
     rowOfNote,
     rowById,

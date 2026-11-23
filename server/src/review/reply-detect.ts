@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import type { ReplyCommand } from '../db/schema';
+import {
+  machineMadeComment,
+  sameAzureIdentity,
+  type AzureThread,
+  type AzureThreadComment,
+} from '../scm/azure/client';
 import type { GitHubComment, GitHubReviewComment, GitHubReviewThread } from '../scm/github/client';
 import { discussionResolved, type GitLabDiscussion } from '../scm/gitlab/client';
 import { markerOf } from '../scm/markdown';
@@ -8,30 +14,50 @@ import { parseCommand } from './command-parse';
 /*
  * Which of the people's notes in a merge request Qualor answers (6I-4): the new replies in its own
  * threads, and the notes that give it a command. Decoration and the webhook's scan list the
- * discussions (GitLab), or the review comments, review threads and issue comments (GitHub), and
- * hand them here; what comes back is what the queue (reply-queue.ts) records in the ledger
- * (replies.ts). Plain functions over what they are given: no database, no request and no clock
- * (`since` says how far back a note counts).
+ * discussions (GitLab), the review comments, review threads and issue comments (GitHub), or the
+ * threads of the pull request (Azure DevOps), and hand them here; what comes back is what the
+ * queue (reply-queue.ts) records in the ledger (replies.ts). Plain functions over what they are
+ * given: no database, no request and no clock (`since` says how far back a note counts).
  *
  * A thread is Qualor's when its first note is Qualor's own, is no system note, and opens with an
  * issue marker. A reply is a later note that a person wrote (GitLab: anyone but Qualor's user, no
- * system note; GitHub: an account of type `User`), that the ledger does not hold yet (its id is
- * above the thread's largest) and that was made at or after `since`. All the replies of a thread
- * make one round, which its newest note keys. A resolved thread has no round, and nor has a
- * GitHub thread whose resolution was not listed: it may be closed.
+ * system note; GitHub: an account of type `User`; Azure DevOps: an identity other than Qualor's,
+ * in a comment that Azure DevOps did not write itself and that was not deleted), that the ledger
+ * does not hold yet (its id is above the thread's largest) and that was made at or after `since`.
+ * All the replies of a thread make one round, which its newest note keys. A resolved thread has no
+ * round (on Azure DevOps, any thread that is not active), and nor has a GitHub thread whose
+ * resolution was not listed: it may be closed.
  *
- * A command is the first note of a GitLab discussion (not Qualor's own, no system note), or a
- * comment on a GitHub pull request's page by a person, made at or after `since`, whose body
- * `parseCommand` reads as one. A note inside a thread is never a command, and in a thread of
- * Qualor's it is a reply.
+ * A command is the first note of a GitLab discussion (not Qualor's own, no system note), the first
+ * comment of an Azure DevOps thread (the same, and not deleted), or a comment on a GitHub pull
+ * request's page by a person, made at or after `since`, whose body `parseCommand` reads as one. A
+ * note inside a thread is never a command, and in a thread of Qualor's it is a reply.
+ *
+ * Azure DevOps numbers the comments of each thread from 1, and its threads from one counter of
+ * the organisation (probe item 15): a comment is a note of the ledger by `azureNoteId`, the
+ * thread's id and the comment's in one number.
  */
+
+/** What Azure DevOps' comment ids stay below: they are 16-bit (at most 500 comments a thread). */
+const AZURE_COMMENT_IDS = 65_536;
+
+/**
+ * The ledger's note id of comment `commentId` of Azure DevOps thread `threadId`: the thread's id
+ * times 65 536, plus the comment's (probe item 12). Two threads' comment 1 are two notes, and
+ * within a thread a later comment has a larger note id, as the ledger's largest note of a thread
+ * needs. Exact up to thread ids of about 1.3 × 10¹¹.
+ */
+export function azureNoteId(threadId: number, commentId: number): number {
+  return threadId * AZURE_COMMENT_IDS + commentId;
+}
 
 export interface DetectOptions {
   /**
-   * Qualor's own identity on the provider: GitLab's user id, GitHub's `<slug>[bot]`. Without the
-   * one a function needs, it finds nothing: it cannot tell Qualor's notes from people's.
+   * Qualor's own identity on the provider: GitLab's user id, GitHub's `<slug>[bot]`, Azure
+   * DevOps' identity id (a GUID, in any case). Without the one a function needs, it finds nothing:
+   * it cannot tell Qualor's notes from people's.
    */
-  qualor: { gitlabUserId?: number; githubLogin?: string };
+  qualor: { gitlabUserId?: number; githubLogin?: string; azureIdentityId?: string };
   /** The newest note the ledger holds of each thread, by thread id; a thread it holds none of has no entry. */
   largestNoteIds: ReadonlyMap<string, number>;
   /** The earliest note that counts: the later of the review consent and 30 days before the job. */
@@ -40,7 +66,10 @@ export interface DetectOptions {
 
 /** The new replies of one of Qualor's threads, which Qualor answers together. */
 export interface Round {
-  /** The GitLab discussion's id, or the id of the GitHub thread's first comment. */
+  /**
+   * The GitLab discussion's id, the id of the GitHub thread's first comment, or the Azure DevOps
+   * thread's id.
+   */
   threadId: string;
   /** The issue the thread is for: its first note's marker. */
   issueId: string;
@@ -48,17 +77,20 @@ export interface Round {
   noteIds: number[];
   /** The newest of them, which keys the round. */
   newest: number;
-  /** The SCM username of the newest note's author. */
+  /** The SCM username of the newest note's author (on Azure DevOps the display name). */
   author: string;
 }
 
 /** A note that asks Qualor for something. */
 export interface CommandNote {
   noteId: number;
-  /** The GitLab discussion the note opens, where its answer goes; null for a GitHub comment on the page. */
+  /**
+   * The GitLab discussion or the Azure DevOps thread the note opens, where its answer goes; null
+   * for a GitHub comment on the page.
+   */
   threadId: string | null;
   command: ReplyCommand;
-  /** The SCM username of the note's author. */
+  /** The SCM username of the note's author (on Azure DevOps the display name). */
   author: string;
 }
 
@@ -229,6 +261,88 @@ export function githubCommands(
     const command = parseCommand(comment.body);
     if (command === null || !madeSince(comment.created_at, o.since)) continue;
     found.push({ noteId: comment.id, threadId: null, command, author: comment.user.login });
+  }
+  return found;
+}
+
+/** The comments of an Azure DevOps thread by their ids: the first is the one that opened it. */
+export const azureCommentsInOrder = (thread: AzureThread): AzureThreadComment[] =>
+  thread.comments.toSorted((a, b) => a.id - b.id);
+
+/**
+ * Whether an Azure DevOps comment is one Qualor's identity (`qualor`) wrote as it is: not Azure
+ * DevOps' own, and not deleted.
+ */
+export const writtenByQualor = (comment: AzureThreadComment, qualor: string): boolean =>
+  !comment.isDeleted &&
+  !machineMadeComment(comment.commentType) &&
+  sameAzureIdentity(comment.authorId, qualor);
+
+/**
+ * Whether an Azure DevOps comment is a person's: written by an identity that is not Qualor's
+ * (`qualor`), not by Azure DevOps itself, and not deleted (a deleted comment may come without its
+ * author).
+ */
+export const writtenByPerson = (comment: AzureThreadComment, qualor: string): boolean =>
+  !comment.isDeleted &&
+  !machineMadeComment(comment.commentType) &&
+  comment.authorId !== '' &&
+  !sameAzureIdentity(comment.authorId, qualor);
+
+/** Who wrote a comment, as the ledger names them: the display name, else the identity's id. */
+export const azureAuthor = (comment: AzureThreadComment): string =>
+  comment.authorName === '' ? comment.authorId : comment.authorName;
+
+/**
+ * The rounds of Qualor's Azure DevOps threads (`threads`: the pull request's, all comments of
+ * each): one for each active thread that has a new reply. A thread is Qualor's when its first
+ * comment is a text comment of Qualor's identity (`qualor.azureIdentityId`, in any case) that
+ * opens with an issue marker; a thread that is not active (fixed, won't fix, closed, by design,
+ * pending) is resolved and has none. Each reply is the note `azureNoteId` names.
+ */
+export function azureRounds(threads: readonly AzureThread[], o: DetectOptions): Round[] {
+  const qualor = o.qualor.azureIdentityId;
+  if (qualor === undefined) return [];
+  const rounds: Round[] = [];
+  for (const thread of threads) {
+    const [first, ...later] = azureCommentsInOrder(thread);
+    if (first === undefined || !writtenByQualor(first, qualor)) continue;
+    const marker = markerOf(first.content);
+    if (marker?.kind !== 'issue' || thread.status !== 'active') continue;
+    const replies = later
+      .filter((comment) => writtenByPerson(comment, qualor))
+      .map((comment) => ({
+        id: azureNoteId(thread.id, comment.id),
+        author: azureAuthor(comment),
+        createdAt: comment.publishedDate,
+      }));
+    const round = roundOf(String(thread.id), marker.issueId, replies, o);
+    if (round !== null) rounds.push(round);
+  }
+  return rounds;
+}
+
+/**
+ * The commands in an Azure DevOps pull request's threads: the first comment of each thread that a
+ * person opened (`writtenByPerson`: not Qualor's, not Azure DevOps' own, not deleted), when it is a
+ * command. The answer goes into that thread, so `threadId` is its id, and the note is the
+ * comment's `azureNoteId`.
+ */
+export function azureCommands(threads: readonly AzureThread[], o: DetectOptions): CommandNote[] {
+  const qualor = o.qualor.azureIdentityId;
+  if (qualor === undefined) return [];
+  const found: CommandNote[] = [];
+  for (const thread of threads) {
+    const first = azureCommentsInOrder(thread)[0];
+    if (first === undefined || !writtenByPerson(first, qualor)) continue;
+    const command = parseCommand(first.content);
+    if (command === null || !madeSince(first.publishedDate, o.since)) continue;
+    found.push({
+      noteId: azureNoteId(thread.id, first.id),
+      threadId: String(thread.id),
+      command,
+      author: azureAuthor(first),
+    });
   }
   return found;
 }

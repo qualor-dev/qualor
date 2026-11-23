@@ -135,6 +135,17 @@ describe('the AI review section', () => {
     );
   });
 
+  it('says it in Azure DevOps’ words for Azure DevOps', () => {
+    const skipped = (reason: 'draft' | 'closed') =>
+      aiSummarySection({ kind: 'skipped', reason, detail: null }, 'azure', AI_SECTION_MAX_BYTES)[2];
+    expect(skipped('draft')).toBe(
+      'AI review is skipped while this pull request is a draft; the next pipeline run after it is ready reviews it, and a `qualor review` comment reviews it now.',
+    );
+    expect(skipped('closed')).toBe(
+      'AI review did not run because this pull request is merged or closed.',
+    );
+  });
+
   it('says that a merge request is too large for the per-review budget, apart from the day’s budget', () => {
     const tooLarge = { kind: 'skipped', reason: 'budget_spent', detail: 'too_large' } as const;
     expect(section(tooLarge)).toEqual([
@@ -634,6 +645,14 @@ describe('the first note of an AI review thread', () => {
       '```suggestion\n  for (let i = 0; i < items.length; i += 1) {\n    sum += items[i];\n```',
     );
     for (const body of [gitlab, github]) expect(checkAiThreadLines(body), body).toBe(true);
+  });
+
+  it('writes the suggestion block of an Azure DevOps thread as GitHub’s, which Azure DevOps offers to apply (probe item 5)', () => {
+    const one = { startLine: 7, endLine: 7, lines: ['x'] };
+    const azure = aiThreadBody(input({ provider: 'azure', suggestion: one }));
+    expect(azure).toContain('```suggestion\nx\n```');
+    expect(azure).toBe(aiThreadBody(input({ provider: 'github', suggestion: one })));
+    expect(checkAiThreadLines(azure), azure).toBe(true);
   });
 
   it('leaves out a suggestion that would not be safe to post, and keeps the finding', () => {

@@ -7,10 +7,12 @@ import { githubDeps } from '../../test/github';
 import type { IngestHarness } from '../../test/ingest';
 import { reviewOff, reviewOn } from '../../test/replies';
 import {
+  azureNote,
   createReplyHarness,
   HEAD,
   INSIDERS,
   OUTSIDERS,
+  type AzureMr,
   type Person,
 } from '../../test/reply-drivers';
 import { reviewResponder, switchReviewOn } from '../../test/review';
@@ -28,7 +30,9 @@ import { AI_REVIEW_QUEUE } from './runs';
  * on a GitLab merge request or a GitHub pull request is a row of the replies' ledger, which the job
  * answers with a fixed text beside the command's note, and, for `qualor review`, a run it makes or
  * restarts. The drivers of the two providers and the harness are in test/reply-drivers.ts, shared
- * with the answers' tests (reply-job.db.test.ts) and the scan's (reply-scan.db.test.ts).
+ * with the answers' tests (reply-job.db.test.ts) and the scan's (reply-scan.db.test.ts). On an
+ * Azure DevOps pull request (Azure sub-plan 5) a command is the first comment of a thread a person
+ * opened, and its answer a reply to it in that thread.
  */
 
 /** A request that asks for someone's rights, on either provider. */
@@ -841,6 +845,113 @@ describe('the answer job (6I-4)', () => {
         expect(posted!.body).toContain('AI review in progress…');
         expect(posted!.id).not.toBe(lost!.id);
       });
+    });
+  });
+
+  describe('the commands on Azure DevOps (Azure sub-plan 5)', () => {
+    // A command restarts a run, whose review job stays queued: the reviews a case runs are its own.
+    beforeEach(async () => {
+      await h.ctx.db.delete(jobs).where(eq(jobs.queue, AI_REVIEW_QUEUE));
+    });
+
+    /**
+     * A pull request whose review of HEAD ended as `end` says (the seeded one is done), and a
+     * thread a person opened with a command (`qualor review` unless `body` says) by a member (a
+     * contributor, unless `who` says otherwise), queued by a decoration.
+     */
+    const commanded = async (
+      key: string,
+      o: { end?: Partial<typeof reviewRuns.$inferInsert>; body?: string; who?: Person } = {},
+    ) => {
+      const mr = await harness.azureDriver.setup(`azure-command-${key}`);
+      await reviewOn(h, llm);
+      if (o.end !== undefined) await endRun(mr.analysisId, o.end);
+      const sent = mr.command(o.body ?? 'qualor review', o.who);
+      await mr.decorate();
+      const row = await commandRow(mr.branchId, sent.noteId);
+      expect(row).toMatchObject({
+        provider: 'azure',
+        kind: 'command',
+        status: 'queued',
+        threadId: sent.threadId,
+        author: mr.username(o.who ?? 'member'),
+      });
+      return { mr, sent, row };
+    };
+    /** Qualor's one answer in the command's thread: a reply to the command's comment. */
+    const answerIn = (mr: AzureMr, threadId: string) => {
+      const answers = mr.commandAnswers().filter((a) => a.threadId === threadId);
+      expect(answers).toHaveLength(1);
+      const answered = mr
+        .thread(threadId)
+        .comments.find((c) => azureNote(Number(threadId), c.id) === answers[0]!.id);
+      expect(answered?.parentCommentId).toBe(1);
+      return answered!;
+    };
+
+    it('`qualor review` by a reader, or by someone Azure DevOps does not know, is refused: only project members may ask (review focus 3)', async () => {
+      for (const who of ['reporter', 'refused'] as const) {
+        const { mr, sent, row } = await commanded(`reader-${who}`, { end: FAILED, who });
+        const before = await runOf(mr.analysisId);
+        expect(await answer(), who).toBe(1);
+        expect(await commandRow(mr.branchId, sent.noteId), who).toMatchObject({
+          status: 'done',
+          outcome: 'not_available',
+          answer: NOT_A_MEMBER,
+        });
+        const answered = answerIn(mr, sent.threadId!);
+        expect(answered.content, who).toBe(commandNote(row.id, NOT_A_MEMBER));
+        // No run was made or restarted.
+        expect(await runOf(mr.analysisId), who).toEqual(before);
+      }
+    });
+
+    it('`qualor review` by a contributor asks for a review of the commit, answered in the command’s thread', async () => {
+      const { mr, sent, row } = await commanded('contributor', { end: FAILED });
+      expect(await answer()).toBe(1);
+      const answered = answerIn(mr, sent.threadId!);
+      expect(answered.content).toBe(commandNote(row.id, requested(HEAD)));
+      expect(await commandRow(mr.branchId, sent.noteId)).toMatchObject({
+        status: 'done',
+        outcome: 'review_requested',
+        answer: requested(HEAD),
+        answerNoteId: azureNote(Number(sent.threadId), answered.id),
+      });
+      // The run waits again, asked for by the person's display name, with its review job due.
+      const run = await runOf(mr.analysisId);
+      expect(run).toMatchObject({ status: 'waiting', requestedBy: mr.username('member') });
+      expect(await reviewJobsOf(run.id)).toEqual([{ due: true }]);
+      // A decoration after it finds the command held and Qualor's answer no command.
+      await mr.decorate();
+      expect(await commandRows(mr.branchId)).toHaveLength(1);
+      expect(await answer()).toBe(0);
+    });
+
+    it('`qualor fix` and `qualor stop` are answered that auto-fix is not switched on, with no run', async () => {
+      for (const body of ['qualor fix', 'qualor stop']) {
+        const { mr, sent, row } = await commanded(body.replace(' ', '-'), { end: FAILED, body });
+        const before = await runOf(mr.analysisId);
+        expect(await answer(), body).toBe(1);
+        expect(answerIn(mr, sent.threadId!).content, body).toBe(commandNote(row.id, NOT_AVAILABLE));
+        expect(await commandRow(mr.branchId, sent.noteId), body).toMatchObject({
+          status: 'done',
+          outcome: 'not_available',
+        });
+        expect(await runOf(mr.analysisId), body).toEqual(before);
+      }
+    });
+
+    it('a command whose comment was deleted ends the row skipped: thread_gone, with no answer', async () => {
+      const { mr, sent } = await commanded('deleted', { end: FAILED });
+      const before = await runOf(mr.analysisId);
+      mr.deleteCommand(sent);
+      await answer();
+      expect(await commandRow(mr.branchId, sent.noteId)).toMatchObject({
+        status: 'skipped',
+        reason: 'thread_gone',
+      });
+      expect(mr.commandAnswers()).toEqual([]);
+      expect(await runOf(mr.analysisId)).toEqual(before);
     });
   });
 });

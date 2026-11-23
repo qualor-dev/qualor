@@ -29,10 +29,13 @@ import {
 } from '../db/schema';
 import { readLlmSettings } from '../llm/settings';
 import { enqueue } from '../queue/queue';
+import type { AzureThread } from '../scm/azure/client';
 import type { GitHubComment } from '../scm/github/client';
 import type { GitLabDiscussion } from '../scm/gitlab/client';
 import { insertReplies, largestNoteIds } from './replies';
 import {
+  azureCommands,
+  azureRounds,
   githubCommands,
   gitlabCommands,
   gitlabRounds,
@@ -496,8 +499,8 @@ function insertRounds(
 
 /**
  * Writes the rows of the commands in `notes`, as {@link insertRounds} writes rounds, the first
- * {@link MAX_QUEUED_COMMANDS}. A GitLab command has the discussion it opened, which its answer goes
- * into; a GitHub one is in no thread.
+ * {@link MAX_QUEUED_COMMANDS}. A GitLab command has the discussion it opened, and an Azure DevOps
+ * one the thread, which its answer goes into; a GitHub one is in no thread.
  */
 function insertCommands(
   db: Executor,
@@ -685,5 +688,29 @@ export async function queueGitHubAnswers(
   return queueReplies(db, { ...ids, provider: 'github' }, window, {
     rounds: found.rounds,
     commands: githubCommands(found.comments, options),
+  });
+}
+
+/**
+ * Queues the answers to what people wrote in an Azure DevOps pull request (Azure sub-plan 5): the
+ * new replies in Qualor's threads and the commands among `threads`, the pull request's threads as
+ * the listing a decoration or a scan read holds them (Azure DevOps lists them all in one answer).
+ * `identityId` is Qualor's identity in Azure DevOps. Each note is a comment's `azureNoteId`, the
+ * thread's id and the comment's in one number, so comment 1 of two threads is two notes. Reads
+ * nothing from Azure DevOps. Without a `window` AI review is not active for the project, and
+ * Qualor answers none. Answers how many jobs it queued.
+ */
+export async function queueAzureAnswers(
+  db: Db,
+  ids: AnswerIds,
+  window: ReplyWindow | null,
+  identityId: string,
+  threads: readonly AzureThread[],
+): Promise<number> {
+  if (window === null) return 0;
+  const options = { qualor: { azureIdentityId: identityId }, ...window };
+  return queueReplies(db, { ...ids, provider: 'azure' }, window, {
+    rounds: azureRounds(threads, options),
+    commands: azureCommands(threads, options),
   });
 }

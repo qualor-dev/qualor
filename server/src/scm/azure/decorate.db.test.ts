@@ -1,24 +1,27 @@
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { azureCommitId, seedAzurePullRequest } from '../../../test/azure';
 import {
   createFakeAzureDevOps,
   type FakeAzureDevOps,
   type FakeAzurePullRequestInput,
 } from '../../../test/fake-azure-devops';
+import { createFakeLlm, type FakeLlm } from '../../../test/fake-llm';
 import { createIngestHarness, type IngestHarness } from '../../../test/ingest';
+import { answerJob, queuedAnswers, reviewOff, reviewOn } from '../../../test/replies';
 import { engine, file, finding, reportWith } from '../../../test/reports';
 import { decorationDeps, PUBLIC_URL, runDecorations } from '../../../test/scm';
 import {
   analyses,
   branches,
+  issues,
   jobs,
   projects,
   reviewSnapshots,
   scmConnections,
 } from '../../db/schema';
 import { decorateAnalysis } from '../decorate';
-import { markerOf, summaryMarker } from '../markdown';
+import { issueMarker, markerOf, summaryMarker } from '../markdown';
 import { azureStatusName } from '../render';
 import { parseInternalHosts } from '../url';
 import { AZURE_REPOSITORY_MISMATCH } from './decorate';
@@ -664,6 +667,90 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
       });
       await h.ctx.db.delete(jobs);
       expect(await problemOf()).toBeNull();
+    });
+  });
+
+  describe('the answers to what people wrote (Azure sub-plan 5)', () => {
+    let llm: FakeLlm;
+    beforeAll(async () => {
+      llm = await createFakeLlm();
+    });
+    afterAll(async () => {
+      await llm.close();
+    });
+    // AI review is off for every other test of this file.
+    afterEach(() => reviewOff(h));
+
+    it('queues a reply in Qualor’s thread and a command, from the threads the decoration read, with no request of its own; none without AI review', async () => {
+      const s = await setup('az/answers');
+      const analysisId = await s.ingest({ findings: 1 });
+      await decorate();
+      const [issue] = await h.ctx.db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(eq(issues.projectId, s.project.id));
+      const [branch] = await h.ctx.db
+        .select({ id: branches.id })
+        .from(branches)
+        .where(and(eq(branches.projectId, s.project.id), eq(branches.kind, 'merge_request')));
+      // Qualor's thread of the issue, which a person replied in, and a thread a person opened
+      // with a command, as Azure DevOps lists them.
+      const ann = fake.addUser({ role: 'contributor', displayName: 'Ann Smith' });
+      const thread = fake.addThread(s.repository.id, PR, {
+        comments: [
+          {
+            content: `${issueMarker(issue!.id)}\n**Medium** · a finding`,
+            authorId: fake.patUser.id,
+          },
+          { content: 'This is intended.', authorId: ann.id, parentCommentId: 1 },
+        ],
+      });
+      const command = fake.addThread(s.repository.id, PR, {
+        comments: [{ content: 'qualor review', authorId: ann.id }],
+      });
+      const again = async () => {
+        fake.clearRequests();
+        const outcome = await decorateAnalysis(decorationDeps(h), {
+          analysisId,
+          attempt: 0,
+          gitlab: null,
+          azure: { repositoryId: s.repository.id, checkout: 'head' },
+        });
+        expect(outcome.kind).toBe('done');
+        return requestsOf().filter((r) => r.startsWith('GET'));
+      };
+      // Without AI review, nothing is queued.
+      const reads = await again();
+      expect(await queuedAnswers(h.ctx.db, branch!.id)).toEqual({ rows: [], jobs: [] });
+      await reviewOn(h, llm);
+      // With it, the same reads, and the notes are queued.
+      expect(await again()).toEqual(reads);
+      const queued = await queuedAnswers(h.ctx.db, branch!.id);
+      expect(queued.rows).toMatchObject([
+        {
+          provider: 'azure',
+          kind: 'reply',
+          noteId: thread.id * 65_536 + 2,
+          threadId: String(thread.id),
+          issueId: issue!.id,
+          author: 'Ann Smith',
+          status: 'queued',
+        },
+        {
+          provider: 'azure',
+          kind: 'command',
+          command: 'review',
+          noteId: command.id * 65_536 + 1,
+          threadId: String(command.id),
+          issueId: null,
+          author: 'Ann Smith',
+          status: 'queued',
+        },
+      ]);
+      expect(queued.jobs).toEqual(queued.rows.map((row) => answerJob(branch!.id, row.id)));
+      // Decorated again, the notes are held: nothing more is queued.
+      await again();
+      expect(await queuedAnswers(h.ctx.db, branch!.id)).toEqual(queued);
     });
   });
 });

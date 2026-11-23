@@ -1,5 +1,6 @@
 import { deleteBranchSnapshots } from '../../review/lifecycle';
 import { withMergeRequestHead } from '../../review/render';
+import { queueAzureAnswers, replyWindow } from '../../review/reply-queue';
 import type { DecorationDeps, DecorationOutcome } from '../decorate';
 import {
   branchUrl,
@@ -97,7 +98,8 @@ function ownSummary(
 /**
  * The summary: its thread's first comment edited when it differs, else a closed thread on the pull
  * request as a whole. Another identity's thread with the marker is left alone (Azure DevOps has no
- * deletion of others' threads).
+ * deletion of others' threads). Answers the threads it listed, which the answers to the people's
+ * comments are found in.
  */
 async function reconcileSummary(
   client: AzureDevOpsClient,
@@ -106,7 +108,7 @@ async function reconcileSummary(
   loaded: Loaded,
   identityId: string,
   body: string,
-): Promise<void> {
+): Promise<AzureThread[]> {
   const threads = await client.threads(repositoryId, prId);
   const own = ownSummary(threads, identityId, loaded.project.id);
   if (own === null) {
@@ -114,6 +116,7 @@ async function reconcileSummary(
   } else if (comparable(own.content) !== comparable(body)) {
     await client.editComment(repositoryId, prId, own.threadId, own.commentId, body);
   }
+  return threads;
 }
 
 function summaryFor(
@@ -217,8 +220,9 @@ function problemCodeOf(error: ScmError) {
 /**
  * The steps of one Azure DevOps decoration: the client and the repository check; a branch analysis gets a
  * commit status. A pull request gets, in this order, its status on the analysed iteration (the one
- * a "Status check" branch policy reads), Qualor's inline threads, and the summary thread. A
- * completed or abandoned pull request only has its title recorded and its snapshots deleted.
+ * a "Status check" branch policy reads), Qualor's inline threads, the summary thread, and the
+ * answers to the people's replies and commands queued (6I-4). A completed or abandoned pull
+ * request only has its title recorded and its snapshots deleted.
  */
 async function decorateAzureSteps(
   deps: DecorationDeps,
@@ -310,9 +314,22 @@ async function decorateAzureSteps(
     const data = await summaryData(deps.db, loaded, deps.publicUrl);
     const review = await loadReviewSummary(deps.db, analysis.id, deps.publicUrl);
     const body = summaryFor(deps, loaded, data, review, pull, inline);
-    await attempt(failures, () =>
+    const threads = await attempt(failures, () =>
       reconcileSummary(client, repositoryId, prId, loaded, identity.id, body),
     );
+    // Last: what Azure DevOps shows is written before the database takes more work. The replies
+    // and commands are the ones in the threads the summary listed (none when they could not be
+    // read): no request of their own. Without AI review active for the project there is no
+    // window, and Qualor answers none (6I-4).
+    if (threads !== null) {
+      await queueAzureAnswers(
+        deps.db,
+        { projectId: project.id, branchId: branch.id },
+        await replyWindow(deps.db, project, branch.id),
+        identity.id,
+        threads,
+      );
+    }
     return finish(connection.id, failures, failed);
   } catch (err) {
     if (err instanceof ScmError) return failed(err);

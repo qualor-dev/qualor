@@ -1,13 +1,16 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { FakeAzureDevOps } from '../../test/fake-azure-devops';
 import type { FakeGitHub } from '../../test/fake-github';
 import type { FakeGitLab } from '../../test/fake-gitlab';
 import { openAiAnswer, openAiToolCalls, type FakeLlm } from '../../test/fake-llm';
 import { githubDeps } from '../../test/github';
 import type { IngestHarness } from '../../test/ingest';
+import { outsideProseSpans } from '../../test/markdown-check';
 import { reviewOff, reviewOn } from '../../test/replies';
 import {
   ACCEPTED,
+  azureNote,
   createReplyHarness,
   decision,
   EXPLAINED,
@@ -65,7 +68,9 @@ import {
  * with a fixed text beside the command's note, and, for `qualor review`, a run it makes or restarts.
  * The commands' cases are in reply-commands.db.test.ts. The drivers of the two providers and the
  * harness are in test/reply-drivers.ts, shared with the commands' tests and the scan's
- * (reply-scan.db.test.ts).
+ * (reply-scan.db.test.ts). On an Azure DevOps pull request (Azure sub-plan 5) the same job runs
+ * through the Azure DevOps driver: a reply to the thread's first comment, the rights of a
+ * contributor and of a reader, and a thread resolved as fixed.
  */
 
 /** A request that asks for someone's rights, on either provider. */
@@ -93,10 +98,11 @@ describe('the answer job (6I-4)', () => {
   let h: IngestHarness;
   let gitlab: FakeGitLab;
   let github: FakeGitHub;
+  let azure: FakeAzureDevOps;
   let llm: FakeLlm;
 
   beforeAll(async () => {
-    ({ h, gitlab, github, llm } = await harness.start());
+    ({ h, gitlab, github, azure, llm } = await harness.start());
   });
   afterAll(async () => {
     await harness.close();
@@ -1916,6 +1922,171 @@ describe('the answer job (6I-4)', () => {
       expect(mr.answers(threadId).map((a) => a.body)).toEqual([
         replyNote(row.id, words, 'false_positive'),
       ]);
+    });
+  });
+
+  describe('on Azure DevOps (Azure sub-plan 5)', () => {
+    /** A request that asks for someone's rights: the identities lookup or the Git ACL. */
+    const AZURE_RIGHTS = /\/_apis\/identities$|\/_apis\/accesscontrollists\//;
+    /**
+     * A pull request with an open AI finding in Qualor's thread, a person's reply in it (a
+     * member's, a contributor, unless `who` says otherwise), and the reply queued by a decoration.
+     */
+    const replied = async (key: string, o: { body?: string; who?: Person } = {}) => {
+      const mr = await harness.azureDriver.setup(`azure-${key}`);
+      await reviewOn(h, llm);
+      const issueId = await aiFinding(mr.branchId, 9);
+      await mr.decorate();
+      const threadId = mr.threadOf(issueId);
+      const noteId = mr.reply(
+        threadId,
+        o.body ?? 'We will not fix this now: the team accepts it.',
+        o.who,
+      );
+      await mr.decorate();
+      const row = await rowOfNote(mr.branchId, noteId);
+      expect(row).toMatchObject({
+        provider: 'azure',
+        kind: 'reply',
+        status: 'queued',
+        threadId,
+        issueId,
+        author: mr.username(o.who ?? 'member'),
+      });
+      return { mr, issueId, threadId, noteId, row };
+    };
+
+    it("a contributor's won't-fix reply marks the issue, posts one answer in reply to Qualor's first comment, and resolves the thread as fixed", async () => {
+      const { mr, issueId, threadId, row } = await replied('wont-fix');
+      harness.azureDriver.clearRequests();
+      llm.say(WONT_FIX);
+      expect(await answer()).toBe(1);
+      expect(await issueById(issueId)).toMatchObject({ status: 'wont_fix', resolvedBy: null });
+      // The changelog names the person by their display name.
+      expect(await changesOf(issueId)).toMatchObject([
+        {
+          field: 'status',
+          newValue: 'wont_fix',
+          comment: `Won't fix after \`${mr.username('member')}\` replied in the merge request.`,
+        },
+      ]);
+      const thread = mr.thread(threadId);
+      const posted = thread.comments.at(-1)!;
+      expect(posted).toMatchObject({
+        content: replyNote(row.id, ACCEPTED, 'wont_fix'),
+        parentCommentId: 1,
+        commentType: 'text',
+      });
+      expect(mr.answers(threadId)).toHaveLength(1);
+      expect(thread.status).toBe('fixed');
+      expect(await rowById(row.id)).toMatchObject({
+        status: 'done',
+        outcome: 'wont_fix',
+        verdict: 'wont_fix',
+        answerNoteId: azureNote(Number(threadId), posted.id),
+      });
+      // The rights of the one author: the identities host, then the repository's ACL.
+      const asked = harness.azureDriver.requests().filter((r) => AZURE_RIGHTS.test(r));
+      expect(asked).toEqual([
+        'GET /vssps/_apis/identities',
+        expect.stringMatching(/^GET \/_apis\/accesscontrollists\/2e9eb7ed-/),
+      ]);
+      // A decoration afterwards finds Qualor's answer no reply, and leaves the thread as it is: no
+      // status is sent for any thread (the summary's comment may be edited).
+      harness.azureDriver.clearRequests();
+      await mr.decorate();
+      expect(mr.thread(threadId).status).toBe('fixed');
+      expect(
+        harness.azureDriver.requests().filter((r) => /^PATCH .*\/threads\/\d+$/.test(r)),
+      ).toEqual([]);
+      expect(
+        await h.ctx.db.select().from(reviewReplies).where(eq(reviewReplies.branchId, mr.branchId)),
+      ).toHaveLength(1);
+    });
+
+    it("a reader's won't-fix reply, or one whose identity Azure DevOps does not know, is answered and changes nothing (review focus 3)", async () => {
+      for (const who of [...OUTSIDERS, 'refused'] as const) {
+        const { mr, issueId, threadId, row } = await replied(`outsider-${who}`, { who });
+        const calls = llm.requests.length;
+        // The model says won't fix all the same: refused, it answers instead.
+        llm.say(WONT_FIX, KEEP);
+        await answer();
+        expect(systemOf(callsSince(calls)[0]!), who).toContain(MEMBERS_ONLY);
+        expect(await issueById(issueId), who).toMatchObject({ status: 'open' });
+        expect(await changesOf(issueId), who).toEqual([]);
+        expect(
+          mr.answers(threadId).map((a) => a.body),
+          who,
+        ).toEqual([replyNote(row.id, EXPLAINED, null)]);
+        expect(mr.thread(threadId).comments.at(-1)?.parentCommentId, who).toBe(1);
+        expect(mr.resolved(threadId), who).toBe(false);
+        expect(await rowById(row.id), who).toMatchObject({ status: 'done', outcome: 'answered' });
+      }
+    });
+
+    it("an insider's won't-fix reply is applied, an owner's too", async () => {
+      for (const who of ['owner', 'maintainer'] as const) {
+        const { mr, issueId, threadId, row } = await replied(`insider-${who}`, { who });
+        llm.say(WONT_FIX);
+        await answer();
+        expect((await issueById(issueId)).status, who).toBe('wont_fix');
+        expect(mr.resolved(threadId), who).toBe(true);
+        expect(await rowById(row.id), who).toMatchObject({ status: 'done', outcome: 'wont_fix' });
+      }
+    });
+
+    it("the model's words stay inert on Azure DevOps: a mention by id, a work item, a pull request and math are code", async () => {
+      const { mr, threadId, row } = await replied('inert', { body: 'Who owns this?' });
+      const guid = mr.identityOf('owner');
+      const words = `Ask @<${guid}> about #1 and !2, or @${guid}; see $x$ and $$y$$.`;
+      llm.say(decision('keep', 'question', words));
+      await answer();
+      const [posted] = mr.answers(threadId);
+      expect(posted?.body).toBe(replyNote(row.id, words, null));
+      const lines = posted!.body.split('\n').slice(3);
+      expect(lines.join('\n')).toContain('` #1 `');
+      for (const line of lines) {
+        const outside = outsideProseSpans(line);
+        for (const pattern of [/@<?[0-9a-f]{8}-/i, /#\d/, /!\d/, /\$[^$\s]/, /\$\$/, /@/]) {
+          expect(outside, `${line}: ${String(pattern)}`).not.toMatch(pattern);
+        }
+      }
+    });
+
+    it('a transient failure of the rights check fails the job into its second try, which answers', async () => {
+      const { mr, issueId, threadId, row } = await replied('rights-retry');
+      // Azure DevOps cannot answer the ACL once (503): the rights are not known, so the job is
+      // tried again rather than the reply's status change being dropped.
+      azure.inject('GET', /\/_apis\/accesscontrollists\//, {
+        status: 503,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: { message: 'Service Unavailable' },
+      });
+      llm.say(WONT_FIX);
+      await answer();
+      expect(await rowById(row.id)).toMatchObject({ status: 'running', verdict: null });
+      expect((await jobsOf(row.id)).map((j) => [j.status, j.attempts])).toEqual([['queued', 1]]);
+      expect(mr.answers(threadId)).toEqual([]);
+      await retryNow();
+      await answer();
+      expect((await issueById(issueId)).status).toBe('wont_fix');
+      expect(await rowById(row.id)).toMatchObject({ status: 'done', outcome: 'wont_fix' });
+      expect(mr.answers(threadId)).toHaveLength(1);
+    });
+
+    it('a thread a person resolved, one that is gone, or one whose reply was deleted ends the row skipped: thread_gone', async () => {
+      const resolved = await replied('resolved-thread');
+      resolved.mr.resolveAsPerson(resolved.threadId);
+      const gone = await replied('gone-thread');
+      gone.mr.deleteThread(gone.threadId);
+      const retracted = await replied('retracted-reply');
+      retracted.mr.deleteNote(retracted.threadId, retracted.noteId);
+      const calls = llm.requests.length;
+      await answer();
+      for (const { row } of [resolved, gone, retracted]) {
+        expect(await rowById(row.id)).toMatchObject({ status: 'skipped', reason: 'thread_gone' });
+      }
+      expect(callsSince(calls)).toEqual([]);
     });
   });
 

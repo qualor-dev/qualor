@@ -5,7 +5,7 @@ import type { FakeLlm } from '../../test/fake-llm';
 import { githubDeps } from '../../test/github';
 import type { IngestHarness } from '../../test/ingest';
 import { answerJob, queuedAnswers, reviewOff, reviewOn, reviewScope } from '../../test/replies';
-import { createReplyHarness, HEAD, KEEP, type Driver } from '../../test/reply-drivers';
+import { azureNote, createReplyHarness, HEAD, KEEP, type Driver } from '../../test/reply-drivers';
 import { uuidv7 } from '../db/ids';
 import { branches, issueChanges, issues, jobs, projects } from '../db/schema';
 import { firstLineOf, markerOf, replyMarker } from '../scm/markdown';
@@ -24,7 +24,8 @@ import { AI_REPLY_QUEUE, queueScan, replyKey } from './reply-queue';
  * drivers (test/reply-drivers.ts): Qualor's thread, a person's reply and a person's command are
  * found, nothing is read of a merge request that is closed or whose project has no AI review, and a
  * merge request the provider no longer has, a provider that fails and a circuit that is closed to
- * the connection each end the job as they should.
+ * the connection each end the job as they should. On an Azure DevOps pull request (sub-plan 5), the
+ * note ids (a thread's id times 65 536 plus the comment's) and what is never a note to answer.
  */
 
 describe('the notes scan (a webhook’s job)', () => {
@@ -437,6 +438,146 @@ describe('the notes scan (a webhook’s job)', () => {
       llm.say(KEEP);
       await answer({ scmRuntime: runtime });
       expect(mr.answers(threadId)).toHaveLength(1);
+    });
+  });
+
+  describe('on Azure DevOps (Azure sub-plan 5)', () => {
+    beforeEach(async () => {
+      await h.ctx.db.delete(jobs).where(eq(jobs.queue, AI_REPLY_QUEUE));
+    });
+
+    /** A pull request with an open AI finding and Qualor's thread for it, and no reply yet. */
+    const threaded = async (key: string) => {
+      const mr = await harness.azureDriver.setup(`azure-scan-${key}`);
+      await reviewOn(h, llm);
+      const issueId = await aiFinding(mr.branchId, 9);
+      await mr.decorate();
+      return { mr, issueId, threadId: mr.threadOf(issueId) };
+    };
+    const queuedFor = (branchId: string) => queuedAnswers(h.ctx.db, branchId);
+    /** What reached Azure DevOps, from `_apis/` and without the repository's id. */
+    const sent = () =>
+      harness.azureDriver
+        .requests()
+        .map((r) => r.replace(/\/_apis\/git\/repositories\/[^/]+/, '').replace('/_apis/', '/'));
+
+    it('queues the reply and the command it finds as a decoration would, by their note ids, and only reads', async () => {
+      const { mr, issueId, threadId } = await threaded('found');
+      const noteId = mr.reply(threadId, 'We accept this for now.');
+      const command = mr.command('qualor review');
+      harness.azureDriver.clearRequests();
+      await scan(mr.branchId);
+      const { rows, jobs: queued } = await queuedFor(mr.branchId);
+      const reply = rows.find((r) => r.kind === 'reply')!;
+      const asked = rows.find((r) => r.kind === 'command')!;
+      expect(rows).toHaveLength(2);
+      // The note id is the thread's id times 65 536 plus the comment's: comment 2 of Qualor's
+      // thread, comment 1 of the person's.
+      expect(noteId).toBe(azureNote(Number(threadId), 2));
+      expect(command.noteId).toBe(azureNote(Number(command.threadId), 1));
+      expect(reply).toMatchObject({
+        provider: 'azure',
+        noteId,
+        threadId,
+        issueId,
+        author: mr.username('member'),
+        status: 'queued',
+      });
+      expect(asked).toMatchObject({
+        provider: 'azure',
+        noteId: command.noteId,
+        threadId: command.threadId,
+        command: 'review',
+        author: mr.username('member'),
+        status: 'queued',
+      });
+      expect(queued).toEqual([answerJob(mr.branchId, reply.id), answerJob(mr.branchId, asked.id)]);
+      // The pull request's state, who Qualor is, and the threads: reads only.
+      expect(sent()).toEqual([
+        'GET /pullrequests/7',
+        'GET /connectionData',
+        'GET /pullrequests/7/threads',
+      ]);
+    });
+
+    it('comment 1 in two threads, and comment 2 in two others, are four notes: four rows and four answers (review focus 2)', async () => {
+      const { mr, issueId, threadId } = await threaded('same-comment-ids');
+      const other = await aiFinding(mr.branchId, 12);
+      await mr.decorate();
+      const otherThread = mr.threadOf(other);
+      const replies = [
+        mr.reply(threadId, 'We accept this for now.'),
+        mr.reply(otherThread, 'This one too.'),
+      ];
+      const commands = [mr.command('qualor fix'), mr.command('qualor stop')];
+      // The same comment ids in different threads.
+      expect(replies.map((n) => n % 65_536)).toEqual([2, 2]);
+      expect(commands.map((c) => c.noteId % 65_536)).toEqual([1, 1]);
+      await scan(mr.branchId);
+      const { rows } = await queuedFor(mr.branchId);
+      expect(rows.map((r) => [r.kind, r.noteId, r.threadId, r.issueId])).toEqual(
+        [
+          ['reply', replies[0], threadId, issueId],
+          ['reply', replies[1], otherThread, other],
+          ['command', commands[0]!.noteId, commands[0]!.threadId, null],
+          ['command', commands[1]!.noteId, commands[1]!.threadId, null],
+        ].toSorted((a, b) => Number(a[1]) - Number(b[1])),
+      );
+      llm.say(KEEP, KEEP);
+      expect(await answer()).toBe(4);
+      expect(mr.answers(threadId)).toHaveLength(1);
+      expect(mr.answers(otherThread)).toHaveLength(1);
+      expect(mr.commandAnswers().map((a) => a.threadId)).toEqual(commands.map((c) => c.threadId));
+    });
+
+    it('an edited comment delivered twice is one row: the second scan finds its note in the ledger', async () => {
+      const { mr, threadId } = await threaded('edited');
+      const noteId = mr.reply(threadId, 'We accept this.');
+      await scan(mr.branchId);
+      const first = await queuedFor(mr.branchId);
+      expect(first.rows).toMatchObject([{ kind: 'reply', noteId }]);
+      // The person edits the comment: Azure DevOps delivers the edit, and the scan reads it again.
+      mr
+        .thread(threadId)
+        .comments.find((c) => azureNote(Number(threadId), c.id) === noteId)!.content =
+        'We accept this for now, edited.';
+      await scan(mr.branchId);
+      expect(await queuedFor(mr.branchId)).toEqual(first);
+    });
+
+    it("Qualor's own answers, Azure DevOps' comments, a deleted comment and a resolved thread make no row", async () => {
+      const { mr, threadId } = await threaded('nothing');
+      mr.reply(threadId, 'Why is this a problem?');
+      await scan(mr.branchId);
+      llm.say(KEEP);
+      expect(await answer()).toBe(1);
+      expect(mr.answers(threadId)).toHaveLength(1);
+      const rows = (await queuedFor(mr.branchId)).rows;
+      // Qualor's answer is in the thread now; Azure DevOps' own thread of a push, a person's
+      // deleted comment, and a reply in a thread a person resolved come beside it.
+      const pull = mr.thread(threadId);
+      pull.comments.push({
+        id: pull.comments.length + 1,
+        authorId: mr.identityOf('member'),
+        content: 'Ann updated the status',
+        commentType: 'system',
+        parentCommentId: 0,
+        publishedDate: new Date().toISOString(),
+        isDeleted: false,
+      });
+      const deleted = mr.reply(threadId, 'Never mind.');
+      mr.deleteNote(threadId, deleted);
+      const closed = await aiFinding(mr.branchId, 12);
+      await mr.decorate();
+      const closedThread = mr.threadOf(closed);
+      mr.resolveAsPerson(closedThread);
+      mr.reply(closedThread, 'Done here.');
+      await scan(mr.branchId);
+      // Neither the scan nor the decoration before it found anything new: the one row is the
+      // answered round's.
+      const after = await queuedFor(mr.branchId);
+      expect(after.rows.map((r) => [r.id, r.status])).toEqual(rows.map((r) => [r.id, 'done']));
+      expect(after.jobs.filter((j) => j.status === 'queued')).toEqual([]);
     });
   });
 });

@@ -14,7 +14,7 @@ import { SCM_TOKEN_AAD, type ScmConnectionRow } from '../src/scm/connections';
  */
 
 /** A repository id as Azure DevOps names one (a GUID); any will do for a stub. */
-export const AZURE_REPOSITORY = '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001';
+const AZURE_REPOSITORY = '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001';
 
 export interface RecordingListener {
   /** `http://127.0.0.1:<port>`: list `host` in `scmInternalHosts`, so a request would get through. */

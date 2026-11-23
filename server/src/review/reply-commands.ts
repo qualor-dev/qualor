@@ -5,6 +5,7 @@ import type { ReviewJobDeps } from './job';
 import { commandNote } from './render';
 import { recordAnswerNote, type ReplyRow } from './replies';
 import {
+  azureCommandSide,
   GONE,
   githubCommandSide,
   gitlabCommandSide,
@@ -134,7 +135,8 @@ class CommandFlow extends JobSteps {
    * Where the answer to a command goes, on the provider the project is mapped to now: `gone` when
    * that is no longer the row's provider, `unusable` when its client cannot be made (a key that no
    * longer decrypts, an address the rules no longer allow) or the ids are none of the provider's. A
-   * GitLab command has the discussion its note opened.
+   * GitLab command has the discussion its note opened, an Azure DevOps one the thread its comment
+   * opened.
    */
   private commandSideOf(row: ReplyRow, target: Target): CommandSide | 'gone' | 'unusable' {
     const { connection } = target;
@@ -159,6 +161,17 @@ class CommandFlow extends JobSteps {
           found.client,
           found.ref,
           found.iid,
+          row,
+          row.threadId,
+          logger,
+        );
+      case 'azure':
+        if (row.threadId === null) return 'unusable';
+        return azureCommandSide(
+          connection.id,
+          found.client,
+          found.repositoryId,
+          found.prId,
           row,
           row.threadId,
           logger,
