@@ -171,12 +171,30 @@ export async function decorateAzure(
   });
   const connectionId = loaded.connection.id;
   if (outcome.kind === 'done') {
-    await clearScmProblem(deps.db, connectionId);
+    await keepOutcome(deps, connectionId, () => clearScmProblem(deps.db, connectionId));
   } else if (seen.decisive !== null) {
     const code = problemCodeOf(seen.decisive);
-    if (code !== null) await recordScmProblem(deps.db, connectionId, code);
+    if (code !== null) {
+      await keepOutcome(deps, connectionId, () => recordScmProblem(deps.db, connectionId, code));
+    }
   }
   return outcome;
+}
+
+/**
+ * A write of the connection's problem is not worth failing the job for: when it fails, the job's
+ * outcome stands and a warning is logged (the connection's id only, never the database's words).
+ */
+async function keepOutcome(
+  deps: DecorationDeps,
+  connectionId: string,
+  write: () => Promise<void>,
+): Promise<void> {
+  try {
+    await write();
+  } catch {
+    deps.logger?.warn({ connectionId }, 'could not update the Azure DevOps connection problem');
+  }
 }
 
 /** The code a failure records, or null when it passes by itself or is not the connection's. */
@@ -202,7 +220,9 @@ async function decorateAzureSteps(
   if ('problem' in found) {
     // The stored credential cannot be read, or the address is no longer allowed: no request is made.
     const code = clientProblemCode(found.problem);
-    if (isScmBackgroundProblem(code)) await recordScmProblem(deps.db, connection.id, code);
+    if (isScmBackgroundProblem(code)) {
+      await keepOutcome(deps, connection.id, () => recordScmProblem(deps.db, connection.id, code));
+    }
     return failed(new AzureError('refused', found.problem), false);
   }
   const client = found.client;

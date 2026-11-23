@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { azureCommitId, seedAzurePullRequest } from '../../../test/azure';
 import {
   createFakeAzureDevOps,
@@ -399,6 +399,107 @@ describe('Azure DevOps decoration: status and summary (Azure sub-plan 4)', () =>
       expect(await problemOf()).toEqual({ code: 'token_refused', at: expect.any(String) });
       await s.ingest();
       expect(await decorate()).toBe(1);
+      expect(await problemOf()).toBeNull();
+    });
+
+    const SEEDED = { code: 'token_refused' as const, at: '2026-11-20T10:00:00.000Z' };
+    const seed = () =>
+      h.ctx.db
+        .update(scmConnections)
+        .set({ problem: SEEDED })
+        .where(eq(scmConnections.id, connectionId));
+
+    it('leaves a recorded problem as it was after a failure that is not the credential’s', async () => {
+      await seed();
+      // A transient failure.
+      const a = await setup('az/keep-transient');
+      fake.inject('POST', /\/statuses$/, { status: 503, body: {} });
+      await a.ingest();
+      await decorate();
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toEqual(SEEDED);
+      // A rate limit.
+      const b = await setup('az/keep-rate-limit');
+      fake.inject('POST', /\/statuses$/, {
+        status: 429,
+        headers: { 'retry-after': '30' },
+        body: {},
+      });
+      await b.ingest();
+      await decorate();
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toEqual(SEEDED);
+      // A repository that is not the mapped one.
+      const c = await setup('az/keep-mismatch');
+      const other = fake.addRepository({ name: 'other3', projectName: 'Payments' });
+      const analysisId = await c.ingest({ azure: { repositoryId: other.id, checkout: 'head' } });
+      await decorateAnalysis(decorationDeps(h), {
+        analysisId,
+        attempt: 0,
+        gitlab: null,
+        azure: { repositoryId: other.id, checkout: 'head' },
+      });
+      await h.ctx.db.delete(jobs);
+      expect(await problemOf()).toEqual(SEEDED);
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: null })
+        .where(eq(scmConnections.id, connectionId));
+    });
+
+    /** Deps whose writes to scm_connections fail, as a database error would. */
+    const failingWrites = () => {
+      const warn = vi.fn();
+      const db = new Proxy(h.ctx.db, {
+        get(target, prop) {
+          if (prop === 'update') {
+            return (table: unknown) => {
+              if (table === scmConnections) throw new Error('connection refused by the database');
+              return target.update(table as never);
+            };
+          }
+          const value = Reflect.get(target, prop, target) as unknown;
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      return { warn, deps: { ...decorationDeps(h), db, logger: { info: vi.fn(), warn } } };
+    };
+
+    it('keeps the outcome when clearing the problem fails, and logs a warning', async () => {
+      await seed();
+      const s = await setup('az/clear-fails');
+      const analysisId = await s.ingest();
+      await h.ctx.db.delete(jobs);
+      const { warn, deps } = failingWrites();
+      const outcome = await decorateAnalysis(deps, {
+        analysisId,
+        attempt: 0,
+        gitlab: null,
+        azure: { repositoryId: s.repository.id, checkout: 'head' },
+      });
+      expect(outcome).toMatchObject({ kind: 'done' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('connection refused');
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ problem: null })
+        .where(eq(scmConnections.id, connectionId));
+    });
+
+    it('keeps the failed outcome when recording the problem fails, and logs a warning', async () => {
+      const s = await setup('az/record-fails');
+      fake.inject('GET', /\/connectionData$/, { status: 401, body: {} });
+      const analysisId = await s.ingest();
+      await h.ctx.db.delete(jobs);
+      const { warn, deps } = failingWrites();
+      const outcome = await decorateAnalysis(deps, {
+        analysisId,
+        attempt: 0,
+        gitlab: null,
+        azure: { repositoryId: s.repository.id, checkout: 'head' },
+      });
+      expect(outcome).toMatchObject({ kind: 'failed', retry: false });
+      expect(warn).toHaveBeenCalledTimes(1);
       expect(await problemOf()).toBeNull();
     });
 
