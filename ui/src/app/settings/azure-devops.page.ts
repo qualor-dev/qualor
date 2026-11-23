@@ -31,6 +31,7 @@ import {
   azureTestText,
 } from './azure-text';
 import { CopyValue } from './copy-value';
+import { SecretOnce } from './secret-once';
 import type { Connection } from './gitlab.page';
 
 type AuthKind = 'pat' | 'service_principal_secret' | 'service_principal_certificate';
@@ -89,7 +90,7 @@ function normalBaseUrl(raw: string): string | null {
 /** Azure DevOps, for org admins: its connections, a test of each, and their credentials. */
 @Component({
   selector: 'q-azure-devops-page',
-  imports: [CopyValue, DateTimePipe, Icon, NgTemplateOutlet, RouterLink],
+  imports: [CopyValue, DateTimePipe, Icon, NgTemplateOutlet, RouterLink, SecretOnce],
   templateUrl: './azure-devops.page.html',
   styleUrl: './scm.page.css',
 })
@@ -416,6 +417,7 @@ export class AzureDevOpsPage {
       if (generation !== this.orgGeneration) return;
       const text = azureTestText(result, azureCertificateExpiredOn(connection, this.locale));
       this.results.update((all) => ({ ...all, [connection.id]: text }));
+      this.hookOutcomes.update((all) => without(all, connection.id));
       this.hookStates.update((all) =>
         result.hooks ? { ...all, [connection.id]: result.hooks } : without(all, connection.id),
       );
@@ -467,6 +469,7 @@ export class AzureDevOpsPage {
         // A failure part-way may have written subscriptions and a password.
         if (err instanceof ApiError && err.status === 502) {
           this.hookStates.update((all) => without(all, connection.id));
+          this.hookOutcomes.update((all) => without(all, connection.id));
           void this.connections.refresh();
         }
         return true;

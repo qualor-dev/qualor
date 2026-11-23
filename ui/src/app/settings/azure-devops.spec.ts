@@ -751,7 +751,8 @@ describe('AzureDevOpsPage service hooks', () => {
     const password = root.querySelector<HTMLInputElement>('#hook-password-a1')!;
     expect([url.value, user.value, password.value]).toEqual([HTTPS_URL, 'qualor', PASSWORD]);
     expect(url.readOnly && user.readOnly && password.readOnly).toBe(true);
-    expect(text(hooks(root))).toContain('Copy it now: Qualor shows it only once.');
+    expect(text(hooks(root))).toContain('Copy it now: it is shown only this once.');
+    expect(text(hooks(root)).match(/Copy it now/g)).toHaveLength(1);
     button(hooks(root), 'Done').click();
     await settle(fixture);
     expect(root.querySelector('#hook-password-a1')).toBeNull();
@@ -820,6 +821,71 @@ describe('AzureDevOpsPage service hooks', () => {
     expect(blocks[1]).toContain('The stored password can no longer be read');
     expect(blocks[1]).not.toContain('may hold an older password');
     expect(blocks[2]).not.toContain('older password');
+  });
+
+  it('shows the states of a Test after a subscribe, and after a 502', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: { ...TEST_OK, hooks: [{ projectId: 'proj-api', state: 'stale' }] },
+    }));
+    let fail = false;
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () =>
+      fail
+        ? { status: 502, body: problem(502, 'SCM_UNAVAILABLE') }
+        : {
+            body: { projects: [{ projectId: 'proj-api', comment: 'created', updated: 'created' }] },
+          },
+    );
+    const { fixture, root } = await render();
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    expect(text(hooks(root))).toContain('Comments: created');
+    button(root, 'Test').click();
+    await settle(fixture);
+    expect(text(hooks(root))).toContain('Older password');
+    expect(text(hooks(root))).not.toContain('Comments: created');
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    fail = true;
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    button(root, 'Test').click();
+    await settle(fixture);
+    expect(text(hooks(root))).toContain('Older password');
+    expect(text(hooks(root))).not.toContain('Comments: created');
+  });
+
+  it('announces the outcomes politely', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () => ({
+      body: { projects: [{ projectId: 'proj-api', comment: 'created', updated: 'created' }] },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    const live = hooks(root).querySelector('.hook-outcomes')!.closest('[aria-live]');
+    expect(live?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('forgets a shown password on subscribe, and a second one replaces the first', async () => {
+    const server = setup([WITH_SECRET]);
+    const passwords = [PASSWORD, PASSWORD + '-2'];
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks/secret', () => ({
+      body: { url: HTTPS_URL, user: 'qualor', password: passwords.shift()! },
+    }));
+    server.on('POST', '/api/v0/scm-connections/a1/azure-hooks', () => ({
+      body: { projects: [] },
+    }));
+    const { fixture, root } = await render();
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    button(hooks(root), 'Show a new password').click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLInputElement>('#hook-password-a1')!.value).toBe(PASSWORD + '-2');
+    expect(root.textContent).not.toContain(PASSWORD + '-3');
+    button(hooks(root), SUBSCRIBE).click();
+    await settle(fixture);
+    expect(root.querySelector('#hook-password-a1')).toBeNull();
   });
 
   it('shows a reader the states but no buttons', async () => {

@@ -380,43 +380,45 @@
                   >
                 </p>
               }
-              @if (hookOutcomes()[c.id]; as projects) {
-                @if (projects.length === 0) {
-                  <p class="muted" i18n="@@azure.hooks.noProjects">
-                    No Azure DevOps project holds a mapped repository yet. Map one under
-                    Repositories.
-                  </p>
+              <div aria-live="polite">
+                @if (hookOutcomes()[c.id]; as projects) {
+                  @if (projects.length === 0) {
+                    <p class="muted" i18n="@@azure.hooks.noProjects">
+                      No Azure DevOps project holds a mapped repository yet. Map one under
+                      Repositories.
+                    </p>
+                  } @else {
+                    <ul class="hook-outcomes">
+                      @for (p of projects; track p.projectId) {
+                        <li>
+                          <code>{{ p.projectId }}</code
+                          >: {{ hookOutcomeText(p.comment, p.updated) }}
+                        </li>
+                      }
+                    </ul>
+                  }
+                } @else if (hookStates()[c.id]; as states) {
+                  @if (states.length === 0) {
+                    <p class="muted" i18n="@@azure.hooks.noProjects">
+                      No Azure DevOps project holds a mapped repository yet. Map one under
+                      Repositories.
+                    </p>
+                  } @else {
+                    <ul class="hook-states">
+                      @for (s of states; track s.projectId) {
+                        <li>
+                          <code>{{ s.projectId }}</code
+                          >: {{ hookStateText(s.state) }}
+                        </li>
+                      }
+                    </ul>
+                  }
                 } @else {
-                  <ul class="hook-outcomes">
-                    @for (p of projects; track p.projectId) {
-                      <li>
-                        <code>{{ p.projectId }}</code
-                        >: {{ hookOutcomeText(p.comment, p.updated) }}
-                      </li>
-                    }
-                  </ul>
-                }
-              } @else if (hookStates()[c.id]; as states) {
-                @if (states.length === 0) {
-                  <p class="muted" i18n="@@azure.hooks.noProjects">
-                    No Azure DevOps project holds a mapped repository yet. Map one under
-                    Repositories.
+                  <p class="muted" i18n="@@azure.hooks.untested">
+                    Test the connection to see the hooks of each project.
                   </p>
-                } @else {
-                  <ul class="hook-states">
-                    @for (s of states; track s.projectId) {
-                      <li>
-                        <code>{{ s.projectId }}</code
-                        >: {{ hookStateText(s.state) }}
-                      </li>
-                    }
-                  </ul>
                 }
-              } @else {
-                <p class="muted" i18n="@@azure.hooks.untested">
-                  Test the connection to see the hooks of each project.
-                </p>
-              }
+              </div>
               @if (hookSecrets()[c.id]; as secret) {
                 <div class="webhook-address">
                   @if (secret.url; as hookUrl) {
@@ -433,27 +435,18 @@
                     i18n-label="@@azure.hooks.user"
                     [value]="secret.user"
                   />
-                  <q-copy-value
+                  <q-secret-once
                     [fieldId]="'hook-password-' + c.id"
                     label="Password"
                     i18n-label="@@azure.hooks.password"
                     [value]="secret.password"
+                    [autofocus]="false"
+                    (done)="forgetHookPassword(c)"
                   />
-                  <p class="hint" i18n="@@azure.hooks.once">
-                    Copy it now: Qualor shows it only once.
-                  </p>
                   <p class="hint" i18n="@@azure.hooks.thenSubscribe">
                     Azure DevOps keeps the old password until you create or update Qualor's
                     subscriptions.
                   </p>
-                  <button
-                    type="button"
-                    class="btn"
-                    (click)="forgetHookPassword(c)"
-                    i18n="@@azure.hooks.done"
-                  >
-                    Done
-                  </button>
                 </div>
               }
               @if (canManage()) {
