@@ -3,6 +3,7 @@ import {
   AZURE_REPOSITORY_ID,
   azureBaseUrlProblem,
   azureDeployment,
+  azureIdentitiesBase,
   azurePullRequestWebUrl,
   azureWebBase,
 } from './url.js';
@@ -103,5 +104,26 @@ describe('web URLs', () => {
     expect(azurePullRequestWebUrl('https://dev.azure.com/acme/p/_git/r', 42)).toBe(
       'https://dev.azure.com/acme/p/_git/r/pullrequest/42',
     );
+  });
+});
+
+describe('azureIdentitiesBase (the identities host, approved 2026-11-23)', () => {
+  it('maps dev.azure.com/<org> to vssps.dev.azure.com/<org>', () => {
+    expect(azureIdentitiesBase('https://dev.azure.com/acme', 'services')).toBe(
+      'https://vssps.dev.azure.com/acme',
+    );
+  });
+
+  it('maps <org>.visualstudio.com to <org>.vssps.visualstudio.com', () => {
+    expect(azureIdentitiesBase('https://acme.visualstudio.com', 'services')).toBe(
+      'https://acme.vssps.visualstudio.com',
+    );
+  });
+
+  it.each([
+    'https://ado.example.com/DefaultCollection',
+    'https://ado.example.com:8443/tfs/DefaultCollection',
+  ])('keeps a Server collection URL as it is: %s', (url) => {
+    expect(azureIdentitiesBase(url, 'server')).toBe(url);
   });
 });

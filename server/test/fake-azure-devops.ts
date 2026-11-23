@@ -79,6 +79,49 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     iteration, newest first, each with its `id`: a POST adds a status with a higher id, and the newest
  *     of a genre and name supersedes the older ones (the list keeps them). Constructed.
  *   - `commits/{sha}/statuses` (POST): `7-commit-status` (201).
+ * - Replies, commenter rights and service hooks (sub-plan 5), all at api-version 7.0:
+ *   - `pullrequests/{id}/threads/{t}` (GET): the thread object of `20-thread-get`. A comment keeps
+ *     `parentCommentId`, `publishedDate` (`lastUpdatedDate` and `lastContentUpdatedDate` follow
+ *     it) and the author's `displayName`; a deleted comment (`isDeleted`) has no `author` and no
+ *     `content`. `threads/{t}/comments` (POST) keeps the body's `parentCommentId` (`20-reply-post`)
+ *     and dates the comment by the fake's clock.
+ *   - Users (`addUser`, `users`): an identity with a role (`owner`, `contributor`, `reader`), by id
+ *     (a GUID) and identity descriptor. The PAT's user is an owner, the service principal a
+ *     contributor; both carry the descriptors of `20-identities-pat-user` / `-service-principal`.
+ *   - THE SECOND HOST. On Services the identities live on `vssps.dev.azure.com/<org>`, a host other
+ *     than the organisation's. The fake serves them on its one server under the prefix
+ *     `/vssps/<org>` (`identitiesUrl`), where the test origin seam
+ *     (`QUALOR_AZURE_TEST_ORIGIN`, `Config.azureTestOrigin`) maps that host: a Services
+ *     organisation's identities target is `<origin>/vssps<path of the organisation>`
+ *     (`azureClientFor`), in the `requests` list as `/vssps/_apis/identities`. A Server fake
+ *     answers them on the collection itself (`/_apis/identities`), as Server does.
+ *   - `GET _apis/identities?identityIds=<ids>`: `{ count, value }` of the `20-identities-*`
+ *     identity with the user's id, descriptor (`Microsoft.IdentityModel.Claims.ClaimsIdentity;…`,
+ *     the form the ACL takes), subject descriptor and display name; an unknown id is not listed
+ *     (`count: 0`; Microsoft documents no other answer, the probe never asked for one).
+ *   - `GET _apis/accesscontrollists/{git namespace}?token=repoV2/{project}/{repository}&descriptors=
+ *     &includeExtendedInfo=true`: the `20-acl-*` answer with the user's `allow` and
+ *     `extendedInfo.effectiveAllow` by role, taken from the recordings (owner: `20-acl-pat-user`,
+ *     contributor: `20-acl-service-principal`, reader: `server/16-acl-reader`; the services
+ *     recordings hold no reader, and the reader's value is the same ACL form). An unknown
+ *     descriptor has an entry-less `acesDictionary` (constructed). Bit 4 is set for owner and
+ *     contributor, clear for reader.
+ *   - `GET _apis/hooks/publishers/tfs/eventTypes`: `{ count, value }` of the four pull request event
+ *     types with `supportedResourceVersions` from `9-event-types`. THAT FILE IS REDUCED (`{ status,
+ *     pullRequestEvents[{ id, supportedResourceVersions }] }`: the probe kept only those two fields
+ *     of the real answer), so the rest of each event type (`name`, `description`, `publisherId`,
+ *     `inputDescriptors`, `url`) is built here after Microsoft's EventTypeDescription and is
+ *     constructed, not recorded.
+ *   - `_apis/hooks/subscriptions` (GET with the `publisherId`, `eventType`, `consumerId` and
+ *     `consumerActionId` filters; POST; `/{id}` PUT): the subscription object of
+ *     `9-subscription-comment` with the fake's values; `consumerInputs.basicAuthPassword` is
+ *     `********` as recorded and the real password stays in `subscriptions`. A POST or PUT needs
+ *     `publisherId: tfs`, `consumerId: webHooks`, `consumerActionId: httpRequest`, an event type of the
+ *     list and one of its resource versions (else a 400 SubscriptionInputException, constructed);
+ *     a password with an `http://` url is the recorded 400 (`9-subscription-http-basic-auth`).
+ *     A POST is `enabled`; a PUT without `status` enables it again (constructed); a test sets a
+ *     status with `setSubscriptionStatus` (`onProbation` ...). Nothing is delivered: the fake calls no
+ *     webhook (`deliverAzureEvent` in `test/azure.ts` posts a recorded event to Qualor's route).
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
  *   AADSTS code) for a refusal: 400, or 401 `invalid_client` for a wrong secret or assertion. It
@@ -207,6 +250,59 @@ export interface FakeAzureComment {
   authorId: string;
   content: string;
   commentType: 'text' | 'system' | 'codeChange';
+  /** The comment it answers; 0 for a thread's first. */
+  parentCommentId: number;
+  /** ISO 8601, as Azure DevOps writes it. */
+  publishedDate: string;
+  /** A deleted comment has no author and no content in the answer. */
+  isDeleted: boolean;
+}
+
+/** What a person has in the organisation: the rights the ACL answers by. */
+export type FakeAzureRole = 'owner' | 'contributor' | 'reader';
+
+export interface FakeAzureUser {
+  id: string;
+  displayName: string;
+  role: FakeAzureRole;
+  /** The identity descriptor: what the identities lookup answers and the ACL is asked with. */
+  descriptor: string;
+  /** The Graph form (`aad.…`) a comment's `author.descriptor` carries. */
+  subjectDescriptor: string;
+}
+
+export interface FakeAzureUserInput {
+  role: FakeAzureRole;
+  /** Default a new GUID. */
+  id?: string;
+  displayName?: string;
+  descriptor?: string;
+}
+
+export interface FakeAzureSubscription {
+  id: string;
+  status: string;
+  eventType: string;
+  resourceVersion: string;
+  projectId: string;
+  repositoryId: string | null;
+  branch: string | null;
+  url: string;
+  username: string;
+  /** What the client sent; the answer shows `********`. */
+  password: string;
+}
+
+export interface FakeAzureCommentInput {
+  content: string;
+  /** Default the PAT's user. */
+  authorId?: string;
+  commentType?: FakeAzureComment['commentType'];
+  /** Default 0. */
+  parentCommentId?: number;
+  /** Default now, by the fake's clock. */
+  publishedDate?: string;
+  isDeleted?: boolean;
 }
 
 export type FakeAzureThreadStatus =
@@ -222,6 +318,8 @@ export interface FakeAzureThread {
   line: number | null;
   /** The `threadContext` as it was created (null: none). */
   threadContext: Record<string, unknown> | null;
+  /** The first comment's `publishedDate`. */
+  publishedDate: string;
   comments: FakeAzureComment[];
 }
 
@@ -261,11 +359,7 @@ export interface FakeAzureThreadInput {
   filePath?: string;
   line?: number;
   /** Default: one comment by the PAT's user. */
-  comments?: {
-    content: string;
-    authorId?: string;
-    commentType?: FakeAzureComment['commentType'];
-  }[];
+  comments?: FakeAzureCommentInput[];
 }
 
 export interface RecordedRequest {
@@ -332,6 +426,27 @@ export interface FakeAzureDevOps {
   addThread(repositoryId: string, prId: number, input?: FakeAzureThreadInput): FakeAzureThread;
   /** A system thread (`commentType: 'system'`, no status), as Azure DevOps writes for a push. */
   addSystemThread(repositoryId: string, prId: number, content?: string): FakeAzureThread;
+  /** A comment added to a thread, as a person or another tool made it (id: the next free one). */
+  addComment(
+    repositoryId: string,
+    prId: number,
+    threadId: number,
+    input: FakeAzureCommentInput,
+  ): FakeAzureComment;
+  /** The identities of the organisation: the PAT's user (owner), the principal (contributor), added ones. */
+  readonly users: readonly FakeAzureUser[];
+  /** A person with a role, to be looked up by id and asked about in the ACL. */
+  addUser(input: FakeAzureUserInput): FakeAzureUser;
+  /**
+   * Where a client looks up identities: on Services the fake's second host, a prefix of its one
+   * server (`<origin>/vssps/<org>`, which the test origin seam maps the `vssps` host to); on Server
+   * the collection `url`.
+   */
+  readonly identitiesUrl: string;
+  /** The service hook subscriptions, with the passwords the clients sent. */
+  readonly subscriptions: readonly FakeAzureSubscription[];
+  /** What Azure DevOps does to a subscription that fails (`onProbation`, `disabledBySystem`, ...). */
+  setSubscriptionStatus(id: string, status: string): void;
   /** The commit statuses posted, in order. */
   readonly commitStatuses: { repositoryId: string; sha: string; status: FakeAzureStatus }[];
   readonly requests: RecordedRequest[];
@@ -483,6 +598,14 @@ export async function createFakeAzureDevOps(options: {
     : null;
   const requests: RecordedRequest[] = [];
   const tokenRequests: RecordedRequest[] = [];
+  const PAT_DESCRIPTOR = azureShape<{ body: { value: { descriptor: string }[] } }>(
+    'services',
+    '20-identities-pat-user',
+  ).body.value[0]!.descriptor;
+  const PRINCIPAL_DESCRIPTOR = azureShape<{ body: { value: { descriptor: string }[] } }>(
+    'services',
+    '20-identities-service-principal',
+  ).body.value[0]!.descriptor;
   const injections: Injection[] = [];
   const repositories: FakeAzureRepository[] = [];
   const projectIds = new Map<string, string>();
@@ -492,6 +615,9 @@ export async function createFakeAzureDevOps(options: {
   const commitStatuses: FakeAzureDevOps['commitStatuses'] = [];
   let threadCounter = 0;
   let statusCounter = 0;
+  const users: FakeAzureUser[] = [];
+  const subscriptions: FakeAzureSubscription[] = [];
+  const clock = () => new Date(now()).toISOString();
   /** Issued bearer tokens: how the principal proved itself, and until when the token holds. */
   const tokens = new Map<string, { how: 'secret' | 'certificate'; expiresAt: number }>();
   let url = '';
@@ -541,6 +667,57 @@ export async function createFakeAzureDevOps(options: {
     };
     send(res, 200, body, { 'content-type': shape.contentType });
   };
+
+  // Identities, the ACL and the hooks are recorded on Services (items 20 and 9); Server answers the same forms.
+  type Answer<T> = { body: T };
+  type RecordedIdentity = Record<string, unknown>;
+  const recordedIdentity = azureShape<Answer<{ value: RecordedIdentity[] }>>(
+    'services',
+    '20-identities-pat-user',
+  ).body.value[0]!;
+  const recordedPrincipalIdentity = azureShape<Answer<{ value: RecordedIdentity[] }>>(
+    'services',
+    '20-identities-service-principal',
+  ).body.value[0]!;
+  type RecordedAce = Record<string, unknown> & { extendedInfo: Record<string, unknown> };
+  type RecordedAcl = Record<string, unknown> & { acesDictionary: Record<string, RecordedAce> };
+  const aceOf = (shape: Answer<{ value: RecordedAcl[] }>): RecordedAce =>
+    Object.values(shape.body.value[0]!.acesDictionary)[0]!;
+  const recordedAcl = azureShape<Answer<{ value: RecordedAcl[] }>>('services', '20-acl-pat-user')
+    .body.value[0]!;
+  const ACE_BY_ROLE: Record<FakeAzureRole, RecordedAce> = {
+    owner: aceOf(azureShape('services', '20-acl-pat-user')),
+    contributor: aceOf(azureShape('services', '20-acl-service-principal')),
+    reader: aceOf(azureShape('server', '16-acl-reader')),
+  };
+  const recordedSubscription = azureShape<Answer<Record<string, unknown>>>(
+    deployment,
+    '9-subscription-comment',
+  ).body;
+  const recordedHttpRefusal = recordedAnswer(deployment, '9-subscription-http-basic-auth');
+  const eventTypes = azureShape<{
+    pullRequestEvents: { id: string; supportedResourceVersions: string[] }[];
+  }>(deployment, '9-event-types').pullRequestEvents;
+
+  const subjectOf = (id: string) => `aad.${Buffer.from(id).toString('base64url')}`;
+  const addUserTo = (input: FakeAzureUserInput): FakeAzureUser => {
+    const id = (input.id ?? randomUUID()).toLowerCase();
+    const displayName = input.displayName ?? `User ${id.slice(0, 8)}`;
+    const user: FakeAzureUser = {
+      id,
+      displayName,
+      role: input.role,
+      descriptor:
+        input.descriptor ??
+        `Microsoft.IdentityModel.Claims.ClaimsIdentity;ado.example.invalid\\${id.slice(0, 8)}@example.invalid`,
+      subjectDescriptor: subjectOf(id),
+    };
+    users.push(user);
+    return user;
+  };
+  const userById = (id: string) => users.find((u) => u.id === id.toLowerCase());
+  const userByDescriptor = (descriptor: string) =>
+    users.find((u) => u.descriptor.toLowerCase() === descriptor.toLowerCase());
 
   const repositoryJson = (r: FakeAzureRepository) => {
     const web = `${url}/${encodeURIComponent(r.projectName)}/_git/${encodeURIComponent(r.name)}`;
@@ -639,17 +816,28 @@ export async function createFakeAzureDevOps(options: {
     c: FakeAzureComment,
   ) => {
     const author = recordedComment.author as Record<string, unknown>;
-    const who = c.authorId === principalUser?.id ? principalUser : patUser;
+    const who = userById(c.authorId);
+    const rest = { ...recordedComment };
+    delete rest.author;
+    delete rest.content;
     return {
-      ...recordedComment,
+      ...rest,
       id: c.id,
-      parentCommentId: 0,
-      author: {
-        ...author,
-        id: c.authorId,
-        displayName: c.authorId === who.id ? who.displayName : c.authorId,
-      },
-      content: c.content,
+      parentCommentId: c.parentCommentId,
+      ...(c.isDeleted
+        ? { isDeleted: true }
+        : {
+            author: {
+              ...author,
+              id: c.authorId,
+              displayName: who?.displayName ?? c.authorId,
+              ...(who ? { descriptor: who.subjectDescriptor } : {}),
+            },
+            content: c.content,
+          }),
+      publishedDate: c.publishedDate,
+      lastUpdatedDate: c.publishedDate,
+      lastContentUpdatedDate: c.publishedDate,
       commentType: c.commentType,
       _links: {
         self: {
@@ -666,6 +854,8 @@ export async function createFakeAzureDevOps(options: {
       ...rest,
       pullRequestThreadContext: null,
       id: t.id,
+      publishedDate: t.publishedDate,
+      lastUpdatedDate: t.comments.at(-1)?.publishedDate ?? t.publishedDate,
       comments: t.comments.map((c) => commentJson(r, p, t, c)),
       ...(t.status === null ? {} : { status: t.status }),
       threadContext: t.threadContext,
@@ -909,6 +1099,8 @@ export async function createFakeAzureDevOps(options: {
       return missing('TF401152: The thread does not exist.', 'GitThreadNotFoundException');
     if (threadRoute && thread) {
       const isComments = sub.includes('/comments');
+      if (!isComments && method === 'GET')
+        return answerJson(200, threadJson(repository, pr, thread));
       if (!isComments && method === 'PATCH') {
         const body = jsonBodyOf(req);
         if (!body) return bad('a thread update is a JSON object');
@@ -928,6 +1120,9 @@ export async function createFakeAzureDevOps(options: {
           authorId,
           content: body.content,
           commentType: 'text',
+          parentCommentId: typeof body.parentCommentId === 'number' ? body.parentCommentId : 0,
+          publishedDate: clock(),
+          isDeleted: false,
         };
         thread.comments.push(comment);
         return answerJson(200, commentJson(repository, pr, thread, comment));
@@ -950,11 +1145,7 @@ export async function createFakeAzureDevOps(options: {
     input: {
       status: FakeAzureThreadStatus | null;
       threadContext: Record<string, unknown> | null;
-      comments: {
-        content: string;
-        authorId?: string;
-        commentType?: FakeAzureComment['commentType'];
-      }[];
+      comments: FakeAzureCommentInput[];
     },
   ): FakeAzureThread => {
     const context = input.threadContext as {
@@ -968,15 +1159,251 @@ export async function createFakeAzureDevOps(options: {
       filePath: context?.filePath?.replace(/^\//, '') ?? null,
       line: context?.rightFileStart?.line ?? null,
       threadContext: input.threadContext,
+      publishedDate: '',
       comments: input.comments.map((c, i) => ({
         id: i + 1,
         authorId: c.authorId ?? patUser.id,
         content: c.content,
         commentType: c.commentType ?? 'text',
+        parentCommentId: c.parentCommentId ?? 0,
+        publishedDate: c.publishedDate ?? clock(),
+        isDeleted: c.isDeleted ?? false,
       })),
     };
+    thread.publishedDate = thread.comments[0]?.publishedDate ?? clock();
     pr.threads.push(thread);
     return thread;
+  };
+
+  const hookBody = (
+    res: ServerResponse,
+    status: number,
+    message: string,
+    typeKey = 'SubscriptionInputException',
+  ) => wrapped(res, status, message, typeKey);
+
+  const subscriptionJson = (
+    s: FakeAzureSubscription,
+    callerId: string,
+    createdAt: string,
+    modifiedAt: string,
+  ) => {
+    const caller = userById(callerId)!;
+    const person = {
+      displayName: caller.displayName,
+      id: caller.id,
+      uniqueName: '',
+      descriptor: caller.subjectDescriptor,
+    };
+    const self = `${url}/_apis/hooks/subscriptions/${s.id}`;
+    return {
+      ...recordedSubscription,
+      id: s.id,
+      url: self,
+      status: s.status,
+      eventType: s.eventType,
+      resourceVersion: s.resourceVersion,
+      createdBy: person,
+      createdDate: createdAt,
+      modifiedBy: person,
+      modifiedDate: modifiedAt,
+      publisherInputs: {
+        projectId: s.projectId,
+        ...(s.repositoryId === null ? {} : { repository: s.repositoryId }),
+        ...(s.branch === null ? {} : { branch: s.branch }),
+        tfsSubscriptionId: randomUUID(),
+      },
+      consumerInputs: {
+        basicAuthUsername: s.username,
+        detailedMessagesToSend: 'all',
+        messagesToSend: 'all',
+        resourceDetailsToSend: 'all',
+        url: s.url,
+        basicAuthPassword: '********',
+      },
+      _links: {
+        ...(recordedSubscription._links as Record<string, unknown>),
+        self: { href: self },
+        notifications: { href: `${self}/notifications` },
+      },
+    };
+  };
+
+  /** What a POST or a PUT of a subscription says, or the reason it is refused (400). */
+  const subscriptionFrom = (
+    res: ServerResponse,
+    req: RecordedRequest,
+    id: string,
+  ): Omit<FakeAzureSubscription, 'status'> | null => {
+    const body = jsonBodyOf(req);
+    const publisher = (body?.publisherInputs ?? {}) as Record<string, unknown>;
+    const consumer = (body?.consumerInputs ?? {}) as Record<string, unknown>;
+    const event = eventTypes.find((e) => e.id === body?.eventType);
+    const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
+    if (
+      !body ||
+      body.publisherId !== 'tfs' ||
+      body.consumerId !== 'webHooks' ||
+      body.consumerActionId !== 'httpRequest'
+    ) {
+      hookBody(res, 400, 'fake Azure DevOps: a subscription is tfs to webHooks httpRequest');
+      return null;
+    }
+    if (!event) {
+      hookBody(res, 400, `fake Azure DevOps: unknown event type ${String(body.eventType)}`);
+      return null;
+    }
+    if (!event.supportedResourceVersions.includes(String(body.resourceVersion))) {
+      hookBody(
+        res,
+        400,
+        `fake Azure DevOps: ${event.id} has no resource version ${String(body.resourceVersion)}`,
+      );
+      return null;
+    }
+    const target = text(consumer.url);
+    if (!target || !/^https?:\/\//.test(target)) {
+      hookBody(res, 400, 'fake Azure DevOps: a web hook needs an http(s) url');
+      return null;
+    }
+    const password = text(consumer.basicAuthPassword) ?? '';
+    if (password !== '' && target.startsWith('http:')) {
+      send(res, recordedHttpRefusal.status, recordedHttpRefusal.body, recordedHttpRefusal.headers);
+      return null;
+    }
+    return {
+      id,
+      eventType: event.id,
+      resourceVersion: String(body.resourceVersion),
+      projectId: text(publisher.projectId) ?? '',
+      repositoryId: text(publisher.repository),
+      branch: text(publisher.branch),
+      url: target,
+      username: text(consumer.basicAuthUsername) ?? '',
+      password,
+    };
+  };
+
+  /**
+   * Identities, the ACL and the service hooks: true when the route is one of these (and answered).
+   * `/vssps/…` is the identities host (Services); a Server answers identities on the collection.
+   */
+  const otherRoute = (
+    req: RecordedRequest,
+    res: ServerResponse,
+    who: 'pat' | 'secret' | 'certificate',
+    version: string,
+  ): boolean => {
+    const callerId = who === 'pat' ? patUser.id : principalUser!.id;
+    const query = new URLSearchParams(req.query);
+    const wrong = () => {
+      const text = `fake Azure DevOps: this route is not asked at api-version ${version}`;
+      wrapped(res, 400, text, 'VssInvalidPreviewVersionException');
+      return true;
+    };
+    const json = (status: number, body: unknown) => {
+      send(res, status, body, { 'content-type': JSON_7_0 });
+      return true;
+    };
+
+    if (req.path.startsWith('/vssps/') || req.path === '/_apis/identities') {
+      if (req.method !== 'GET' || !/^(\/vssps)?\/_apis\/identities$/.test(req.path)) {
+        wrapped(res, 404, 'fake Azure DevOps: no such route', 'NotFound');
+        return true;
+      }
+      if (version !== '7.0') return wrong();
+      const value = (query.get('identityIds') ?? '')
+        .split(',')
+        .map((id) => userById(id.trim()))
+        .filter((u): u is FakeAzureUser => u !== undefined)
+        .map((u) => ({
+          ...(u.id === principalUser?.id ? recordedPrincipalIdentity : recordedIdentity),
+          id: u.id,
+          descriptor: u.descriptor,
+          subjectDescriptor: u.subjectDescriptor,
+          providerDisplayName: u.displayName,
+        }));
+      return json(200, { count: value.length, value });
+    }
+
+    const acl = /^\/_apis\/accesscontrollists\/([^/]+)$/.exec(req.path);
+    if (acl && req.method === 'GET') {
+      if (version !== '7.0') return wrong();
+      const descriptor = query.get('descriptors') ?? '';
+      const user = userByDescriptor(descriptor);
+      const ace = user ? ACE_BY_ROLE[user.role] : null;
+      return json(200, {
+        count: 1,
+        value: [
+          {
+            ...recordedAcl,
+            token: query.get('token') ?? '',
+            acesDictionary: ace
+              ? { [user!.descriptor]: { ...ace, descriptor: user!.descriptor } }
+              : {},
+            includeExtendedInfo: query.get('includeExtendedInfo') === 'true',
+          },
+        ],
+      });
+    }
+
+    if (req.path === '/_apis/hooks/publishers/tfs/eventTypes' && req.method === 'GET') {
+      if (version !== '7.0') return wrong();
+      const value = eventTypes.map((e) => ({
+        id: e.id,
+        name: e.id,
+        description: '',
+        publisherId: 'tfs',
+        supportedResourceVersions: e.supportedResourceVersions,
+        inputDescriptors: [],
+        url: `${url}/_apis/hooks/publishers/tfs/eventTypes/${e.id}`,
+      }));
+      return json(200, { count: value.length, value });
+    }
+
+    const hooks = /^\/_apis\/hooks\/subscriptions(?:\/([0-9a-fA-F-]{36}))?$/.exec(req.path);
+    if (!hooks) return false;
+    if (version !== '7.0') return wrong();
+    const stamp = clock();
+    if (!hooks[1] && req.method === 'GET') {
+      const wanted = (name: string) => query.get(name) ?? '';
+      const value = subscriptions
+        .filter((s) => wanted('eventType') === '' || s.eventType === wanted('eventType'))
+        .filter(() => ['', 'tfs'].includes(wanted('publisherId')))
+        .filter(() => ['', 'webHooks'].includes(wanted('consumerId')))
+        .filter(() => ['', 'httpRequest'].includes(wanted('consumerActionId')))
+        .map((s) => subscriptionJson(s, callerId, stamp, stamp));
+      return json(200, { count: value.length, value });
+    }
+    if (!hooks[1] && req.method === 'POST') {
+      const made = subscriptionFrom(res, req, randomUUID());
+      if (!made) return true;
+      const subscription: FakeAzureSubscription = { ...made, status: 'enabled' };
+      subscriptions.push(subscription);
+      return json(200, subscriptionJson(subscription, callerId, stamp, stamp));
+    }
+    if (hooks[1] && req.method === 'PUT') {
+      const index = subscriptions.findIndex((s) => s.id === hooks[1]!.toLowerCase());
+      if (index < 0) {
+        hookBody(
+          res,
+          404,
+          `fake Azure DevOps: no subscription ${hooks[1]}`,
+          'SubscriptionNotFoundException',
+        );
+        return true;
+      }
+      const made = subscriptionFrom(res, req, subscriptions[index]!.id);
+      if (!made) return true;
+      const status = jsonBodyOf(req)?.status;
+      const replaced: FakeAzureSubscription = {
+        ...made,
+        status: typeof status === 'string' ? status : 'enabled',
+      };
+      subscriptions[index] = replaced;
+      return json(200, subscriptionJson(replaced, callerId, stamp, stamp));
+    }
+    return false;
   };
 
   const answer = (req: RecordedRequest, res: ServerResponse, inside: boolean): void => {
@@ -989,6 +1416,8 @@ export async function createFakeAzureDevOps(options: {
     if (who === 'wrong') return send(res, wrongPat.status, wrongPat.body, wrongPat.headers);
     if (who !== 'pat' && !fake.identityAdded) return tf401444(res);
     const version = new URLSearchParams(req.query).get('api-version') ?? '';
+    const other = otherRoute(req, res, who, version);
+    if (other) return;
     const one = /^\/_apis\/git\/repositories\/([^/]+)$/.exec(req.path);
     const route =
       req.method !== 'GET'
@@ -1025,8 +1454,13 @@ export async function createFakeAzureDevOps(options: {
   };
 
   const handleApi = async (incoming: IncomingMessage, res: ServerResponse) => {
-    const inside = (incoming.url ?? '').startsWith(`${basePath}/`);
-    const req = await recorded(incoming, basePath);
+    // The identities host (Services): a prefix of this server, kept in the path of the request.
+    const identitiesPrefix = `/vssps${basePath}`;
+    const vssps =
+      deployment === 'services' && (incoming.url ?? '').startsWith(`${identitiesPrefix}/`);
+    const inside = vssps || (incoming.url ?? '').startsWith(`${basePath}/`);
+    const read = await recorded(incoming, vssps ? identitiesPrefix : basePath);
+    const req = vssps ? { ...read, path: `/vssps${read.path}` } : read;
     requests.push(req);
     const injected = injections.find(
       (i) => i.method === req.method && i.path.test(req.path) && i.answers.length > 0,
@@ -1208,6 +1642,32 @@ export async function createFakeAzureDevOps(options: {
         comments: [{ content, commentType: 'system' }],
       });
     },
+    addComment(repositoryId, prId, threadId, input) {
+      const thread = fake.pullRequest(repositoryId, prId).threads.find((x) => x.id === threadId);
+      if (!thread) throw new Error(`fake Azure DevOps: no thread ${threadId}`);
+      const comment: FakeAzureComment = {
+        id: Math.max(0, ...thread.comments.map((c) => c.id)) + 1,
+        authorId: input.authorId ?? patUser.id,
+        content: input.content,
+        commentType: input.commentType ?? 'text',
+        parentCommentId: input.parentCommentId ?? 0,
+        publishedDate: input.publishedDate ?? clock(),
+        isDeleted: input.isDeleted ?? false,
+      };
+      thread.comments.push(comment);
+      return comment;
+    },
+    users,
+    addUser: addUserTo,
+    get identitiesUrl() {
+      return deployment === 'services' ? `${new URL(url).origin}/vssps${basePath}` : url;
+    },
+    subscriptions,
+    setSubscriptionStatus(id, status) {
+      const subscription = subscriptions.find((s) => s.id === id.toLowerCase());
+      if (!subscription) throw new Error(`fake Azure DevOps: no subscription ${id}`);
+      subscription.status = status;
+    },
     commitStatuses,
     requests,
     tokenRequests,
@@ -1223,6 +1683,10 @@ export async function createFakeAzureDevOps(options: {
       if (entra) await closeServer(entra);
     },
   };
+  addUserTo({ ...patUser, role: 'owner', descriptor: PAT_DESCRIPTOR });
+  if (principalUser) {
+    addUserTo({ ...principalUser, role: 'contributor', descriptor: PRINCIPAL_DESCRIPTOR });
+  }
   for (const input of options.repositories ?? []) fake.addRepository(input);
   return fake;
 }

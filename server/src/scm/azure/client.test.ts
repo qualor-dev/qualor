@@ -5,6 +5,7 @@ import {
   azureCommitId,
   bearerOf,
   entraCredentialOf,
+  identitiesOf,
   patOf,
   seedAzurePullRequest,
 } from '../../../test/azure';
@@ -27,6 +28,7 @@ import {
   MAX_AZURE_RESPONSE_BYTES,
   type AzureClientOptions,
   type AzureCredential,
+  type NewAzureSubscription,
 } from './client';
 
 const NOW = 1_800_000_000_000;
@@ -76,8 +78,14 @@ function clientOf(
   credential: AzureCredential = patOf(fake),
   options: AzureClientOptions = {},
 ): AzureDevOpsClient {
+  const identities = identitiesOf(fake);
   return new AzureDevOpsClient(
-    { baseUrl: fake.url, credential, allowInternalHosts: true },
+    {
+      baseUrl: fake.url,
+      credential,
+      allowInternalHosts: true,
+      ...(identities ? { identities } : {}),
+    },
     { timeoutMs: 2_000, ...options },
   );
 }
@@ -106,6 +114,7 @@ function expectNoLeak(err: unknown, fake: FakeAzureDevOps): void {
   expect(text).not.toMatch(/Basic |Bearer /);
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const apiVersion = (query: string) => new URLSearchParams(query).get('api-version');
 
 describe('the recorded answers the fake serves parse with the client schemas', () => {
@@ -764,9 +773,28 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
         status: 'fixed',
         filePath: 'src/a.ts',
         rightLine: 12,
+        publishedDate: expect.stringMatching(ISO_DATE),
         comments: [
-          { id: 1, authorId: 'u-1', content: 'first', commentType: 'text' },
-          { id: 2, authorId: 'u-2', content: 'second', commentType: 'text' },
+          {
+            id: 1,
+            authorId: 'u-1',
+            authorName: 'u-1',
+            content: 'first',
+            commentType: 'text',
+            parentCommentId: 0,
+            publishedDate: expect.stringMatching(ISO_DATE),
+            isDeleted: false,
+          },
+          {
+            id: 2,
+            authorId: 'u-2',
+            authorName: 'u-2',
+            content: 'second',
+            commentType: 'text',
+            parentCommentId: 0,
+            publishedDate: expect.stringMatching(ISO_DATE),
+            isDeleted: false,
+          },
         ],
       });
       expect(list[2]).toMatchObject({ status: 'active', filePath: null, rightLine: null });
@@ -1064,6 +1092,524 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       expect(err.request).toBe(
         `PATCH /_apis/git/repositories/{id}/pullrequests/${pullRequest.id}/threads/9999`,
       );
+    });
+  });
+});
+
+describe('replies, rights and service hooks (sub-plan 5, task 2)', () => {
+  const repo = () => services.repositories[0]!;
+  const lastRequest = () => services.requests.at(-1)!;
+  const bodyOf = (r: { body: string }) => JSON.parse(r.body) as Record<string, unknown>;
+  const PASSWORD = 'hook-password-8c1d-not-for-logs';
+  const HOOK_URL = 'https://qualor.example/api/v0/azure-devops/webhooks/c1';
+  const commentHook = (extra: Partial<NewAzureSubscription> = {}): NewAzureSubscription => ({
+    eventType: 'ms.vss-code.git-pullrequest-comment-event',
+    resourceVersion: '2.0',
+    projectId: repo().projectId,
+    repositoryId: repo().id,
+    url: HOOK_URL,
+    password: PASSWORD,
+    ...extra,
+  });
+
+  describe('threads: a single thread, dates, parents, names, deleted and system comments', () => {
+    it('reads one thread with the new comment fields', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id, {
+        comments: [
+          {
+            content: 'root',
+            authorId: services.patUser.id,
+            publishedDate: '2026-11-23T10:00:00.5Z',
+          },
+          {
+            content: 'reply',
+            authorId: services.principalUser!.id,
+            parentCommentId: 1,
+            publishedDate: '2026-11-23T10:05:00.25Z',
+          },
+        ],
+      });
+      services.clearRequests();
+      const got = await clientOf(services).thread(repo().id, pullRequest.id, thread.id);
+      expect(lastRequest()).toMatchObject({
+        method: 'GET',
+        path: `/_apis/git/repositories/${repo().id}/pullrequests/${pullRequest.id}/threads/${thread.id}`,
+      });
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(got.id).toBe(thread.id);
+      expect(got.publishedDate).toBe('2026-11-23T10:00:00.5Z');
+      expect(got.comments).toEqual([
+        {
+          id: 1,
+          authorId: services.patUser.id,
+          authorName: services.patUser.displayName,
+          content: 'root',
+          commentType: 'text',
+          parentCommentId: 0,
+          publishedDate: '2026-11-23T10:00:00.5Z',
+          isDeleted: false,
+        },
+        {
+          id: 2,
+          authorId: services.principalUser!.id,
+          authorName: services.principalUser!.displayName,
+          content: 'reply',
+          commentType: 'text',
+          parentCommentId: 1,
+          publishedDate: '2026-11-23T10:05:00.25Z',
+          isDeleted: false,
+        },
+      ]);
+    });
+
+    it('parses a deleted comment without an author and a system comment', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id, {
+        comments: [
+          { content: 'root' },
+          { content: 'gone', isDeleted: true, parentCommentId: 1 },
+          { content: 'Updated the source branch', commentType: 'system' },
+        ],
+      });
+      const raw = await fetch(
+        `${services.url}/_apis/git/repositories/${repo().id}/pullrequests/${pullRequest.id}/threads/${thread.id}?api-version=7.0`,
+        {
+          headers: { authorization: `Basic ${Buffer.from(`:${services.pat}`).toString('base64')}` },
+        },
+      );
+      const rawBody = (await raw.json()) as { comments: Record<string, unknown>[] };
+      expect(rawBody.comments[1]).not.toHaveProperty('author');
+      expect(rawBody.comments[1]?.isDeleted).toBe(true);
+      const got = await clientOf(services).thread(repo().id, pullRequest.id, thread.id);
+      expect(got.comments[1]).toMatchObject({
+        id: 2,
+        authorId: '',
+        authorName: '',
+        content: '',
+        parentCommentId: 1,
+        isDeleted: true,
+      });
+      expect(got.comments[2]).toMatchObject({ commentType: 'system', isDeleted: false });
+    });
+
+    it('answers an unknown thread as not found and refuses a bad repository id unsent', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const err = await failure(clientOf(services).thread(repo().id, pullRequest.id, 9999));
+      expect(err).toMatchObject({ kind: 'not_found' });
+      expect(err.request).toBe(
+        `GET /_apis/git/repositories/{id}/pullrequests/${pullRequest.id}/threads/9999`,
+      );
+      services.clearRequests();
+      await failure(clientOf(services).thread('../x', 1, 1));
+      expect(services.requests).toHaveLength(0);
+    });
+
+    it('lists the dates and parents too', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.addThread(repo().id, pullRequest.id, {
+        comments: [{ content: 'a' }, { content: 'b', parentCommentId: 1 }],
+      });
+      const [first] = await clientOf(services).threads(repo().id, pullRequest.id);
+      expect(first?.publishedDate).toMatch(ISO_DATE);
+      expect(first?.comments.map((c) => c.parentCommentId)).toEqual([0, 1]);
+    });
+  });
+
+  describe('reply', () => {
+    it('posts a comment under a parent and returns its id', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      const id = await clientOf(services).reply(repo().id, pullRequest.id, thread.id, 1, 'Thanks');
+      expect(id).toBe(2);
+      expect(lastRequest().method).toBe('POST');
+      expect(lastRequest().path).toBe(
+        `/_apis/git/repositories/${repo().id}/pullrequests/${pullRequest.id}/threads/${thread.id}/comments`,
+      );
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(bodyOf(lastRequest())).toEqual({
+        content: 'Thanks',
+        parentCommentId: 1,
+        commentType: 1,
+      });
+      expect(thread.comments[1]).toMatchObject({ id: 2, parentCommentId: 1, content: 'Thanks' });
+      const again = await clientOf(services).reply(repo().id, pullRequest.id, thread.id, 2, 'More');
+      expect(again).toBe(3);
+    });
+
+    it('keeps addComment as it was (parent 0, no result)', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      await expect(
+        clientOf(services).addComment(repo().id, pullRequest.id, thread.id, 'note'),
+      ).resolves.toBeUndefined();
+      expect(bodyOf(lastRequest())).toEqual({
+        content: 'note',
+        parentCommentId: 0,
+        commentType: 1,
+      });
+    });
+
+    it('is a bad answer when Azure DevOps names no comment id', async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      const thread = services.addThread(repo().id, pullRequest.id);
+      services.inject('POST', /\/comments$/, { status: 200, body: { content: 'x' } });
+      const err = await failure(
+        clientOf(services).reply(repo().id, pullRequest.id, thread.id, 1, 'x'),
+      );
+      expect(err).toMatchObject({ kind: 'bad_answer' });
+    });
+  });
+
+  describe('identityDescriptor (identities host)', () => {
+    it('asks the identities host for the id and returns the descriptor (PAT and service principal)', async () => {
+      services.clearRequests();
+      const viaPat = await clientOf(services).identityDescriptor(services.patUser.id);
+      expect(viaPat).toBe(
+        azureShape<{ body: { value: { descriptor: string }[] } }>(
+          'services',
+          '20-identities-pat-user',
+        ).body.value[0]!.descriptor,
+      );
+      const request = services.requests.at(-1)!;
+      expect(request).toMatchObject({ method: 'GET', path: '/vssps/_apis/identities' });
+      expect(new URLSearchParams(request.query).get('identityIds')).toBe(services.patUser.id);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(request.headers.authorization).toBe(
+        `Basic ${Buffer.from(`:${services.pat}`).toString('base64')}`,
+      );
+
+      const viaToken = await clientOf(services, bearerOf(services, 'secret')).identityDescriptor(
+        services.principalUser!.id,
+      );
+      expect(viaToken).toMatch(/^Microsoft\.VisualStudio\.Services\.Claims\.AadServicePrincipal;/);
+      expect(services.requests.at(-1)!.headers.authorization).toMatch(/^Bearer fake-entra-/);
+    });
+
+    it('answers null for an id the organisation does not know', async () => {
+      const unknown = '11111111-2222-4333-8444-555555555555';
+      expect(await clientOf(services).identityDescriptor(unknown)).toBeNull();
+    });
+
+    it('is null when the answer holds an identity without a descriptor', async () => {
+      services.inject('GET', /\/_apis\/identities$/, {
+        status: 200,
+        body: { count: 1, value: [{ id: services.patUser.id }] },
+      });
+      expect(await clientOf(services).identityDescriptor(services.patUser.id)).toBeNull();
+    });
+
+    it('refuses an id that is not a GUID without sending anything', async () => {
+      services.clearRequests();
+      const err = await failure(clientOf(services).identityDescriptor('1&x=2'));
+      expect(err).toMatchObject({ kind: 'refused', reason: 'invalid_input' });
+      expect(services.requests).toHaveLength(0);
+    });
+
+    it('on a Server collection is the collection itself', async () => {
+      const user = server.addUser({ role: 'contributor' });
+      server.clearRequests();
+      const descriptor = await clientOf(server).identityDescriptor(user.id);
+      expect(descriptor).toBe(user.descriptor);
+      expect(server.requests.at(-1)?.path).toBe('/_apis/identities');
+    });
+
+    it('counts against the budget of the one client', async () => {
+      const client = clientOf(services, undefined, { maxRequests: 1 });
+      await client.identityDescriptor(services.patUser.id);
+      expect(await failure(client.connectionData())).toMatchObject({ kind: 'budget' });
+      expect(client.requestCount).toBe(1);
+    });
+  });
+
+  describe('the identities host goes through the same outbound rules as the base', () => {
+    it('derives vssps.dev.azure.com, resolves it itself and refuses a non-public address', async () => {
+      const resolved: string[] = [];
+      const client = new AzureDevOpsClient(
+        {
+          baseUrl: 'https://dev.azure.com/acme',
+          credential: patOf(services),
+          allowInternalHosts: true,
+        },
+        {
+          resolve: async (host) => {
+            resolved.push(host);
+            return [{ address: '10.0.0.7', family: 4 }];
+          },
+        },
+      );
+      const err = await failure(client.identityDescriptor(services.patUser.id));
+      // The base's own permission to use internal hosts does not carry over to its other host.
+      expect(err).toMatchObject({ kind: 'refused', reason: 'not_public' });
+      expect(resolved).toEqual(['vssps.dev.azure.com']);
+    });
+
+    it('derives <org>.vssps.visualstudio.com for a legacy organisation', async () => {
+      const resolved: string[] = [];
+      const client = new AzureDevOpsClient(
+        {
+          baseUrl: 'https://acme.visualstudio.com',
+          credential: patOf(services),
+          allowInternalHosts: false,
+        },
+        {
+          resolve: async (host) => {
+            resolved.push(host);
+            return [];
+          },
+        },
+      );
+      const err = await failure(client.identityDescriptor(services.patUser.id));
+      expect(err).toMatchObject({ kind: 'transient', reason: 'unresolved' });
+      expect(resolved).toEqual(['acme.vssps.visualstudio.com']);
+    });
+
+    it('refuses a loopback identities host that is not allowed, before any request', async () => {
+      services.clearRequests();
+      const identities = identitiesOf(services)!;
+      const client = new AzureDevOpsClient({
+        baseUrl: services.url,
+        credential: patOf(services),
+        allowInternalHosts: true,
+        identities: { ...identities, allowInternalHosts: false },
+      });
+      const err = await failure(client.identityDescriptor(services.patUser.id));
+      expect(err).toMatchObject({ kind: 'refused', reason: 'not_public' });
+      expect(services.requests).toHaveLength(0);
+    });
+
+    it('keeps the two hosts apart: identities on its own prefix, the rest on the base', async () => {
+      services.clearRequests();
+      await clientOf(services).identityDescriptor(services.patUser.id);
+      await clientOf(services).connectionData();
+      expect(services.requests.map((r) => r.path)).toEqual([
+        '/vssps/_apis/identities',
+        '/_apis/connectionData',
+      ]);
+    });
+  });
+
+  describe('contributeAllowed (bit 4 of extendedInfo.effectiveAllow)', () => {
+    it.each([
+      ['owner', true],
+      ['contributor', true],
+      ['reader', false],
+    ] as const)('is %s -> %s', async (role, allowed) => {
+      const user = services.addUser({ role });
+      const client = clientOf(services);
+      const descriptor = await client.identityDescriptor(user.id);
+      expect(descriptor).toBe(user.descriptor);
+      services.clearRequests();
+      expect(await client.contributeAllowed(repo().projectId, repo().id, descriptor!)).toBe(
+        allowed,
+      );
+      const request = lastRequest();
+      expect(request.method).toBe('GET');
+      expect(request.path).toBe('/_apis/accesscontrollists/2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87');
+      const query = new URLSearchParams(request.query);
+      expect(query.get('token')).toBe(`repoV2/${repo().projectId}/${repo().id}`);
+      expect(query.get('descriptors')).toBe(descriptor);
+      expect(query.get('includeExtendedInfo')).toBe('true');
+      expect(query.get('api-version')).toBe('7.0');
+    });
+
+    it('is false for an identity the ACL has no entry for, and for an answer without a list', async () => {
+      const client = clientOf(services);
+      expect(
+        await client.contributeAllowed(
+          repo().projectId,
+          repo().id,
+          'Microsoft.IdentityModel.Claims.ClaimsIdentity;t\\nobody@example.invalid',
+        ),
+      ).toBe(false);
+      services.inject('GET', /accesscontrollists/, { status: 200, body: { count: 0, value: [] } });
+      expect(await client.contributeAllowed(repo().projectId, repo().id, 'x;y')).toBe(false);
+    });
+
+    it('reads the recorded answers: PAT user and service principal allowed, reader not', async () => {
+      type Acl = { body: { value: { acesDictionary: Record<string, unknown> }[] } };
+      for (const name of ['20-acl-pat-user', '20-acl-service-principal']) {
+        const [descriptor] = Object.keys(
+          azureShape<Acl>('services', name).body.value[0]!.acesDictionary,
+        );
+        services.inject('GET', /accesscontrollists/, recordedAnswer('services', name));
+        expect(
+          await clientOf(services).contributeAllowed(repo().projectId, repo().id, descriptor!),
+        ).toBe(true);
+      }
+      services.inject('GET', /accesscontrollists/, recordedAnswer('server', '16-acl-reader'));
+      expect(
+        await clientOf(services).contributeAllowed(
+          repo().projectId,
+          repo().id,
+          'System.Security.Principal.WindowsIdentity;S-1-5-21-0-0-0-1005',
+        ),
+      ).toBe(false);
+    });
+
+    it('refuses ids that are not GUIDs unsent', async () => {
+      services.clearRequests();
+      const client = clientOf(services);
+      await failure(client.contributeAllowed('x', repo().id, 'd'));
+      await failure(client.contributeAllowed(repo().projectId, '../x', 'd'));
+      expect(services.requests).toHaveLength(0);
+    });
+  });
+
+  describe('service hooks', () => {
+    it('lists the pull request event types with their versions, as recorded', async () => {
+      for (const fake of [services, server]) {
+        fake.clearRequests();
+        const types = await clientOf(fake).hookEventTypes();
+        const recorded = azureShape<{
+          pullRequestEvents: { id: string; supportedResourceVersions: string[] }[];
+        }>(fake.deployment, '9-event-types').pullRequestEvents;
+        expect(types).toEqual(
+          recorded.map((e) => ({ id: e.id, versions: e.supportedResourceVersions })),
+        );
+        expect(fake.requests.at(-1)).toMatchObject({
+          method: 'GET',
+          path: '/_apis/hooks/publishers/tfs/eventTypes',
+        });
+        expect(apiVersion(fake.requests.at(-1)!.query)).toBe('7.0');
+        const byId = Object.fromEntries(types.map((t) => [t.id, t.versions]));
+        expect(byId['ms.vss-code.git-pullrequest-comment-event']).toEqual([
+          '2.0',
+          '1.0',
+          '1.0-preview.1',
+        ]);
+        expect(byId['git.pullrequest.updated']).toEqual(['1.0', '1.0-preview.1']);
+      }
+    });
+
+    it('creates a subscription with the body of the recordings', async () => {
+      const made = await clientOf(services).createSubscription(commentHook());
+      expect(lastRequest().method).toBe('POST');
+      expect(lastRequest().path).toBe('/_apis/hooks/subscriptions');
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(bodyOf(lastRequest())).toEqual({
+        publisherId: 'tfs',
+        eventType: 'ms.vss-code.git-pullrequest-comment-event',
+        resourceVersion: '2.0',
+        consumerId: 'webHooks',
+        consumerActionId: 'httpRequest',
+        publisherInputs: { projectId: repo().projectId, repository: repo().id },
+        consumerInputs: {
+          url: HOOK_URL,
+          basicAuthUsername: 'qualor',
+          basicAuthPassword: PASSWORD,
+          resourceDetailsToSend: 'all',
+          messagesToSend: 'all',
+          detailedMessagesToSend: 'all',
+        },
+      });
+      expect(made).toEqual({
+        id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        status: 'enabled',
+        eventType: 'ms.vss-code.git-pullrequest-comment-event',
+        resourceVersion: '2.0',
+        projectId: repo().projectId,
+        url: HOOK_URL,
+      });
+      expect(JSON.stringify(made)).not.toContain(PASSWORD);
+      expect(services.subscriptions.find((s) => s.id === made.id)?.password).toBe(PASSWORD);
+    });
+
+    it('adds the branch filter when given', async () => {
+      await clientOf(services).createSubscription(
+        commentHook({
+          eventType: 'git.pullrequest.updated',
+          resourceVersion: '1.0',
+          branch: 'refs/heads/main',
+        }),
+      );
+      expect(bodyOf(lastRequest()).publisherInputs).toEqual({
+        projectId: repo().projectId,
+        repository: repo().id,
+        branch: 'refs/heads/main',
+      });
+    });
+
+    it('lists the subscriptions with the filters, and shows a status a test sets', async () => {
+      const client = clientOf(services);
+      const before = (await client.subscriptions()).length;
+      const made = await client.createSubscription(commentHook({ url: `${HOOK_URL}-list` }));
+      services.setSubscriptionStatus(made.id, 'onProbation');
+      const listed = await client.subscriptions();
+      expect(listed).toHaveLength(before + 1);
+      expect(listed.find((s) => s.id === made.id)).toEqual({ ...made, status: 'onProbation' });
+      const request = lastRequest();
+      expect(request).toMatchObject({ method: 'GET', path: '/_apis/hooks/subscriptions' });
+      const query = new URLSearchParams(request.query);
+      expect(query.get('publisherId')).toBe('tfs');
+      expect(query.get('consumerId')).toBe('webHooks');
+      expect(query.get('consumerActionId')).toBe('httpRequest');
+      expect(query.get('api-version')).toBe('7.0');
+    });
+
+    it('replaces a subscription with PUT, keeping the id', async () => {
+      const client = clientOf(services);
+      const made = await client.createSubscription(commentHook({ url: `${HOOK_URL}-put` }));
+      services.setSubscriptionStatus(made.id, 'disabledBySystem');
+      const replaced = await client.replaceSubscription(
+        made.id,
+        commentHook({ url: `${HOOK_URL}-put`, resourceVersion: '1.0' }),
+      );
+      expect(lastRequest().method).toBe('PUT');
+      expect(lastRequest().path).toBe(`/_apis/hooks/subscriptions/${made.id}`);
+      expect(apiVersion(lastRequest().query)).toBe('7.0');
+      expect(bodyOf(lastRequest())).toMatchObject({
+        eventType: 'ms.vss-code.git-pullrequest-comment-event',
+        resourceVersion: '1.0',
+        consumerInputs: { basicAuthPassword: PASSWORD },
+      });
+      expect(replaced).toEqual({ ...made, resourceVersion: '1.0', status: 'enabled' });
+    });
+
+    it('answers a PUT of an unknown subscription as not found and refuses a bad id unsent', async () => {
+      const err = await failure(
+        clientOf(services).replaceSubscription(
+          '11111111-2222-4333-8444-555555555555',
+          commentHook(),
+        ),
+      );
+      expect(err).toMatchObject({ kind: 'not_found' });
+      expect(err.request).toBe('PUT /_apis/hooks/subscriptions/{id}');
+      services.clearRequests();
+      await failure(clientOf(services).replaceSubscription('../x', commentHook()));
+      expect(services.requests).toHaveLength(0);
+    });
+
+    it('is refused for a password over http, with the recorded 400 and no password in the error', async () => {
+      const err = await failure(
+        clientOf(services).createSubscription(commentHook({ url: 'http://qualor.example/hook' })),
+      );
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+      expect((err as AzureError).azureMessage).toMatch(/must be HTTPS when a basic authentication/);
+      expect(written(err)).not.toContain(PASSWORD);
+    });
+
+    it('is refused for a resource version the event does not offer', async () => {
+      const err = await failure(
+        clientOf(services).createSubscription(
+          commentHook({ eventType: 'git.pullrequest.updated', resourceVersion: '9.9' }),
+        ),
+      );
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+    });
+
+    it('a PUT counts against the budget, which stays 400 by default', async () => {
+      const made = await clientOf(services).createSubscription(
+        commentHook({ url: `${HOOK_URL}-budget` }),
+      );
+      services.clearRequests();
+      const client = clientOf(services, undefined, { maxRequests: 2 });
+      await client.replaceSubscription(made.id, commentHook({ url: `${HOOK_URL}-budget` }));
+      await client.subscriptions();
+      const err = await failure(client.replaceSubscription(made.id, commentHook()));
+      expect(err).toMatchObject({ kind: 'budget' });
+      expect(services.requests.map((r) => r.method)).toEqual(['PUT', 'GET']);
+      expect(MAX_AZURE_REQUESTS).toBe(400);
     });
   });
 });

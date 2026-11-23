@@ -5,7 +5,12 @@ import { VERSION } from '../../index';
 import { namedRequest, ScmError, type ScmErrorKind, type ScmErrorOptions } from '../provider';
 import { retryAfterSeconds } from '../retry-after';
 import { scmRefusedAddress } from '../url';
-import { AZURE_REPOSITORY_ID, azurePullRequestWebUrl } from './url';
+import {
+  AZURE_REPOSITORY_ID,
+  azureDeployment,
+  azureIdentitiesBase,
+  azurePullRequestWebUrl,
+} from './url';
 
 /** The id of an Azure DevOps pull request, as an Azure analysis names its branch (digits only). */
 export const AZURE_PR_ID = /^[0-9]{1,10}$/;
@@ -33,6 +38,7 @@ export const AZURE_TEXT = {
   rateLimited: 'Azure DevOps is limiting requests (HTTP 429)',
   badAnswer: "Azure DevOps's answer was not understood",
   repositoryId: 'The repository id is not an Azure DevOps repository id (a GUID)',
+  guid: 'The id is not an Azure DevOps id (a GUID)',
   notPublic:
     'The Azure DevOps host resolves to a private, loopback or otherwise non-public address; list it in QUALOR_SCM_INTERNAL_HOSTS',
   refusedAddress:
@@ -72,6 +78,13 @@ export interface AzureConnectionInput {
   baseUrl: string;
   credential: AzureCredential;
   allowInternalHosts: boolean;
+  /**
+   * Where identities are looked up (the `vssps` host of a Services organisation) and whether that
+   * host may be an internal one. Default: {@link azureIdentitiesBase} of `baseUrl`, internal hosts
+   * allowed only where it is the base itself (a Server collection). The rules of the base apply to
+   * this host as they are, never the base's permission.
+   */
+  identities?: { baseUrl: string; allowInternalHosts: boolean };
 }
 
 export interface AzureClientOptions {
@@ -136,10 +149,18 @@ export interface AzureChange {
 
 export interface AzureThreadComment {
   id: number;
+  /** '' for a deleted comment, which Azure DevOps may send without an author. */
   authorId: string;
+  /** The author's `displayName`; '' when there is none. */
+  authorName: string;
   content: string;
   /** `text`, `system`, `codeChange`. */
   commentType: string;
+  /** The comment this one answers; 0 for a thread's first. */
+  parentCommentId: number;
+  /** As Azure DevOps wrote it (ISO 8601, 3 or 7 fraction digits); '' when absent. */
+  publishedDate: string;
+  isDeleted: boolean;
 }
 
 export interface AzureThread {
@@ -149,7 +170,35 @@ export interface AzureThread {
   /** Without the leading `/`, as {@link AzureChange.path}. */
   filePath: string | null;
   rightLine: number | null;
+  /** When the thread was created, as Azure DevOps wrote it; '' when absent. */
+  publishedDate: string;
   comments: AzureThreadComment[];
+}
+
+/** A service hook subscription, as far as Qualor reads it. */
+export interface AzureSubscription {
+  id: string;
+  /** `enabled`, `onProbation`, `disabledByUser`, `disabledBySystem`, `disabledByInactiveIdentity`. */
+  status: string;
+  eventType: string;
+  resourceVersion: string;
+  projectId: string;
+  /** The webhook address the subscription delivers to (`consumerInputs.url`). */
+  url: string;
+}
+
+export interface NewAzureSubscription {
+  eventType: string;
+  /** The event's newest released version, from {@link AzureDevOpsClient.hookEventTypes}. */
+  resourceVersion: string;
+  projectId: string;
+  /** Narrows the deliveries to this repository (`publisherInputs.repository`). */
+  repositoryId: string;
+  /** A ref name filter (`publisherInputs.branch`); none: every branch. */
+  branch?: string;
+  url: string;
+  /** The Basic password Azure DevOps sends with every delivery (https only). */
+  password: string;
 }
 
 export interface NewAzureThread {
@@ -175,7 +224,7 @@ export type AzureStatus = {
 /** A file {@link AzureDevOpsClient.fileText} did not read, and why. */
 export type AzureFileSkipped = 'too_large' | 'binary' | 'missing';
 
-type AzureMethod = 'GET' | 'POST' | 'PATCH';
+type AzureMethod = 'GET' | 'POST' | 'PUT' | 'PATCH';
 /** A pull request's changes come in pages of this many. */
 const CHANGES_PAGE = 100;
 /** The file size `fileText` reads by default. */
@@ -184,6 +233,11 @@ export const AZURE_FILE_MAX_BYTES = 1024 * 1024;
 const THREAD_STATUS = { active: 1, fixed: 2, closed: 4 } as const;
 const STATUS_STATES: readonly string[] = ['succeeded', 'failed', 'error', 'pending', 'notSet'];
 const COMMIT_ID = /^[0-9a-f]{40,64}$/i;
+/** The Git Repositories security namespace (A §10); contribute is bit 4 of its `effectiveAllow`. */
+const GIT_NAMESPACE = '2e9eb7ed-3c0a-47d4-87c1-0ffdd275fd87';
+const CONTRIBUTE = 4;
+/** The user name of a subscription's Basic credential; the password is the connection's secret. */
+const HOOK_USER = 'qualor';
 
 // ─── Response shapes (the fields Qualor reads; server/test/azure-shapes/ holds recorded ones) ──
 
@@ -240,30 +294,70 @@ const itemAnswer = z.looseObject({
   content: z.string().nullish(),
   contentMetadata: z.looseObject({ isBinary: z.boolean().nullish() }).nullish(),
 });
-const threadList = z.looseObject({
+const threadAnswer = z.looseObject({
+  id: z.number().int(),
+  status: z.string().nullish(),
+  publishedDate: z.string().nullish(),
+  threadContext: z
+    .looseObject({
+      filePath: z.string().nullish(),
+      rightFileStart: z.looseObject({ line: z.number().int() }).nullish(),
+    })
+    .nullish(),
+  comments: z
+    .array(
+      z.looseObject({
+        id: z.number().int(),
+        // A deleted comment may come without its author.
+        author: z
+          .looseObject({ id: z.string().nullish(), displayName: z.string().nullish() })
+          .nullish(),
+        content: z.string().nullish(),
+        commentType: z.string().nullish(),
+        parentCommentId: z.number().int().nullish(),
+        publishedDate: z.string().nullish(),
+        isDeleted: z.boolean().nullish(),
+      }),
+    )
+    .nullish(),
+});
+const threadList = z.looseObject({ value: z.array(threadAnswer) });
+const createdComment = z.looseObject({ id: z.number().int() });
+const identityList = z.looseObject({
+  value: z.array(z.looseObject({ descriptor: z.string().nullish() })),
+});
+const aclList = z.looseObject({
   value: z.array(
     z.looseObject({
-      id: z.number().int(),
-      status: z.string().nullish(),
-      threadContext: z
-        .looseObject({
-          filePath: z.string().nullish(),
-          rightFileStart: z.looseObject({ line: z.number().int() }).nullish(),
-        })
-        .nullish(),
-      comments: z
-        .array(
+      acesDictionary: z
+        .record(
+          z.string(),
           z.looseObject({
-            id: z.number().int(),
-            author: z.looseObject({ id: z.string() }).nullish(),
-            content: z.string().nullish(),
-            commentType: z.string().nullish(),
+            descriptor: z.string().nullish(),
+            extendedInfo: z.looseObject({ effectiveAllow: z.number().int().nullish() }).nullish(),
           }),
         )
         .nullish(),
     }),
   ),
 });
+const eventTypeList = z.looseObject({
+  value: z.array(
+    z.looseObject({
+      id: z.string().min(1),
+      supportedResourceVersions: z.array(z.string()).nullish(),
+    }),
+  ),
+});
+const subscriptionAnswer = z.looseObject({
+  id: z.string().min(1),
+  status: z.string().min(1),
+  eventType: z.string().min(1),
+  resourceVersion: z.string().min(1),
+  publisherInputs: z.looseObject({ projectId: z.string().nullish() }).nullish(),
+  consumerInputs: z.looseObject({ url: z.string().nullish() }).nullish(),
+});
+const subscriptionList = z.looseObject({ value: z.array(subscriptionAnswer) });
 const createdThread = z.looseObject({
   id: z.number().int(),
   comments: z.array(z.looseObject({ id: z.number().int() })).min(1),
@@ -285,6 +379,37 @@ const statusList = z.looseObject({
 
 /** For tests against the recorded shapes. */
 export const AZURE_SHAPES = { connectionData, repository, repositoryList } as const;
+
+function threadOf(t: z.infer<typeof threadAnswer>): AzureThread {
+  return {
+    id: t.id,
+    status: t.status ?? null,
+    filePath: t.threadContext?.filePath ? t.threadContext.filePath.replace(/^\//, '') : null,
+    rightLine: t.threadContext?.rightFileStart?.line ?? null,
+    publishedDate: t.publishedDate ?? '',
+    comments: (t.comments ?? []).map((c) => ({
+      id: c.id,
+      authorId: c.author?.id ?? '',
+      authorName: c.author?.displayName ?? '',
+      content: c.content ?? '',
+      commentType: c.commentType ?? 'text',
+      parentCommentId: c.parentCommentId ?? 0,
+      publishedDate: c.publishedDate ?? '',
+      isDeleted: c.isDeleted ?? false,
+    })),
+  };
+}
+
+function subscriptionOf(s: z.infer<typeof subscriptionAnswer>): AzureSubscription {
+  return {
+    id: s.id,
+    status: s.status,
+    eventType: s.eventType,
+    resourceVersion: s.resourceVersion,
+    projectId: s.publisherInputs?.projectId ?? '',
+    url: s.consumerInputs?.url ?? '',
+  };
+}
 
 function repositoryOf(answer: z.infer<typeof repository>): AzureRepository {
   return {
@@ -539,18 +664,17 @@ export class AzureDevOpsClient {
       `${this.#pullRequestPath(repositoryId, prId)}/threads`,
       threadList,
     );
-    return answer.value.map((t) => ({
-      id: t.id,
-      status: t.status ?? null,
-      filePath: t.threadContext?.filePath ? t.threadContext.filePath.replace(/^\//, '') : null,
-      rightLine: t.threadContext?.rightFileStart?.line ?? null,
-      comments: (t.comments ?? []).map((c) => ({
-        id: c.id,
-        authorId: c.author?.id ?? '',
-        content: c.content ?? '',
-        commentType: c.commentType ?? 'text',
-      })),
-    }));
+    return answer.value.map(threadOf);
+  }
+
+  /** One thread with its comments (dates, parents, authors' names). */
+  async thread(repositoryId: string, prId: number, threadId: number): Promise<AzureThread> {
+    return threadOf(
+      await this.#get(
+        `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}`,
+        threadAnswer,
+      ),
+    );
   }
 
   /**
@@ -613,6 +737,23 @@ export class AzureDevOpsClient {
       z.unknown(),
       { content, parentCommentId: 0, commentType: 1 },
     );
+  }
+
+  /** A comment that answers comment `parentCommentId` of the thread; the new comment's id. */
+  async reply(
+    repositoryId: string,
+    prId: number,
+    threadId: number,
+    parentCommentId: number,
+    content: string,
+  ): Promise<number> {
+    const answer = await this.#call(
+      'POST',
+      `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}/comments`,
+      createdComment,
+      { content, parentCommentId, commentType: 1 },
+    );
+    return answer.id;
   }
 
   async editComment(
@@ -701,6 +842,121 @@ export class AzureDevOpsClient {
     );
   }
 
+  /**
+   * The identity descriptor (`Microsoft.IdentityModel.Claims.ClaimsIdentity;<tenant>\\<name>` and its
+   * kin, the form the access control lists take) of an identity id, asked of the identities host
+   * with this connection's credential; null when the answer holds no identity or no descriptor.
+   */
+  async identityDescriptor(identityId: string): Promise<string | null> {
+    if (!AZURE_REPOSITORY_ID.test(identityId)) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    const answer = await this.#call(
+      'GET',
+      `/_apis/identities?identityIds=${identityId.toLowerCase()}`,
+      identityList,
+      undefined,
+      AZURE_API_VERSION,
+      'identities',
+    );
+    return answer.value[0]?.descriptor || null;
+  }
+
+  /**
+   * Whether the identity may contribute to the repository (Git Repositories permission bit 4 of
+   * `extendedInfo.effectiveAllow`, so group membership and inheritance are counted). False when
+   * the list has no entry for the descriptor.
+   */
+  async contributeAllowed(
+    projectId: string,
+    repositoryId: string,
+    descriptor: string,
+  ): Promise<boolean> {
+    if (!AZURE_REPOSITORY_ID.test(projectId)) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    this.#repositoryPath(repositoryId); // validates the id
+    const query = new URLSearchParams({
+      token: `repoV2/${projectId.toLowerCase()}/${repositoryId.toLowerCase()}`,
+      descriptors: descriptor,
+      includeExtendedInfo: 'true',
+    });
+    const answer = await this.#get(`/_apis/accesscontrollists/${GIT_NAMESPACE}?${query}`, aclList);
+    const wanted = descriptor.toLowerCase();
+    for (const acl of answer.value) {
+      for (const [key, ace] of Object.entries(acl.acesDictionary ?? {})) {
+        if (key.toLowerCase() !== wanted && (ace.descriptor ?? '').toLowerCase() !== wanted)
+          continue;
+        return ((ace.extendedInfo?.effectiveAllow ?? 0) & CONTRIBUTE) !== 0;
+      }
+    }
+    return false;
+  }
+
+  /** The service hook event types of the `tfs` publisher with the resource versions each offers. */
+  async hookEventTypes(): Promise<{ id: string; versions: string[] }[]> {
+    const answer = await this.#get('/_apis/hooks/publishers/tfs/eventTypes', eventTypeList);
+    return answer.value.map((e) => ({ id: e.id, versions: e.supportedResourceVersions ?? [] }));
+  }
+
+  /** The web hook subscriptions of the organisation or collection (any publisher filter is ours). */
+  async subscriptions(): Promise<AzureSubscription[]> {
+    const answer = await this.#get(
+      '/_apis/hooks/subscriptions?publisherId=tfs&consumerId=webHooks&consumerActionId=httpRequest',
+      subscriptionList,
+    );
+    return answer.value.map(subscriptionOf);
+  }
+
+  async createSubscription(input: NewAzureSubscription): Promise<AzureSubscription> {
+    return subscriptionOf(
+      await this.#call(
+        'POST',
+        '/_apis/hooks/subscriptions',
+        subscriptionAnswer,
+        this.#subscriptionBody(input),
+      ),
+    );
+  }
+
+  /** PUT: the subscription is rewritten (a changed address or version, or enabled again). */
+  async replaceSubscription(id: string, input: NewAzureSubscription): Promise<AzureSubscription> {
+    if (!AZURE_REPOSITORY_ID.test(id)) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    return subscriptionOf(
+      await this.#call(
+        'PUT',
+        `/_apis/hooks/subscriptions/${id.toLowerCase()}`,
+        subscriptionAnswer,
+        { ...this.#subscriptionBody(input), id: id.toLowerCase() },
+      ),
+    );
+  }
+
+  #subscriptionBody(input: NewAzureSubscription): Record<string, unknown> {
+    return {
+      publisherId: 'tfs',
+      eventType: input.eventType,
+      resourceVersion: input.resourceVersion,
+      consumerId: 'webHooks',
+      consumerActionId: 'httpRequest',
+      publisherInputs: {
+        projectId: input.projectId,
+        repository: input.repositoryId,
+        ...(input.branch === undefined ? {} : { branch: input.branch }),
+      },
+      consumerInputs: {
+        url: input.url,
+        basicAuthUsername: HOOK_USER,
+        basicAuthPassword: input.password,
+        resourceDetailsToSend: 'all',
+        messagesToSend: 'all',
+        detailedMessagesToSend: 'all',
+      },
+    };
+  }
+
   /** The answer of a GET as `schema` reads it; its error names the route ({@link azureRoute}). */
   #get<T>(path: string, schema: z.ZodType<T>, apiVersion: string = AZURE_API_VERSION): Promise<T> {
     return this.#call('GET', path, schema, undefined, apiVersion);
@@ -716,6 +972,7 @@ export class AzureDevOpsClient {
     schema: z.ZodType<T>,
     body?: unknown,
     apiVersion: string = AZURE_API_VERSION,
+    host: 'base' | 'identities' = 'base',
   ): Promise<T> {
     const max = this.#options.maxRequests ?? MAX_AZURE_REQUESTS;
     if (this.#requestCount >= max) {
@@ -739,6 +996,7 @@ export class AzureDevOpsClient {
         authorization,
         secrets,
         now,
+        host,
       );
       const parsed = schema.safeParse(json);
       if (!parsed.success) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer, { status });
@@ -746,6 +1004,20 @@ export class AzureDevOpsClient {
     } catch (err) {
       throw namedRequest(err, azureRoute(method, path.split('?', 1)[0] ?? path));
     }
+  }
+
+  /**
+   * The identities host and its own permission to be internal: the address rules (the SSRF check
+   * of every resolved address, the refused ranges) are applied to it as to the base, per request.
+   */
+  #identities(): { baseUrl: string; allowInternalHosts: boolean } {
+    const { identities, baseUrl, allowInternalHosts } = this.#connection;
+    if (identities) return identities;
+    const deployment = azureDeployment(baseUrl);
+    return {
+      baseUrl: azureIdentitiesBase(baseUrl, deployment),
+      allowInternalHosts: deployment === 'server' ? allowInternalHosts : false,
+    };
   }
 
   /** The `Authorization` header, and the secrets no message may carry. */
@@ -767,8 +1039,9 @@ export class AzureDevOpsClient {
     authorization: string,
     secrets: string[],
     now: () => number,
+    host: 'base' | 'identities',
   ): Promise<{ status: number; json: unknown }> {
-    const { baseUrl, allowInternalHosts } = this.#connection;
+    const { baseUrl, allowInternalHosts } = host === 'base' ? this.#connection : this.#identities();
     const separator = path.includes('?') ? '&' : '?';
     const result = await outboundRequest(
       {

@@ -160,6 +160,9 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     authorId: 'a-person',
     content,
     commentType: 'text',
+    parentCommentId: 0,
+    publishedDate: '2026-11-23T10:00:00Z',
+    isDeleted: false,
   });
   const lastComment = (t: FakeAzureThread) => t.comments[t.comments.length - 1]?.content ?? '';
 
@@ -515,8 +518,17 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
         filePath: 'src/a.ts',
         line: row.line,
         threadContext: null,
+        publishedDate: '2026-11-23T10:00:00Z',
         comments: [
-          { id: 1, authorId: fake.patUser.id, content: issueMarker(row.id), commentType: 'text' },
+          {
+            id: 1,
+            authorId: fake.patUser.id,
+            content: issueMarker(row.id),
+            commentType: 'text',
+            parentCommentId: 0,
+            publishedDate: '2026-11-23T10:00:00Z',
+            isDeleted: false,
+          },
           person(1000 + row.line!),
         ],
       });

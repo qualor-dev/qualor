@@ -2549,4 +2549,18 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     });
     expect(services.tokenRequests).toHaveLength(3);
   });
+
+  it("looks identities up on the identities host: the test origin's prefix, and the same address rules", async () => {
+    const row = await rowOf((await created(SP_SECRET)).id);
+    const deps = scmDepsOf(h.ctx.config);
+    const made = azureClientFor(row, deps);
+    if ('problem' in made) throw new Error(made.problem);
+    services.clearRequests();
+    const descriptor = await made.client.identityDescriptor(services.principalUser!.id);
+    expect(descriptor).toMatch(/AadServicePrincipal;/);
+    expect(services.requests.map((r) => r.path)).toEqual(['/vssps/_apis/identities']);
+    // The identities host is not the base: an internal host list without the fake's host refuses both.
+    const unlisted = azureClientFor(row, { ...deps, internalHosts: new Set() });
+    expect(unlisted).toMatchObject({ problem: expect.any(String) });
+  });
 });

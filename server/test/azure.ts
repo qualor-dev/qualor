@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
 import type { Config } from '../src/config';
 import type { AzureCredential } from '../src/scm/azure/client';
 import { parseAzureCertificate } from '../src/scm/azure/certificate';
 import { entraToken, type EntraCredential, type EntraOptions } from '../src/scm/azure/entra';
-import type {
-  FakeAzureChange,
-  FakeAzureDevOps,
-  FakeAzureIteration,
-  FakeAzurePullRequest,
-  FakeAzurePullRequestInput,
+import {
+  azureShape,
+  type FakeAzureChange,
+  type FakeAzureDeployment,
+  type FakeAzureDevOps,
+  type FakeAzureIteration,
+  type FakeAzurePullRequest,
+  type FakeAzurePullRequestInput,
 } from './fake-azure-devops';
 import { TEST_IDP, type TestKeyPair } from './saml';
 
@@ -135,4 +138,57 @@ export function seedAzurePullRequest(
     fake.addFile(repositoryId, sourceCommit, path, content);
   }
   return { pullRequest, iteration, sourceCommit, baseCommit };
+}
+
+/**
+ * Where a client looks up identities on `fake`: on Services the fake's second host (a prefix of its
+ * server, which the test origin seam maps the `vssps` host to, see `identitiesUrl`), allowed as
+ * the fake's own address; on Server the collection itself (undefined: the client's default).
+ */
+export function identitiesOf(
+  fake: FakeAzureDevOps,
+): { baseUrl: string; allowInternalHosts: boolean } | undefined {
+  return fake.deployment === 'services'
+    ? { baseUrl: fake.identitiesUrl, allowInternalHosts: true }
+    : undefined;
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** `overrides` laid over `base`: plain objects merge, anything else (arrays too) replaces. */
+function overlaid(base: unknown, overrides: unknown): unknown {
+  if (!isPlain(base) || !isPlain(overrides)) return overrides;
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overrides)) merged[key] = overlaid(base[key], value);
+  return merged;
+}
+
+/**
+ * Posts a recorded service hook delivery (`azure-shapes/<deployment>/9-event-<name>.json`, e.g.
+ * `comment-created`, `comment-reply`, `pr-updated`) to Qualor's route for the connection, as Azure
+ * DevOps would: JSON, with `auth` as the Basic credential (user name default `qualor`; none: no
+ * `Authorization` header). `overrides` are laid over the recorded body field by field.
+ */
+export async function deliverAzureEvent(
+  app: Pick<FastifyInstance, 'inject'>,
+  connectionId: string,
+  name: string,
+  overrides: Record<string, unknown> = {},
+  auth?: { username?: string; password: string },
+  deployment: FakeAzureDeployment = 'services',
+) {
+  if (!/^[a-z-]{1,40}$/.test(name)) throw new Error(`not an Azure DevOps event name: ${name}`);
+  const { body } = azureShape<{ body: unknown }>(deployment, `9-event-${name}`);
+  const basic = auth
+    ? {
+        authorization: `Basic ${Buffer.from(`${auth.username ?? 'qualor'}:${auth.password}`).toString('base64')}`,
+      }
+    : {};
+  return await app.inject({
+    method: 'POST',
+    url: `/api/v0/azure-devops/webhooks/${connectionId}`,
+    headers: { 'content-type': 'application/json', ...basic },
+    payload: JSON.stringify(overlaid(body, overrides)),
+  });
 }

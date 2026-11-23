@@ -56,3 +56,21 @@ export function azureWebBase(normalisedBaseUrl: string): string {
 export function azurePullRequestWebUrl(repositoryWebUrl: string, id: number): string {
   return `${repositoryWebUrl}/pullrequest/${id}`;
 }
+
+/**
+ * Where identities are looked up: Services keeps them on a host of their own, `vssps.dev.azure.com/<org>`
+ * for `https://dev.azure.com/<org>` and `<org>.vssps.visualstudio.com` for `https://<org>.visualstudio.com`;
+ * a Server collection answers them itself. The caller applies the same address rules as to the base.
+ */
+export function azureIdentitiesBase(
+  normalisedBaseUrl: string,
+  deployment: AzureDeployment,
+): string {
+  if (deployment === 'server') return normalisedBaseUrl;
+  const url = new URL(normalisedBaseUrl);
+  const host = url.hostname.toLowerCase();
+  if (host === 'dev.azure.com')
+    return `https://vssps.dev.azure.com${url.pathname.replace(/\/+$/, '')}`;
+  const label = host.slice(0, -'.visualstudio.com'.length);
+  return `https://${label}.vssps.visualstudio.com`;
+}

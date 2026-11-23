@@ -22,7 +22,12 @@ import {
   type EntraCredential,
   type EntraOptions,
 } from './entra';
-import { azureBaseUrlProblem, azureDeployment, type AzureDeployment } from './url';
+import {
+  azureBaseUrlProblem,
+  azureDeployment,
+  azureIdentitiesBase,
+  type AzureDeployment,
+} from './url';
 
 /**
  * Azure DevOps connections (design §7.1, §7.2): what the connection API checks and stores for
@@ -389,6 +394,24 @@ function targetOf(baseUrl: string, deps: ScmDeps): string {
   return `${origin}${new URL(baseUrl).pathname}`.replace(/\/+$/, '');
 }
 
+/** Tests only: the path the fake serves the identities host (`vssps.…`) under, on the test origin. */
+export const AZURE_TEST_IDENTITIES_PREFIX = '/vssps';
+
+/**
+ * Where the client looks up identities: on Services the `vssps` host of the organisation
+ * (`azureIdentitiesBase`), in tests (ruling 5) the fake's prefix on the test origin; a Server
+ * collection answers them itself. The same address rules as the base's apply to that target.
+ */
+function identitiesTargetOf(baseUrl: string, deps: ScmDeps): string {
+  const deployment = azureDeployment(baseUrl);
+  const origin = deps.azureTestOrigin;
+  if (origin !== null && deployment === 'services') {
+    const path = new URL(baseUrl).pathname;
+    return `${origin}${AZURE_TEST_IDENTITIES_PREFIX}${path}`.replace(/\/+$/, '');
+  }
+  return azureIdentitiesBase(baseUrl, deployment);
+}
+
 /**
  * A client for an Azure DevOps connection, or why there is none: a credential that no longer
  * decrypts or parses, an expired certificate, a service principal on a Server, or a base URL the
@@ -404,8 +427,12 @@ export function azureClientFor(
 ): { client: AzureDevOpsClient } | { problem: string } {
   const secret = decryptSecret(encryptionKey(deps.secretKey), row.tokenEnc, SCM_TOKEN_AAD);
   if (secret === null) return { problem: AZURE_CONNECTION_TEXT.unreadable };
+  const identities = identitiesTargetOf(row.baseUrl, deps);
+  // The identities host is held to the base's rules: the same address check, its own permission.
   const problem =
-    scmBaseUrlProblem(row.baseUrl, deps.internalHosts) ?? azureBaseUrlProblem(row.baseUrl);
+    scmBaseUrlProblem(row.baseUrl, deps.internalHosts) ??
+    azureBaseUrlProblem(row.baseUrl) ??
+    scmBaseUrlProblem(identities, deps.internalHosts);
   if (problem) return { problem };
   const found = credentialOf(
     row,
@@ -421,6 +448,10 @@ export function azureClientFor(
         baseUrl: target,
         credential: found.credential,
         allowInternalHosts: isInternalHostAllowed(new URL(target), deps.internalHosts),
+        identities: {
+          baseUrl: identities,
+          allowInternalHosts: isInternalHostAllowed(new URL(identities), deps.internalHosts),
+        },
       },
       deps.azureClientOptions,
     ),
