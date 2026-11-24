@@ -111,7 +111,8 @@ export function nameKind(value: unknown): string {
 
 const SECRET_KEY = /(?:PAT|PASSWORD|SECRET|TOKEN|API_KEY|LLM_KEY)$/;
 
-function hostsOf(url: string | undefined): string[] {
+/** The host of a URL, and the IP an AWS public name or an sslip.io name carries; none for a non-URL. */
+export function hostsOf(url: string | undefined): string[] {
   if (!url) return [];
   let host: string;
   try {

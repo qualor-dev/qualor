@@ -427,33 +427,34 @@ const enc = encodeURIComponent;
 const repoPath = (ctx: ProbeContext, repoId: string, rest: string): string =>
   `/${ctx.project}/_apis/git/repositories/${repoId}${rest}`;
 
-/** The fix repository, created when missing (the service principal is a Project Administrator). */
-async function ensureRepository(
+/**
+ * A kept repository of the bench project (the fix repository by default), created when missing
+ * (the service principal is a Project Administrator).
+ */
+export async function ensureRepository(
   ctx: ProbeContext,
   notes: string[],
+  name: string = FIX_REPOSITORY,
 ): Promise<z.infer<typeof RepoAnswer>> {
-  const got = await ctx.bot.request(
-    'GET',
-    `/${ctx.project}/_apis/git/repositories/${FIX_REPOSITORY}`,
-  );
-  if (got.status === 200) return shape(RepoAnswer, got.json, 'fix repository');
-  if (got.status !== 404) ok(got, 'fix repository');
+  const got = await ctx.bot.request('GET', `/${ctx.project}/_apis/git/repositories/${name}`);
+  if (got.status === 200) return shape(RepoAnswer, got.json, `repository ${name}`);
+  if (got.status !== 404) ok(got, `repository ${name}`);
   const probe = await repoInfo(ctx);
   const client: AzureClient = ctx.entra?.('secret') ?? ctx.bot;
   const res = ok(
     await client.request('POST', `/${ctx.project}/_apis/git/repositories`, {
-      name: FIX_REPOSITORY,
+      name,
       project: { id: probe.project.id },
     }),
-    'create the fix repository',
+    `create the repository ${name}`,
   );
   await rec(ctx, 'repository-create', answerOf(res));
-  notes.push(`repository ${FIX_REPOSITORY} created (kept between runs)`);
+  notes.push(`repository ${name} created (kept between runs)`);
   return shape(RepoAnswer, res.json, 'created repository');
 }
 
 /** The head of `refName` in a repository read by id (one without a default branch yet too). */
-async function headOf(
+export async function headOf(
   ctx: ProbeContext,
   repoId: string,
   refName: string,
@@ -473,7 +474,7 @@ async function headOf(
 }
 
 /** A file's text at a commit (`$format=json`: a raw read of a JSON file would come back parsed); null when absent. */
-async function fileText(
+export async function fileText(
   ctx: ProbeContext,
   repoId: string,
   filePath: string,
@@ -594,7 +595,7 @@ const VulnerabilityItem = z
   })
   .loose();
 
-const codeOf = (json: unknown): string =>
+export const codeOf = (json: unknown): string =>
   json && typeof json === 'object' && typeof (json as { code?: unknown }).code === 'string'
     ? (json as { code: string }).code
     : 'no code';
@@ -642,7 +643,7 @@ function clearFix(
 }
 
 /** The main branch of the Qualor project; undefined before its first analysis. */
-async function qualorMain(api: QualorApi, projectId: string) {
+export async function qualorMain(api: QualorApi, projectId: string) {
   return (await api.all(`/api/v0/projects/${projectId}/branches?kind=branch`, BranchItem)).find(
     (b) => b.isMain,
   );
@@ -655,7 +656,7 @@ async function vulndbStatus(api: QualorApi): Promise<string> {
 }
 
 /** Why a build did not succeed: its failed steps and their log tails (the detail only, redacted). */
-async function buildProblem(ctx: ProbeContext, buildId: number): Promise<string> {
+export async function buildProblem(ctx: ProbeContext, buildId: number): Promise<string> {
   return failedSteps(await timeline(ctx, buildId), await buildLogs(ctx, buildId));
 }
 
