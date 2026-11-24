@@ -949,7 +949,7 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     // A hidden character makes the suggestion one the note does not post.
     const id = await s.aiFinding({
       line: 3,
-      suggestion: { startLine: 3, endLine: 4, lines: ['3', 'four‮'] },
+      suggestion: { startLine: 3, endLine: 4, lines: ['3', 'four\u202E'] },
     });
     await decorate();
     const thread = s.aiThread(id);

@@ -120,7 +120,7 @@ export class FixLinkView {
       this.inFlightWhileOff() ||
       (this.usable() && (this.shown() !== null || this.canCreate() || this.error() !== null)),
   );
-  /** "MR" on GitLab, "PR" on GitHub, the plain "MR" while the provider is not known. */
+  /** "MR" on GitLab, "PR" on GitHub and Azure DevOps, the plain "MR" while the provider is not known. */
   protected readonly word = computed(() => {
     const provider = this.state()?.provider;
     if (provider === null || provider === undefined) return 'MR';

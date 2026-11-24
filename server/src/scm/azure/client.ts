@@ -34,6 +34,7 @@ export const AZURE_TEXT = {
   refused: 'Azure DevOps refused the credential (HTTP 401)',
   signInRequired: 'The identity is not a member of this organization or has no access level',
   forbidden: 'The Azure DevOps identity lacks the permission for this request (HTTP 403)',
+  rightMissing: 'The Azure DevOps identity lacks a right on the repository',
   notFound: 'Azure DevOps found nothing there, or the identity cannot see it (HTTP 404)',
   rateLimited: 'Azure DevOps is limiting requests (HTTP 429)',
   badAnswer: "Azure DevOps's answer was not understood",
@@ -566,7 +567,7 @@ function throwRefRefused(updateStatus: string | undefined): never {
     throw new AzureError('refused', AZURE_TEXT.refStale, { status: 409, reason: 'stale' });
   }
   if (updateStatus !== undefined && REF_RIGHT_MISSING.has(updateStatus)) {
-    throw new AzureError('auth', AZURE_TEXT.forbidden, {
+    throw new AzureError('auth', AZURE_TEXT.rightMissing, {
       status: 403,
       reason: 'permission_missing',
       azureMessage: updateStatus,

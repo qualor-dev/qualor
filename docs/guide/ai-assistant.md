@@ -379,8 +379,9 @@ on GitLab, GitHub or Azure DevOps, or ignores it.
 
 ### What runs, and when
 
-After each analysis of a merge request or pull request whose project is mapped to GitLab, GitHub or Azure
-DevOps ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md)), Qualor picks the findings that get a suggestion:
+After each analysis of a merge request or pull request whose project is mapped to GitLab, GitHub or
+Azure DevOps ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md)),
+Qualor picks the findings that get a suggestion:
 
 - only **new-code** findings of that merge request: never the old issues of its target branch, and
   never an analysis of the main branch or another branch;

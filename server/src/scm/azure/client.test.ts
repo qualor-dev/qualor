@@ -1876,6 +1876,8 @@ describe('fix writes: branches, pushes, refs, raw reads and pull requests (sub-p
       const error = await failure(clientOf(fake).updateRef(repoId, NAME, head, head));
       expect(error).toMatchObject({ kind: 'auth', status: 403, reason: 'permission_missing' });
       expect((error as AzureError).azureMessage).toBe(word);
+      expect((error as AzureError).message).toBe(AZURE_TEXT.rightMissing);
+      expect((error as AzureError).message).not.toContain('HTTP 403');
     });
 
     it('deleteRef sends the zero new id; the old id is not enforced (succeededCorruptRef)', async () => {

@@ -353,7 +353,8 @@ function azureWrites(
       try {
         await client.updateRef(repositoryId, `refs/heads/${input.branch}`, head, sha);
       } catch (err) {
-        // Azure DevOps has no stale answer of its own for this update (probe 22e): a refusal while
+        // Azure DevOps has no stale answer of its own for this update (the stale answer of a ref update was never
+        // probed): a refusal while
         // the head has moved is a person's push; one while it has not is a real refusal.
         const refused = err instanceof ScmError && (err.kind === 'refused' || err.kind === 'auth');
         if (refused && (await branchHead(input.branch)) !== head)
