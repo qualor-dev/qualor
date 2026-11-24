@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { inspect } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -14,6 +15,7 @@ import {
   createFakeAzureDevOps,
   recordedAnswer,
   type FakeAzureDevOps,
+  type FakeAzureProject,
 } from '../../../test/fake-azure-devops';
 import { TEST_SP } from '../../../test/saml';
 import { trustTestCa } from '../../../test/tls';
@@ -28,6 +30,7 @@ import {
   MAX_AZURE_RESPONSE_BYTES,
   type AzureClientOptions,
   type AzureCredential,
+  type AzureJsonPatch,
   type NewAzureSubscription,
 } from './client';
 
@@ -2594,6 +2597,794 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
     ] as const)('%s', (schema, names) => {
       for (const name of names) {
         expect(AZURE_SHAPES[schema].safeParse(body(name)).success, name).toBe(true);
+      }
+    });
+  });
+});
+
+describe('the Boards calls (sub-plan 8, task 2; probe items 13 and 30)', () => {
+  let fake: FakeAzureDevOps;
+  let agile: FakeAzureProject;
+  let basic: FakeAzureProject;
+  let scrum: FakeAzureProject;
+  const lastRequest = () => fake.requests.at(-1)!;
+  const queryOf = (r: { query: string }) => new URLSearchParams(r.query);
+  const PATCH_JSON = 'application/json-patch+json';
+  const LINK = 'https://qualor.example.com/projects/p/issues/i';
+  const HIDDEN = [
+    'Code Review Request',
+    'Code Review Response',
+    'Feedback Request',
+    'Feedback Response',
+    'Shared Steps',
+    'Shared Parameter',
+    'Test Plan',
+    'Test Suite',
+  ];
+  const BATCH_FIELDS = [
+    'System.State',
+    'System.TeamProject',
+    'System.WorkItemType',
+    'System.Tags',
+    'System.Description',
+  ];
+  const field = (name: string, value: unknown): AzureJsonPatch => ({
+    op: 'add',
+    path: `/fields/${name}`,
+    value,
+  });
+  const ops = (title = 'SQL injection in login', tags = 'qualor; team-a'): AzureJsonPatch[] => [
+    field('System.Title', title),
+    field('System.Description', '<p>Found by Qualor</p>'),
+    field('System.Tags', tags),
+    { op: 'add', path: '/relations/-', value: { rel: 'Hyperlink', url: LINK } },
+  ];
+  const reconcile = (since: string) =>
+    "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.Tags] CONTAINS 'qualor'" +
+    ` AND [System.CreatedBy] = @Me AND [System.CreatedDate] >= '${since}' ORDER BY [System.Id] DESC`;
+  /** A request as the client would not send it (a refusal of the fake itself). */
+  const raw = async (
+    method: string,
+    path: string,
+    body?: unknown,
+    contentType = 'application/json',
+  ): Promise<{ status: number; json: Record<string, unknown> }> => {
+    const res = await fetch(`${fake.url}${path}`, {
+      method,
+      headers: {
+        authorization: `Basic ${Buffer.from(`:${fake.pat}`).toString('base64')}`,
+        ...(body === undefined ? {} : { 'content-type': contentType }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await res.text();
+    return {
+      status: res.status,
+      json: (text ? JSON.parse(text) : {}) as Record<string, unknown>,
+    };
+  };
+  const answerOf = (body: unknown) => ({
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+    body,
+  });
+
+  beforeAll(async () => {
+    fake = await createFakeAzureDevOps({
+      deployment: 'services',
+      principal: AZURE_TEST_PRINCIPAL,
+    });
+    agile = fake.addProject({ name: 'Payments Team', process: 'agile' });
+    basic = fake.addProject({ name: 'Ops', process: 'basic' });
+    scrum = fake.addProject({ name: 'Mobile', process: 'scrum' });
+  });
+  afterAll(async () => {
+    await fake.close();
+  });
+  beforeEach(() => {
+    fake.clearRequests();
+  });
+
+  describe('projects', () => {
+    it('asks 100 at a time at 7.0 and answers ids lower-cased, by name as Azure DevOps lists them', async () => {
+      const projects = await clientOf(fake).projects();
+      expect(fake.requests).toHaveLength(1);
+      const request = lastRequest();
+      expect(request.method).toBe('GET');
+      expect(request.path).toBe('/_apis/projects');
+      expect(queryOf(request).get('$top')).toBe('100');
+      expect(queryOf(request).get('continuationToken')).toBeNull();
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(projects).toEqual([
+        { id: scrum.id, name: 'Mobile' },
+        { id: basic.id, name: 'Ops' },
+        { id: agile.id, name: 'Payments Team' },
+      ]);
+    });
+
+    it('follows x-ms-continuationtoken (a running offset) until it is absent', async () => {
+      const many = await createFakeAzureDevOps({ deployment: 'services' });
+      try {
+        for (let i = 0; i < 250; i += 1) {
+          many.addProject({ name: `p-${String(i).padStart(3, '0')}` });
+        }
+        const projects = await clientOf(many).projects();
+        expect(projects).toHaveLength(250);
+        expect(new Set(projects.map((p) => p.id)).size).toBe(250);
+        expect(
+          many.requests.map((r) => new URLSearchParams(r.query).get('continuationToken')),
+        ).toEqual([null, '100', '200']);
+      } finally {
+        await many.close();
+      }
+    });
+
+    it('stops at 1000 projects, and at an empty page even with a token', async () => {
+      const page = (n: number) => ({
+        ...answerOf({
+          count: 100,
+          value: Array.from({ length: 100 }, (_, i) => ({ id: randomUUID(), name: `p${n}-${i}` })),
+        }),
+        headers: { 'content-type': 'application/json', 'x-ms-continuationtoken': String(n * 100) },
+      });
+      const pages = Array.from({ length: 10 }, (_, n) => page(n + 1));
+      fake.inject('GET', /^\/_apis\/projects$/, ...pages);
+      expect(await clientOf(fake).projects()).toHaveLength(1000);
+      expect(fake.requests).toHaveLength(10);
+      fake.clearRequests();
+      fake.inject('GET', /^\/_apis\/projects$/, {
+        ...answerOf({ count: 0, value: [] }),
+        headers: { 'content-type': 'application/json', 'x-ms-continuationtoken': '5' },
+      });
+      expect(await clientOf(fake).projects()).toEqual([]);
+      expect(fake.requests).toHaveLength(1);
+    });
+  });
+
+  describe('work item types', () => {
+    it('lists the types with their states, categories and every field (required, default)', async () => {
+      const types = await clientOf(fake).workItemTypes(agile.id);
+      const request = lastRequest();
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/workitemtypes`);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(types.map((t) => t.name)).toEqual([
+        'Bug',
+        'Code Review Request',
+        'Code Review Response',
+        'Epic',
+        'Feature',
+        'Feedback Request',
+        'Feedback Response',
+        'Shared Steps',
+        'Task',
+        'Test Case',
+        'Test Plan',
+        'Test Suite',
+        'User Story',
+        'Issue',
+        'Shared Parameter',
+      ]);
+      const bug = types.find((t) => t.name === 'Bug')!;
+      expect(bug.referenceName).toBe('Microsoft.VSTS.WorkItemTypes.Bug');
+      expect(bug.states).toEqual([
+        { name: 'New', category: 'Proposed' },
+        { name: 'Active', category: 'InProgress' },
+        { name: 'Resolved', category: 'Resolved' },
+        { name: 'Closed', category: 'Completed' },
+      ]);
+      const required = (referenceName: string, hasDefault = false) => ({
+        referenceName,
+        alwaysRequired: true,
+        hasDefault,
+      });
+      const optional = (referenceName: string) => ({
+        referenceName,
+        alwaysRequired: false,
+        hasDefault: false,
+      });
+      expect(bug.fields).toEqual(
+        expect.arrayContaining([
+          required('System.AreaId'),
+          required('System.IterationId'),
+          required('System.Title'),
+          required('System.State', true),
+          required('Microsoft.VSTS.Common.ValueArea', true),
+          optional('System.Description'),
+          optional('Microsoft.VSTS.TCM.ReproSteps'),
+          optional('System.Tags'),
+          optional('System.History'),
+          // Not in the trimmed recording: the fake's full field list.
+          optional('System.AreaPath'),
+          optional('System.IterationPath'),
+        ]),
+      );
+      const issue = (await clientOf(fake).workItemTypes(basic.id)).find((t) => t.name === 'Issue')!;
+      expect(issue.fields.map((f) => f.referenceName)).not.toContain(
+        'Microsoft.VSTS.TCM.ReproSteps',
+      );
+      expect(issue.states.map((s) => `${s.name}:${s.category}`)).toEqual([
+        'To Do:Proposed',
+        'Doing:InProgress',
+        'Done:Completed',
+      ]);
+    });
+
+    it('names the hidden types by name (Microsoft.HiddenCategory lists names only)', async () => {
+      expect(await clientOf(fake).hiddenWorkItemTypes(agile.id)).toEqual(new Set(HIDDEN));
+      const request = lastRequest();
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/workitemtypecategories`);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(await clientOf(fake).hiddenWorkItemTypes(basic.id)).toEqual(
+        new Set([...HIDDEN, 'Test Case']),
+      );
+      fake.inject(
+        'GET',
+        /workitemtypecategories$/,
+        answerOf({
+          count: 1,
+          value: [{ referenceName: 'Microsoft.BugCategory', workItemTypes: [{ name: 'Bug' }] }],
+        }),
+      );
+      expect(await clientOf(fake).hiddenWorkItemTypes(agile.id)).toEqual(new Set());
+    });
+
+    it('refuses a project id that is not a GUID without sending anything', async () => {
+      const err = await failure(clientOf(fake).workItemTypes('Payments Team'));
+      expect(err).toMatchObject({ kind: 'refused', reason: 'invalid_input' });
+      expect(fake.requests).toHaveLength(0);
+    });
+  });
+
+  describe('classification paths', () => {
+    it('answers the create form: no leading backslash, no Area or Iteration segment, root first', async () => {
+      const client = clientOf(fake);
+      expect(await client.classificationPaths(agile.id, 'areas')).toEqual(['Payments Team']);
+      const request = lastRequest();
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/classificationnodes/areas`);
+      expect(queryOf(request).get('$depth')).toBe('10');
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(await client.classificationPaths(agile.id, 'iterations')).toEqual([
+        'Payments Team',
+        'Payments Team\\Iteration 1',
+        'Payments Team\\Iteration 2',
+        'Payments Team\\Iteration 3',
+      ]);
+      expect(lastRequest().path).toBe(`/${agile.id}/_apis/wit/classificationnodes/iterations`);
+      fake.addClassificationNode(scrum.id, 'areas', 'Backend\\API');
+      fake.addClassificationNode(scrum.id, 'areas', 'Frontend');
+      expect(await client.classificationPaths(scrum.id, 'areas')).toEqual([
+        'Mobile',
+        'Mobile\\Backend',
+        'Mobile\\Backend\\API',
+        'Mobile\\Frontend',
+      ]);
+    });
+
+    it('reads the recorded iteration tree (probe item 30a)', async () => {
+      fake.inject(
+        'GET',
+        /classificationnodes\/iterations$/,
+        recordedAnswer('services', '30-pat-a-iterations'),
+      );
+      expect(await clientOf(fake).classificationPaths(agile.id, 'iterations')).toEqual([
+        'probe-org',
+        'probe-org\\Iteration 1',
+        'probe-org\\Iteration 2',
+        'probe-org\\Iteration 3',
+      ]);
+    });
+
+    it('keeps 10 levels below the root and at most 2000 paths', async () => {
+      type Node = { name: string; path: string; hasChildren: boolean; children?: Node[] };
+      const chain = (depth: number, at: string): Node => ({
+        name: `n${depth}`,
+        path: at,
+        hasChildren: depth < 12,
+        ...(depth < 12 ? { children: [chain(depth + 1, `${at}\\n${depth + 1}`)] } : {}),
+      });
+      fake.inject('GET', /classificationnodes\/areas$/, answerOf(chain(0, '\\P\\Area')));
+      const deep = await clientOf(fake).classificationPaths(agile.id, 'areas');
+      expect(deep).toHaveLength(11);
+      expect(deep.at(-1)).toBe('P\\n1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9\\n10');
+      const children = Array.from({ length: 2100 }, (_, i) => ({
+        name: `a${i}`,
+        path: `\\P\\Area\\a${i}`,
+        hasChildren: false,
+      }));
+      fake.inject(
+        'GET',
+        /classificationnodes\/areas$/,
+        answerOf({ name: 'P', path: '\\P\\Area', hasChildren: true, children }),
+      );
+      const wide = await clientOf(fake).classificationPaths(agile.id, 'areas');
+      expect(wide).toHaveLength(2000);
+      expect(wide.slice(0, 2)).toEqual(['P', 'P\\a0']);
+    });
+  });
+
+  describe('createWorkItem and validateWorkItem', () => {
+    it('POSTs the JSON Patch to workitems/$<type> as application/json-patch+json, reads the work item', async () => {
+      const body = [...ops(), field('Microsoft.VSTS.TCM.ReproSteps', '<p>Found by Qualor</p>')];
+      const item = await clientOf(fake).createWorkItem(agile.id, 'Bug', body);
+      const request = lastRequest();
+      expect(request.method).toBe('POST');
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/workitems/$Bug`);
+      expect(request.headers['content-type']).toBe(PATCH_JSON);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(queryOf(request).get('validateOnly')).toBeNull();
+      expect(JSON.parse(request.body)).toEqual(body);
+      expect(item).toEqual({
+        id: expect.any(Number),
+        rev: 1,
+        state: 'New',
+        typeName: 'Bug',
+        projectName: 'Payments Team',
+        tags: ['qualor', 'team-a'],
+        description: '<p>Found by Qualor</p>',
+        url: `${fake.url}/${agile.id}/_apis/wit/workItems/${item.id}`,
+      });
+      const stored = fake.workItem(item.id);
+      expect(stored).toMatchObject({
+        projectId: agile.id,
+        typeName: 'Bug',
+        areaPath: 'Payments Team',
+        iterationPath: 'Payments Team',
+        createdBy: fake.patUser.id,
+        relations: [{ rel: 'Hyperlink', url: LINK }],
+        history: [],
+      });
+      expect(stored.fields['Microsoft.VSTS.Common.ValueArea']).toBe('Business');
+      expect(stored.fields['Microsoft.VSTS.TCM.ReproSteps']).toBe('<p>Found by Qualor</p>');
+    });
+
+    it('encodes a type name with spaces, sets the paths given, is made by the identity that asked', async () => {
+      fake.addClassificationNode(scrum.id, 'iterations', 'Sprint 7');
+      const item = await clientOf(fake, bearerOf(fake, 'secret')).createWorkItem(
+        scrum.id,
+        'Product Backlog Item',
+        [
+          ...ops('A story', 'qualor'),
+          field('System.AreaPath', 'Mobile\\Frontend'),
+          field('System.IterationPath', 'Mobile\\Sprint 7'),
+        ],
+      );
+      expect(lastRequest().path).toBe(`/${scrum.id}/_apis/wit/workitems/$Product%20Backlog%20Item`);
+      expect(item).toMatchObject({
+        typeName: 'Product Backlog Item',
+        state: 'New',
+        tags: ['qualor'],
+      });
+      expect(fake.workItem(item.id)).toMatchObject({
+        areaPath: 'Mobile\\Frontend',
+        iterationPath: 'Mobile\\Sprint 7',
+        createdBy: fake.principalUser!.id,
+      });
+    });
+
+    it("keeps Azure DevOps' words of a refused create in azureMessage, never in the message", async () => {
+      const count = fake.workItems().length;
+      const err = await failure(
+        clientOf(fake).createWorkItem(agile.id, 'Bug', [field('System.Description', '<p>d</p>')]),
+      );
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+      const azure = err as AzureError;
+      expect(azure.azureTypeKey).toBe('RuleValidationException');
+      expect(azure.azureMessage).toBe(
+        'TF401320: Rule Error for field Title. Error code: Required, InvalidEmpty.',
+      );
+      expect(err.message).toBe('Azure DevOps answered HTTP 400');
+      expect(written(err)).not.toContain('TF401320');
+      expectNoLeak(err, fake);
+      expect(fake.workItems()).toHaveLength(count);
+    });
+
+    it('refuses a required field without a default, an unknown type, path, project and field', async () => {
+      const client = clientOf(fake);
+      const typed = async (promise: Promise<unknown>) => (await failure(promise)) as AzureError;
+      const required = await typed(client.createWorkItem(agile.id, 'Feedback Request', ops()));
+      expect(required).toMatchObject({ kind: 'refused', status: 400 });
+      expect(required.azureTypeKey).toBe('RuleValidationException');
+      expect(required.azureMessage).toMatch(/^TF401320: Rule Error for field /);
+      const type = await typed(client.createWorkItem(agile.id, 'Defect', ops()));
+      expect(type).toMatchObject({ kind: 'not_found', status: 404 });
+      expect(type.azureTypeKey).toBe('WorkItemTypeNotFoundException');
+      for (const path of ['Payments Team\\Nowhere', '\\Payments Team\\Area']) {
+        const area = await typed(
+          client.createWorkItem(agile.id, 'Bug', [...ops(), field('System.AreaPath', path)]),
+        );
+        expect(area).toMatchObject({ kind: 'refused', status: 400 });
+        expect(area.azureTypeKey).toBe('WorkItemFieldInvalidTreeNameException');
+      }
+      const project = await typed(client.createWorkItem(randomUUID(), 'Bug', ops()));
+      expect(project).toMatchObject({ kind: 'not_found', status: 404 });
+      expect(project.azureTypeKey).toBe('ProjectDoesNotExistException');
+      const repro = await typed(
+        client.createWorkItem(basic.id, 'Issue', [
+          ...ops(),
+          field('Microsoft.VSTS.TCM.ReproSteps', 'r'),
+        ]),
+      );
+      expect(repro).toMatchObject({ kind: 'refused', status: 400 });
+    });
+
+    it('reads the long-text 500 (TF401262) as refused, not transient; any other 500 stays transient', async () => {
+      const big = (await failure(
+        clientOf(fake).createWorkItem(agile.id, 'Bug', [
+          ...ops(),
+          field('System.Description', `<p>${'x'.repeat(1_048_577)}</p>`),
+        ]),
+      )) as AzureError;
+      expect(big).toMatchObject({ kind: 'refused', status: 500 });
+      expect(big.azureTypeKey).toBe('WorkItemFieldMaxLongTextSizeExceededException');
+      fake.inject('POST', /\/workitems\//, recordedAnswer('services', '30-pat-e-big-description'));
+      const recorded = (await failure(
+        clientOf(fake).createWorkItem(agile.id, 'Bug', ops()),
+      )) as AzureError;
+      expect(recorded).toMatchObject({ kind: 'refused', status: 500 });
+      expect(recorded.azureMessage).toMatch(/^TF401262: /);
+      fake.inject('POST', /\/workitems\//, {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+        body: { message: 'boom', typeKey: 'SqlException' },
+      });
+      expect(await failure(clientOf(fake).createWorkItem(agile.id, 'Bug', ops()))).toMatchObject({
+        kind: 'transient',
+        status: 500,
+      });
+    });
+
+    it('validateOnly: the same POST with validateOnly=true, nothing made, the same refusals', async () => {
+      const count = fake.workItems().length;
+      const client = clientOf(fake);
+      await expect(client.validateWorkItem(agile.id, 'Bug', ops())).resolves.toBeUndefined();
+      const request = lastRequest();
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/workitems/$Bug`);
+      expect(queryOf(request).get('validateOnly')).toBe('true');
+      expect(request.headers['content-type']).toBe(PATCH_JSON);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(JSON.parse(request.body)).toEqual(ops());
+      expect(fake.workItems()).toHaveLength(count);
+      const err = (await failure(
+        client.validateWorkItem(agile.id, 'Bug', [field('System.Tags', 'qualor')]),
+      )) as AzureError;
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+      expect(err.azureTypeKey).toBe('RuleValidationException');
+      expect(await failure(client.validateWorkItem(agile.id, 'Defect', ops()))).toMatchObject({
+        kind: 'not_found',
+      });
+      fake.inject('POST', /\/workitems\//, recordedAnswer('services', '30-sp-d-validate'));
+      await expect(client.validateWorkItem(agile.id, 'Bug', ops())).resolves.toBeUndefined();
+    });
+
+    it('refuses a type name that is empty or too long without sending anything', async () => {
+      for (const name of ['', 'x'.repeat(129)]) {
+        expect(await failure(clientOf(fake).createWorkItem(agile.id, name, ops()))).toMatchObject({
+          kind: 'refused',
+          reason: 'invalid_input',
+        });
+      }
+      expect(fake.requests).toHaveLength(0);
+    });
+  });
+
+  describe('updateWorkItem', () => {
+    it('PATCHes workitems/{id} as application/json-patch+json: a note into System.History, rev + 1', async () => {
+      const client = clientOf(fake);
+      const created = await client.createWorkItem(agile.id, 'Bug', ops());
+      const note = [field('System.History', '<p>Qualor no longer finds this issue.</p>')];
+      const updated = await client.updateWorkItem(agile.id, created.id, note);
+      const request = lastRequest();
+      expect(request.method).toBe('PATCH');
+      expect(request.path).toBe(`/${agile.id}/_apis/wit/workitems/${created.id}`);
+      expect(request.headers['content-type']).toBe(PATCH_JSON);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(JSON.parse(request.body)).toEqual(note);
+      expect(updated).toMatchObject({
+        id: created.id,
+        rev: 2,
+        state: 'New',
+        tags: ['qualor', 'team-a'],
+      });
+      expect(fake.workItem(created.id).history).toEqual([
+        '<p>Qualor no longer finds this issue.</p>',
+      ]);
+    });
+
+    it('answers an unknown id as not found, a stale test /rev as refused, a bad id before sending', async () => {
+      const client = clientOf(fake);
+      const unknown = (await failure(
+        client.updateWorkItem(agile.id, 987_654, [field('System.History', 'n')]),
+      )) as AzureError;
+      expect(unknown).toMatchObject({ kind: 'not_found', status: 404 });
+      expect(unknown.azureTypeKey).toBe('WorkItemUnauthorizedAccessException');
+      const created = await client.createWorkItem(agile.id, 'Bug', ops());
+      const stale = (await failure(
+        client.updateWorkItem(agile.id, created.id, [
+          { op: 'test', path: '/rev', value: 7 },
+          field('System.History', 'n'),
+        ]),
+      )) as AzureError;
+      expect(stale).toMatchObject({ kind: 'refused', status: 412 });
+      expect(stale.azureTypeKey).toBe('TestPatchOperationFailedException');
+      expect(fake.workItem(created.id).history).toEqual([]);
+      fake.clearRequests();
+      for (const id of [0, -1, 1.5]) {
+        expect(await failure(client.updateWorkItem(agile.id, id, []))).toMatchObject({
+          kind: 'refused',
+          reason: 'invalid_input',
+        });
+      }
+      expect(fake.requests).toHaveLength(0);
+    });
+  });
+
+  describe('queryWorkItemIds and workItemsBatch', () => {
+    it('WIQL: POSTs the query with timePrecision=true and $top=200; tag, creator and time count', async () => {
+      const project = fake.addProject({ name: 'Reconcile' });
+      const since = new Date(Date.now() - 60_000).toISOString();
+      const sp = clientOf(fake, bearerOf(fake, 'secret'));
+      const a = await sp.createWorkItem(project.id, 'Bug', ops('a', 'qualor; x'));
+      const b = await sp.createWorkItem(project.id, 'Bug', ops('b', 'Qualor'));
+      await clientOf(fake).createWorkItem(project.id, 'Bug', ops('by the PAT', 'qualor'));
+      await sp.createWorkItem(project.id, 'Bug', ops('no tag', 'other'));
+      await sp.createWorkItem(agile.id, 'Bug', ops('another project', 'qualor'));
+      const deleted = await sp.createWorkItem(project.id, 'Bug', ops('deleted', 'qualor'));
+      fake.deleteWorkItem(deleted.id);
+      fake.clearRequests();
+      expect(await sp.queryWorkItemIds(project.id, reconcile(since))).toEqual([b.id, a.id]);
+      const request = lastRequest();
+      expect(request.method).toBe('POST');
+      expect(request.path).toBe(`/${project.id}/_apis/wit/wiql`);
+      expect(queryOf(request).get('timePrecision')).toBe('true');
+      expect(queryOf(request).get('$top')).toBe('200');
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(request.headers['content-type']).toBe('application/json');
+      expect(JSON.parse(request.body)).toEqual({ query: reconcile(since) });
+      const ahead = new Date(Date.now() + 3_600_000).toISOString();
+      expect(await sp.queryWorkItemIds(project.id, reconcile(ahead))).toEqual([]);
+    });
+
+    it('batch: the organisation route, errorPolicy omit and the fields, no $expand; missing ids absent', async () => {
+      const client = clientOf(fake);
+      const a = await client.createWorkItem(agile.id, 'Bug', ops('a'));
+      const b = await client.createWorkItem(basic.id, 'Issue', ops('b', 'qualor'));
+      const gone = await client.createWorkItem(agile.id, 'Bug', ops('gone'));
+      fake.deleteWorkItem(gone.id);
+      const moved = fake.workItem(a.id);
+      moved.projectId = basic.id;
+      moved.state = 'To Do';
+      moved.rev += 1;
+      fake.clearRequests();
+      const items = await client.workItemsBatch([a.id, 999_999, gone.id, b.id]);
+      const request = lastRequest();
+      expect(request.method).toBe('POST');
+      expect(request.path).toBe('/_apis/wit/workitemsbatch');
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(request.headers['content-type']).toBe('application/json');
+      expect(JSON.parse(request.body)).toEqual({
+        ids: [a.id, 999_999, gone.id, b.id],
+        fields: BATCH_FIELDS,
+        errorPolicy: 'omit',
+      });
+      const read = (id: number, rev: number, typeName: string, tags: string[]) => ({
+        id,
+        rev,
+        state: 'To Do',
+        typeName,
+        projectName: 'Ops',
+        tags,
+        description: '<p>Found by Qualor</p>',
+        url: `${fake.url}/_apis/wit/workItems/${id}`,
+      });
+      expect(items).toEqual([
+        read(a.id, 2, 'Bug', ['qualor', 'team-a']),
+        read(b.id, 1, 'Issue', ['qualor']),
+      ]);
+    });
+
+    it('batch: 201 ids throw before any request; none asks nothing', async () => {
+      const ids = Array.from({ length: 201 }, (_, i) => i + 1);
+      expect(await failure(clientOf(fake).workItemsBatch(ids))).toMatchObject({
+        kind: 'refused',
+        reason: 'invalid_input',
+      });
+      expect(await clientOf(fake).workItemsBatch([])).toEqual([]);
+      expect(await failure(clientOf(fake).workItemsBatch([1, 0]))).toMatchObject({
+        reason: 'invalid_input',
+      });
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it('reads the recorded batch of a moved item (probe item 30g)', async () => {
+      fake.inject(
+        'POST',
+        /workitemsbatch$/,
+        recordedAnswer('services', '30-pat-g-batch-moved-org'),
+      );
+      expect(await clientOf(fake).workItemsBatch([13])).toEqual([
+        {
+          id: 13,
+          rev: 2,
+          state: 'To Do',
+          typeName: 'Issue',
+          projectName: 'probe-basic',
+          tags: ['probe30', 'qualor'],
+          description: null,
+          url: 'https://dev.azure.com/probe-org/_apis/wit/workItems/13',
+        },
+      ]);
+    });
+  });
+
+  describe('the fake', () => {
+    const v = '?api-version=7.0';
+
+    it('refuses a create sent as application/json (probe item 30c)', async () => {
+      const answer = await raw('POST', `/${agile.id}/_apis/wit/workitems/$Bug${v}`, ops());
+      expect(answer.status).toBe(400);
+      expect(answer.json.typeKey).toBe('VssRequestContentTypeNotSupportedException');
+    });
+
+    it('refuses a time in the date without timePrecision, takes a date alone (probe item 30f)', async () => {
+      const wiql = (query: string, params = '') =>
+        raw('POST', `/${agile.id}/_apis/wit/wiql${v}${params}`, { query });
+      const at = new Date().toISOString();
+      const plain = await wiql(reconcile(at));
+      expect(plain.status).toBe(400);
+      expect(plain.json.typeKey).toBe('VssPropertyValidationException');
+      expect(String(plain.json.message)).toContain(`[System.CreatedDate] >= '${at}'`);
+      expect((await wiql(reconcile(at.slice(0, 10)))).status).toBe(200);
+      const top = await wiql(reconcile('2000-01-01'), '&timePrecision=true&$top=1');
+      expect(top.json.workItems).toHaveLength(1);
+      expect((await wiql('SELECT [System.Id] FROM WorkItems')).status).toBe(400);
+    });
+
+    it('batch: without errorPolicy a missing id fails it all; fields with $expand are refused (30g)', async () => {
+      const item = await clientOf(fake).createWorkItem(agile.id, 'Bug', ops());
+      const batch = (body: unknown, at = '') =>
+        raw('POST', `${at}/_apis/wit/workitemsbatch${v}`, body);
+      const strict = await batch({ ids: [item.id, 999_998], fields: BATCH_FIELDS });
+      expect(strict.status).toBe(404);
+      expect(strict.json.typeKey).toBe('WorkItemUnauthorizedAccessException');
+      expect(String(strict.json.message)).toContain('999998');
+      const both = await batch({
+        ids: [item.id],
+        fields: BATCH_FIELDS,
+        $expand: 'relations',
+        errorPolicy: 'omit',
+      });
+      expect(both.status).toBe(400);
+      expect(both.json.typeKey).toBe('ConflictingParametersException');
+      const expanded = await batch({ ids: [item.id], $expand: 'relations' }, `/${agile.id}`);
+      const [entry] = expanded.json.value as { relations: { rel: string; url: string }[] }[];
+      expect(entry?.relations).toMatchObject([{ rel: 'Hyperlink', url: LINK }]);
+    });
+
+    it('afterCreate: makes the work item, then resets the connection (an answer lost)', async () => {
+      const count = fake.workItems().length;
+      fake.inject('POST', /\/_apis\/wit\/workitems\//, { status: 200, afterCreate: 'reset' });
+      const err = await failure(clientOf(fake).createWorkItem(agile.id, 'Bug', ops('lost')));
+      expect(err.kind).toBe('transient');
+      expect(fake.workItems()).toHaveLength(count + 1);
+      expect(fake.workItems().at(-1)).toMatchObject({ title: 'lost', state: 'New' });
+    });
+
+    it('counts the requests by method and path', async () => {
+      const client = clientOf(fake);
+      await client.workItemTypes(agile.id);
+      await client.queryWorkItemIds(agile.id, reconcile(new Date().toISOString()));
+      await client.queryWorkItemIds(agile.id, reconcile(new Date().toISOString()));
+      expect(fake.countRequests()).toBe(3);
+      expect(fake.countRequests('POST', /\/wiql$/)).toBe(2);
+      expect(fake.countRequests('GET')).toBe(1);
+    });
+
+    it('every answer of the Boards routes parses with the client schemas', async () => {
+      const item = await clientOf(fake).createWorkItem(agile.id, 'Bug', ops());
+      const wit = (projectId: string, rest: string) => `/${projectId}/_apis/wit/${rest}`;
+      const since = new Date(0).toISOString();
+      const cases: [keyof typeof AZURE_SHAPES, Promise<{ json: unknown }>][] = [
+        ['projectList', raw('GET', `/_apis/projects${v}&$top=1`)],
+        ['workItemTypeList', raw('GET', wit(scrum.id, `workitemtypes${v}`))],
+        ['workItemTypeCategoryList', raw('GET', wit(scrum.id, `workitemtypecategories${v}`))],
+        ['classificationNode', raw('GET', wit(scrum.id, `classificationnodes/areas${v}`))],
+        ['workItemAnswer', raw('POST', wit(agile.id, `workitems/$Task${v}`), ops(), PATCH_JSON)],
+        [
+          'validatedWorkItem',
+          raw('POST', wit(agile.id, `workitems/$Task${v}&validateOnly=true`), ops(), PATCH_JSON),
+        ],
+        [
+          'workItemAnswer',
+          raw(
+            'PATCH',
+            wit(agile.id, `workitems/${item.id}${v}`),
+            [field('System.History', 'n')],
+            PATCH_JSON,
+          ),
+        ],
+        [
+          'wiqlAnswer',
+          raw('POST', wit(agile.id, `wiql${v}&timePrecision=true`), { query: reconcile(since) }),
+        ],
+        [
+          'workItemBatch',
+          raw('POST', `/_apis/wit/workitemsbatch${v}`, { ids: [item.id], errorPolicy: 'omit' }),
+        ],
+      ];
+      for (const [schema, answer] of cases) {
+        const { json } = await answer;
+        expect(AZURE_SHAPES[schema].safeParse(json).success, schema).toBe(true);
+      }
+    });
+  });
+
+  describe('the recorded answers parse with the client schemas', () => {
+    const both = ['services', 'server'] as const;
+    const services = ['services'] as const;
+    const thirty = (names: string[]) => names.flatMap((n) => [`30-pat-${n}`, `30-sp-${n}`]);
+    const thirteen = (kind: string) => ['agile', 'basic', 'scrum'].map((p) => `13-${p}-${kind}`);
+    it.each([
+      ['projectList', thirty(['a-projects', 'a-projects-top1', 'a-projects-page2']), services],
+      ['workItemTypeList', thirteen('types'), both],
+      [
+        'workItemTypeCategoryList',
+        thirty(['b-categories-agile', 'b-categories-basic', 'b-categories-scrum']),
+        services,
+      ],
+      ['classificationNode', thirty(['a-areas', 'a-iterations']), services],
+      ['workItemAnswer', [...thirteen('create'), ...thirteen('history')], both],
+      [
+        'workItemAnswer',
+        thirty([
+          'a-create',
+          'f-create',
+          'g-move-state',
+          'h-create',
+          'h-history-code',
+          'h-history-plain',
+          'h-history-pre',
+          'h-history-suppress',
+          'i-close',
+          'i-history-closed',
+          'i-test-rev-current',
+          'j-tag-100',
+          'j-tag-101',
+          'j-tag-400',
+          'j-tag-comma',
+        ]),
+        services,
+      ],
+      ['validatedWorkItem', thirty(['d-validate']), services],
+      ['wiqlAnswer', thirteen('wiql'), both],
+      [
+        'wiqlAnswer',
+        thirty([
+          'f-wiql-precise',
+          'f-wiql-ahead-precise',
+          'f-wiql-date-only',
+          'f-wiql-no-creator',
+          'f-wiql-top',
+        ]),
+        services,
+      ],
+      ['workItemBatch', thirteen('batch'), both],
+      [
+        'workItemBatch',
+        thirty([
+          'g-batch-org',
+          'g-batch-project',
+          'g-batch-moved-org',
+          'g-batch-moved-agile',
+          'g-batch-moved-basic',
+        ]),
+        services,
+      ],
+    ] as const)('%s', (schema, names, deployments) => {
+      for (const deployment of deployments) {
+        for (const name of names) {
+          const { body } = azureShape<{ body: unknown }>(deployment, name);
+          expect(AZURE_SHAPES[schema].safeParse(body).success, `${deployment}/${name}`).toBe(true);
+        }
       }
     });
   });

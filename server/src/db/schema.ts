@@ -76,6 +76,24 @@ export interface JiraFailure {
 }
 /** The Jira priority name for a Qualor severity; a severity without one sets none. */
 export type JiraPriorities = Partial<Record<Severity, string>>;
+/** Azure Boards (Azure DevOps design §7.8): a link's kinds, states and origins are the Jira ones. */
+export type BoardsLinkKind = JiraLinkKind;
+export type BoardsLinkState = JiraLinkState;
+export type BoardsLinkOrigin = JiraLinkOrigin;
+/** Azure Boards' state categories (Proposed, InProgress, Resolved, Completed, Removed), lower-cased. */
+export const BOARDS_STATE_CATEGORIES = [
+  'proposed',
+  'inprogress',
+  'resolved',
+  'completed',
+  'removed',
+] as const;
+export type BoardsStateCategory = (typeof BOARDS_STATE_CATEGORIES)[number];
+/** Why a Boards link could not be created: a code and its fixed text (Azure's words for field_refused). */
+export interface BoardsFailure {
+  code: string;
+  message: string;
+}
 
 /** 0.16 fix MRs (spec §6.4): the states of a dependency fix. */
 export const FIX_STATES = [
@@ -1556,6 +1574,122 @@ export const jiraLinks = pgTable(
     check(
       'jira_links_status_category_check',
       sql`status_category IS NULL OR status_category IN ('new','indeterminate','done')`,
+    ),
+  ],
+);
+
+// ─── Azure Boards (Azure DevOps sub-plan 8, migration 0037) ─────────────────
+
+const boardsStateCategoryList = sql.raw(BOARDS_STATE_CATEGORIES.map((c) => `'${c}'`).join(','));
+
+/** A project's Boards mapping (design §7.8): the Jira mapping's twin on an Azure DevOps connection. */
+export const projectBoardsSettings = pgTable(
+  'project_boards_settings',
+  {
+    projectId: uuid('project_id')
+      .primaryKey()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => scmConnections.id, { onDelete: 'cascade' }),
+    /** The Azure DevOps project's GUID, lower case: every work item path names it. */
+    azureProjectId: text('azure_project_id').notNull(),
+    azureProjectName: text('azure_project_name').notNull(),
+    /** The work item type by its reference name (stable when a process renames it) and its name. */
+    workItemTypeRef: text('work_item_type_ref').notNull(),
+    workItemTypeName: text('work_item_type_name').notNull(),
+    /** In the create's `System.AreaPath` form (`<project>\<child>`); NULL: the project root. */
+    areaPath: text('area_path'),
+    iterationPath: text('iteration_path'),
+    /** The mapping's tags; every work item also gets `qualor`. */
+    tags: text('tags').array().notNull().default(emptyTextArray),
+    /** The automatic rule: off while this is NULL and `auto_exploited` is false. */
+    autoMinSeverity: text('auto_min_severity').$type<JiraAutoSeverity>(),
+    autoExploited: boolean('auto_exploited').notNull().default(false),
+    autoSince: at('auto_since'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // The connection's cascade, and the mappings of a connection (the pass, the settings panel).
+    index('project_boards_settings_connection_idx').on(t.connectionId),
+    check(
+      'project_boards_settings_azure_project_check',
+      sql`azure_project_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+    ),
+    check('project_boards_settings_tags_check', sql`cardinality(tags) <= 10`),
+    check(
+      'project_boards_settings_auto_severity_check',
+      sql`auto_min_severity IS NULL OR auto_min_severity IN ('critical','high','medium','low')`,
+    ),
+    check(
+      'project_boards_settings_auto_since_check',
+      sql`(auto_min_severity IS NULL AND NOT auto_exploited) OR auto_since IS NOT NULL`,
+    ),
+  ],
+);
+
+/** One work item per finding (design §7.8): `jira_links` with a work item id and its state. */
+export const boardsLinks = pgTable(
+  'boards_links',
+  {
+    id: id(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => scmConnections.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().$type<BoardsLinkKind>(),
+    issueId: uuid('issue_id').references(() => issues.id, { onDelete: 'cascade' }),
+    packageName: text('package_name'),
+    vulnerabilityId: text('vulnerability_id'),
+    state: text('state').notNull().$type<BoardsLinkState>(),
+    origin: text('origin').notNull().$type<BoardsLinkOrigin>(),
+    /** Raised on each re-arm; part of the reconciliation key. */
+    generation: smallint('generation').notNull().default(1),
+    attemptedAt: at('attempted_at'),
+    failure: jsonb('failure').$type<BoardsFailure>(),
+    workItemId: integer('work_item_id'),
+    /** The work item's state as the last pass read it, and its category. */
+    stateName: text('state_name'),
+    stateCategory: text('state_category').$type<BoardsStateCategory>(),
+    stateCheckedAt: at('state_checked_at'),
+    missedPasses: smallint('missed_passes').notNull().default(0),
+    reportedFixedAt: at('reported_fixed_at'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // Unique on issue_id alone: it is NULL exactly for vulnerability rows, as in jira_links.
+    uniqueIndex('boards_links_issue_uq').on(t.issueId),
+    uniqueIndex('boards_links_vulnerability_uq')
+      .on(t.projectId, t.packageName, t.vulnerabilityId)
+      .where(sql`kind = 'vulnerability'`),
+    // The state step reads the oldest first, never read first of all.
+    index('boards_links_pass_idx').on(t.connectionId, t.state, t.stateCheckedAt.asc().nullsFirst()),
+    // The project's cascade and the user's SET NULL (every foreign key has an index).
+    index('boards_links_project_idx').on(t.projectId),
+    index('boards_links_created_by_idx')
+      .on(t.createdBy)
+      .where(sql`created_by IS NOT NULL`),
+    check('boards_links_kind_check', sql`kind IN ('issue','vulnerability')`),
+    check(
+      'boards_links_target_check',
+      sql`(kind = 'issue' AND issue_id IS NOT NULL AND package_name IS NULL AND vulnerability_id IS NULL) OR (kind = 'vulnerability' AND issue_id IS NULL AND package_name IS NOT NULL AND vulnerability_id IS NOT NULL)`,
+    ),
+    check(
+      'boards_links_state_check',
+      sql`state IN ('pending','created','failed','missing','dismissed')`,
+    ),
+    check('boards_links_origin_check', sql`origin IN ('manual','auto')`),
+    check(
+      'boards_links_work_item_check',
+      sql`state NOT IN ('created','missing') OR work_item_id IS NOT NULL`,
+    ),
+    check(
+      'boards_links_state_category_check',
+      sql`state_category IS NULL OR state_category IN (${boardsStateCategoryList})`,
     ),
   ],
 );

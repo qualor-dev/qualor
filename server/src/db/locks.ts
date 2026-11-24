@@ -164,4 +164,6 @@ export const LOCKS = {
   azureHooks: 7_310_041,
   /** `pg_advisory_xact_lock(key)`: schedule lock of the Azure DevOps backstop passes (sub-plan 5, task 9). */
   azurePollSchedule: 7_310_042,
+  /** `pg_advisory_xact_lock(key)`: schedule lock of the Azure Boards create and sync jobs (sub-plan 8). */
+  boardsSchedule: 7_310_043,
 } as const;

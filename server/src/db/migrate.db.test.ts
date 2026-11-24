@@ -75,8 +75,10 @@ describe('runMigrations / pendingMigrations', () => {
     // 0033_fix_mrs (0.16, fix merge requests, approved 2026-11-18), 0034_azure_devops (Azure
     // DevOps connections, approved 2026-11-21 with the Azure DevOps design), 0035_scm_connection_problem (the
     // background problem of an SCM connection, approved 2026-11-23), 0036_azure_ci_setup (the Azure
-    // DevOps CI setup columns of the onboarding items and runs, approved 2026-11-24).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(37);
+    // DevOps CI setup columns of the onboarding items and runs, approved 2026-11-24),
+    // 0037_azure_boards (the Azure Boards mappings and links of the Azure DevOps design §8, sub-plan 8
+    // Ruling 1, 2026-11-25).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(38);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -331,6 +333,8 @@ describe('runMigrations / pendingMigrations', () => {
     const added = [
       ...added0006,
       'compliance_reports', // 0007_compliance_reports
+      'boards_links', // 0037_azure_boards
+      'project_boards_settings', // 0037_azure_boards
       'jira_connections', // 0032_jira
       'jira_links', // 0032_jira
       'dependency_fixes', // 0033_fix_mrs

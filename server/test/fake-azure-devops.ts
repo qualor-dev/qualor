@@ -165,6 +165,36 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     / `26-policies-search`; only the Build policy type is known, the matchKind reads back `Exact`.
  *   - `items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.…` (GET) of a repository: the root
  *     `/` and the commit's top-level files and folders (`26-root-items`).
+ * - Azure Boards (sub-plan 8), at api-version 7.0, from the 13-* (both deployments) and 30-*
+ *   (Services) recordings with the fake's values laid over them. A project (`addProject`, or a
+ *   repository's) has a process (`agile`, `scrum`, `basic`); an unknown project id is 30e's 404.
+ *   - `_apis/projects` (GET, `$top`, `continuationToken`, `$skip`): `30-pat-a-projects`, by name;
+ *     `x-ms-continuationtoken` (the next offset) while more remain (30a).
+ *   - `wit/workitemtypes` (GET): the process's `13-*-types`, live per project (`workItemTypes`).
+ *     The recordings kept only the required fields and five others, so the standard System fields
+ *     (AreaPath, IterationPath, TeamProject ...) are added, not required and without a default.
+ *   - `wit/workitemtypecategories` (GET): `30-pat-b-categories-<process>`, the hidden category
+ *     naming the types flagged `hidden` (names only, as recorded).
+ *   - `wit/classificationnodes/{areas|iterations}` (GET, `$depth`): the root node of `30-pat-a-*`,
+ *     paths `\<project>\Area\<child>`; areas are the root alone, iterations Iteration 1 to 3
+ *     (`addClassificationNode` adds more). A create takes the form `<project>\<child>` only.
+ *   - `wit/workitems/$<type>` (POST, `validateOnly`) and `wit/workitems/{id}` (PATCH), JSON Patch as
+ *     `application/json-patch+json` (else 30c's 400): `13-*-create` / `-history` shapes. The
+ *     refusals as recorded: an unknown type (30d 404), an always-required field without a default
+ *     and not set (30e RuleValidationException; Area and Iteration fall back to the root), a title
+ *     over 255 (30e), a long text over 1,048,576 (30e's 500), a path that is no node (30a), a state
+ *     off the type's list (30k), a stale `test /rev` (30i 412); a field the type lacks is a 400
+ *     TF51535 (constructed). Tags split on `;` and `,`, kept distinct and sorted; a PATCH `add`
+ *     keeps the old ones (30j); a History note gets a `commentVersionRef`. `validateOnly` makes
+ *     nothing and answers without id, rev or relations (30d).
+ *   - `wit/wiql` (POST, `timePrecision`, `$top`): only the reconcile query (TeamProject = @project,
+ *     Tags CONTAINS, CreatedBy = @Me, CreatedDate >=), ids descending; a time in the date without
+ *     `timePrecision` is 30f's 400, a date alone compares by day.
+ *   - `wit/workitemsbatch` (POST, organisation or project route): every work item wherever it is
+ *     now; `fields` with `$expand` is 30g's 400; a missing id fails the batch (30g's 404) unless
+ *     `errorPolicy` is `omit`, which leaves it out.
+ *   - `afterCreate` (an injected answer) makes the work item and then loses the answer;
+ *     `countRequests` counts requests by method and path.
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
  *   AADSTS code) for a refusal: 400, or 401 `invalid_client` for a wrong secret or assertion. It
@@ -444,6 +474,59 @@ export interface FakeAzurePolicy {
   settings: Record<string, unknown>;
 }
 
+/** Azure Boards (sub-plan 8): the process a project was made with, as the probe bench had them. */
+export type FakeAzureProcess = 'agile' | 'scrum' | 'basic';
+
+export interface FakeAzureProject {
+  /** Lower case. */
+  id: string;
+  name: string;
+  process: FakeAzureProcess;
+}
+
+export interface FakeAzureWorkItemField {
+  referenceName: string;
+  name: string;
+  alwaysRequired: boolean;
+  /** null: none (Area and Iteration fall back to the project root all the same). */
+  defaultValue: unknown;
+}
+
+export interface FakeAzureWorkItemType {
+  name: string;
+  referenceName: string;
+  states: { name: string; category: string; color: string }[];
+  /** Every field: the recorded ones (trimmed by the probe) with the standard System fields added. */
+  fields: FakeAzureWorkItemField[];
+  /** Listed under `Microsoft.HiddenCategory` (probe item 30b). */
+  hidden: boolean;
+}
+
+/** A work item as the fake holds it; live, so a test moves it or changes its state in place. */
+export interface FakeAzureWorkItem {
+  id: number;
+  rev: number;
+  /** The project it is in now (the batch reads it on the organisation route wherever it is). */
+  projectId: string;
+  typeName: string;
+  state: string;
+  title: string;
+  /** As Azure DevOps keeps them: split on `;` and `,`, distinct, sorted. */
+  tags: string[];
+  description: string | null;
+  /** The create's form (`<project>\<child>`); the project root when the create set none. */
+  areaPath: string;
+  iterationPath: string;
+  /** The other fields the create or a PATCH set, and the type's defaults (ValueArea ...). */
+  fields: Record<string, unknown>;
+  relations: { rel: string; url: string }[];
+  /** The `System.History` notes, oldest first. */
+  history: string[];
+  /** The identity id of the caller that made it. */
+  createdBy: string;
+  createdDate: string;
+}
+
 export interface RecordedRequest {
   method: string;
   /** The path under the organisation or collection (`/_apis/…`), still percent-encoded. */
@@ -464,6 +547,11 @@ export interface InjectedAnswer {
   before?: () => Promise<void>;
   /** After `before`, answer as the fake normally would, with `headers` added (`status` ignored). */
   passThrough?: boolean;
+  /**
+   * After `before`, make the change as the fake normally would (a work item created), then hang or
+   * reset the connection instead of answering: an answer lost after Azure DevOps acted.
+   */
+  afterCreate?: 'hang' | 'reset';
 }
 
 interface Injection {
@@ -579,6 +667,25 @@ export interface FakeAzureDevOps {
   readonly policies: readonly FakeAzurePolicy[];
   /** The commit statuses posted, in order. */
   readonly commitStatuses: { repositoryId: string; sha: string; status: FakeAzureStatus }[];
+  /**
+   * A project (process `agile` unless named) as `_apis/projects` lists it; the one of that name
+   * when it exists (a repository's project is one too).
+   */
+  addProject(input: { name: string; id?: string; process?: FakeAzureProcess }): FakeAzureProject;
+  /** Every project, by name. */
+  projects(): FakeAzureProject[];
+  /** The project's work item types, live: a test renames, removes or changes one in place. */
+  workItemTypes(projectId: string): FakeAzureWorkItemType[];
+  /** An area or iteration node below the root (`Team\\Backend`: both made); its create form. */
+  addClassificationNode(projectId: string, group: 'areas' | 'iterations', path: string): string;
+  /** Every work item, in the order made (deleted ones gone). */
+  workItems(): FakeAzureWorkItem[];
+  /** The work item with this id; throws when there is none. */
+  workItem(id: number): FakeAzureWorkItem;
+  /** Deletes a work item (to the recycle bin): the batch, WIQL and a PATCH no longer find it. */
+  deleteWorkItem(id: number): void;
+  /** How many requests since `clearRequests` match `method` and `path` (all without them). */
+  countRequests(method?: string, path?: RegExp): number;
   readonly requests: RecordedRequest[];
   /** The requests to the token endpoint (path from `/`). */
   readonly tokenRequests: RecordedRequest[];
@@ -2318,6 +2425,613 @@ export async function createFakeAzureDevOps(options: {
     return { status: 200, body: { count: value.length, value } };
   };
 
+  // ─── Azure Boards (sub-plan 8): projects, work item types, nodes and work items ───────────────
+  type Recorded = { status: number; contentType: string; body: Json };
+  const boardsShape = (name: string) => azureShape<Recorded>('services', name);
+  const recordedTeamProject = boardsShape('30-pat-a-projects').body.value as Json[];
+  const recordedTypeOf = (process: FakeAzureProcess) =>
+    azureShape<{ body: { value: Json[] } }>(deployment, `13-${process}-types`).body.value;
+  const recordedBug = recordedTypeOf('agile').find((t) => t.name === 'Bug')!;
+  const recordedCreate = azureShape<Recorded>(deployment, '13-agile-create').body;
+  const recordedCreator = (recordedCreate.fields as Json)['System.CreatedBy'] as Json;
+  const recordedLinkAttributes = (recordedCreate.relations as Json[])[0]!.attributes as Json;
+  const refusals = {
+    noProject: boardsShape('30-pat-e-no-project'),
+    contentType: boardsShape('30-pat-c-json-content-type'),
+    noType: boardsShape('30-pat-d-validate-no-type'),
+    treeName: boardsShape('30-pat-a-create-node-path'),
+    required: boardsShape('30-pat-e-no-title'),
+    longTitle: boardsShape('30-pat-e-long-title'),
+    longText: boardsShape('30-pat-e-big-description'),
+    state: boardsShape('30-pat-k-removed'),
+    staleRev: boardsShape('30-pat-i-test-rev-stale'),
+    plainTime: boardsShape('30-pat-f-wiql-plain-time'),
+    noItem: boardsShape('30-pat-g-batch-org-no-policy'),
+    fieldsExpand: boardsShape('30-pat-g-batch-fields-expand'),
+  };
+  /** Fields every type has; the recordings kept only the required ones and five others. */
+  const STANDARD_FIELDS: Record<string, string> = {
+    'System.Id': 'ID',
+    'System.Rev': 'Rev',
+    'System.AreaPath': 'Area Path',
+    'System.TeamProject': 'Team Project',
+    'System.IterationPath': 'Iteration Path',
+    'System.WorkItemType': 'Work Item Type',
+    'System.Reason': 'Reason',
+    'System.AssignedTo': 'Assigned To',
+    'System.CreatedDate': 'Created Date',
+    'System.CreatedBy': 'Created By',
+    'System.ChangedDate': 'Changed Date',
+    'System.ChangedBy': 'Changed By',
+    'System.CommentCount': 'Comment Count',
+    'System.Description': 'Description',
+    'System.History': 'History',
+    'System.Tags': 'Tags',
+  };
+  const LONG_TEXT_MAX = 1_048_576;
+  const projectRows = new Map<string, FakeAzureProject>();
+  const typesOf = new Map<string, FakeAzureWorkItemType[]>();
+  type FakeNode = { id: number; identifier: string; name: string; children: FakeNode[] };
+  const nodesOf = new Map<string, Record<'areas' | 'iterations', FakeNode>>();
+  const workItemRows: FakeAzureWorkItem[] = [];
+  let nodeCounter = 0;
+  let workItemCounter = 0;
+  let commentCounter = 0;
+
+  const ensureProject = (name: string, id?: string, process?: FakeAzureProcess) => {
+    const known = projectIds.get(name);
+    const project = known ? projectRows.get(known)! : undefined;
+    if (project) {
+      if (process) project.process = process;
+      return project;
+    }
+    const made = { id: (id ?? randomUUID()).toLowerCase(), name, process: process ?? 'agile' };
+    projectIds.set(name, made.id);
+    projectRows.set(made.id, made);
+    return made;
+  };
+  const projectTypes = (project: FakeAzureProject): FakeAzureWorkItemType[] => {
+    const known = typesOf.get(project.id);
+    if (known) return known;
+    const hidden = (
+      boardsShape(`30-pat-b-categories-${project.process}`).body.value as Json[]
+    ).find((c) => c.referenceName === 'Microsoft.HiddenCategory')!.workItemTypes as Json[];
+    const made = recordedTypeOf(project.process).map((t): FakeAzureWorkItemType => {
+      const fields = (t.fields as Json[]).map((f) => ({
+        referenceName: String(f.referenceName),
+        name: String(f.name),
+        alwaysRequired: f.alwaysRequired === true,
+        defaultValue: f.defaultValue ?? null,
+      }));
+      for (const [referenceName, name] of Object.entries(STANDARD_FIELDS)) {
+        if (!fields.some((f) => f.referenceName === referenceName)) {
+          fields.push({ referenceName, name, alwaysRequired: false, defaultValue: null });
+        }
+      }
+      return {
+        name: String(t.name),
+        referenceName: String(t.referenceName),
+        states: (t.states as FakeAzureWorkItemType['states']).map((s) => ({ ...s })),
+        fields,
+        hidden: hidden.some((h) => h.name === t.name),
+      };
+    });
+    typesOf.set(project.id, made);
+    return made;
+  };
+  const newNode = (name: string, children: FakeNode[] = []): FakeNode => ({
+    id: (nodeCounter += 1),
+    identifier: randomUUID(),
+    name,
+    children,
+  });
+  const projectNodes = (project: FakeAzureProject) => {
+    let nodes = nodesOf.get(project.id);
+    if (!nodes) {
+      const iterations = ['Iteration 1', 'Iteration 2', 'Iteration 3'].map((n) => newNode(n));
+      nodes = { areas: newNode(project.name), iterations: newNode(project.name, iterations) };
+      nodesOf.set(project.id, nodes);
+    }
+    return nodes;
+  };
+  /** The create forms of a group's nodes, lower-cased, to the form as the tree spells it. */
+  const nodePaths = (project: FakeAzureProject, group: 'areas' | 'iterations') => {
+    const paths = new Map<string, string>();
+    const walk = (node: FakeNode, at: string) => {
+      paths.set(at.toLowerCase(), at);
+      for (const child of node.children) walk(child, `${at}\\${child.name}`);
+    };
+    walk(projectNodes(project)[group], project.name);
+    return paths;
+  };
+  const nodeJson = (
+    project: FakeAzureProject,
+    group: 'areas' | 'iterations',
+    node: FakeNode,
+    below: string[],
+    depth: number,
+  ): Json => {
+    const kind = group === 'areas' ? 'Area' : 'Iteration';
+    const self = `${url}/${project.id}/_apis/wit/classificationNodes/${kind}s${below.map((s) => `/${encodeURIComponent(s)}`).join('')}`;
+    const children = depth > 0 && node.children.length > 0 ? node.children : null;
+    return {
+      id: node.id,
+      identifier: node.identifier,
+      name: node.name,
+      structureType: kind.toLowerCase(),
+      hasChildren: node.children.length > 0,
+      ...(children
+        ? {
+            children: children.map((c) =>
+              nodeJson(project, group, c, [...below, c.name], depth - 1),
+            ),
+          }
+        : {}),
+      path: `\\${[project.name, kind, ...below].join('\\')}`,
+      ...(below.length === 0 ? { _links: { self: { href: self } } } : {}),
+      url: self,
+    };
+  };
+  /** Tags as Azure DevOps keeps them: `;` and `,` split them (30j); distinct, sorted (13). */
+  const tagsFrom = (value: unknown, kept: readonly string[] = []): string[] => {
+    const tags = new Map(kept.map((t) => [t.toLowerCase(), t]));
+    for (const tag of String(value ?? '').split(/[;,]/)) {
+      const trimmed = tag.trim();
+      if (trimmed && !tags.has(trimmed.toLowerCase())) tags.set(trimmed.toLowerCase(), trimmed);
+    }
+    return [...tags.values()].sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : 1));
+  };
+  const fieldsJson = (w: FakeAzureWorkItem): Json => {
+    const who = userById(w.createdBy);
+    const identity = {
+      ...recordedCreator,
+      id: w.createdBy,
+      displayName: who?.displayName ?? w.createdBy,
+      uniqueName: who?.displayName ?? w.createdBy,
+    };
+    return {
+      'System.AreaPath': w.areaPath,
+      'System.TeamProject': projectRows.get(w.projectId)?.name ?? w.projectId,
+      'System.IterationPath': w.iterationPath,
+      'System.WorkItemType': w.typeName,
+      'System.State': w.state,
+      'System.Reason': 'New',
+      'System.CreatedDate': w.createdDate,
+      'System.CreatedBy': identity,
+      'System.ChangedDate': w.createdDate,
+      'System.ChangedBy': identity,
+      'System.CommentCount': w.history.length,
+      'System.Title': w.title,
+      ...w.fields,
+      ...(w.description === null ? {} : { 'System.Description': w.description }),
+      ...(w.history.length > 0 ? { 'System.History': w.history.at(-1) } : {}),
+      ...(w.tags.length > 0 ? { 'System.Tags': w.tags.join('; ') } : {}),
+    };
+  };
+  const multiline = deployment === 'services' ? { multilineFieldsFormat: {} } : {};
+  const relationsJson = (w: FakeAzureWorkItem) =>
+    w.relations.length === 0
+      ? {}
+      : {
+          relations: w.relations.map((r, i) => ({
+            ...r,
+            attributes: { ...recordedLinkAttributes, id: w.id * 100 + i },
+          })),
+        };
+  const workItemJson = (w: FakeAzureWorkItem, projectId: string, extra: Json = {}): Json => {
+    const base = `${url}/${projectId}`;
+    const self = `${base}/_apis/wit/workItems/${w.id}`;
+    const link = (href: string) => ({ href });
+    return {
+      id: w.id,
+      rev: w.rev,
+      fields: fieldsJson(w),
+      ...multiline,
+      ...relationsJson(w),
+      ...extra,
+      _links: {
+        self: link(self),
+        workItemUpdates: link(`${self}/updates`),
+        workItemRevisions: link(`${self}/revisions`),
+        workItemComments: link(`${self}/comments`),
+        html: link(`${base}/_workitems/edit/${w.id}`),
+        workItemType: link(`${base}/_apis/wit/workItemTypes/${encodeURIComponent(w.typeName)}`),
+        fields: link(`${base}/_apis/wit/fields`),
+      },
+      url: self,
+    };
+  };
+
+  type Patch = {
+    fields: Map<string, unknown>;
+    replaced: Set<string>;
+    relations: { rel: string; url: string }[];
+    testRev: number | null;
+  };
+  /** A JSON Patch of field adds and replaces, Hyperlink relations and a `test /rev`; null otherwise. */
+  const patchOf = (text: string): Patch | null => {
+    let ops: unknown;
+    try {
+      ops = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(ops)) return null;
+    const patch: Patch = { fields: new Map(), replaced: new Set(), relations: [], testRev: null };
+    for (const op of ops as Json[]) {
+      const at = typeof op.path === 'string' ? op.path : '';
+      const rel = op.value as Json | null;
+      if (op.op === 'test' && at === '/rev') patch.testRev = Number(op.value);
+      else if ((op.op === 'add' || op.op === 'replace') && at.startsWith('/fields/')) {
+        patch.fields.set(at.slice('/fields/'.length), op.value);
+        if (op.op === 'replace') patch.replaced.add(at.slice('/fields/'.length));
+      } else if (op.op === 'add' && at === '/relations/-' && typeof rel?.url === 'string') {
+        patch.relations.push({ rel: String(rel.rel), url: rel.url });
+      } else return null;
+    }
+    return patch;
+  };
+
+  const boardsRoute = (
+    req: RecordedRequest,
+    res: ServerResponse,
+    version: string,
+    who: 'pat' | 'secret' | 'certificate',
+  ): boolean => {
+    const route =
+      /^(?:\/([^/]+))?\/_apis\/(?:(projects)|wit\/(workitemtypes|workitemtypecategories|classificationnodes\/(areas|iterations)|workitems\/\$([^/]+)|workitems\/(\d+)|wiql|workitemsbatch))$/i.exec(
+        req.path,
+      );
+    if (!route) return false;
+    const [, rawProject, projectsList, rawKind = '', groupMatch, typeMatch, idMatch] = route;
+    const kind = rawKind.toLowerCase().split('/')[0]!;
+    // `_apis/projects` and the batch are organisation routes (the batch is a project one too).
+    const organisation = projectsList !== undefined || kind === 'workitemsbatch';
+    if (rawProject === undefined ? !organisation : projectsList !== undefined) return false;
+    const query = new URLSearchParams(req.query);
+    const caller = who === 'pat' ? patUser : principalUser!;
+    const answerJson = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+      send(res, status, body, { 'content-type': JSON_7_0, ...headers });
+      return true;
+    };
+    const refuse = (recorded: Recorded, message?: string, status = recorded.status) => {
+      const body = message === undefined ? recorded.body : { ...recorded.body, message };
+      send(res, status, body, { 'content-type': recorded.contentType });
+      return true;
+    };
+    const refused = (text: string, typeKey: string) => {
+      wrapped(res, 400, text, typeKey);
+      return true;
+    };
+    const bad = (text: string) => refused(`fake Azure DevOps: ${text}`, 'ArgumentException');
+    if (version !== '7.0') {
+      const text = `fake Azure DevOps: this route is not asked at api-version ${version}`;
+      wrapped(res, 400, text, 'VssInvalidPreviewVersionException');
+      return true;
+    }
+
+    if (projectsList) {
+      if (req.method !== 'GET') return false;
+      const top = Number(query.get('$top') ?? 100) || 100;
+      const offset =
+        (Number(query.get('continuationToken') ?? 0) || 0) + (Number(query.get('$skip') ?? 0) || 0);
+      const all = [...projectRows.values()].sort((a, b) => (a.name < b.name ? -1 : 1));
+      const value = all.slice(offset, offset + top).map((p) => ({
+        ...recordedTeamProject[0],
+        id: p.id,
+        name: p.name,
+        description: `${p.name} (${p.process})`,
+        url: `${url}/_apis/projects/${p.id}`,
+      }));
+      const more = offset + top < all.length;
+      return answerJson(
+        200,
+        { count: value.length, value },
+        more ? { 'x-ms-continuationtoken': String(offset + top) } : {},
+      );
+    }
+
+    const project = rawProject
+      ? projectRows.get(decodeURIComponent(rawProject).toLowerCase())
+      : null;
+    if (project === undefined) {
+      const id = decodeURIComponent(rawProject!).toLowerCase();
+      const named = who === 'pat' ? id : `vstfs:///Classification/TeamProject/${id}`;
+      return refuse(
+        refusals.noProject,
+        `VS800075: The project with id '${named}' does not exist, or you do not have permission to access it.`,
+      );
+    }
+    const noItem = (id: unknown) =>
+      refuse(
+        refusals.noItem,
+        `TF401232: Work item ${String(id)} does not exist, or you do not have permissions to read it.`,
+      );
+
+    if (kind === 'workitemsbatch' && req.method === 'POST') {
+      const body = jsonBodyOf(req);
+      const ids = body?.ids;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.length > 200) {
+        return bad('a batch reads 1 to 200 ids');
+      }
+      const wanted = Array.isArray(body!.fields) ? body!.fields.map(String) : null;
+      const expand = typeof body!.$expand === 'string' ? body!.$expand.toLowerCase() : 'none';
+      if (wanted && expand !== 'none') return refuse(refusals.fieldsExpand);
+      const found = ids.map((id) => workItemRows.find((w) => w.id === id));
+      const missing = ids.find((_, i) => !found[i]);
+      if (missing !== undefined && String(body!.errorPolicy).toLowerCase() !== 'omit') {
+        return noItem(missing);
+      }
+      const value = found
+        .filter((w): w is FakeAzureWorkItem => w !== undefined)
+        .map((w) => {
+          const all = fieldsJson(w);
+          return {
+            id: w.id,
+            rev: w.rev,
+            fields: wanted
+              ? Object.fromEntries(
+                  wanted.filter((f) => all[f] !== undefined).map((f) => [f, all[f]]),
+                )
+              : all,
+            ...multiline,
+            ...(expand === 'relations' || expand === 'all' ? relationsJson(w) : {}),
+            url: `${url}/_apis/wit/workItems/${w.id}`,
+          };
+        });
+      return answerJson(200, { count: value.length, value });
+    }
+    if (!project) return false;
+    const types = projectTypes(project);
+
+    if (kind === 'workitemtypes' && req.method === 'GET') {
+      const value = types.map((t) => {
+        const fields = t.fields.map((f) => ({
+          ...f,
+          url: `${url}/${project.id}/_apis/wit/fields/${f.referenceName}`,
+        }));
+        return {
+          ...recordedBug,
+          name: t.name,
+          referenceName: t.referenceName,
+          states: t.states,
+          fieldInstances: fields,
+          fields,
+          url: `${url}/${project.id}/_apis/wit/workItemTypes/${encodeURIComponent(t.name)}`,
+        };
+      });
+      return answerJson(200, { count: value.length, value });
+    }
+    if (kind === 'workitemtypecategories' && req.method === 'GET') {
+      const recorded = boardsShape(`30-pat-b-categories-${project.process}`).body;
+      const value = (recorded.value as Json[]).map((c) =>
+        c.referenceName !== 'Microsoft.HiddenCategory'
+          ? c
+          : {
+              ...c,
+              workItemTypes: types
+                .filter((t) => t.hidden)
+                .map((t) => ({
+                  name: t.name,
+                  url: `${url}/${project.id}/_apis/wit/workItemTypes/${t.referenceName}`,
+                })),
+            },
+      );
+      return answerJson(200, { ...recorded, value });
+    }
+    if (kind === 'classificationnodes' && req.method === 'GET') {
+      const group = groupMatch!.toLowerCase() as 'areas' | 'iterations';
+      const depth = Number(query.get('$depth') ?? 0) || 0;
+      return answerJson(200, nodeJson(project, group, projectNodes(project)[group], [], depth));
+    }
+
+    if (kind === 'wiql' && req.method === 'POST') {
+      const text = String(jsonBodyOf(req)?.query ?? '');
+      const precise = query.get('timePrecision') === 'true';
+      const shape =
+        /^\s*SELECT\s+\[System\.Id\]\s+FROM\s+WorkItems\s+WHERE\s+(.+?)\s+ORDER\s+BY\s+\[System\.Id\]\s+DESC\s*$/i.exec(
+          text,
+        );
+      if (!shape) return bad('the fake reads only the reconcile query');
+      const tests: ((w: FakeAzureWorkItem) => boolean)[] = [];
+      for (const clause of shape[1]!.split(/\s+AND\s+/i)) {
+        const tag = /^\[System\.Tags\]\s+CONTAINS\s+'((?:[^']|'')*)'$/i.exec(clause);
+        const since = /^\[System\.CreatedDate\]\s*>=\s*'([^']+)'$/i.exec(clause);
+        if (/^\[System\.TeamProject\]\s*=\s*@project$/i.test(clause)) {
+          tests.push((w) => w.projectId === project.id);
+        } else if (/^\[System\.CreatedBy\]\s*=\s*@Me$/i.test(clause)) {
+          tests.push((w) => w.createdBy === caller.id);
+        } else if (tag) {
+          const wanted = tag[1]!.replace(/''/g, "'").toLowerCase();
+          tests.push((w) => w.tags.some((t) => t.toLowerCase() === wanted));
+        } else if (since) {
+          const timed = /[T:]/.test(since[1]!);
+          if (timed && !precise) {
+            const message = String(refusals.plainTime.body.message).replace(/«.*»/, `«${clause}»`);
+            return refuse(refusals.plainTime, message);
+          }
+          const at = Date.parse(timed ? since[1]! : `${since[1]}T00:00:00Z`);
+          if (Number.isNaN(at)) return bad(`not a date: ${since[1]}`);
+          const day = (iso: string) => Date.parse(`${iso.slice(0, 10)}T00:00:00Z`);
+          tests.push((w) => (precise ? Date.parse(w.createdDate) : day(w.createdDate)) >= at);
+        } else {
+          return bad(`the fake reads only the reconcile query, not «${clause}»`);
+        }
+      }
+      const top = Number(query.get('$top') ?? 20_000) || 20_000;
+      const ids = workItemRows
+        .filter((w) => tests.every((test) => test(w)))
+        .map((w) => w.id)
+        .sort((a, b) => b - a)
+        .slice(0, top);
+      return answerJson(200, {
+        ...boardsShape('30-pat-f-wiql-precise').body,
+        asOf: clock(),
+        workItems: ids.map((id) => ({ id, url: `${url}/${project.id}/_apis/wit/workItems/${id}` })),
+      });
+    }
+
+    const creating = req.method === 'POST' && typeMatch !== undefined;
+    if (kind !== 'workitems' || !(creating || (req.method === 'PATCH' && idMatch !== undefined))) {
+      return false;
+    }
+    if (!/^application\/json-patch\+json/i.test(req.headers['content-type'] ?? '')) {
+      const message = String(refusals.contentType.body.message).replace(
+        '"POST"',
+        `"${req.method}"`,
+      );
+      return refuse(refusals.contentType, message);
+    }
+    const item = idMatch === undefined ? null : workItemRows.find((w) => w.id === Number(idMatch));
+    if (item === undefined) return noItem(idMatch);
+    // Either project's path reaches a moved item (30g); its type and nodes are its project's.
+    const home = (item && projectRows.get(item.projectId)) || project;
+    const typeName = item ? item.typeName : decodeURIComponent(typeMatch!);
+    const type = projectTypes(home).find((t) => t.name.toLowerCase() === typeName.toLowerCase());
+    if (!type && !item) {
+      return refuse(
+        refusals.noType,
+        `VS402323: Work item type ${typeName} does not exist in project ${project.id} or you do not have permission to access it.`,
+      );
+    }
+    const patch = patchOf(req.body);
+    if (!patch) return bad('a JSON Patch of field adds, Hyperlink relations and a test of /rev');
+    if (item && patch.testRev !== null && patch.testRev !== item.rev) {
+      return refuse(
+        refusals.staleRev,
+        `VS403351: Test Operation for path /rev failed, value ${item.rev} was not equal to test value ${patch.testRev}.`,
+      );
+    }
+    // A RuleValidationException as recorded (no title: 30e, a state off the list: 30k).
+    const ruleRefusal = (recorded: Recorded, referenceName: string, text: string) => {
+      const custom = recorded.body.customProperties as Json;
+      const [rule] = custom.RuleValidationErrors as Json[];
+      const errors = [{ ...rule, fieldReferenceName: referenceName, errorMessage: text }];
+      const customProperties = { ...custom, ErrorMessage: text, RuleValidationErrors: errors };
+      return refuse({ ...recorded, body: { ...recorded.body, message: text, customProperties } });
+    };
+    // The checks a create and a PATCH share.
+    const paths = { areas: nodePaths(home, 'areas'), iterations: nodePaths(home, 'iterations') };
+    const placed: Record<string, string> = {};
+    for (const [referenceName, value] of patch.fields) {
+      if (type && !type.fields.some((f) => f.referenceName === referenceName)) {
+        return refused(
+          `TF51535: Cannot find field ${referenceName}.`,
+          'WorkItemFieldInvalidException',
+        );
+      }
+      if (referenceName === 'System.Title' && String(value).length > 255) {
+        return refuse(refusals.longTitle);
+      }
+      if (typeof value === 'string' && value.length > LONG_TEXT_MAX) {
+        return refuse(
+          refusals.longText,
+          `TF401262: Value of long text field ${referenceName} exceeds the maximum allowed length of ${LONG_TEXT_MAX}.`,
+        );
+      }
+      const group = ({ 'System.AreaPath': 'areas', 'System.IterationPath': 'iterations' } as const)[
+        referenceName as 'System.AreaPath'
+      ];
+      if (group) {
+        const known = paths[group].get(String(value).toLowerCase());
+        if (!known) {
+          return refuse(
+            refusals.treeName,
+            `TF401347: Invalid tree name given for work item ${item?.id ?? -1}, field '${referenceName}'.`,
+          );
+        }
+        placed[referenceName] = known;
+      }
+      if (referenceName === 'System.State' && type && !type.states.some((s) => s.name === value)) {
+        const text = `The field 'State' contains the value '${String(value)}' that is not in the list of supported values`;
+        return ruleRefusal(refusals.state, 'System.State', text);
+      }
+    }
+    const set = (name: string) => patch.fields.has(name);
+    const text = (name: string) => (set(name) ? String(patch.fields.get(name)) : null);
+
+    if (item) {
+      for (const [referenceName, value] of patch.fields) {
+        if (referenceName === 'System.Title') item.title = String(value);
+        else if (referenceName === 'System.State') item.state = String(value);
+        else if (referenceName === 'System.Description') item.description = String(value);
+        else if (referenceName === 'System.History') item.history.push(String(value));
+        else if (referenceName === 'System.AreaPath') item.areaPath = placed[referenceName]!;
+        else if (referenceName === 'System.IterationPath')
+          item.iterationPath = placed[referenceName]!;
+        else if (referenceName === 'System.Tags') {
+          // An add keeps the tags already there (30j); a replace sets them.
+          item.tags = tagsFrom(value, patch.replaced.has(referenceName) ? [] : item.tags);
+        } else item.fields[referenceName] = value;
+      }
+      item.relations.push(...patch.relations);
+      item.rev += 1;
+      if (!set('System.History')) return answerJson(200, workItemJson(item, project.id));
+      commentCounter += 1;
+      const ref = `${url}/${project.id}/_apis/wit/workItems/${item.id}/comments/${commentCounter}`;
+      const commentVersionRef = { commentId: commentCounter, version: 1, url: `${ref}/versions/1` };
+      return answerJson(200, workItemJson(item, project.id, { commentVersionRef }));
+    }
+
+    // A create: every always-required field without a default must be set (Area and Iteration
+    // fall back to the project root although they list none, probe items 13 and 30d).
+    for (const field of type!.fields) {
+      const root =
+        field.referenceName === 'System.AreaId' || field.referenceName === 'System.IterationId';
+      const empty =
+        !set(field.referenceName) || String(patch.fields.get(field.referenceName)) === '';
+      const hasDefault = field.defaultValue !== null && field.defaultValue !== '';
+      if (field.alwaysRequired && !hasDefault && !root && empty) {
+        const message = `TF401320: Rule Error for field ${field.name}. Error code: Required, InvalidEmpty.`;
+        return ruleRefusal(refusals.required, field.referenceName, message);
+      }
+    }
+    const fields: Record<string, unknown> = {};
+    for (const field of type!.fields) {
+      if (field.defaultValue !== null && field.referenceName !== 'System.State') {
+        fields[field.referenceName] = field.defaultValue;
+      }
+    }
+    const own = ['Title', 'State', 'Tags', 'Description', 'History', 'AreaPath', 'IterationPath'];
+    for (const [referenceName, value] of patch.fields) {
+      if (!own.includes(referenceName.replace(/^System\./, ''))) fields[referenceName] = value;
+    }
+    const stateDefault = type!.fields.find((f) => f.referenceName === 'System.State')?.defaultValue;
+    const made: FakeAzureWorkItem = {
+      id: workItemCounter + 1,
+      rev: 1,
+      projectId: project.id,
+      typeName: type!.name,
+      state: text('System.State') ?? String(stateDefault ?? type!.states[0]?.name ?? 'New'),
+      title: text('System.Title') ?? '',
+      tags: tagsFrom(patch.fields.get('System.Tags')),
+      description: text('System.Description'),
+      areaPath: placed['System.AreaPath'] ?? project.name,
+      iterationPath: placed['System.IterationPath'] ?? project.name,
+      fields,
+      relations: patch.relations,
+      history: set('System.History') ? [text('System.History')!] : [],
+      createdBy: caller.id,
+      createdDate: clock(),
+    };
+    if (query.get('validateOnly') === 'true') {
+      // A dry run: the fields with the defaults filled in, no id, rev or relations (30d).
+      const base = `${url}/${project.id}/_apis/wit`;
+      return answerJson(200, {
+        fields: { ...fieldsJson(made), 'System.CommentCount': undefined },
+        ...multiline,
+        _links: {
+          workItemType: { href: `${base}/workItemTypes/${encodeURIComponent(type!.name)}` },
+          fields: { href: `${base}/fields` },
+        },
+        url: `${base}/workItems`,
+      });
+    }
+    workItemCounter += 1;
+    workItemRows.push(made);
+    return answerJson(200, workItemJson(made, project.id));
+  };
+
   const answer = (req: RecordedRequest, res: ServerResponse, inside: boolean): void => {
     if (!inside) {
       return wrapped(res, 404, 'fake Azure DevOps: no such collection', 'NotFound');
@@ -2331,6 +3045,7 @@ export async function createFakeAzureDevOps(options: {
     const other = otherRoute(req, res, who, version);
     if (other) return;
     if (buildRoute(req, res, version, who)) return;
+    if (boardsRoute(req, res, version, who)) return;
     const one = /^\/_apis\/git\/repositories\/([^/]+)$/.exec(req.path);
     const route =
       req.method !== 'GET'
@@ -2381,7 +3096,18 @@ export async function createFakeAzureDevOps(options: {
     const given = injected?.answers.shift();
     if (!given) return answer(req, res, inside);
     await given.before?.();
-    if (given.passThrough) {
+    if (given.afterCreate) {
+      // The fake acts on the request into a sink; the client never gets the answer.
+      const sink = { writeHead: () => sink, setHeader: () => sink, end: () => sink };
+      answer(req, sink as unknown as ServerResponse, inside);
+      if (given.afterCreate === 'reset') {
+        try {
+          incoming.socket.resetAndDestroy();
+        } catch {
+          incoming.socket.destroy();
+        }
+      }
+    } else if (given.passThrough) {
       for (const [name, value] of Object.entries(given.headers ?? {})) res.setHeader(name, value);
       answer(req, res, inside);
     } else if (!given.hang) {
@@ -2471,8 +3197,7 @@ export async function createFakeAzureDevOps(options: {
     identityAdded: options.identityAdded ?? true,
     repositories,
     addRepository(input) {
-      const projectId = projectIds.get(input.projectName) ?? randomUUID();
-      projectIds.set(input.projectName, projectId);
+      const projectId = ensureProject(input.projectName).id;
       const repository: FakeAzureRepository = {
         id: (input.id ?? randomUUID()).toLowerCase(),
         name: input.name,
@@ -2669,6 +3394,38 @@ export async function createFakeAzureDevOps(options: {
     },
     policies: policyRows,
     commitStatuses,
+    addProject: (input) => ensureProject(input.name, input.id, input.process),
+    projects: () => [...projectRows.values()].sort((a, b) => (a.name < b.name ? -1 : 1)),
+    workItemTypes(projectId) {
+      const project = projectRows.get(projectId.toLowerCase());
+      if (!project) throw new Error(`fake Azure DevOps: no project ${projectId}`);
+      return projectTypes(project);
+    },
+    addClassificationNode(projectId, group, nodePath) {
+      const project = projectRows.get(projectId.toLowerCase());
+      if (!project) throw new Error(`fake Azure DevOps: no project ${projectId}`);
+      let node = projectNodes(project)[group];
+      for (const name of nodePath.split('\\')) {
+        const known = node.children.find((c) => c.name === name);
+        node = known ?? node.children[node.children.push(newNode(name)) - 1]!;
+      }
+      return `${project.name}\\${nodePath}`;
+    },
+    workItems: () => workItemRows,
+    workItem(id) {
+      const item = workItemRows.find((w) => w.id === id);
+      if (!item) throw new Error(`fake Azure DevOps: no work item ${id}`);
+      return item;
+    },
+    deleteWorkItem(id) {
+      workItemRows.splice(workItemRows.indexOf(fake.workItem(id)), 1);
+    },
+    countRequests: (method, pathPattern) =>
+      requests.filter(
+        (r) =>
+          (method === undefined || r.method === method) &&
+          (pathPattern === undefined || pathPattern.test(r.path)),
+      ).length,
     requests,
     tokenRequests,
     inject(method, pathPattern, ...answers) {

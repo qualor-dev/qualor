@@ -51,7 +51,35 @@ export const AZURE_TEXT = {
   timeout: 'Azure DevOps did not answer in time',
   refStale: 'The branch moved while Qualor was changing it',
   refRefused: 'Azure DevOps refused to change the branch',
+  workItemId: 'The id is not an Azure DevOps work item id',
+  workItemType: 'The work item type name is empty or longer than 128 characters',
+  workItemBatch: 'At most 200 work items are read in one request',
+  classificationGroup: 'The classification group is areas or iterations',
 } as const;
+
+/** JSON Patch bodies of work item writes (probe item 30c: `application/json` is a 400). */
+export const AZURE_JSON_PATCH = 'application/json-patch+json';
+/** `workitemsbatch` reads at most this many ids per request. */
+export const MAX_WORK_ITEM_BATCH = 200;
+/** A WIQL query answers at most this many ids (`$top`). */
+export const WORK_ITEM_QUERY_TOP = 200;
+/** `projects()` reads at most this many projects, 100 per page. */
+export const MAX_AZURE_PROJECTS = 1000;
+/** `classificationPaths()` reads this many levels below the root, and at most 2000 paths. */
+export const CLASSIFICATION_DEPTH = 10;
+export const MAX_CLASSIFICATION_PATHS = 2000;
+/** The fields a batch read asks for (never with `$expand`, probe item 30g). */
+export const WORK_ITEM_BATCH_FIELDS = [
+  'System.State',
+  'System.TeamProject',
+  'System.WorkItemType',
+  'System.Tags',
+  'System.Description',
+] as const;
+/** Server errors that are refusals, not outages: a long text field over 1,048,576 characters (30e). */
+const REFUSED_SERVER_ERRORS: ReadonlySet<string> = new Set([
+  'WorkItemFieldMaxLongTextSizeExceededException',
+]);
 
 /** A failed Azure DevOps request; see {@link ScmError}. */
 export class AzureError extends ScmError {
@@ -360,6 +388,47 @@ export type AzureStatus = {
 /** A file {@link AzureDevOpsClient.fileText} did not read, and why. */
 export type AzureFileSkipped = 'too_large' | 'binary' | 'missing';
 
+/** A project of the organisation or collection; `id` is its GUID, lower case. */
+export interface AzureProject {
+  id: string;
+  name: string;
+}
+
+/**
+ * A work item type as `workitemtypes` lists it: the name a create takes, the reference name that
+ * survives a rename, the states with Azure DevOps' category (`Proposed`, `InProgress`, `Resolved`,
+ * `Completed`, `Removed`; empty when it names none) and every field with whether it is always
+ * required and has a default.
+ */
+export interface AzureWorkItemType {
+  name: string;
+  referenceName: string;
+  states: { name: string; category: string }[];
+  fields: { referenceName: string; alwaysRequired: boolean; hasDefault: boolean }[];
+}
+
+/**
+ * A work item as Qualor reads it: a field Azure DevOps did not send is null. `tags` are split on
+ * `;` in the order Azure DevOps keeps them (it reorders them). `url` is the REST URL it answered.
+ */
+export interface AzureWorkItem {
+  id: number;
+  rev: number;
+  state: string | null;
+  typeName: string | null;
+  projectName: string | null;
+  tags: string[];
+  description: string | null;
+  url: string;
+}
+
+/** One JSON Patch operation of a work item write (`/fields/<reference name>`, `/relations/-`, `/rev`). */
+export interface AzureJsonPatch {
+  op: 'add' | 'replace' | 'test';
+  path: string;
+  value: unknown;
+}
+
 type AzureMethod = 'GET' | 'POST' | 'PUT' | 'PATCH';
 /** What one call may ask differently from the rest. */
 interface AzureCallOptions {
@@ -367,6 +436,10 @@ interface AzureCallOptions {
   maxBytes?: number;
   /** The answer is the file's bytes, not JSON: the schema reads a Buffer. */
   raw?: true;
+  /** The body's content type; default `application/json`. */
+  contentType?: typeof AZURE_JSON_PATCH;
+  /** Reads a success's headers (a paging token) before the body is parsed. */
+  onHeaders?: (headers: IncomingHttpHeaders) => void;
 }
 const ZERO_OBJECT_ID = '0'.repeat(40);
 const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -588,6 +661,71 @@ const statusList = z.looseObject({
   ),
 });
 
+// Azure Boards (sub-plan 8; probe items 13 and 30).
+const projectList = z.looseObject({
+  value: z.array(
+    z.looseObject({ id: z.string().regex(AZURE_REPOSITORY_ID), name: z.string().min(1) }),
+  ),
+});
+const workItemTypeList = z.looseObject({
+  value: z.array(
+    z.looseObject({
+      name: z.string().min(1),
+      referenceName: z.string().min(1),
+      states: z
+        .array(z.looseObject({ name: z.string().min(1), category: z.string().nullish() }))
+        .nullish(),
+      fields: z
+        .array(
+          z.looseObject({
+            referenceName: z.string().min(1),
+            alwaysRequired: z.boolean().nullish(),
+            defaultValue: z.unknown(),
+          }),
+        )
+        .nullish(),
+    }),
+  ),
+});
+/** The categories list type names only, no reference names (probe item 30b). */
+const workItemTypeCategoryList = z.looseObject({
+  value: z.array(
+    z.looseObject({
+      referenceName: z.string().min(1),
+      workItemTypes: z.array(z.looseObject({ name: z.string().min(1) })).nullish(),
+    }),
+  ),
+});
+interface ClassificationNodeAnswer {
+  path: string;
+  children?: ClassificationNodeAnswer[] | null | undefined;
+}
+/** `children` only when the node has some (probe item 30a). */
+const classificationNode: z.ZodType<ClassificationNodeAnswer> = z.lazy(() =>
+  z.looseObject({ path: z.string().min(1), children: z.array(classificationNode).nullish() }),
+);
+const workItemAnswer = z.looseObject({
+  id: z.number().int().positive(),
+  rev: z.number().int(),
+  fields: z
+    .looseObject({
+      'System.State': z.string().nullish(),
+      'System.WorkItemType': z.string().nullish(),
+      'System.TeamProject': z.string().nullish(),
+      'System.Tags': z.string().nullish(),
+      'System.Description': z.string().nullish(),
+    })
+    .nullish(),
+  url: z.string().min(1),
+});
+/** A `validateOnly` create answers the fields it would store: no id, rev or relations (30d). */
+const validatedWorkItem = z.looseObject({ fields: z.record(z.string(), z.unknown()) });
+const wiqlAnswer = z.looseObject({
+  workItems: z.array(z.looseObject({ id: z.number().int().positive() })),
+});
+/** With `errorPolicy: 'omit'` a missing id is left out (30g); Microsoft documents a null entry. */
+const workItemBatch = z.looseObject({ value: z.array(workItemAnswer.nullable()) });
+
 /** For tests against the recorded shapes. */
 export const AZURE_SHAPES = {
   connectionData,
@@ -606,7 +744,51 @@ export const AZURE_SHAPES = {
   policyAnswer,
   policyList,
   itemList,
+  projectList,
+  workItemTypeList,
+  workItemTypeCategoryList,
+  classificationNode,
+  workItemAnswer,
+  validatedWorkItem,
+  wiqlAnswer,
+  workItemBatch,
 } as const;
+
+/** The name of the category whose types the picker leaves out (probe item 30b). */
+const HIDDEN_CATEGORY = 'Microsoft.HiddenCategory';
+
+/**
+ * A classification node's `path` (`\<project>\Area\<child>`) in the form a create takes and stores
+ * (`<project>\<child>`): the leading `\` and the `Area` or `Iteration` segment dropped (30a).
+ */
+export function azureFieldPath(nodePath: string): string {
+  const [project = '', , ...rest] = nodePath.replace(/^\\/, '').split('\\');
+  return [project, ...rest].join('\\');
+}
+
+function workItemOf(answer: z.infer<typeof workItemAnswer>): AzureWorkItem {
+  const fields = answer.fields ?? {};
+  return {
+    id: answer.id,
+    rev: answer.rev,
+    state: fields['System.State'] ?? null,
+    typeName: fields['System.WorkItemType'] ?? null,
+    projectName: fields['System.TeamProject'] ?? null,
+    tags: (fields['System.Tags'] ?? '')
+      .split(';')
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0),
+    description: fields['System.Description'] ?? null,
+    url: answer.url,
+  };
+}
+
+/** A work item id as the REST paths and the `work_item_id` column take it. */
+function checkWorkItemId(id: number): void {
+  if (!Number.isInteger(id) || id <= 0 || id > 2_147_483_647) {
+    throw new AzureError('refused', AZURE_TEXT.workItemId, { reason: 'invalid_input' });
+  }
+}
 
 function definitionOf(d: z.infer<typeof definitionAnswer>): AzureDefinition {
   return {
@@ -1730,6 +1912,206 @@ export class AzureDevOpsClient {
     };
   }
 
+  // ─── Azure Boards (design §7.8; probe items 13 and 30): every work item path names the project GUID ──
+
+  /**
+   * The projects of the organisation or collection: pages of 100 that follow
+   * `x-ms-continuationtoken` (a running offset) until it is absent or a page is empty, at most
+   * {@link MAX_AZURE_PROJECTS} (probe item 30a).
+   */
+  async projects(): Promise<AzureProject[]> {
+    const found: AzureProject[] = [];
+    const page: { token: string | null } = { token: null };
+    do {
+      const after =
+        page.token === null ? '' : `&continuationToken=${encodeURIComponent(page.token)}`;
+      page.token = null;
+      const answer = await this.#call(
+        'GET',
+        `/_apis/projects?$top=100${after}`,
+        projectList,
+        undefined,
+        AZURE_API_VERSION,
+        'base',
+        [],
+        {
+          onHeaders: (headers) => {
+            const token = [headers['x-ms-continuationtoken'] ?? []].flat()[0]?.trim();
+            page.token = token ? token : null;
+          },
+        },
+      );
+      for (const p of answer.value) found.push({ id: p.id.toLowerCase(), name: p.name });
+      if (answer.value.length === 0) break;
+    } while (page.token !== null && found.length < MAX_AZURE_PROJECTS);
+    return found.slice(0, MAX_AZURE_PROJECTS);
+  }
+
+  /** The work item types of a project, hidden ones included (see {@link hiddenWorkItemTypes}). */
+  async workItemTypes(projectId: string): Promise<AzureWorkItemType[]> {
+    const answer = await this.#get(
+      `${this.#projectPath(projectId)}/wit/workitemtypes`,
+      workItemTypeList,
+    );
+    return answer.value.map((t) => ({
+      name: t.name,
+      referenceName: t.referenceName,
+      states: (t.states ?? []).map((s) => ({ name: s.name, category: s.category ?? '' })),
+      fields: (t.fields ?? []).map((f) => ({
+        referenceName: f.referenceName,
+        alwaysRequired: f.alwaysRequired === true,
+        hasDefault:
+          f.defaultValue !== null && f.defaultValue !== undefined && f.defaultValue !== '',
+      })),
+    }));
+  }
+
+  /**
+   * The NAMES of the types in `Microsoft.HiddenCategory` (Test Plan, Code Review Request ...): the
+   * category lists names only, so a caller matches them against {@link workItemTypes} by name.
+   */
+  async hiddenWorkItemTypes(projectId: string): Promise<Set<string>> {
+    const answer = await this.#get(
+      `${this.#projectPath(projectId)}/wit/workitemtypecategories`,
+      workItemTypeCategoryList,
+    );
+    const hidden = answer.value.find((c) => c.referenceName === HIDDEN_CATEGORY);
+    return new Set((hidden?.workItemTypes ?? []).map((t) => t.name));
+  }
+
+  /**
+   * The area or iteration paths of a project in the create's `System.AreaPath` form
+   * ({@link azureFieldPath}): the root (the project name) first, then depth first, at most
+   * {@link CLASSIFICATION_DEPTH} levels below the root and {@link MAX_CLASSIFICATION_PATHS} paths.
+   */
+  async classificationPaths(projectId: string, group: 'areas' | 'iterations'): Promise<string[]> {
+    const base = this.#projectPath(projectId);
+    if (group !== 'areas' && group !== 'iterations') {
+      throw new AzureError('refused', AZURE_TEXT.classificationGroup, { reason: 'invalid_input' });
+    }
+    const root = await this.#get(
+      `${base}/wit/classificationnodes/${group}?$depth=${CLASSIFICATION_DEPTH}`,
+      classificationNode,
+    );
+    const paths: string[] = [];
+    const todo: { node: ClassificationNodeAnswer; depth: number }[] = [{ node: root, depth: 0 }];
+    for (let next = todo.pop(); next !== undefined; next = todo.pop()) {
+      if (paths.length >= MAX_CLASSIFICATION_PATHS) break;
+      paths.push(azureFieldPath(next.node.path));
+      if (next.depth >= CLASSIFICATION_DEPTH) continue;
+      const depth = next.depth + 1;
+      todo.push(...[...(next.node.children ?? [])].reverse().map((node) => ({ node, depth })));
+    }
+    return paths;
+  }
+
+  /** `/{projectId}/_apis/wit/workitems/$<type>`: the type by its name, URL-encoded. */
+  #workItemTypePath(projectId: string, typeName: string): string {
+    const base = this.#projectPath(projectId);
+    if (typeName.length === 0 || typeName.length > 128) {
+      throw new AzureError('refused', AZURE_TEXT.workItemType, { reason: 'invalid_input' });
+    }
+    return `${base}/wit/workitems/$${encodeURIComponent(typeName)}`;
+  }
+
+  /**
+   * Creates a work item of the type named `typeName`. A refusal is `refused` with Azure DevOps'
+   * words in `azureMessage` (decisions and `field_refused` only); an unknown type is `not_found`
+   * with typeKey `WorkItemTypeNotFoundException`.
+   */
+  async createWorkItem(
+    projectId: string,
+    typeName: string,
+    ops: readonly AzureJsonPatch[],
+  ): Promise<AzureWorkItem> {
+    const answer = await this.#call(
+      'POST',
+      this.#workItemTypePath(projectId, typeName),
+      workItemAnswer,
+      ops,
+      AZURE_API_VERSION,
+      'base',
+      [],
+      { contentType: AZURE_JSON_PATCH },
+    );
+    return workItemOf(answer);
+  }
+
+  /**
+   * The same POST with `validateOnly=true`: a dry run that makes nothing and refuses exactly as
+   * {@link createWorkItem} does (probe item 30d). Its answer has no id, so it returns nothing.
+   */
+  async validateWorkItem(
+    projectId: string,
+    typeName: string,
+    ops: readonly AzureJsonPatch[],
+  ): Promise<void> {
+    await this.#call(
+      'POST',
+      `${this.#workItemTypePath(projectId, typeName)}?validateOnly=true`,
+      validatedWorkItem,
+      ops,
+      AZURE_API_VERSION,
+      'base',
+      [],
+      { contentType: AZURE_JSON_PATCH },
+    );
+  }
+
+  /** A PATCH of a work item (a `System.History` note); either project's path reads a moved item. */
+  async updateWorkItem(
+    projectId: string,
+    id: number,
+    ops: readonly AzureJsonPatch[],
+  ): Promise<AzureWorkItem> {
+    const base = this.#projectPath(projectId);
+    checkWorkItemId(id);
+    const answer = await this.#call(
+      'PATCH',
+      `${base}/wit/workitems/${id}`,
+      workItemAnswer,
+      ops,
+      AZURE_API_VERSION,
+      'base',
+      [],
+      { contentType: AZURE_JSON_PATCH },
+    );
+    return workItemOf(answer);
+  }
+
+  /**
+   * The ids a WIQL query of the project finds, always with `timePrecision=true` (a time in a date
+   * is refused without it, probe item 30f) and at most {@link WORK_ITEM_QUERY_TOP}.
+   */
+  async queryWorkItemIds(projectId: string, wiql: string): Promise<number[]> {
+    const answer = await this.#call(
+      'POST',
+      `${this.#projectPath(projectId)}/wit/wiql?timePrecision=true&$top=${WORK_ITEM_QUERY_TOP}`,
+      wiqlAnswer,
+      { query: wiql },
+    );
+    return answer.workItems.slice(0, WORK_ITEM_QUERY_TOP).map((w) => w.id);
+  }
+
+  /**
+   * Reads up to {@link MAX_WORK_ITEM_BATCH} work items on the organisation route (it reads items
+   * moved to another project), with `errorPolicy: 'omit'` and {@link WORK_ITEM_BATCH_FIELDS}: a
+   * deleted or unknown id is simply absent (probe item 30g).
+   */
+  async workItemsBatch(ids: readonly number[]): Promise<AzureWorkItem[]> {
+    if (ids.length > MAX_WORK_ITEM_BATCH) {
+      throw new AzureError('refused', AZURE_TEXT.workItemBatch, { reason: 'invalid_input' });
+    }
+    for (const id of ids) checkWorkItemId(id);
+    if (ids.length === 0) return [];
+    const answer = await this.#call('POST', '/_apis/wit/workitemsbatch', workItemBatch, {
+      ids: [...ids],
+      fields: WORK_ITEM_BATCH_FIELDS,
+      errorPolicy: 'omit',
+    });
+    return answer.value.filter((w) => w !== null).map(workItemOf);
+  }
+
   /** The answer of a GET as `schema` reads it; its error names the route ({@link azureRoute}). */
   #get<T>(path: string, schema: z.ZodType<T>, apiVersion: string = AZURE_API_VERSION): Promise<T> {
     return this.#call('GET', path, schema, undefined, apiVersion);
@@ -1829,7 +2211,9 @@ export class AzureDevOpsClient {
           authorization,
           accept: 'application/json',
           'user-agent': `Qualor/${VERSION}`,
-          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(body === undefined
+            ? {}
+            : { 'content-type': options.contentType ?? 'application/json' }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       },
@@ -1852,6 +2236,7 @@ export class AzureDevOpsClient {
     }
     if (status >= 200 && status < 300) {
       this.#notBefore = now() + paceOf(headers, now());
+      options.onHeaders?.(headers);
       if (options.raw) return { status, json: answer };
       try {
         return {
@@ -1895,14 +2280,12 @@ export class AzureDevOpsClient {
         ...found,
       });
     }
-    throw new AzureError(
-      status >= 500 ? 'transient' : 'refused',
-      `Azure DevOps answered HTTP ${status}`,
-      {
-        status,
-        reason: 'http',
-        ...found,
-      },
-    );
+    // A long text over Azure DevOps' limit is a 500 (probe item 30e), yet asking again cannot help.
+    const outage = status >= 500 && !REFUSED_SERVER_ERRORS.has(found.azureTypeKey ?? '');
+    throw new AzureError(outage ? 'transient' : 'refused', `Azure DevOps answered HTTP ${status}`, {
+      status,
+      reason: 'http',
+      ...found,
+    });
   }
 }
