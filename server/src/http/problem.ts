@@ -29,9 +29,16 @@ export interface ProblemExtensions {
   reason?: string;
   /** 400 INVALID_LICENSE_ID: the policy entries that are not SPDX ids or terms (6M §5). */
   details?: { invalid: string[] };
-  /** 422 JIRA_ISSUE_TYPE_UNSUPPORTED: the names of the required fields Qualor cannot fill (0.16 Jira §6.2). */
+  /**
+   * 422 JIRA_ISSUE_TYPE_UNSUPPORTED: the names of the required fields Qualor cannot fill (0.16 Jira
+   * §6.2). 422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: their reference names, empty when the Azure DevOps
+   * project offers no such type (Azure DevOps design §7.8).
+   */
   missingFields?: string[];
-  /** 409 JIRA_CONNECTION_BROKEN: the code of the connection's credential problem (0.16 Jira §6.4). */
+  /**
+   * 409 JIRA_CONNECTION_BROKEN: the code of the connection's credential problem (0.16 Jira §6.4).
+   * 502 BOARDS_UNAVAILABLE: the connection Test's code of the failed Azure DevOps call.
+   */
   problemCode?: string;
 }
 

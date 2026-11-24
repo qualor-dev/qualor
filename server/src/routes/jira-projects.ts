@@ -6,6 +6,7 @@ import type { RouteDeps } from '../app';
 import type { PROJECT_JIRA_CHANGED_FIELDS } from '../audit/catalogue';
 import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
+import { boardsMappingOf, trackerInUse } from '../boards/mapping';
 import type { Executor } from '../db/client';
 import { first } from '../db/rows';
 import {
@@ -421,7 +422,7 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           problems: [403, 409, 502],
           problemDescriptions: {
             403: 'FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence',
-            409: 'JIRA_NOT_CONNECTED: the organisation has no Jira connection',
+            409: 'JIRA_NOT_CONNECTED: the organisation has no Jira connection; TRACKER_IN_USE: the project has an Azure Boards mapping (a project uses one tracker)',
             502: "JIRA_UNAVAILABLE: the Jira call failed; `detail` is the fixed text of its problem code, never Jira's own words",
           },
         },
@@ -445,6 +446,8 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
       const { body } = request;
       const priorities = normalPriorities(body.priorities);
       const { row, client } = await clientOf(project);
+      // Azure DevOps design §7.8: a project uses one tracker.
+      if ((await boardsMappingOf(deps.db, project.id)) !== null) throw trackerInUse('boards');
       const key = body.jiraProject.key;
       const types = await asked(row, () => client.issueTypes(key));
       const type = types.find((t) => t.id === body.issueType.id);
@@ -480,6 +483,8 @@ export const jiraProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = asy
           .where(eq(projects.id, project.id))
           .for('no key update');
         await lockUnmoved(tx, row);
+        // Under the project's row lock, which the Boards PUT takes too.
+        if ((await boardsMappingOf(tx, project.id)) !== null) throw trackerInUse('boards');
         const before = await mappingOf(tx, project.id);
         // R10: only turning it on needs the licence; a stored true is kept as it is.
         if (

@@ -106,6 +106,13 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'POST /projects/:id/jira/links': 'issue.triage',
   'POST /jira-links/:id/retry': 'issue.triage',
   'DELETE /jira-links/:id': 'issue.triage',
+  // Azure DevOps sub-plan 8: a project's Azure Boards mapping and its pickers.
+  'GET /projects/:id/boards': 'project.read',
+  'PUT /projects/:id/boards': 'project.settings',
+  'DELETE /projects/:id/boards': 'project.settings',
+  'GET /projects/:id/boards/projects': 'project.settings',
+  'GET /projects/:id/boards/work-item-types': 'project.settings',
+  'GET /projects/:id/boards/paths': 'project.settings',
   'GET /organizations/:id/license-policy': 'org.read',
   'PUT /organizations/:id/license-policy': 'org.licenses.manage',
   'GET /projects': 'list:project.read',

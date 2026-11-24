@@ -4300,9 +4300,9 @@ export interface components {
             details?: {
                 invalid: string[];
             };
-            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
+            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill. BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the reference names of the always-required fields without a default of the work item type that Qualor cannot fill (System.Description when the type has neither Description nor Repro Steps), empty when the Azure DevOps project offers no such type */
             missingFields?: string[];
-            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection */
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
             problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */

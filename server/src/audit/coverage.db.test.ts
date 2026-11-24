@@ -378,6 +378,14 @@ describe('the audit catalogue end to end (rbac-audit.md §19 criteria 7–8)', (
     expect(rows.rows.map((r) => r.changed)).toEqual([['mapping'], ['labels'], ['mapping']]);
   });
 
+  it('names the changed Azure Boards mapping fields: the whole mapping on create and remove', async () => {
+    const rows = await ctx.db.execute<{ changed: string[] }>(
+      sql`SELECT details->'changed' AS changed FROM audit_events
+          WHERE action = 'project.boards_updated' ORDER BY seq`,
+    );
+    expect(rows.rows.map((r) => r.changed)).toEqual([['mapping'], ['tags'], ['mapping']]);
+  });
+
   it('names the changed fix MR settings: the first save changes all three, then the cap', async () => {
     const rows = await ctx.db.execute<{ changed: string[] }>(
       sql`SELECT details->'changed' AS changed FROM audit_events

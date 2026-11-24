@@ -38,6 +38,7 @@ import {
   type Session,
   type TestContext,
 } from './app';
+import { createFakeAzureDevOps, type FakeAzureDevOps } from './fake-azure-devops';
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
 import { createFakeJira, type FakeJira } from './fake-jira';
 import { createFakeLlm, type FakeLlm } from './fake-llm';
@@ -66,6 +67,7 @@ const S = {
   scmTokenUpdated: ['glpat', 'scenario', 'updated', '7J8K'].join('-'),
   jiraToken: ['jira', 'scenario', 'api', 'token', '2K3L'].join('-'),
   jiraEmail: ['jira', 'scenario', 'robot', '6P'].join('-') + '@example.test',
+  azurePat: ['azure', 'scenario', 'pat', '3N4P'].join('-'),
   gitlabWebhookSecret: ['gitlab', 'webhook', 'secret', 'CREATED83'].join('-'),
   gitlabWebhookSecretUpdated: ['gitlab', 'webhook', 'secret', 'UPDATED94'].join('-'),
   githubWebhookSecret: ['github', 'webhook', 'secret', 'CREATED61'].join('-'),
@@ -94,6 +96,8 @@ export interface AuditScenarioEnv {
   gitlab: FakeGitLab;
   /** A Data Center the Jira connection's first address is on (nothing calls it). */
   jira: FakeJira;
+  /** An Azure DevOps Server collection the Boards mapping is checked against. */
+  azure: FakeAzureDevOps;
   /** Trusted by the scenario's `PUT /license` when the context's edition trusts it. */
   signer: TestSigner;
   /** createTestContext's `config`: the fakes are internal hosts the server may call. */
@@ -105,19 +109,23 @@ export async function startAuditScenarioEnv(): Promise<AuditScenarioEnv> {
   const llm = await createFakeLlm({ apiKey: S.llmKey });
   const gitlab = await createFakeGitLab({ token: S.gitlabToken });
   const jira = await createFakeJira({ deployment: 'data_center', token: S.jiraToken });
+  const azure = await createFakeAzureDevOps({ deployment: 'server', pat: S.azurePat });
   return {
     llm,
     gitlab,
     jira,
+    azure,
     signer: testSigner(),
     config: {
       publicUrl: 'https://qualor.example.com',
-      scmInternalHosts: parseInternalHosts(new URL(gitlab.url).host),
+      scmInternalHosts: parseInternalHosts(
+        [new URL(gitlab.url).host, new URL(azure.url).host].join(','),
+      ),
       jiraInternalHosts: parseInternalHosts(new URL(jira.url).host),
       llmInternalHosts: parseInternalHosts(llm.host),
     },
     close: async () => {
-      await Promise.all([llm.close(), gitlab.close(), jira.close()]);
+      await Promise.all([llm.close(), gitlab.close(), jira.close(), azure.close()]);
     },
   };
 }
@@ -572,6 +580,34 @@ export async function runAuditScenario(
     webhookSecret: S.githubWebhookSecretUpdated,
   });
   await call('DELETE', `/scm-connections/${github}`, 204);
+
+  // project.boards_updated: map (mapping), update (tags), unmap (mapping), on a connection to the
+  // Azure DevOps Server fake, before the Jira mapping (a project uses one tracker).
+  const boardsConnection = (
+    (
+      await call('POST', '/scm-connections', 201, {
+        organizationId: org,
+        provider: 'azure',
+        baseUrl: env.azure.url,
+        azureAuth: 'pat',
+        token: S.azurePat,
+      })
+    ).json() as { id: string }
+  ).id;
+  const boardsProject = env.azure.addProject({ name: 'Scenario', process: 'agile' });
+  const boardsMapping = {
+    connectionId: boardsConnection,
+    azureProject: { id: boardsProject.id, name: boardsProject.name },
+    workItemType: { referenceName: 'Microsoft.VSTS.WorkItemTypes.Bug' },
+    areaPath: null,
+    iterationPath: null,
+    tags: [] as string[],
+    autoCreate: { minSeverity: null, exploited: false },
+  };
+  await call('PUT', `/projects/${main.id}/boards`, 200, boardsMapping);
+  await call('PUT', `/projects/${main.id}/boards`, 200, { ...boardsMapping, tags: ['scenario'] });
+  await call('DELETE', `/projects/${main.id}/boards`, 204);
+  await call('DELETE', `/scm-connections/${boardsConnection}`, 204);
 
   // jira_connection.created (a Data Center), .updated (a new address, Cloud with the email and
   // the token: deployment, siteUrl, email and token), .deleted. Only the mapping calls Jira.

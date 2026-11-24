@@ -1,12 +1,21 @@
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
+import { azureConnection } from '../../test/azure-pending';
 import { createFakeJira, type FakeJira } from '../../test/fake-jira';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { connectJira, jiraTestConfig, mapJira, seedJiraLink } from '../../test/jira';
 import { rbacPlugins } from '../../test/rbac';
 import { trustTestCa } from '../../test/tls';
-import { auditEvents, jiraConnections, jiraLinks, jobs, projectJiraSettings } from '../db/schema';
+import {
+  auditEvents,
+  jiraConnections,
+  jiraLinks,
+  jobs,
+  projectBoardsSettings,
+  projectJiraSettings,
+  scmConnections,
+} from '../db/schema';
 import { JIRA_QUEUE } from '../jira/jobs';
 import { JIRA_PROBLEM_TEXT } from '../jira/problems';
 
@@ -365,6 +374,34 @@ describe('the project Jira mapping (0.16 Jira §6.2, §6.8)', () => {
       const res = await put();
       expect(res.statusCode).toBe(409);
       expect(res.json()).toMatchObject({ code: 'JIRA_NOT_CONNECTED' });
+    });
+
+    it('answers 409 TRACKER_IN_USE while the project has an Azure Boards mapping, asking Jira nothing', async () => {
+      await connect();
+      const azure = await azureConnection(h.ctx.db, {
+        organizationId: h.organizationId,
+        baseUrl: 'https://dev.azure.com/tracker',
+        secretKey: h.ctx.config.secretKey,
+      });
+      await h.ctx.db.insert(projectBoardsSettings).values({
+        projectId,
+        connectionId: azure.id,
+        azureProjectId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000002',
+        azureProjectName: 'Payments',
+        workItemTypeRef: 'Microsoft.VSTS.WorkItemTypes.Bug',
+        workItemTypeName: 'Bug',
+      });
+      try {
+        fake.clearRequests();
+        const res = await put();
+        expect(res.statusCode).toBe(409);
+        expect(res.json()).toMatchObject({ code: 'TRACKER_IN_USE' });
+        expect(fake.requests).toEqual([]);
+        expect(await stored()).toBeUndefined();
+        expect(await events()).toEqual([]);
+      } finally {
+        await h.ctx.db.delete(scmConnections).where(eq(scmConnections.id, azure.id));
+      }
     });
 
     it('answers 502 with the fixed text when Jira fails, and stores nothing', async () => {

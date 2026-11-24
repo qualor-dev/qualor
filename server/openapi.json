@@ -61,14 +61,14 @@
           },
           "missingFields": {
             "type": "array",
-            "description": "JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill",
+            "description": "JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill. BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the reference names of the always-required fields without a default of the work item type that Qualor cannot fill (System.Description when the type has neither Description nor Repro Steps), empty when the Azure DevOps project offers no such type",
             "items": {
               "type": "string"
             }
           },
           "problemCode": {
             "type": "string",
-            "description": "JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection"
+            "description": "JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...)"
           },
           "errors": {
             "type": "array",
@@ -44609,7 +44609,7 @@
             }
           },
           "409": {
-            "description": "JIRA_NOT_CONNECTED: the organisation has no Jira connection; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "description": "JIRA_NOT_CONNECTED: the organisation has no Jira connection; TRACKER_IN_USE: the project has an Azure Boards mapping (a project uses one tracker); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -45811,6 +45811,1197 @@
           },
           "422": {
             "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/boards": {
+      "get": {
+        "summary": "The project's Azure Boards mapping or null, the organisation's Azure DevOps connections (name, address, background problem), whether vulnerability monitoring is on, and whether `exploited` of the automatic rule is licensed",
+        "tags": [
+          "boards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mapping": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "connectionId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "azureProject": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "workItemType": {
+                              "type": "object",
+                              "properties": {
+                                "referenceName": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "referenceName",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "areaPath": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "iterationPath": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "tags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "autoCreate": {
+                              "type": "object",
+                              "properties": {
+                                "minSeverity": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "critical",
+                                        "high",
+                                        "medium",
+                                        "low"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "exploited": {
+                                  "type": "boolean"
+                                },
+                                "since": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "minSeverity",
+                                "exploited",
+                                "since"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            }
+                          },
+                          "required": [
+                            "connectionId",
+                            "azureProject",
+                            "workItemType",
+                            "areaPath",
+                            "iterationPath",
+                            "tags",
+                            "autoCreate",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "baseUrl": {
+                            "type": "string"
+                          },
+                          "problem": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "undecryptable",
+                                      "url_not_allowed",
+                                      "not_public",
+                                      "unresolved",
+                                      "timeout",
+                                      "unreachable",
+                                      "token_refused",
+                                      "not_found",
+                                      "http_error",
+                                      "bad_answer",
+                                      "not_installed",
+                                      "permission_missing",
+                                      "sign_in_required",
+                                      "html_answer",
+                                      "token_endpoint",
+                                      "token_endpoint_unreachable",
+                                      "token_endpoint_timeout",
+                                      "token_endpoint_error",
+                                      "hook_probation",
+                                      "hook_disabled"
+                                    ]
+                                  },
+                                  "at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "at"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "baseUrl",
+                          "problem"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "monitoringOn": {
+                      "type": "boolean"
+                    },
+                    "exploitedAvailable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "mapping",
+                    "connections",
+                    "monitoringOn",
+                    "exploitedAvailable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The type's name and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off",
+        "tags": [
+          "boards"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "connectionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "description": "An Azure DevOps connection of the project's organisation"
+                  },
+                  "azureProject": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "workItemType": {
+                    "type": "object",
+                    "properties": {
+                      "referenceName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "referenceName"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "areaPath": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "One of the project's area paths (`GET …/boards/paths`); null is the project's root"
+                  },
+                  "iterationPath": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "One of the project's iteration paths (`GET …/boards/paths`); null is the project's root"
+                  },
+                  "tags": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[^;,\\s\\p{Cc}](?:[^;,\\p{Cc}]{0,98}[^;,\\s\\p{Cc}])?$"
+                    },
+                    "description": "At most 10 tags, added to `qualor`"
+                  },
+                  "autoCreate": {
+                    "type": "object",
+                    "properties": {
+                      "minSeverity": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "critical",
+                              "high",
+                              "medium",
+                              "low"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "exploited": {
+                        "type": "boolean",
+                        "description": "Turning it on needs the `vuln.priority` licence (403 FEATURE_NOT_LICENSED)"
+                      }
+                    },
+                    "required": [
+                      "minSeverity",
+                      "exploited"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "connectionId",
+                  "azureProject",
+                  "workItemType",
+                  "areaPath",
+                  "iterationPath",
+                  "tags",
+                  "autoCreate"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mapping": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "connectionId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "azureProject": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "workItemType": {
+                              "type": "object",
+                              "properties": {
+                                "referenceName": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "referenceName",
+                                "name"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "areaPath": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "iterationPath": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "tags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "autoCreate": {
+                              "type": "object",
+                              "properties": {
+                                "minSeverity": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "enum": [
+                                        "critical",
+                                        "high",
+                                        "medium",
+                                        "low"
+                                      ]
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "exploited": {
+                                  "type": "boolean"
+                                },
+                                "since": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "format": "date-time",
+                                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "minSeverity",
+                                "exploited",
+                                "since"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "updatedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                            }
+                          },
+                          "required": [
+                            "connectionId",
+                            "azureProject",
+                            "workItemType",
+                            "areaPath",
+                            "iterationPath",
+                            "tags",
+                            "autoCreate",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "baseUrl": {
+                            "type": "string"
+                          },
+                          "problem": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "undecryptable",
+                                      "url_not_allowed",
+                                      "not_public",
+                                      "unresolved",
+                                      "timeout",
+                                      "unreachable",
+                                      "token_refused",
+                                      "not_found",
+                                      "http_error",
+                                      "bad_answer",
+                                      "not_installed",
+                                      "permission_missing",
+                                      "sign_in_required",
+                                      "html_answer",
+                                      "token_endpoint",
+                                      "token_endpoint_unreachable",
+                                      "token_endpoint_timeout",
+                                      "token_endpoint_error",
+                                      "hook_probation",
+                                      "hook_disabled"
+                                    ]
+                                  },
+                                  "at": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "at"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "baseUrl",
+                          "problem"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "monitoringOn": {
+                      "type": "boolean"
+                    },
+                    "exploitedAvailable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "mapping",
+                    "connections",
+                    "monitoringOn",
+                    "exploitedAvailable"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections; TRACKER_IN_USE: the project has a Jira mapping (a project uses one tracker); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field); BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the type is not a visible type of the Azure DevOps project, or has always-required fields Qualor cannot fill (their reference names in `missingFields`); BOARDS_PATH_UNKNOWN: the area or iteration path is not one the project lists (errors[] names the field); BOARDS_CREATE_REFUSED: Azure DevOps refused a `validateOnly` work item with the mapping, its own words cut to 500 characters in `detail`",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove the project's Azure Boards mapping (project admins); its links stay and keep syncing, nothing new is created. 404 without a mapping",
+        "tags": [
+          "boards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/boards/projects": {
+      "get": {
+        "summary": "The picker (project admins): the Azure DevOps projects the connection sees, by name (at most 1000)",
+        "tags": [
+          "boards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "connection",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/boards/work-item-types": {
+      "get": {
+        "summary": "The work item types of an Azure DevOps project by name (project admins), hidden ones left out, each with whether Qualor can create it and the reference names of the always-required fields without a default it cannot fill (it sets Title, Description, Repro Steps, Tags, Area and Iteration; a type needs Description or Repro Steps)",
+        "tags": [
+          "boards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "connection",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "in": "query",
+            "name": "azureProject",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "referenceName": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "supported": {
+                            "type": "boolean"
+                          },
+                          "missingFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "referenceName",
+                          "name",
+                          "supported",
+                          "missingFields"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v0/projects/{id}/boards/paths": {
+      "get": {
+        "summary": "The area and iteration paths of an Azure DevOps project (project admins), as a work item takes them (`<project>\\<child>`): the root (the project's name) first, then depth first, at most 10 levels and 2000 paths each",
+        "tags": [
+          "boards"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "connection",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "in": "query",
+            "name": "azureProject",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "areas": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "iterations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "areas",
+                    "iterations"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not visible to the caller",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (VALIDATION_FAILED; errors[] names each field)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words",
             "content": {
               "application/problem+json": {
                 "schema": {

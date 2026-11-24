@@ -18753,7 +18753,7 @@ export interface paths {
                         "application/problem+json": components["schemas"]["Problem"];
                     };
                 };
-                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                /** @description JIRA_NOT_CONNECTED: the organisation has no Jira connection; TRACKER_IN_USE: the project has an Azure Boards mapping (a project uses one tracker); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -19421,6 +19421,622 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The project's Azure Boards mapping or null, the organisation's Azure DevOps connections (name, address, background problem), whether vulnerability monitoring is on, and whether `exploited` of the automatic rule is licensed */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            mapping: {
+                                /** Format: uuid */
+                                connectionId: string;
+                                azureProject: {
+                                    id: string;
+                                    name: string;
+                                };
+                                workItemType: {
+                                    referenceName: string;
+                                    name: string;
+                                };
+                                areaPath: string | null;
+                                iterationPath: string | null;
+                                tags: string[];
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            connections: {
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                                baseUrl: string;
+                                problem: {
+                                    /** @enum {string} */
+                                    code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error" | "hook_probation" | "hook_disabled";
+                                    /** Format: date-time */
+                                    at: string;
+                                } | null;
+                            }[];
+                            monitoringOn: boolean;
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        /** Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The type's name and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: uuid
+                         * @description An Azure DevOps connection of the project's organisation
+                         */
+                        connectionId: string;
+                        azureProject: {
+                            id: string;
+                            name: string;
+                        };
+                        workItemType: {
+                            referenceName: string;
+                        };
+                        /** @description One of the project's area paths (`GET …/boards/paths`); null is the project's root */
+                        areaPath: string | null;
+                        /** @description One of the project's iteration paths (`GET …/boards/paths`); null is the project's root */
+                        iterationPath: string | null;
+                        /** @description At most 10 tags, added to `qualor` */
+                        tags: string[];
+                        autoCreate: {
+                            minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                            /** @description Turning it on needs the `vuln.priority` licence (403 FEATURE_NOT_LICENSED) */
+                            exploited: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            mapping: {
+                                /** Format: uuid */
+                                connectionId: string;
+                                azureProject: {
+                                    id: string;
+                                    name: string;
+                                };
+                                workItemType: {
+                                    referenceName: string;
+                                    name: string;
+                                };
+                                areaPath: string | null;
+                                iterationPath: string | null;
+                                tags: string[];
+                                autoCreate: {
+                                    minSeverity: ("critical" | "high" | "medium" | "low") | null;
+                                    exploited: boolean;
+                                    since: string | null;
+                                };
+                                /** Format: date-time */
+                                updatedAt: string;
+                            } | null;
+                            connections: {
+                                /** Format: uuid */
+                                id: string;
+                                name: string;
+                                baseUrl: string;
+                                problem: {
+                                    /** @enum {string} */
+                                    code: "undecryptable" | "url_not_allowed" | "not_public" | "unresolved" | "timeout" | "unreachable" | "token_refused" | "not_found" | "http_error" | "bad_answer" | "not_installed" | "permission_missing" | "sign_in_required" | "html_answer" | "token_endpoint" | "token_endpoint_unreachable" | "token_endpoint_timeout" | "token_endpoint_error" | "hook_probation" | "hook_disabled";
+                                    /** Format: date-time */
+                                    at: string;
+                                } | null;
+                            }[];
+                            monitoringOn: boolean;
+                            exploitedAvailable: boolean;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED); FEATURE_NOT_LICENSED: `autoCreate.exploited` is turned on without the `vuln.priority` licence */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections; TRACKER_IN_USE: the project has a Jira mapping (a project uses one tracker); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field); BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the type is not a visible type of the Azure DevOps project, or has always-required fields Qualor cannot fill (their reference names in `missingFields`); BOARDS_PATH_UNKNOWN: the area or iteration path is not one the project lists (errors[] names the field); BOARDS_CREATE_REFUSED: Azure DevOps refused a `validateOnly` work item with the mapping, its own words cut to 500 characters in `detail` */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Remove the project's Azure Boards mapping (project admins); its links stay and keep syncing, nothing new is created. 404 without a mapping */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/boards/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The picker (project admins): the Azure DevOps projects the connection sees, by name (at most 1000) */
+        get: {
+            parameters: {
+                query: {
+                    connection: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: string;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/boards/work-item-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The work item types of an Azure DevOps project by name (project admins), hidden ones left out, each with whether Qualor can create it and the reference names of the always-required fields without a default it cannot fill (it sets Title, Description, Repro Steps, Tags, Area and Iteration; a type needs Description or Repro Steps) */
+        get: {
+            parameters: {
+                query: {
+                    connection: string;
+                    azureProject: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                referenceName: string;
+                                name: string;
+                                supported: boolean;
+                                missingFields: string[];
+                            }[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/projects/{id}/boards/paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The area and iteration paths of an Azure DevOps project (project admins), as a work item takes them (`<project>\<child>`): the root (the project's name) first, then depth first, at most 10 levels and 2000 paths each */
+        get: {
+            parameters: {
+                query: {
+                    connection: string;
+                    azureProject: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            areas: string[];
+                            iterations: string[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the connection is not one of the organisation's Azure DevOps connections */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_UNAVAILABLE: the Azure DevOps call failed; `detail` is the fixed text of its problem (its code in `problemCode`), never Azure DevOps' own words */
+                502: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/organizations/{id}/setup-checklist": {
         parameters: {
             query?: never;
@@ -19608,9 +20224,9 @@ export interface components {
             details?: {
                 invalid: string[];
             };
-            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill */
+            /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill. BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the reference names of the always-required fields without a default of the work item type that Qualor cannot fill (System.Description when the type has neither Description nor Repro Steps), empty when the Azure DevOps project offers no such type */
             missingFields?: string[];
-            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection */
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
             problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */

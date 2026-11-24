@@ -136,6 +136,20 @@ export const PROJECT_JIRA_CHANGED_FIELDS = [
   'priorities',
   'autoCreate',
 ] as const;
+/**
+ * Azure DevOps design §7.8, §9: the names `project.boards_updated` may list (names only; `mapping` is
+ * the whole mapping created or removed).
+ */
+export const PROJECT_BOARDS_CHANGED_FIELDS = [
+  'mapping',
+  'connection',
+  'azureProject',
+  'workItemType',
+  'areaPath',
+  'iterationPath',
+  'tags',
+  'autoCreate',
+] as const;
 /** 0.16 fix MRs §6.1: the names `project.fixes_updated` may list (names only). */
 export const PROJECT_FIXES_CHANGED_FIELDS = ['enabled', 'autoCreate', 'maxOpen'] as const;
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
@@ -503,6 +517,14 @@ export const AUDIT_CATALOGUE = {
     target: 'project',
     details: z.strictObject({
       changed: z.array(z.enum(PROJECT_JIRA_CHANGED_FIELDS)).max(PROJECT_JIRA_CHANGED_FIELDS.length),
+    }),
+  },
+  'project.boards_updated': {
+    target: 'project',
+    details: z.strictObject({
+      changed: z
+        .array(z.enum(PROJECT_BOARDS_CHANGED_FIELDS))
+        .max(PROJECT_BOARDS_CHANGED_FIELDS.length),
     }),
   },
   'project.fixes_updated': {
