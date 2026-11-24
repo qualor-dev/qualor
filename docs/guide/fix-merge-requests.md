@@ -51,7 +51,7 @@ The connection's token needs:
 
 The permissions the connection already needs for [comments](./gitlab.md#3-merge-request-comments-and-commit-status)
 and [CI setup](./github.md#set-up-ci-with-a-pull-request) cover them on GitLab and GitHub. On Azure
-DevOps, [add the fix rights](./azure-devops.md#the-identitys-permissions). If the first commit fails with
+DevOps, [add the fix rights](./azure-devops.md#fix-pull-requests). If the first commit fails with
 `scm_permission`, the token lacks one.
 
 ### The project settings
@@ -326,13 +326,16 @@ its merge requests:
 | What happens | Result |
 |---|---|
 | The merge request is current | nothing |
-| It has a conflict, or a vulnerability now needs a higher version | the next fix job rebuilds it from the current main, and Qualor force-updates its branch. The card shows **updating**. If the rebuild fails, the merge request stays open with the reason, and **Retry** asks again. Azure DevOps computes a conflict when the pull request changes, not when only main moves, so the rebuild can wait longer there |
+| It has a conflict, or a vulnerability now needs a higher version | the next fix job rebuilds it from the current main, and Qualor force-updates its branch. The card shows **updating**. If the rebuild fails, the merge request stays open with the reason, and **Retry** asks again |
 | The vulnerability is gone from main | Qualor comments "Qualor no longer finds a vulnerable `<package>` on `<main>`", closes the merge request and deletes the branch: **Fixed**. A branch your rules keep from deletion stays |
 | You merge it (Azure DevOps: complete it) | **Merged** |
 | Someone closes it without merging (Azure DevOps: abandons it) | **Declined**. Qualor never proposes that version again; **Create again** can propose a higher one |
 | Someone deletes it (GitLab) | **Declined**, as a close. **Fixed** when the vulnerability is gone |
 | Someone pushes to its branch | **Taken over**. Qualor never touches that branch or merge request again |
 | You ask again after a takeover | a new branch `qualor/fix/<family>/<package>-2`, then `-3`, and so on |
+
+Azure DevOps computes a conflict when the pull request changes, not when only main moves.
+A rebuild can wait longer there.
 
 While vulnerability monitoring is off, Qualor neither closes nor requests merge requests. When fix
 MRs are switched off for the project, Qualor still tracks its open merge requests: it records them

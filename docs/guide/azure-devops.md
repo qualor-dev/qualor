@@ -247,13 +247,7 @@ Qualor can open [fix pull requests](./fix-merge-requests.md) that bump a vulnera
 Press the switch **Allow fix pull requests** on the connection in **Settings → Azure DevOps**. It is
 off, also for connections that existed before. The pull requests show as **PR !12**.
 
-Give the identity these rights on the repository, besides **Contribute to pull requests**:
-
-| Right | Why |
-|---|---|
-| **Contribute** | Qualor pushes its `qualor/fix/…` branches |
-| **Create branch** | each fix gets a new branch |
-| **Force push** | Qualor moves and deletes its own `qualor/fix/…` branches |
+Grant the rights in the repository's **Security** settings. [The token table](./fix-merge-requests.md#turning-it-on) lists them.
 
 The [fix job](./fix-merge-requests.md#azure-pipelines) runs in a pipeline of the main branch.
 

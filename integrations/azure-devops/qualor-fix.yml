@@ -11,8 +11,7 @@
 # managers in a scratch copy of the checkout and uploads the changed manifests and lockfiles. The
 # Qualor server opens the pull requests. It never changes the checkout.
 # The scanner image has npm, Yarn classic and Go. For pnpm, Yarn Berry, Maven, uv or Poetry, use
-# the docker form (qualor-fix-docker.yml) with your own image, or install the manager in a step
-# before the task.
+# the docker form (qualor-fix-docker.yml) with your own image.
 # The checkout fetches the full history and does not leave the build's token in .git/config,
 # where the package managers' scripts could read it.
 # imageTag pins the scanner to your Qualor server's release line: the extension updates itself
