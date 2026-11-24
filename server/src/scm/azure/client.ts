@@ -1085,9 +1085,15 @@ export class AzureDevOpsClient {
     return answer.value.map(definitionOf);
   }
 
+  /**
+   * Creates the definition, then re-saves it unchanged (GET, PUT). A YAML pipeline made by the POST
+   * does not run its CI trigger on pushes for the first 5 to 12 minutes; a PUT right after the
+   * create switches it on at once (probe item 28, Azure DevOps Services), and a quick merge of the
+   * setup PR must still be analysed. A manual run does not do it.
+   */
   async createDefinition(projectId: string, input: NewAzureDefinition): Promise<AzureDefinition> {
     this.#repositoryPath(input.repositoryId); // validates the id
-    const answer = await this.#call(
+    const created = await this.#call(
       'POST',
       `${this.#projectPath(projectId)}/build/definitions`,
       definitionAnswer,
@@ -1110,7 +1116,7 @@ export class AzureDevOpsClient {
       'base',
       secretValues(input.variables),
     );
-    return definitionOf(answer);
+    return this.#resave(projectId, created.id);
   }
 
   async definition(projectId: string, id: number): Promise<AzureDefinition> {
@@ -1148,6 +1154,19 @@ export class AzureDevOpsClient {
       AZURE_API_VERSION,
       'base',
       secretValues(variables),
+    );
+    return definitionOf(answer);
+  }
+
+  /** GET then PUT of the same body: the secret reads back `null` and survives. */
+  async #resave(projectId: string, id: number): Promise<AzureDefinition> {
+    const path = this.#definitionPath(projectId, id);
+    const answer = await this.#call(
+      'PUT',
+      path,
+      definitionAnswer,
+      await this.#get(path, definitionAnswer),
+      AZURE_API_VERSION,
     );
     return definitionOf(answer);
   }

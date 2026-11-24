@@ -1306,6 +1306,24 @@ describe('the repository-setup run', () => {
           .filter((r) => `${r.path}?${r.query} ${r.body}`.includes(secret))
           .map((r) => `${r.method} ${r.path}`),
       ).toEqual([`POST /${repo.projectId}/_apis/build/definitions`]);
+      // The new pipeline is re-saved once at once (the YAML trigger would else idle for minutes):
+      // POST, then GET and PUT of that id; the PUT keeps the trigger and the secret.
+      const definitionsBase = `/${repo.projectId}/_apis/build/definitions`;
+      expect(
+        fake.requests
+          .filter((r) => r.path.startsWith(definitionsBase) && r.method !== 'DELETE')
+          .filter((r) => r.path !== definitionsBase || r.method === 'POST')
+          .map((r) => `${r.method} ${r.path}`),
+      ).toEqual([
+        `POST ${definitionsBase}`,
+        `GET ${definitionsBase}/${definition.id}`,
+        `PUT ${definitionsBase}/${definition.id}`,
+      ]);
+      expect(definition.secrets['QUALOR_TOKEN']).toBe(secret);
+      expect(definition.body).toMatchObject({
+        variables: { QUALOR_TOKEN: { value: null, isSecret: true } },
+        triggers: YAML_CI_TRIGGER,
+      });
       expect(h.ctx.logs.join('\n')).not.toContain(secret);
       expect(JSON.stringify(await read(runId))).not.toContain(secret);
       const events = await h.ctx.db.select().from(auditEvents);

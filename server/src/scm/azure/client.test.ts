@@ -2214,8 +2214,9 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
 
     it('creates one with a YAML process, its CI trigger from the YAML, the queue, the repository and the variables', async () => {
       const input = newDefinition('Qualor create');
+      fake.clearRequests();
       const made = await clientOf(fake).createDefinition(projectId, input);
-      const request = lastRequest();
+      const request = fake.requests[0]!;
       expect(request.method).toBe('POST');
       expect(request.path).toBe(`/${projectId}/_apis/build/definitions`);
       expect(apiVersion(request.query)).toBe('7.0');
@@ -2254,6 +2255,64 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
         QUALOR_TOKEN: SECRET,
       });
+    });
+
+    it('re-saves the new definition at once (GET, PUT unchanged), so its YAML trigger fires', async () => {
+      fake.clearRequests();
+      const made = await clientOf(fake).createDefinition(projectId, newDefinition('Qualor resave'));
+      const base = `/${projectId}/_apis/build/definitions`;
+      expect(fake.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
+        `POST ${base}`,
+        `GET ${base}/${made.id}`,
+        `PUT ${base}/${made.id}`,
+      ]);
+      const put = lastRequest();
+      expect(apiVersion(put.query)).toBe('7.0');
+      const sent = bodyOf(put);
+      expect(sent.triggers).toEqual(YAML_CI_TRIGGER);
+      expect(sent.variables).toMatchObject({
+        QUALOR_TOKEN: { value: null, isSecret: true },
+        QUALOR_PROJECT_KEY: { value: 'payments/ci' },
+      });
+      expect(put.body).not.toContain(SECRET);
+      expect(made.secretSet).toBe(true);
+      expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
+        QUALOR_TOKEN: SECRET,
+      });
+      expect(fake.definitions.find((d) => d.id === made.id)?.body.triggers).toEqual(
+        YAML_CI_TRIGGER,
+      );
+    });
+
+    it('returns the answer of the re-save PUT', async () => {
+      fake.inject('PUT', /build\/definitions\/\d+$/, {
+        status: 200,
+        body: {
+          id: 4242,
+          name: 'From the PUT',
+          queue: { id: 7 },
+          process: { type: 2, yamlFilename: 'put.yml' },
+          repository: { id: repoId },
+          variables: {},
+        },
+      });
+      const made = await clientOf(fake).createDefinition(projectId, newDefinition('Qualor answer'));
+      expect(made).toMatchObject({ id: 4242, name: 'From the PUT', yamlPath: 'put.yml' });
+    });
+
+    it('an error on the re-save GET or PUT is the usual AzureError, without the secret', async () => {
+      for (const method of ['GET', 'PUT'] as const) {
+        fake.inject(method, /build\/definitions\/\d+$/, {
+          status: 400,
+          body: { message: `echo QUALOR_TOKEN=${SECRET}` },
+        });
+        const err = await failure(
+          clientOf(fake).createDefinition(projectId, newDefinition(`Qualor resave ${method}`)),
+        );
+        expect(err).toBeInstanceOf(AzureError);
+        expect(err).toMatchObject({ kind: 'refused', status: 400 });
+        expect(written(err)).not.toContain(SECRET);
+      }
     });
 
     it('lists the definitions of a repository and reads one', async () => {
