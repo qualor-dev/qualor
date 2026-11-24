@@ -2700,10 +2700,21 @@ input.switch[type='checkbox']:focus-visible {
   min-width: 0;
 }
 .band-actions {
+  --band-control: 36px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+/* Every control of the action row is one height (a text field's), whatever its kind: a search
+   field and its button, a link or a button, primary or not, a segmented switch. Each keeps its
+   colours. A popover a control opens (Watch) is deeper and keeps its own sizes. */
+.band-actions > .btn,
+.band-actions > * > .btn,
+.band-actions > .segmented,
+.band-search > input {
+  height: var(--band-control);
+  min-height: var(--band-control);
 }
 .band-search {
   display: flex;
@@ -2712,6 +2723,7 @@ input.switch[type='checkbox']:focus-visible {
 .band-search input {
   width: 18rem;
   max-width: 100%;
+  padding-block: 0;
   border-color: transparent;
   background: rgb(255 255 255 / 0.97);
   color: #0a1b33;
