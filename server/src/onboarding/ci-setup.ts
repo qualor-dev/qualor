@@ -14,14 +14,17 @@ import {
   type YAMLMap,
   type YAMLSeq,
 } from 'yaml';
+import { codeSpan } from '../scm/markdown';
 import {
   COMPONENT_PATH,
+  azurePipeline,
   githubWorkflow,
   gitlabIncludeEntry,
   gitlabIncludeSnippet,
   gitlabPlainJob,
   projectKeyArg,
   yamlScalar,
+  type AzurePool,
   type ComponentOptions,
 } from './ci-templates';
 
@@ -51,6 +54,18 @@ export interface CiSetupInput {
     tokenSecretSet: boolean;
     /** A QUALOR_TOKEN the repository inherits exists: an organisation secret on GitHub. */
     inheritedTokenSet: boolean;
+  };
+  /** Azure DevOps only: the agent pool of the pipeline and what the repository already holds. */
+  azure?: {
+    pool: AzurePool;
+    existing: {
+      /** `.azure-pipelines/qualor.yml` exists on the default branch. */
+      pipelineFile: boolean;
+      /** The text of `azure-pipelines.yml` on the default branch, when it exists. */
+      azurePipelinesYml: string | null;
+      /** A pipeline definition of the repository: the file it runs and whether its secret is set. */
+      definition: { yamlPath: string | null; secretSet: boolean } | null;
+    };
   };
 }
 
@@ -82,6 +97,7 @@ export function minorOf(version: string): string {
 
 const GITLAB_FILE = '.gitlab-ci.yml';
 const WORKFLOW_FILE = '.github/workflows/qualor.yml';
+export const AZURE_FILE = '.azure-pipelines/qualor.yml';
 
 type Parsed = { ok: true; doc: Document.Parsed; root: YAMLMap | null } | { ok: false };
 
@@ -311,6 +327,19 @@ function gitlabDescription(i: CiSetupInput): string[] {
   ];
 }
 
+function azureDescription(i: CiSetupInput): string[] {
+  const pool = i.azure?.pool ?? { vmImage: 'ubuntu-latest' as const };
+  const hosted = 'vmImage' in pool;
+  const image = codeSpan(`${scannerImage(i)}:${i.version}`);
+  return [
+    `The pipeline file ${codeSpan(AZURE_FILE)} runs the Qualor scanner image ${image}.`,
+    'Qualor creates the pipeline `Qualor` from it. The token is its secret variable `QUALOR_TOKEN` and the server address its variable `QUALOR_URL`; neither is in any file.',
+    `The pipeline runs on ${hosted ? 'the Microsoft-hosted image' : 'the agent pool'} ${codeSpan(hosted ? pool.vmImage : pool.name)}. It needs a Linux agent with Docker, and the agent pool must be authorised for the pipeline \`Qualor\`. The agents must be able to pull the image from Docker Hub.`,
+    'After the first analysis of the default branch, Qualor adds the Build validation policy that runs the pipeline on every pull request into that branch.',
+    `To remove it, delete ${codeSpan(AZURE_FILE)}, the pipeline \`Qualor\` (its secret goes with it) and the Build validation policy.`,
+  ];
+}
+
 const CHANGE_REQUEST_WORD: Record<ScmProvider, string> = {
   gitlab: 'merge request',
   github: 'pull request',
@@ -323,8 +352,8 @@ function providerDescription(i: CiSetupInput): string[] {
       return githubDescription(i);
     case 'gitlab':
       return gitlabDescription(i);
-    case 'azure': // azure-pending(7): what an Azure Pipelines CI setup adds
-      return [];
+    case 'azure':
+      return azureDescription(i);
     default:
       return assertNever(i.provider, 'provider');
   }
@@ -342,7 +371,8 @@ function descriptionFor(i: CiSetupInput): string {
   if (githubRunner) {
     lines.push('The job needs a Linux runner with Docker (labels `self-hosted` and `linux`).');
   }
-  if (i.host === 'self-hosted') {
+  if (i.host === 'self-hosted' && i.provider !== 'azure') {
+    // provider-guard: the Azure lines cover the agents' image pull
     lines.push(
       'To upgrade the scanner, edit the version in the file. The runners must be able to pull the image from Docker Hub.',
     );
@@ -363,7 +393,10 @@ function changePlan(input: CiSetupInput, files: ChangeFiles): CiPlan {
     kind: 'change',
     files,
     secrets: [{ name: 'QUALOR_TOKEN' }],
-    variables: input.provider === 'gitlab' ? [{ key: 'QUALOR_URL', value: input.serverUrl }] : [], // provider-guard: only GitLab has a CI/CD variable for the address
+    variables:
+      input.provider === 'gitlab' || input.provider === 'azure' // provider-guard: only GitLab and Azure have a CI/CD variable for the address
+        ? [{ key: 'QUALOR_URL', value: input.serverUrl }]
+        : [],
     description: descriptionFor(input),
   };
 }
@@ -446,14 +479,59 @@ function planGitlab(input: CiSetupInput): CiPlan {
   return changePlan(input, [{ path: GITLAB_FILE, content, update: text !== null }]);
 }
 
+/** The file plus the steps Qualor would do outside it, as trailing comments (one YAML document). */
+function azureSnippet(content: string, serverUrl: string): string {
+  return (
+    content +
+    [
+      '',
+      `# Save this as ${AZURE_FILE}, then:`,
+      '#   1. Create a pipeline from it (Pipelines, New pipeline, Azure Repos Git, Existing Azure Pipelines YAML file).',
+      `#   2. Add the pipeline variable QUALOR_URL = ${serverUrl}.`,
+      '#   3. Add the pipeline variable QUALOR_TOKEN (a project analysis token) and mark it secret.',
+      '#   4. After the first analysis of the default branch, add the pipeline as a Build validation',
+      '#      policy of that branch.',
+      '',
+    ].join('\n')
+  );
+}
+
+function planAzure(input: CiSetupInput): CiPlan {
+  const azure = input.azure ?? {
+    pool: { vmImage: 'ubuntu-latest' as const },
+    existing: { pipelineFile: false, azurePipelinesYml: null, definition: null },
+  };
+  const { existing } = azure;
+  const content = azurePipeline({
+    projectKey: input.projectKey,
+    version: input.version,
+    pool: azure.pool,
+    csharp: input.csharp,
+  });
+  const definitionSet =
+    existing.definition?.yamlPath === AZURE_FILE && existing.definition.secretSet;
+  if (
+    existing.pipelineFile ||
+    definitionSet ||
+    (existing.azurePipelinesYml !== null && runsQualor(existing.azurePipelinesYml))
+  ) {
+    return {
+      kind: 'snippet',
+      reason: 'already_set_up',
+      snippet: azureSnippet(content, input.serverUrl),
+    };
+  }
+  return changePlan(input, [{ path: AZURE_FILE, content, update: false }]);
+}
+
 export function planCiSetup(input: CiSetupInput): CiPlan {
   switch (input.provider) {
     case 'github':
       return planGithub(input);
     case 'gitlab':
       return planGitlab(input);
-    case 'azure': // azure-pending(7): the Azure Pipelines CI setup (no file Qualor could write yet)
-      return { kind: 'snippet', reason: 'yaml_unsupported', snippet: '' };
+    case 'azure':
+      return planAzure(input);
     default:
       return assertNever(input.provider, 'provider');
   }

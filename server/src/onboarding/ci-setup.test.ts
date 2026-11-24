@@ -914,14 +914,124 @@ describe('every generated YAML parses', () => {
   });
 });
 
-describe('CI setup on Azure DevOps: not available yet (Azure sub-plan 2, Task 2)', () => {
-  it('plans no file, only an empty snippet, whatever the repository holds', () => {
-    for (const host of ['cloud', 'self-hosted'] as const) {
-      expect(planCiSetup(input({ provider: 'azure', host }))).toEqual({
-        kind: 'snippet',
-        reason: 'yaml_unsupported',
-        snippet: '',
-      });
+type AzureInput = NonNullable<CiSetupInput['azure']>;
+
+function az(
+  over: Partial<Omit<AzureInput, 'existing'>> & {
+    existing?: Partial<AzureInput['existing']>;
+  } = {},
+  rest: Partial<Omit<CiSetupInput, 'existing' | 'azure'>> = {},
+): CiPlan {
+  const { existing, ...a } = over;
+  return planCiSetup(
+    input({
+      provider: 'azure',
+      host: 'self-hosted',
+      ...rest,
+      azure: {
+        pool: { vmImage: 'ubuntu-latest' },
+        existing: {
+          pipelineFile: false,
+          azurePipelinesYml: null,
+          definition: null,
+          ...existing,
+        },
+        ...a,
+      },
+    }),
+  );
+}
+
+describe('CI setup on Azure DevOps', () => {
+  it('plans the pipeline file, the secret, the QUALOR_URL variable and a description', () => {
+    const plan = change(az());
+    expect(plan.files).toHaveLength(1);
+    expect(plan.files[0]).toMatchObject({ path: '.azure-pipelines/qualor.yml', update: false });
+    const doc = parse(plan.files[0]!.content) as { variables: Record<string, string> };
+    expect(doc.variables).toEqual({
+      QUALOR_SCANNER_IMAGE: 'qualor/scanner:0.14.3',
+      QUALOR_PROJECT_KEY: KEY,
+    });
+    expect(plan.secrets).toEqual([{ name: 'QUALOR_TOKEN' }]);
+    expect(plan.variables).toEqual([{ key: 'QUALOR_URL', value: URL_ }]);
+    expect(plan.description).toContain('`Qualor`');
+    expect(plan.description).toContain('`QUALOR_TOKEN`');
+    expect(plan.description).toMatch(/Build validation/);
+    expect(plan.description).toMatch(/agent pool/);
+    expect(plan.description).toMatch(/pull request/);
+    expect(plan.description).toContain('` .azure-pipelines/qualor.yml `');
+  });
+
+  it('uses the .NET image and the named pool', () => {
+    const plan = change(az({ pool: { name: 'Linux pool' } }, { csharp: true }));
+    const doc = parse(plan.files[0]!.content) as {
+      pool: unknown;
+      variables: Record<string, string>;
+    };
+    expect(doc.pool).toEqual({ name: 'Linux pool' });
+    expect(doc.variables.QUALOR_SCANNER_IMAGE).toBe('qualor/scanner-dotnet:0.14.3');
+    expect(plan.description).toContain('dotnet build --no-incremental');
+    expect(plan.description).toContain('` Linux pool `');
+  });
+
+  it.each([
+    ['the file exists on the default branch', { pipelineFile: true }],
+    [
+      'a definition uses the path and its secret is set',
+      { definition: { yamlPath: '.azure-pipelines/qualor.yml', secretSet: true } },
+    ],
+    ['azure-pipelines.yml runs Qualor', { azurePipelinesYml: 'steps:\n  - script: qualor scan\n' }],
+    [
+      'azure-pipelines.yml uses the scanner image',
+      { azurePipelinesYml: 'variables:\n  I: qualor/scanner:0.16\n' },
+    ],
+  ])('is already set up when %s', (_label, existing) => {
+    const plan = az({ existing });
+    expect(plan).toMatchObject({ kind: 'snippet', reason: 'already_set_up' });
+    if (plan.kind === 'snippet') expect(plan.snippet).toContain('QUALOR_SCANNER_IMAGE');
+  });
+
+  it('does not count a definition without the secret or on another path, or a file without Qualor', () => {
+    for (const existing of [
+      { definition: { yamlPath: '.azure-pipelines/qualor.yml', secretSet: false } },
+      { definition: { yamlPath: 'azure-pipelines.yml', secretSet: true } },
+      { definition: null },
+      { azurePipelinesYml: 'steps:\n  - script: npm test\n' },
+    ])
+      expect(az({ existing }).kind).toBe('change');
+  });
+
+  it('keeps hostile repository, project and pool names inert in the description', () => {
+    const hostile = ['#12', '!3', '@<8C5A1F2E-1111-2222-3333-444455556666>', '$x$', '<!--'];
+    for (const bad of hostile) {
+      const plan = change(az({ pool: { name: `${bad} pool` } }, { projectKey: `a/${bad}` }));
+      for (const line of plan.description.split('\n')) {
+        // Every occurrence of the value sits inside a code span.
+        const outside = line.replace(/`[^`]*`/g, '');
+        expect(outside).not.toContain(bad);
+      }
+      expect(plan.description).not.toMatch(/^\//m);
     }
+  });
+
+  it('the manual path is the same file plus the definition and the secret, as steps', () => {
+    const plan = az({ existing: { azurePipelinesYml: 'x: qualor/scanner' } });
+    if (plan.kind !== 'snippet') throw new Error('expected snippet');
+    const docs = parseAllDocuments(plan.snippet);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.errors).toEqual([]);
+    expect(plan.snippet).toContain('QUALOR_URL = ' + URL_);
+    expect(plan.snippet).toContain('QUALOR_TOKEN');
+  });
+
+  it.each([
+    { csharp: false, pool: { vmImage: 'ubuntu-latest' } as const },
+    { csharp: true, pool: { name: 'p' } as const },
+  ])('every generated Azure YAML parses (%o)', ({ csharp, pool }) => {
+    const plan = change(az({ pool }, { csharp }));
+    const docs = parseAllDocuments(plan.files[0]!.content);
+    expect(docs).toHaveLength(1);
+    expect(docs[0]?.errors).toEqual([]);
+    expect(docs[0]?.warnings).toEqual([]);
   });
 });
