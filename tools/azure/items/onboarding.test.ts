@@ -16,6 +16,7 @@ import {
   helloSource,
   imageOf,
   isKnownMain,
+  judgeCiQueued,
   judgeDefinition,
   judgeMainPolicy,
   judgePending,
@@ -39,8 +40,12 @@ import {
   SETUP_TITLE,
   setupDefinitions,
   SetupRunSchema,
-  staleBranches,
+  mainWaits,
+  retireDefinition,
+  retiredName,
+  staleRefs,
   toCancel,
+  triggersText,
   tokensIn,
   treeFiles,
   type Build,
@@ -147,18 +152,68 @@ describe('item 27 main', () => {
 });
 
 describe('item 27 clearing an earlier run', () => {
-  it('finds the setup branch and the probe branches only', () => {
+  it('finds the setup branch, the probe branches and the temporary refs of the reset only', () => {
     const refs = [
       { name: 'refs/heads/main', objectId: 'a' },
       { name: 'refs/heads/qualor/setup', objectId: 'b' },
       { name: 'refs/heads/qualor/setup-2', objectId: 'c' },
       { name: 'refs/heads/probe/27-20261124120000', objectId: 'd' },
       { name: 'refs/heads/probe/26-20261124120000', objectId: 'e' },
+      { name: 'refs/qualor/probe-tmp/27-20261124110000', objectId: 'f' },
+      { name: 'refs/qualor/fix-tmp/20261124110000', objectId: 'g' },
     ];
-    expect(staleBranches(refs).map((r) => r.name)).toEqual([
+    expect(staleRefs(refs).map((r) => r.name)).toEqual([
       'refs/heads/qualor/setup',
       'refs/heads/probe/27-20261124120000',
+      'refs/qualor/probe-tmp/27-20261124110000',
     ]);
+  });
+
+  it('renames a pipeline before it deletes it: GET, PUT with the new name, then DELETE', async () => {
+    const calls: string[] = [];
+    let sent: Record<string, unknown> | undefined;
+    const name = await retireDefinition(
+      {
+        get: (id) => {
+          calls.push(`get ${id}`);
+          return Promise.resolve({ id, name: 'Qualor', revision: 3, triggers: [{ x: 1 }] });
+        },
+        put: (id, body) => {
+          calls.push(`put ${id}`);
+          sent = body;
+          return Promise.resolve();
+        },
+        remove: (id) => {
+          calls.push(`delete ${id}`);
+          return Promise.resolve();
+        },
+      },
+      7,
+      '20261124120000',
+    );
+    expect(calls).toEqual(['get 7', 'put 7', 'delete 7']);
+    expect(name).toBe('Qualor deleted 20261124120000 7');
+    expect(name).toBe(retiredName('20261124120000', 7));
+    expect(sent).toEqual({ id: 7, name, revision: 3, triggers: [{ x: 1 }] });
+  });
+
+  it('deletes nothing when the rename is refused', async () => {
+    const calls: string[] = [];
+    await expect(
+      retireDefinition(
+        {
+          get: (id) => Promise.resolve({ id, name: 'Qualor' }),
+          put: () => Promise.reject(new Error('refused')),
+          remove: (id) => {
+            calls.push(`delete ${id}`);
+            return Promise.resolve();
+          },
+        },
+        7,
+        's',
+      ),
+    ).rejects.toThrow('refused');
+    expect(calls).toEqual([]);
   });
 
   it("takes the setup's pipelines of this repository by name, and lists others on the file", () => {
@@ -211,7 +266,31 @@ describe('item 27 clearing an earlier run', () => {
         },
       ],
     };
-    expect(policiesToRemove(json, [1, 2])).toEqual([10, 11]);
+    expect(policiesToRemove(json, [1, 2], REPO)).toEqual([10]);
+  });
+
+  it('removes a policy named Qualor only when it applies to this repository', () => {
+    const named = (id: number, repositoryId: string | null) => ({
+      id,
+      type: { id: BUILD_POLICY },
+      settings: {
+        buildDefinitionId: 9,
+        displayName: 'Qualor',
+        scope: [{ repositoryId, refName: 'refs/heads/main', matchKind: 'Exact' }],
+      },
+    });
+    const json = {
+      value: [named(11, REPO.toUpperCase()), named(12, OTHER_REPO), named(13, null)],
+    };
+    expect(policiesToRemove(json, [1], REPO)).toEqual([11]);
+    // A policy of the setup's pipeline goes whatever its scope says.
+    expect(
+      policiesToRemove(
+        { value: [{ ...named(14, OTHER_REPO), settings: { buildDefinitionId: 1 } }] },
+        [1],
+        REPO,
+      ),
+    ).toEqual([14]);
   });
 });
 
@@ -537,6 +616,21 @@ describe('item 27 builds', () => {
     expect(mainBuildOf([builds[0] as Build], 'aaaa')).toBeUndefined();
   });
 
+  it('CI queued the main build: a build of main that no one queued by hand', () => {
+    const ci = build({ id: 4, sourceBranch: 'refs/heads/main', reason: 'individualCI' });
+    expect(judgeCiQueued(ci, true)).toEqual({
+      what: 'CI queued the main build (the pipeline runs on pushes)',
+      pass: true,
+      got: 'build 4, reason individualCI; the image commit on qualor/setup started a CI build',
+    });
+    expect(judgeCiQueued({ ...ci, reason: 'manual' }, false).pass).toBe(false);
+    const none = judgeCiQueued(undefined, false);
+    expect(none.pass).toBe(false);
+    expect(none.got).toBe(
+      'no build of main within 5 min; the image commit on qualor/setup started no CI build either',
+    );
+  });
+
   it("cancels a branch's unfinished builds only", () => {
     const builds = [
       build({ id: 1, sourceBranch: 'refs/heads/qualor/setup', status: 'inProgress' }),
@@ -574,6 +668,32 @@ describe('item 27 builds', () => {
   });
 });
 
+describe('item 27 waits and triggers', () => {
+  it('keeps the main build and analysis within 15 minutes, the analysis keeping its share', () => {
+    const start = 1_000_000;
+    const deadline = start + 15 * 60_000;
+    expect(mainWaits(deadline, start)).toEqual({ buildMs: 13 * 60_000 });
+    expect(mainWaits(deadline, deadline - 60_000)).toEqual({ buildMs: 0 });
+    expect(mainWaits(deadline, deadline + 1)).toEqual({ buildMs: 0 });
+  });
+
+  it("says what triggers the pipeline has: the YAML's CI trigger, another, or none", () => {
+    expect(
+      triggersText([
+        { triggerType: 'continuousIntegration', settingsSourceType: 2, branchFilters: [] },
+      ]),
+    ).toBe('continuousIntegration (settings from the YAML)');
+    expect(
+      triggersText([
+        { triggerType: 'continuousIntegration', settingsSourceType: 1 },
+        { triggerType: 'schedule' },
+      ]),
+    ).toBe('continuousIntegration (settings in the definition), schedule');
+    expect(triggersText([])).toBe('none');
+    expect(triggersText(undefined)).toBe('none');
+  });
+});
+
 describe("item 27 Qualor's status", () => {
   it("is the server's status name for the key, not Azure Pipelines' codecoverage under the pipeline's name", () => {
     const name = azureStatusName(KEY);
@@ -595,5 +715,16 @@ describe("item 27 Qualor's status", () => {
     expect(
       qualorStatus([{ id: 6, state: 'notSet', context: { name, genre: 'qualor' } }], KEY),
     ).toBeUndefined();
+  });
+
+  it('names the status as the server does for a key it changes (azureStatusName)', () => {
+    const key = 'Probe Org/qualor-probe-setup';
+    const name = azureStatusName(key);
+    expect(name).not.toBe(key);
+    const statuses = [
+      { id: 1, state: 'failed', context: { name: key, genre: 'qualor' } },
+      { id: 2, state: 'succeeded', context: { name, genre: 'qualor' } },
+    ];
+    expect(qualorStatus(statuses, key)?.id).toBe(2);
   });
 });

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { azureStatusName } from '../../../server/src/scm/render';
 import type { AzureResponse } from '../client.js';
 import { BENCH_IMAGE_TAG } from './18-ci.js';
 import { check, needEnv, rec, servicePrincipalId, type Check } from './19-decoration.js';
@@ -31,6 +32,7 @@ import {
   ok,
   prWithMerge,
   pushFiles,
+  queueBuild,
   queuePermissions,
   refHead,
   remove,
@@ -64,6 +66,8 @@ export const POLICY_NAME = 'Qualor';
 export const POOL = 'Default';
 /** The item's own branches (the probe pull request's), which an earlier run may have left. */
 const PROBE_PREFIX = 'refs/heads/probe/27-';
+/** The reset's temporary refs (one per run, deleted by it; an interrupted run may leave one). */
+const TMP_PREFIX = 'refs/qualor/probe-tmp/27-';
 const MAIN = 'refs/heads/main';
 const SETUP_REF = `refs/heads/${SETUP_BRANCH}`;
 const ZEROS = '0'.repeat(40);
@@ -73,11 +77,13 @@ const SETUP_WAIT_MS = 5 * 60_000;
 /** Azure DevOps takes the image commit into the pull request, then completes it. */
 const SOURCE_WAIT_MS = 2 * 60_000;
 const MERGE_WAIT_MS = 3 * 60_000;
-/** Ruling: the main build and the main analysis together; the build must be queued within 5. */
+/**
+ * Ruling: the main build and the main analysis together, 15 minutes. CI must queue the build
+ * within 5 (else the item queues it by hand); the last 2 are kept for the analysis.
+ */
 const MAIN_WAIT_MS = 15 * 60_000;
 const MAIN_QUEUED_MS = 5 * 60_000;
-/** The last poll of the main analysis gets this long even when the build used the 15 minutes. */
-const ANALYSIS_GRACE_MS = 2 * 60_000;
+const ANALYSIS_SHARE_MS = 2 * 60_000;
 /** Ruling: the policy job after the main analysis. */
 const POLICY_WAIT_MS = 5 * 60_000;
 /** The policy queues the pull request's build at once. */
@@ -186,9 +192,37 @@ export function refUpdatesSucceeded(json: unknown): boolean {
 
 type Ref = { name: string; objectId: string };
 
-/** The branches an earlier run may have left: the setup's branch and the item's probe branches. */
-export function staleBranches(refs: readonly Ref[]): Ref[] {
-  return refs.filter((r) => r.name === SETUP_REF || r.name.startsWith(PROBE_PREFIX));
+/**
+ * The refs an earlier run may have left: the setup's branch, the item's probe branches and the
+ * reset's temporary refs.
+ */
+export function staleRefs(refs: readonly Ref[]): Ref[] {
+  return refs.filter(
+    (r) => r.name === SETUP_REF || r.name.startsWith(PROBE_PREFIX) || r.name.startsWith(TMP_PREFIX),
+  );
+}
+
+/** The name a pipeline of an earlier run gets before it is deleted. */
+export const retiredName = (stamp: string, id: number): string => `Qualor deleted ${stamp} ${id}`;
+
+export type RetireOps = {
+  get: (id: number) => Promise<Record<string, unknown>>;
+  put: (id: number, body: Record<string, unknown>) => Promise<void>;
+  remove: (id: number) => Promise<void>;
+};
+
+/**
+ * Renames a pipeline, then deletes it: Azure DevOps soft-deletes a build definition and may keep
+ * its name taken, which would leave a later setup without `Qualor` and its fallback name. The
+ * definition is read and PUT back whole with the new name (item 26's GET+PUT); a refused rename
+ * deletes nothing. The new name.
+ */
+export async function retireDefinition(ops: RetireOps, id: number, stamp: string): Promise<string> {
+  const current = await ops.get(id);
+  const name = retiredName(stamp, id);
+  await ops.put(id, { ...current, name });
+  await ops.remove(id);
+  return name;
 }
 
 const DefinitionListSchema = z.object({
@@ -260,15 +294,25 @@ type Policy = z.infer<typeof PolicyListSchema>['value'][number];
 
 const isBuildPolicy = (p: Policy): boolean => p.type === undefined || p.type.id === BUILD_POLICY;
 
-/** The Build validation policies an earlier run left on main: those of the setup's pipelines, or named `Qualor`. */
-export function policiesToRemove(json: unknown, definitionIds: readonly number[]): number[] {
+const appliesTo = (p: Policy, repositoryId: string): boolean =>
+  (p.settings.scope ?? []).some((s) => sameId(s.repositoryId, repositoryId));
+
+/**
+ * The Build validation policies an earlier run left on main: those of the setup's pipelines, and
+ * those named `Qualor` that apply to this repository (the list may hold other repositories').
+ */
+export function policiesToRemove(
+  json: unknown,
+  definitionIds: readonly number[],
+  repositoryId: string,
+): number[] {
   return shape(PolicyListSchema, json, 'policies')
     .value.filter(
       (p) =>
         isBuildPolicy(p) &&
         ((p.settings.buildDefinitionId !== undefined &&
           definitionIds.includes(p.settings.buildDefinitionId)) ||
-          p.settings.displayName === POLICY_NAME),
+          (p.settings.displayName === POLICY_NAME && appliesTo(p, repositoryId))),
     )
     .map((p) => p.id);
 }
@@ -498,9 +542,28 @@ export const DefinitionSchema = z
     repository: z.object({ id: z.string() }).loose().optional(),
     queue: z.object({ id: z.number(), name: z.string().optional() }).loose().optional(),
     variables: z.record(z.string(), VariableSchema).nullish(),
+    triggers: z
+      .array(
+        z
+          .object({ triggerType: z.string().optional(), settingsSourceType: z.number().optional() })
+          .loose(),
+      )
+      .nullish(),
   })
   .loose();
 export type Definition = z.infer<typeof DefinitionSchema>;
+
+/** A definition's triggers in words: the CI trigger says where its settings come from. */
+export function triggersText(triggers: Definition['triggers']): string {
+  if (!triggers || triggers.length === 0) return 'none';
+  return triggers
+    .map((t) => {
+      const type = t.triggerType ?? 'unknown';
+      if (type !== 'continuousIntegration') return type;
+      return `${type} (settings ${t.settingsSourceType === 2 ? 'from the YAML' : 'in the definition'})`;
+    })
+    .join(', ');
+}
 
 const sameUrl = (a: string, b: string): boolean =>
   a.replace(/\/+$/, '').toLowerCase() === b.replace(/\/+$/, '').toLowerCase();
@@ -588,6 +651,28 @@ export function mainBuildOf(
   );
 }
 
+/**
+ * The pipeline runs on pushes: CI (not a person) queued the main build after the merge. Whether the
+ * image commit's push to the setup branch started a build too is told alongside.
+ */
+export function judgeCiQueued(build: Build | undefined, setupBranchBuilt: boolean): Check {
+  const setup = setupBranchBuilt
+    ? 'started a CI build'
+    : build
+      ? 'started no CI build'
+      : 'started no CI build either';
+  return check(
+    'CI queued the main build (the pipeline runs on pushes)',
+    build !== undefined && build.reason !== 'manual',
+    `${build ? `build ${build.id}, reason ${build.reason ?? 'unknown'}` : `no build of main within ${MAIN_QUEUED_MS / 60000} min`}; the image commit on ${SETUP_BRANCH} ${setup}`,
+  );
+}
+
+/** How long the main build may take within the 15 minutes: what is left, less the analysis's share. */
+export function mainWaits(deadline: number, now: number): { buildMs: number } {
+  return { buildMs: Math.max(0, deadline - ANALYSIS_SHARE_MS - now) };
+}
+
 /** A branch's unfinished builds: CI builds the item does not need, cancelled to free the one agent. */
 export function toCancel(builds: readonly Build[], sourceBranch: string): Build[] {
   return builds.filter(
@@ -633,11 +718,12 @@ export type Status = z.infer<typeof StatusSchema>;
  * here `qualor` too, so the genre alone is not Qualor's.
  */
 export function qualorStatus(statuses: readonly Status[], projectKey: string): Status | undefined {
+  const name = azureStatusName(projectKey);
   return statuses
     .filter(
       (s) =>
         s.context.genre === 'qualor' &&
-        s.context.name === projectKey &&
+        s.context.name === name &&
         typeof s.state === 'string' &&
         s.state !== 'notSet',
     )
@@ -702,8 +788,9 @@ async function deleteRef(ctx: ProbeContext, repoId: string, name: string): Promi
 
 /**
  * What an earlier run left, before the setup: every active pull request of the repository (the
- * item's alone) abandoned, the setup's pipelines and their Build validation policies on main
- * removed, the setup branch and the item's probe branches deleted.
+ * item's alone) abandoned, the setup's pipelines (renamed first: {@link retireDefinition}) and
+ * their Build validation policies on main removed, the setup branch, the item's probe branches and
+ * the reset's temporary refs deleted.
  */
 async function clearEarlierRun(ctx: ProbeContext, repoId: string, notes: string[]) {
   const root = `/${ctx.project}/_apis`;
@@ -745,21 +832,44 @@ async function clearEarlierRun(ctx: ProbeContext, repoId: string, notes: string[
       'policies on main',
     ).json,
     defs.own.map((d) => d.id),
+    repoId,
   );
   for (const id of policies) await remove(ctx.bot, `${root}/policy/configurations/${id}`, 'policy');
+  const definitionPath = (id: number) => `${root}/build/definitions/${id}`;
+  const retired: string[] = [];
   for (const d of defs.own) {
     await cancelBuilds(ctx, d.id);
-    await remove(ctx.bot, `${root}/build/definitions/${d.id}`, `definition ${d.id}`);
+    const name = await retireDefinition(
+      {
+        get: async (id) =>
+          shape(
+            z.record(z.string(), z.unknown()),
+            ok(await ctx.bot.request('GET', definitionPath(id)), `definition ${id}`).json,
+            'definition',
+          ),
+        put: async (id, body) => {
+          ok(await ctx.bot.request('PUT', definitionPath(id), body), `rename definition ${id}`);
+        },
+        remove: (id) => remove(ctx.bot, definitionPath(id), `definition ${id}`),
+      },
+      d.id,
+      ctx.stamp,
+    );
+    retired.push(`"${d.name}" ${d.id} as "${name}"`);
   }
-  const refs = shape(
-    RefListSchema,
-    ok(await ctx.bot.request('GET', gitById(ctx, repoId, '/refs?filter=heads/')), 'branches').json,
-    'branches',
-  ).value;
-  const stale = staleBranches(refs);
+  const listRefs = async (filter: string) =>
+    shape(
+      RefListSchema,
+      ok(await ctx.bot.request('GET', gitById(ctx, repoId, `/refs?filter=${filter}`)), 'refs').json,
+      'refs',
+    ).value;
+  const stale = staleRefs([
+    ...(await listRefs('heads/')),
+    ...(await listRefs(TMP_PREFIX.slice('refs/'.length))),
+  ]);
   for (const r of stale) await deleteRef(ctx, repoId, r.name);
   notes.push(
-    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) and ${defs.own.length} pipeline(s) of an earlier run removed${defs.own.length ? ` (${defs.own.map((d) => `"${d.name}" ${d.id}`).join(', ')})` : ''}, ${stale.length} branch(es) deleted`,
+    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retired.length ? ` (${retired.join(', ')})` : ''}, ${stale.length} ref(s) deleted`,
   );
   if (defs.others.length > 0) {
     notes.push(
@@ -808,7 +918,7 @@ async function resetMain(ctx: ProbeContext, repoId: string, notes: string[]): Pr
     notes.push(`main of ${SETUP_REPOSITORY} already holds ${HELLO_PATH} alone`);
     return;
   }
-  const tmp = `refs/qualor/probe-tmp/27-${ctx.stamp}`;
+  const tmp = `${TMP_PREFIX}${ctx.stamp}`;
   ctx.cleanup.add(`delete ref ${tmp}`, () => deleteRef(ctx, repoId, tmp));
   const pushed = await ctx.bot.request('POST', pushes, {
     refUpdates: [{ name: tmp, oldObjectId: ZEROS }],
@@ -822,7 +932,12 @@ async function resetMain(ctx: ProbeContext, repoId: string, notes: string[]): Pr
       { name: MAIN, oldObjectId: head, newObjectId: commit },
     ]);
     await rec(ctx, 'ref-move', answerOf(moved));
-    await deleteRef(ctx, repoId, tmp);
+    try {
+      await deleteRef(ctx, repoId, tmp);
+    } catch (err) {
+      // The reset does not depend on it: the clean-up step tries again.
+      notes.push(`the temporary ref was not deleted at once (${(err as Error).message})`);
+    }
     if (
       moved.status < 300 &&
       refUpdatesSucceeded(moved.json) &&
@@ -843,7 +958,7 @@ async function resetMain(ctx: ProbeContext, repoId: string, notes: string[]): Pr
       refUpdates: [{ name: MAIN, oldObjectId: head }],
       commits: [{ comment: RESET_COMMENT, parents: [head], changes: pushChanges(changes) }],
     }),
-    'reset main (fast-forward)',
+    `reset main (fast-forward, after the force-move was refused: ${refused})`,
   );
   await rec(ctx, 'push-reset-ff', answerOf(ff));
   notes.push(
@@ -919,20 +1034,25 @@ async function definitionBuilds(ctx: ProbeContext, definitionId: number) {
   return { res, list: shape(z.object({ value: z.array(BuildSchema) }), res.json, 'builds').value };
 }
 
-/** Cancels the pipeline's unfinished builds of `sourceBranch`; how many it asked to cancel. */
-async function cancelBranchBuilds(
-  ctx: ProbeContext,
-  definitionId: number,
-  sourceBranch: string,
-): Promise<number> {
+/** Asks to cancel each build (best effort); how many Azure DevOps took. */
+async function cancelEach(ctx: ProbeContext, builds: readonly Build[]): Promise<number> {
   let n = 0;
-  for (const b of toCancel((await definitionBuilds(ctx, definitionId)).list, sourceBranch)) {
+  for (const b of builds) {
     const res = await ctx.bot.request('PATCH', `/${ctx.project}/_apis/build/builds/${b.id}`, {
       status: 'cancelling',
     });
     if (res.status < 300) n++;
   }
   return n;
+}
+
+/** Cancels the pipeline's unfinished builds of `sourceBranch`; how many it asked to cancel. */
+async function cancelBranchBuilds(
+  ctx: ProbeContext,
+  definitionId: number,
+  sourceBranch: string,
+): Promise<number> {
+  return cancelEach(ctx, toCancel((await definitionBuilds(ctx, definitionId)).list, sourceBranch));
 }
 
 /** Pushes one commit that edits the pipeline file on the setup branch; the answer. */
@@ -1125,6 +1245,11 @@ export const item: ProbeItem = {
       );
       return finish();
     }
+    // The pipeline stays for the next run, but none of its builds may hold the bench's one agent.
+    ctx.cleanup.add(
+      `cancel the unfinished builds of the setup's pipeline ${defId} (it stays)`,
+      () => cancelBuilds(ctx, defId),
+    );
     const defRes = ok(
       await ctx.bot.request('GET', `/${ctx.project}/_apis/build/definitions/${defId}`),
       'definition',
@@ -1133,7 +1258,9 @@ export const item: ProbeItem = {
     const urlValue = def.variables?.['QUALOR_URL']?.value;
     if (urlValue) addHosts(ctx.redaction, hostsOf(urlValue));
     await rec(ctx, 'definition', { ...answerOf(defRes), body: definitionRecording(defRes.json) });
-    notes.push(`the setup's pipeline: "${def.name}" (definition ${def.id})`);
+    notes.push(
+      `the setup's pipeline: "${def.name}" (definition ${def.id}); triggers ${triggersText(def.triggers)}`,
+    );
 
     // ---- 3. The setup's pull request as it opened it.
     const setupPr = (await activePrsFrom(setupCtx, repo, SETUP_REF))[0];
@@ -1231,48 +1358,52 @@ export const item: ProbeItem = {
     );
     const mainDeadline = Date.now() + MAIN_WAIT_MS;
     let cancelledSetup = 0;
-    const queued = await waitFor(
+    let setupBranchBuilt = false;
+    const ciBuild = await waitFor(
       async () => {
+        const { list } = await definitionBuilds(ctx, defId);
+        setupBranchBuilt ||= list.some((b) => b.sourceBranch === SETUP_REF);
         // The image commit's CI build of the setup branch is not needed: the one agent goes to main.
-        cancelledSetup += await cancelBranchBuilds(ctx, defId, SETUP_REF);
-        return mainBuildOf((await definitionBuilds(ctx, defId)).list, mergeCommit);
+        cancelledSetup += await cancelEach(ctx, toCancel(list, SETUP_REF));
+        return mainBuildOf(list, mergeCommit);
       },
       { timeoutMs: MAIN_QUEUED_MS, intervalMs: 10_000 },
     );
     if (cancelledSetup > 0) {
       notes.push(`${cancelledSetup} CI build(s) of ${SETUP_BRANCH} cancelled (not needed)`);
     }
-    if (!queued) {
-      checks.push(
-        check(
-          'a build of main by the pipeline completed',
-          false,
-          `none queued within ${MAIN_QUEUED_MS / 60000} min`,
-        ),
+    checks.push(judgeCiQueued(ciBuild, setupBranchBuilt));
+    let mainId: number;
+    if (ciBuild) {
+      mainId = ciBuild.id;
+    } else {
+      // Without CI the policy and the decoration still get checked: main is queued by hand.
+      const manual = await queueBuild(ctx, defId, MAIN);
+      await rec(ctx, 'build-main-queued', answerOf(manual.res));
+      mainId = manual.id;
+      notes.push(
+        `no CI build of main within ${MAIN_QUEUED_MS / 60000} min: the item queued build ${mainId} by hand to go on`,
       );
-      return finish();
     }
-    const mainBuild = await waitBuild(ctx, queued.id, {
-      timeoutMs: Math.max(0, mainDeadline - Date.now()),
+    const mainBuild = await waitBuild(ctx, mainId, {
+      timeoutMs: mainWaits(mainDeadline, Date.now()).buildMs,
     });
     await rec(ctx, 'build-main', answerOf(mainBuild.res));
     checks.push(
       check(
         'a build of main by the pipeline completed',
         mainBuild.build.status === 'completed',
-        `build ${queued.id} ${mainBuild.build.status} ${mainBuild.build.result ?? ''}`.trim() +
+        `build ${mainId} ${mainBuild.build.status} ${mainBuild.build.result ?? ''}`.trim() +
           (sameId(mainBuild.build.sourceVersion, mergeCommit ?? '') ? ', of the merge commit' : ''),
       ),
     );
+    // Within the same 15 minutes: the build's wait left the analysis its share.
     const analysed = await waitFor(
       async () => {
         const b = await qualorMain(api, project.id);
         return b?.lastAnalysisId && b.lastAnalysisId !== before ? b : undefined;
       },
-      {
-        timeoutMs: Math.max(mainDeadline - Date.now(), ANALYSIS_GRACE_MS),
-        intervalMs: 10_000,
-      },
+      { timeoutMs: Math.max(0, mainDeadline - Date.now()), intervalMs: 10_000 },
     );
     checks.push(
       check(
@@ -1280,7 +1411,7 @@ export const item: ProbeItem = {
         analysed !== undefined,
         analysed
           ? 'a new main analysis'
-          : `none within ${MAIN_WAIT_MS / 60000} min${mainBuild.build.status === 'completed' && mainBuild.build.result !== 'succeeded' ? `; ${await buildProblem(ctx, queued.id)}` : ''}`,
+          : `none within ${MAIN_WAIT_MS / 60000} min${mainBuild.build.status === 'completed' && mainBuild.build.result !== 'succeeded' ? `; ${await buildProblem(ctx, mainId)}` : ''}`,
       ),
     );
     if (!analysed) return finish();
@@ -1367,10 +1498,10 @@ export const item: ProbeItem = {
 
 /**
  * The checks the full flow makes: the run, 3 on the setup's pull request, 2 on the pipeline, the
- * queue, the pending policy, the merge, the main build, the main analysis, the policy `on`, the
- * policy on main, the pull request build, Qualor's status.
+ * queue, the pending policy, the merge, CI queuing main, the main build, the main analysis, the
+ * policy `on`, the policy on main, the pull request build, Qualor's status.
  */
-const ALL_CHECKS = 15;
+const ALL_CHECKS = 16;
 
 function done(ctx: ProbeContext, checks: Check[], notes: string[]) {
   for (const c of checks) ctx.log(`${c.pass ? 'yes' : 'NO '} ${c.what}: ${c.got}`);
