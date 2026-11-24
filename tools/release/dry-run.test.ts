@@ -72,6 +72,27 @@ describe('pnpm release:dry-run arguments (release.md §10)', () => {
   });
 });
 
+describe('the Azure DevOps extension in the dry run (Azure sub-plan 3 ruling 14)', () => {
+  const source = readFileSync('tools/release/dry-run.ts', 'utf8');
+  const body = source.slice(source.indexOf('export async function dryRun('));
+  const at = (s: string): number => body.indexOf(s);
+
+  // readVsix itself (missing, another version, the dev extension): vsix.test.ts.
+  it('checks the VSIX first: a missing or other VSIX fails before anything is built', () => {
+    expect(at('readVsix(')).toBeGreaterThan(-1);
+    for (const later of ['rmSync(', 'freshnessArgs()', 'buildToolbox()', 'buildCliRelease(']) {
+      expect(at('readVsix('), later).toBeLessThan(at(later));
+    }
+  });
+
+  it('writes the bytes it checked before the manifest and SHA256SUMS, and records them', () => {
+    expect(at('vsix.data')).toBeGreaterThan(at('readVsix('));
+    expect(at('vsix.data')).toBeLessThan(at('buildManifest('));
+    expect(at('vsix.data')).toBeLessThan(at('sha256sums('));
+    expect(body.slice(at('buildManifest('))).toMatch(/^\s+extension: \{ file: \w+, version: /m);
+  });
+});
+
 describe('the packaged chart pins the server image by digest (ruling R-DIGEST)', () => {
   const values = readFileSync('deploy/helm/qualor/values.yaml', 'utf8');
   const digest = `sha256:${'ab'.repeat(32)}`;

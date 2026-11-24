@@ -13,6 +13,7 @@ interface Step {
 }
 interface Job {
   if?: string;
+  'runs-on'?: string;
   needs?: string | string[];
   environment?: string | { name: string };
   permissions?: Record<string, string>;
@@ -112,6 +113,39 @@ describe('the publish gate (release.md §11, §15 item 7)', () => {
     // Only the publish job has an environment or write permission.
     expect(release.jobs['dry-run']?.environment).toBeUndefined();
     expect(release.jobs['dry-run']?.permissions).toBeUndefined();
+  });
+
+  it('builds the Azure DevOps extension in each job, before the dry run that checks it (Azure sub-plan 9)', () => {
+    for (const [name, job] of Object.entries(release.jobs)) {
+      const runs = job.steps.map((s) => s.run ?? '');
+      const at = (cmd: string): number =>
+        runs.findIndex((r) => r === cmd || r.startsWith(`${cmd} `));
+      // Once per job: the dry run adds that VSIX to the release, the publish job uploads it.
+      expect(
+        runs.filter((r) => r === 'pnpm extension:package'),
+        name,
+      ).toHaveLength(1);
+      expect(at('pnpm install'), name).toBeLessThan(at('pnpm extension:package'));
+      expect(at('pnpm extension:package'), name).toBeLessThan(at('pnpm release:dry-run'));
+      expect(job.steps.find((s) => s.run === 'pnpm extension:package')?.env, name).toBeUndefined();
+    }
+    const p = release.jobs['publish']?.steps.map((s) => s.run ?? '') ?? [];
+    expect(p.indexOf('pnpm extension:package')).toBeLessThan(p.indexOf('pnpm release:publish'));
+    // The script packs with tfx and publishes nothing: the Marketplace is the maintainer's step.
+    const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> })
+      .scripts;
+    expect(scripts['extension:package']).toBe(
+      'pnpm --filter @qualor/azure-devops-extension build && pnpm --filter @qualor/azure-devops-extension package',
+    );
+    expect(read('integrations/azure-devops/extension/scripts/package.ts')).toMatch(
+      /'extension',\s*'create'/,
+    );
+  });
+
+  it('runs every job of release.yml on ubuntu-24.04', () => {
+    for (const [name, job] of Object.entries(release.jobs)) {
+      expect(job['runs-on'], name).toBe('ubuntu-24.04');
+    }
   });
 
   it('checks out every tag, so releasedVersions() sees the released versions', () => {
@@ -353,6 +387,13 @@ describe('registry options and uploads (ruling R-REGOPTS)', () => {
     ['crane', /\bcrane\s+(?:push|copy|cp|tag|append|mutate|delete|auth|rebase|flatten|index)\b/],
     ['oras', /\boras\s+(?:push|login|attach|cp|copy|tag|manifest|blob|repo)\b/],
     ['cosign upload', /\bcosign\s+(?:sign|attest|upload|attach|copy)\b(?!-)/],
+    // The Marketplace (Azure sub-plan 9): tfx only packs the extension; publishing is the maintainer's.
+    [
+      'tfx extension publish',
+      new RegExp(
+        `\\btfx\\s+extension\\s+(?:publish|share|install)\\b|${Q}extension${Q},\\s*${Q}(?:publish|share|install)${Q}`,
+      ),
+    ],
     [
       'a push or login argv',
       new RegExp(
@@ -465,6 +506,9 @@ describe('registry options and uploads (ruling R-REGOPTS)', () => {
       'crane push x.tar ref',
       'oras push ref f',
       "run('oras', ['push', ref])",
+      'tfx extension publish --vsix qualor.qualor-1.0.0.vsix',
+      "spawnSync(node, [tfx, 'extension', 'publish', '--vsix', file])",
+      "spawnSync(node, [tfx, 'extension', 'share', '--share-with', org])",
     ]) {
       expect(
         UPLOADS.some(([, p]) => p.test(sample)),
@@ -482,6 +526,8 @@ describe('registry options and uploads (ruling R-REGOPTS)', () => {
       'pnpm release:publish',
       'pnpm install --frozen-lockfile',
       'a crane of paper',
+      "[tfx, 'extension', 'create', '--root', stage]",
+      'pnpm extension:package',
     ]) {
       expect(
         UPLOADS.some(([, p]) => p.test(sample)),

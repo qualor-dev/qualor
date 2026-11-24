@@ -10,9 +10,21 @@ import { readManifest } from './manifest';
 import { runTool, toWork } from './toolbox';
 import { cosignVerifier, verifyRelease } from './verify';
 import { currentVersion } from './version';
+import { EXTENSION_DIR, vsixName } from './vsix';
 
 const scratch = path.join(REPO_ROOT, '.tmp', 'release-test', randomBytes(4).toString('hex'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/** What `pnpm extension:package` does in release.yml before the dry run, into `out`. */
+function packExtension(out: string): string {
+  const cwd = path.join(REPO_ROOT, 'integrations', 'azure-devops', 'extension');
+  must(run(process.execPath, ['--import', 'tsx', 'scripts/build.ts'], { cwd }), 'extension build');
+  must(
+    run(process.execPath, ['--import', 'tsx', 'scripts/package.ts', '--output-path', out], { cwd }),
+    'extension package',
+  );
+  return out;
+}
 
 const packagedDigest = (tgz: string): unknown =>
   (
@@ -30,12 +42,14 @@ describe('pnpm release:dry-run --skip-images (release.md §15 item 6)', () => {
     const dir = await dryRun(
       parseDryRunArgs(['--skip-images', '--skip-cli-sources', '--targets', target], v),
       root,
+      packExtension(path.join(scratch, 'azure')),
     );
     expect(dir).toBe(path.join(root, 'release', v.text));
     const files = readdirSync(dir).sort();
     expect(files).toEqual([
       'SHA256SUMS',
       'SHA256SUMS.bundle',
+      'azure-devops',
       'cli',
       'cosign.pub',
       'helm',
@@ -45,6 +59,8 @@ describe('pnpm release:dry-run --skip-images (release.md §15 item 6)', () => {
     ]);
     expect(existsSync(path.join(dir, 'helm', `qualor-${v.text}.tgz`))).toBe(true);
     expect(existsSync(path.join(dir, 'sbom', 'cli.spdx.json'))).toBe(true);
+    const extension = `${EXTENSION_DIR}/${vsixName(v)}`;
+    expect(existsSync(path.join(dir, extension))).toBe(true);
     const m = readManifest(dir);
     expect(m).toMatchObject({
       version: v.text,
@@ -52,7 +68,9 @@ describe('pnpm release:dry-run --skip-images (release.md §15 item 6)', () => {
       cliSources: false,
       images: [],
       targets: [target],
+      extension: { file: extension, version: `${v.major}.${v.minor}.${v.patch}` },
     });
+    expect(m.files).toContain(extension);
     expect(m.files).not.toContain('SHA256SUMS');
     expect(m.files.some((f) => f.includes('cli-deps'))).toBe(false);
     // Without images there is no digest to pin: the package keeps the tag (ruling RE6).

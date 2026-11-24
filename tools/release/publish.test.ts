@@ -71,6 +71,7 @@ async function writeRelease(
     [`cli/qualor-${t}-linux-x64`]: 'bin',
     'cli-sources/SHA256SUMS': 'x',
     [`helm/qualor-${t}.tgz`]: 'chart',
+    [`azure-devops/qualor.qualor-${t}.vsix`]: 'vsix',
     'sbom/cli.spdx.json': '{}',
     'sbom/server.spdx.json': '{}',
     'sbom/scanner.spdx.json': '{}',
@@ -517,6 +518,7 @@ describe('the order of publishing (ruling R-ORDER)', () => {
       'qualor-0.1.0-linux-x64',
       'qualor-0.1.0.tgz',
       'qualor-0.1.0-server.spdx.json',
+      'qualor.qualor-0.1.0.vsix',
     ]) {
       expect(names, n).toContain(n);
     }

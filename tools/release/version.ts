@@ -103,19 +103,25 @@ export const TASK_FILE = 'integrations/azure-devops/extension/tasks/qualor/task.
 /**
  * The Azure Pipelines examples pin the scanner by its minor tag (x.y, a tag every release of the
  * line moves): the docker examples in the QUALOR_SCANNER_IMAGE variable, the task examples in the
- * imageTag input. The pin follows VERSION's major.minor.
+ * imageTag input. The pin follows VERSION's major.minor, for a pre-release too (sub-plan 3
+ * ruling 19, accepted: a pre-release image has only its full tag, so until x.y.0 is out the pin
+ * names a tag that does not exist yet).
  */
 const DOCKER_PIN = /^( *QUALOR_SCANNER_IMAGE: qualor[/]scanner(?:-dotnet)?:)([0-9]+[.][0-9]+)()$/m;
 const TASK_PIN = /^( *imageTag: ')([0-9]+[.][0-9]+)(')$/m;
 export const AZURE_EXAMPLES: readonly { file: string; pin: RegExp }[] = [
   { file: 'integrations/azure-devops/qualor-docker.yml', pin: DOCKER_PIN },
   { file: 'integrations/azure-devops/qualor-dotnet-docker.yml', pin: DOCKER_PIN },
+  { file: 'integrations/azure-devops/qualor-fix-docker.yml', pin: DOCKER_PIN },
   { file: 'integrations/azure-devops/qualor.yml', pin: TASK_PIN },
   { file: 'integrations/azure-devops/qualor-dotnet.yml', pin: TASK_PIN },
+  { file: 'integrations/azure-devops/qualor-fix.yml', pin: TASK_PIN },
 ];
 export const CHART_FILE = 'deploy/helm/qualor/Chart.yaml';
 /** The committed OpenAPI document carries VERSION in `info.version` (openapi.test.ts compares). */
 export const OPENAPI_FILE = 'server/openapi.json';
+/** The enterprise routes' document takes info.version from the server's (enterprise openapi.test.ts). */
+export const ENTERPRISE_OPENAPI_FILE = 'enterprise/openapi.json';
 
 const PACKAGE_VERSION = /^(\s*"version":\s*")([^"]*)(")/m;
 const CONSTANT = /^(export const VERSION = ')([^']*)(';)$/m;
@@ -160,7 +166,9 @@ export function readVersions(root = REPO_ROOT): Record<string, string> {
         ? (out[CONSTANT_FILES[0] ?? ''] ?? found)
         : (found ?? '(none)');
   }
-  out[OPENAPI_FILE] = OPENAPI_INFO_VERSION.exec(read(root, OPENAPI_FILE))?.[2] ?? '(none)';
+  for (const f of [OPENAPI_FILE, ENTERPRISE_OPENAPI_FILE]) {
+    out[f] = OPENAPI_INFO_VERSION.exec(read(root, f))?.[2] ?? '(none)';
+  }
   // Required (ruling RE6): a checkout without the chart fails here, naming the file.
   const chart = read(root, CHART_FILE);
   out[`${CHART_FILE} version`] = CHART_VERSION.exec(chart)?.[2] ?? '(none)';
@@ -214,15 +222,17 @@ function taskText(root: string, v: Version): string {
 
 /**
  * Sets every location of release.md §2, the extension manifest, task.json (version, imageTag), the
- * minor-tag pins of the Azure Pipelines examples and `info.version` of server/openapi.json; returns
- * the files changed. Atomic in effect: every file is read and checked before the first is written,
- * so a file without its version changes nothing.
+ * minor-tag pins of the Azure Pipelines examples and `info.version` of server/openapi.json and
+ * enterprise/openapi.json; returns the files changed. Atomic in effect: every file is read and
+ * checked before the first is written, so a file without its version changes nothing. The docs
+ * that name the version stay manual (the release checklist; version.test.ts lists them).
  */
 export function setVersion(root: string, v: Version): string[] {
   const plan: [string, RegExp[]][] = [
     ...PACKAGE_FILES.map((f): [string, RegExp[]] => [f, [PACKAGE_VERSION]]),
     ...CONSTANT_FILES.map((f): [string, RegExp[]] => [f, [CONSTANT]]),
     [OPENAPI_FILE, [OPENAPI_INFO_VERSION]],
+    [ENTERPRISE_OPENAPI_FILE, [OPENAPI_INFO_VERSION]],
     [CHART_FILE, [CHART_VERSION, CHART_APP_VERSION]],
   ];
   const texts = [
