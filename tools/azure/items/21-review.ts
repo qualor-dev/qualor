@@ -229,7 +229,7 @@ export function withoutProvider(current: unknown): Record<string, unknown> {
 // ---------------------------------------------------------------------------------------------
 // The bench Qualor's API (admin session)
 
-class QualorApi {
+export class QualorApi {
   #cookie = '';
   #csrf = '';
   constructor(private readonly base: string) {}
@@ -263,7 +263,7 @@ class QualorApi {
       body: JSON.stringify({ username: 'admin', password }),
       signal: AbortSignal.timeout(60_000),
     });
-    if (res.status !== 200) throw new Error(`Qualor admin login -> ${res.status}`);
+    if (!res.ok) throw new Error(`Qualor admin login -> ${res.status}`);
     this.#cookie = res.headers
       .getSetCookie()
       .map((c) => c.split(';')[0])

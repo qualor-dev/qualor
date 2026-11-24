@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   aiInProgress,
   aiSection,
@@ -7,6 +7,7 @@ import {
   isReplyNote,
   notificationsRecording,
   ownSubscriptions,
+  QualorApi,
   reviewSource,
   withoutProvider,
 } from './21-review.js';
@@ -113,6 +114,31 @@ describe('deliveries', () => {
       readable: true,
     });
     expect(deliveries('nonsense', 0).readable).toBe(false);
+  });
+});
+
+describe('QualorApi.login', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('accepts the 204 of the login and keeps the session cookie for the next call', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      if (url.endsWith('/api/v0/auth/login')) {
+        return new Response(null, {
+          status: 204,
+          headers: { 'set-cookie': 'qualor_session=s1; Path=/; HttpOnly' },
+        });
+      }
+      return new Response(JSON.stringify({ csrfToken: 'csrf-1' }), { status: 200 });
+    });
+    await expect(
+      new QualorApi('https://qualor.example/').login('test-password'),
+    ).resolves.toBeUndefined();
+    expect(urls).toEqual([
+      'https://qualor.example/api/v0/auth/login',
+      'https://qualor.example/api/v0/auth/me',
+    ]);
   });
 });
 
