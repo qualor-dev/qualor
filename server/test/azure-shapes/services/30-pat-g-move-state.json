@@ -1,0 +1,87 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 13,
+    "rev": 2,
+    "fields": {
+      "System.AreaPath": "probe-basic",
+      "System.TeamProject": "probe-basic",
+      "System.IterationPath": "probe-basic",
+      "System.WorkItemType": "Issue",
+      "System.State": "To Do",
+      "System.Reason": "New",
+      "System.AssignedTo": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "System.CreatedDate": "2026-11-24T22:48:18.517Z",
+      "System.CreatedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "System.ChangedDate": "2026-11-24T22:48:20.12Z",
+      "System.ChangedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "System.CommentCount": 0,
+      "System.Title": "Qualor probe item 30 reconcile 1 (20261124224814)",
+      "Microsoft.VSTS.Common.Priority": 2,
+      "Microsoft.VSTS.Common.StateChangeDate": "2026-11-24T22:48:20.12Z",
+      "System.Tags": "probe30; qualor"
+    },
+    "multilineFieldsFormat": {},
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItems/13"
+      },
+      "workItemUpdates": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItems/13/updates"
+      },
+      "workItemRevisions": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItems/13/revisions"
+      },
+      "workItemComments": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItems/13/comments"
+      },
+      "html": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_workitems/edit/13"
+      },
+      "workItemType": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItemTypes/Issue"
+      },
+      "fields": {
+        "href": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/fields"
+      }
+    },
+    "url": "https://dev.azure.com/probe-org/713818b4-749e-43d9-88c1-fa6e0000b72a/_apis/wit/workItems/13"
+  }
+}

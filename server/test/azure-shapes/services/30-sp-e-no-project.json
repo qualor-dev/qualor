@@ -1,0 +1,13 @@
+{
+  "status": 404,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "VS800075: The project with id 'vstfs:///Classification/TeamProject/4e07a92b-ec4e-4b20-8449-fa6e000042ae' does not exist, or you do not have permission to access it.",
+    "typeName": "Microsoft.TeamFoundation.Core.WebApi.ProjectDoesNotExistException, Microsoft.TeamFoundation.Core.WebApi",
+    "typeKey": "ProjectDoesNotExistException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

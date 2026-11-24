@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "queryType": "flat",
+    "queryResultType": "workItem",
+    "asOf": "2026-11-24T22:47:06.69Z",
+    "columns": [
+      {
+        "referenceName": "System.Id",
+        "name": "ID",
+        "url": "https://dev.azure.com/probe-org/_apis/wit/fields/System.Id"
+      }
+    ],
+    "sortColumns": [
+      {
+        "field": {
+          "referenceName": "System.Id",
+          "name": "ID",
+          "url": "https://dev.azure.com/probe-org/_apis/wit/fields/System.Id"
+        },
+        "descending": true
+      }
+    ],
+    "workItems": [
+      {
+        "id": 10,
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/10"
+      },
+      {
+        "id": 9,
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/9"
+      }
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "You cannot supply a time with the date when running a query using date precision. The error is caused by «[System.CreatedDate] >= '2026-11-24T22:46:03.823Z'».",
+    "typeName": "Microsoft.VisualStudio.Services.Common.VssPropertyValidationException, Microsoft.VisualStudio.Services.Common",
+    "typeKey": "VssPropertyValidationException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

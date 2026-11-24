@@ -1,0 +1,13 @@
+{
+  "status": 412,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "VS403351: Test Operation for path /rev failed, value 12 was not equal to test value 11.",
+    "typeName": "Microsoft.VisualStudio.Services.WebApi.Patch.TestPatchOperationFailedException, Microsoft.VisualStudio.Services.WebApi",
+    "typeKey": "TestPatchOperationFailedException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

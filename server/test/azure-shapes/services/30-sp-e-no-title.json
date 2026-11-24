@@ -1,0 +1,28 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "customProperties": {
+      "FieldReferenceName": null,
+      "FieldStatusFlags": "none",
+      "ErrorMessage": "TF401320: Rule Error for field Title. Error code: Required, InvalidEmpty.",
+      "FieldStatusCode": 0,
+      "RuleValidationErrors": [
+        {
+          "fieldReferenceName": "System.Title",
+          "fieldStatusFlags": "required, invalidEmpty",
+          "errorMessage": "TF401320: Rule Error for field Title. Error code: Required, InvalidEmpty.",
+          "fieldStatusCode": 524289,
+          "ruleValidationErrors": null
+        }
+      ]
+    },
+    "innerException": null,
+    "message": "TF401320: Rule Error for field Title. Error code: Required, InvalidEmpty.",
+    "typeName": "Microsoft.TeamFoundation.WorkItemTracking.Server.RuleValidationException, Microsoft.TeamFoundation.WorkItemTracking.Server",
+    "typeKey": "RuleValidationException",
+    "errorCode": 0,
+    "eventId": 3200
+  }
+}

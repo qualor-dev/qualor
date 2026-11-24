@@ -1,0 +1,51 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 10,
+    "type": "Issue",
+    "name": "Qualor probe item 30 reconcile 2 (20261124224659)",
+    "project": "probe-org",
+    "deletedDate": "11/24/2026 10:47:07 PM",
+    "deletedBy": "Probe User <Probe User>",
+    "code": 200,
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/recyclebin/10",
+    "resource": {
+      "id": 10,
+      "rev": 2,
+      "fields": {
+        "System.AreaPath": "probe-org",
+        "System.TeamProject": "probe-org",
+        "System.IterationPath": "probe-org",
+        "System.WorkItemType": "Issue",
+        "System.State": "Active",
+        "System.Reason": "New",
+        "System.AssignedTo": "Probe User <Probe User>",
+        "System.CreatedDate": "2026-11-24T22:47:05.66Z",
+        "System.CreatedBy": "Probe User <Probe User>",
+        "System.ChangedDate": "2026-11-24T22:47:07.09Z",
+        "System.ChangedBy": "Probe User <Probe User>",
+        "System.CommentCount": 0,
+        "System.Title": "Qualor probe item 30 reconcile 2 (20261124224659)",
+        "Microsoft.VSTS.Common.ActivatedBy": "Probe User <Probe User>",
+        "Microsoft.VSTS.Common.ActivatedDate": "2026-11-24T22:47:05.66Z",
+        "Microsoft.VSTS.Common.Priority": 2,
+        "Microsoft.VSTS.Common.StateChangeDate": "2026-11-24T22:47:05.66Z",
+        "System.Tags": "probe30; qualor"
+      },
+      "multilineFieldsFormat": {},
+      "_links": {
+        "self": {
+          "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/recyclebin/10"
+        },
+        "workItemType": {
+          "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItemTypes/Issue"
+        },
+        "fields": {
+          "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/fields"
+        }
+      },
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/recyclebin/10"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "customProperties": {
+      "ReferenceName": null
+    },
+    "innerException": null,
+    "message": "TF401324: Value for field 'System.Title' is too long.",
+    "typeName": "Microsoft.TeamFoundation.WorkItemTracking.Server.WorkItemFieldInvalidException, Microsoft.TeamFoundation.WorkItemTracking.Server",
+    "typeKey": "WorkItemFieldInvalidException",
+    "errorCode": 600171,
+    "eventId": 3200
+  }
+}

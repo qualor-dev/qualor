@@ -1,0 +1,13 @@
+{
+  "status": 500,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "TF401262: Value of long text field System.Description exceeds the maximum allowed length of 1048576.",
+    "typeName": "Microsoft.TeamFoundation.WorkItemTracking.Server.WorkItemFieldMaxLongTextSizeExceededException, Microsoft.TeamFoundation.WorkItemTracking.Server",
+    "typeKey": "WorkItemFieldMaxLongTextSizeExceededException",
+    "errorCode": 600171,
+    "eventId": 3200
+  }
+}

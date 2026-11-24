@@ -1,0 +1,40 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 3,
+    "value": [
+      {
+        "id": "713818b4-749e-43d9-88c1-fa6e0000b72a",
+        "name": "probe-basic",
+        "description": "Qualor probe bench (Basic)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/713818b4-749e-43d9-88c1-fa6e0000b72a",
+        "state": "wellFormed",
+        "revision": 27,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:20:59.167Z"
+      },
+      {
+        "id": "a1532079-a512-4327-8d28-fa6e00004469",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+        "state": "wellFormed",
+        "revision": 19,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+      },
+      {
+        "id": "77936758-d73f-480b-8ede-fa6e00002a32",
+        "name": "probe-scrum",
+        "description": "Qualor probe bench (Scrum)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/77936758-d73f-480b-8ede-fa6e00002a32",
+        "state": "wellFormed",
+        "revision": 35,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:21:05.253Z"
+      }
+    ]
+  },
+  "continuationToken": null
+}

@@ -1,0 +1,47 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 5,
+    "identifier": "9c22876d-6f94-4b78-8094-fa6e0000a8fb",
+    "name": "probe-org",
+    "structureType": "iteration",
+    "hasChildren": true,
+    "children": [
+      {
+        "id": 7,
+        "identifier": "4cf58b43-6978-49b1-89bc-fa6e0000264d",
+        "name": "Iteration 1",
+        "structureType": "iteration",
+        "hasChildren": false,
+        "path": "\\probe-org\\Iteration\\Iteration 1",
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/classificationNodes/Iterations/Iteration%201"
+      },
+      {
+        "id": 8,
+        "identifier": "38746ecc-167e-48ec-88d2-fa6e000021d5",
+        "name": "Iteration 2",
+        "structureType": "iteration",
+        "hasChildren": false,
+        "path": "\\probe-org\\Iteration\\Iteration 2",
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/classificationNodes/Iterations/Iteration%202"
+      },
+      {
+        "id": 9,
+        "identifier": "833ce384-bbc3-440b-8550-fa6e00000b99",
+        "name": "Iteration 3",
+        "structureType": "iteration",
+        "hasChildren": false,
+        "path": "\\probe-org\\Iteration\\Iteration 3",
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/classificationNodes/Iterations/Iteration%203"
+      }
+    ],
+    "path": "\\probe-org\\Iteration",
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/classificationNodes/Iterations"
+      }
+    },
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/classificationNodes/Iterations"
+  }
+}

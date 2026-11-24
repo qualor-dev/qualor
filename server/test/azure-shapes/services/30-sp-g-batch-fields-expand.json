@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "The expand parameter can not be used with the fields parameter.",
+    "typeName": "Microsoft.Azure.Boards.WebApi.Common.ConflictingParametersException, Microsoft.Azure.Boards.WebApi.Common",
+    "typeKey": "ConflictingParametersException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "fields": {
+      "System.WorkItemType": "Bug",
+      "System.AreaPath": "probe-org",
+      "System.TeamProject": "probe-org",
+      "System.IterationPath": "probe-org",
+      "System.State": "New",
+      "System.Reason": "New",
+      "Microsoft.VSTS.Common.StateChangeDate": "1753-01-01T00:00:00Z",
+      "System.ChangedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "System.CreatedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "Microsoft.VSTS.Common.Priority": 2,
+      "Microsoft.VSTS.Common.Severity": "3 - Medium",
+      "Microsoft.VSTS.Common.ValueArea": "Business",
+      "System.Title": "Qualor probe item 30 validateOnly (20261124224814)",
+      "System.Description": "<p>Qualor probe: description.</p>",
+      "Microsoft.VSTS.TCM.ReproSteps": "<p>Qualor probe: repro steps.</p>",
+      "System.Tags": "qualor; probe30"
+    },
+    "multilineFieldsFormat": {},
+    "_links": {
+      "workItemType": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItemTypes/Bug"
+      },
+      "fields": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/fields"
+      }
+    },
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems"
+  }
+}

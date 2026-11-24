@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "TF401347: Invalid tree name given for work item -1, field 'System.AreaPath'.",
+    "typeName": "Microsoft.TeamFoundation.WorkItemTracking.Server.WorkItemFieldInvalidTreeNameException, Microsoft.TeamFoundation.WorkItemTracking.Server",
+    "typeKey": "WorkItemFieldInvalidTreeNameException",
+    "errorCode": 600171,
+    "eventId": 3200
+  }
+}
