@@ -39,7 +39,9 @@ Look: the one of qualor.dev (ink navy, cobalt, Schibsted Grotesk and JetBrains M
 from the same origin, so the CSP's `font-src 'self'` holds. The illustrations in `public/art/` are
 SVG, drawn by the site's art module (`qualor.dev/marketing/brand/art/`): `node marketing/brand/art.mjs`
 there rewrites them here (`QUALOR_UI_ART_DIR` points it at a worktree). Edit the scenes there, not the
-files here.
+files here. The page band shows `header-mark.svg` (scene `header-mark`, the lit ring in halftone in
+one dark ink) large and quiet behind its right end from 64rem; `src/app/shared/page-header.css`
+sizes and places it.
 
 Rules: every user-facing string is marked for i18n with a stable `@@id` (`i18n="@@area.key"` in
 templates, `` $localize`:@@area.key:Text` `` in code); templates live in `.html` files; no

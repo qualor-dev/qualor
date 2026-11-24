@@ -13,24 +13,37 @@
   padding: 26px var(--gutter) 0;
 }
 /*
- * The brand mark, solid in the track tone, in the band's free corner under the actions: its right
- * edge on the content's edge, its bottom 20 px above the band's. A compact band has no free corner
- * and no mark, and below 80rem the band's tabs can run into the corner. header-mark.svg is the
- * mark's whole 64-unit box: the ring is 44 units across, with 10 units free to its right and 8.93
- * under the dot.
+ * The brand ring behind the band's right end: header-mark.svg, the lit ring in halftone and its dot
+ * (style C), in one ink (#22406b) that every text and control colour of the band keeps its contrast
+ * over: the muted text 6.0:1, white 10.4:1, the focus and tab blue 3.2:1. Its ring is 1.2 times the
+ * band's height across, so it reads as the whole mark on a compact band too; the bottom of its dot
+ * sits at 97 % of the height, and its right 6 % runs past the band's edge: the band crops its top
+ * and right. Still and opaque (no opacity, so reduced transparency changes nothing), a
+ * pseudo-element out of the layout and the accessibility tree. From 64rem; none in forced colours,
+ * where the band's ink gives way to the system's.
+ *
+ * The file is the mark's 128-unit box: the ring is 88 units across with 20 free to its right, and
+ * the dot's bottom is 110.14 units down. So the box is 128/88 of the ring, its top 110.14/88 of the
+ * ring above the dot's bottom, and it moves right by (88 × 0.06 + 20) / 128 of its width.
  */
-@media (min-width: 80rem) {
-  :host(:not(.compact)) .page-band-inner::after {
-    --ring: 52px;
+@media (min-width: 64rem) {
+  :host::before {
+    --ring: 120%;
     content: '';
     position: absolute;
-    right: calc(var(--gutter) - var(--ring) * 10 / 44);
-    bottom: calc(20px - var(--ring) * 8.93 / 44);
+    top: calc(97% - var(--ring) * 110.14 / 88);
+    right: 0;
     z-index: -1;
-    width: calc(var(--ring) * 64 / 44);
+    height: calc(var(--ring) * 128 / 88);
     aspect-ratio: 1;
+    transform: translateX(19.75%);
     background: url('/art/header-mark.svg') center / contain no-repeat;
     pointer-events: none;
+  }
+}
+@media (forced-colors: active) {
+  :host::before {
+    display: none;
   }
 }
 :host(.compact) .page-band-inner {
