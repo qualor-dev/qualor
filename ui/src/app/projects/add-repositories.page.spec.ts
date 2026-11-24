@@ -150,8 +150,13 @@ function item(ref: string, over: Partial<RunItem> = {}): RunItem {
   };
 }
 
-function run(status: SetupRun['status'], items: RunItem[], ciSetup = true): SetupRun {
-  return { id: RUN_ID, status, ciSetup, items };
+function run(
+  status: SetupRun['status'],
+  items: RunItem[],
+  ciSetup = true,
+  azurePool: string | null = null,
+): SetupRun {
+  return { id: RUN_ID, status, ciSetup, azurePool, items };
 }
 
 const WORKFLOW = "name: qualor\non:\n  push:\njobs:\n  qualor:\n    if: a == 'b' || c\n";
@@ -1106,6 +1111,9 @@ describe('AddRepositoriesPage', () => {
       await navigated;
       const { root } = await render({ runId: RUN_ID, connection: GITLAB_ID });
       expect(text(root.querySelector('a.mr-link'))).toBe('Add Qualor code analysis !3');
+      expect(text(root.querySelector('article.result .hint'))).toBe(
+        'Its pipeline runs the first analysis. Merge it to analyse every push to the default branch.',
+      );
       expect(text(root.querySelector('.result .note'))).toContain(
         'check the build command in the merge request before you merge it',
       );
@@ -1132,6 +1140,11 @@ describe('AddRepositoriesPage', () => {
         expect(text(root.querySelector('a.mr-link'))).toBe('Add Qualor code analysis !12');
         const link = root.querySelector<HTMLAnchorElement>('.azure-lines a');
         expect(link?.getAttribute('href')).toBe(PIPELINE);
+        // No build of the pull request: the pipeline and its policy come after the branch.
+        const hint = text(root.querySelector('article.result .hint'));
+        expect(hint).toBe(
+          'Merge it: the first analysis runs on the main branch after the merge, and pull requests are analysed after that.',
+        );
       });
 
       it.each([
@@ -1147,7 +1160,7 @@ describe('AddRepositoriesPage', () => {
       it.each([
         ['pending', 'The pull request check starts after the first analysis of the main branch'],
         ['on', 'The pull request check is on'],
-        ['manual', 'Add the Build validation policy to the main branch yourself'],
+        ['manual', 'add or enable the Build validation policy on the main branch yourself'],
         ['failed', 'Qualor could not add the pull request check'],
       ] as const)('says the policy is %s', async (policy, expected) => {
         azureRun([merged({ pipelineUrl: PIPELINE, queue: 'open', policy, policyError: 'why' })]);
@@ -1155,8 +1168,48 @@ describe('AddRepositoriesPage', () => {
         expect(text(root.querySelector('.azure-lines'))).toContain(expected);
       });
 
+      it('words a manual policy neutrally: Azure DevOps refused, or a person disabled it', async () => {
+        azureRun([
+          merged({ pipelineUrl: PIPELINE, queue: 'open', policy: 'manual', policyError: 'x' }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(text(root.querySelector('.azure-lines'))).toContain(
+          'Qualor did not add the policy: add or enable the Build validation policy on the main branch yourself.',
+        );
+        expect(text(root.querySelector('.azure-lines'))).not.toContain('may not edit policies');
+      });
+
       it('shows no Azure lines for a repository without them', async () => {
         azureRun([merged(null)]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(root.querySelector('.azure-lines')).toBeNull();
+      });
+
+      it('shows the pipeline Qualor created when a later step failed', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'failed',
+            error: { code: 'unavailable', message: 'x', stage: null },
+            azure: { pipelineUrl: PIPELINE, queue: 'authorized', policy: null, policyError: null },
+          }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        const result = root.querySelector('article.result')!;
+        expect(result.querySelector('.fail-reason')).not.toBeNull();
+        expect(result.querySelector('.azure-lines a')?.getAttribute('href')).toBe(PIPELINE);
+        expect(text(result.querySelector('.azure-lines'))).toContain(
+          'Qualor authorised the pipeline to use its agent pool',
+        );
+      });
+
+      it('shows no Azure lines for a failure before the pipeline', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'failed',
+            error: { code: 'no_agent_pool', message: 'x', stage: null },
+            azure: { pipelineUrl: null, queue: null, policy: null, policyError: null },
+          }),
+        ]);
         const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
         expect(root.querySelector('.azure-lines')).toBeNull();
       });
@@ -1226,26 +1279,40 @@ describe('AddRepositoriesPage', () => {
         expect(text(root.querySelector('article.result .fail-reason'))).toContain(expected);
       });
 
-      it('sends the pool again with Try again', async () => {
-        azureRun([
-          done('acme/website', {
-            ciOutcome: 'failed',
-            error: { code: 'no_agent_pool', message: 'x', stage: null },
-          }),
-        ]);
-        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE_SERVER]) });
-        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
-        const navigated = TestBed.inject(Router).navigate(['/projects/add', RUN_ID], {
-          state: { csharp: [], azurePool: 'Default' },
+      it('sends the pool the run names again with Try again, on a fresh page too', async () => {
+        const failed = done('acme/website', {
+          ciOutcome: 'failed',
+          error: { code: 'no_agent_pool', message: 'x', stage: null },
         });
-        await flush();
-        await navigated;
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE_SERVER]) });
+        // The run names its pool; no navigation hands it over (a reload, a link).
+        server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, {
+          body: run('done', [failed], true, 'Build agents'),
+        });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
         const { root } = await render({ runId: RUN_ID, connection: AZURE_SERVER_ID });
         button(root, 'Try again')!.click();
         await flush();
         expect(server.requestsTo('POST', '/api/v0/repository-setups')[0]?.body).toMatchObject({
-          azurePool: 'Default',
+          repositories: ['acme/website'],
+          azurePool: 'Build agents',
         });
+      });
+
+      it('sends no pool with Try again when the run named none', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'failed',
+            error: { code: 'unavailable', message: 'x', stage: null },
+          }),
+        ]);
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        button(root, 'Try again')!.click();
+        await flush();
+        expect(server.requestsTo('POST', '/api/v0/repository-setups')[0]?.body).not.toHaveProperty(
+          'azurePool',
+        );
       });
     });
   });

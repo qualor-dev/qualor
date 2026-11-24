@@ -12337,6 +12337,8 @@ export interface paths {
                             /** @enum {string} */
                             status: "queued" | "running" | "done";
                             ciSetup: boolean;
+                            /** @description Azure DevOps: the agent pool the run named, which a new run for its failed repositories names again; null when it named none, and on the other providers */
+                            azurePool: string | null;
                             items: {
                                 /** @description The repository as the run was given it */
                                 ref: string;
@@ -12374,9 +12376,9 @@ export interface paths {
                                 azure: {
                                     /** @description The pipeline Qualor created or found, once its secret is written */
                                     pipelineUrl: string | null;
-                                    /** @description The pipeline on its agent pool's queue: `open` to every pipeline (or to it already), `authorized` by Qualor, or `manual`: Azure DevOps refused, a person approves it */
+                                    /** @description The pipeline on its agent pool's queue: `open` to every pipeline, `authorized` for this pipeline (by this run or an earlier one), or `manual`: Azure DevOps refused, a person approves it */
                                     queue: ("authorized" | "open" | "manual") | null;
-                                    /** @description The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (the identity may not edit policies) or `failed` */
+                                    /** @description The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (Qualor did not add it: the identity may not edit policies, or a person disabled the policy for the pipeline) or `failed` */
                                     policy: ("pending" | "on" | "manual" | "failed") | null;
                                     /** @description Why the policy is `manual` or `failed` */
                                     policyError: string | null;

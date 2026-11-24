@@ -282,7 +282,7 @@ function azureLines(azure: RunItem['azure']): string[] {
       break;
     case 'manual':
       lines.push(
-        $localize`:@@addRepos.azure.policyManual:Add the Build validation policy to the main branch yourself: Qualor's identity may not edit policies.`,
+        $localize`:@@addRepos.azure.policyManual:Qualor did not add the policy: add or enable the Build validation policy on the main branch yourself.`,
       );
       break;
     case 'failed':

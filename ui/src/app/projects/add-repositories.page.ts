@@ -56,12 +56,11 @@ const MAX_RETRY_AFTER_S = 60;
 const CONNECTIONS_LIMIT = 100;
 
 /**
- * What the navigation that starts a run hands its page: the repositories GitHub calls C#, and the
- * agent pool of an Azure DevOps run (for **Try again**).
+ * What the navigation that starts a run hands its page: the repositories GitHub calls C#. (The
+ * agent pool of an Azure DevOps run is the run's own, which **Try again** reads from it.)
  */
 interface RunState {
   csharp?: unknown;
-  azurePool?: unknown;
 }
 
 /** The longest agent pool name the server takes. */
@@ -81,10 +80,10 @@ type WhyNot = 'not_allowed' | 'permissions' | 'unread' | 'url';
 
 /**
  * **Add repositories** (`/projects/add`, onboarding spec "Add repositories"): pick one of the
- * organisation's GitHub, GitLab or Azure DevOps connections, tick up to 50 of the repositories it reaches, and
- * add them as projects in a background run, with a merge request per repository that adds the
- * Qualor CI job where the connection allows it (`ciSetup.available`). The run's own address
- * (`/projects/add/<run>?connection=<id>`) follows its progress, read every 2 s (or as
+ * organisation's GitHub, GitLab or Azure DevOps connections, tick up to 50 of the repositories it
+ * reaches, and add them as projects in a background run, with a merge request per repository that
+ * adds the Qualor CI job where the connection allows it (`ciSetup.available`). The run's own
+ * address (`/projects/add/<run>?connection=<id>`) follows its progress, read every 2 s (or as
  * `Retry-After` says, backing off when a read fails) until it is done, then shows each
  * repository's outcome (`q-setup-result`). A token the server reveals (once) is kept in this page
  * only, never in storage; a later visit points to the project's token settings instead.
@@ -181,8 +180,6 @@ export class AddRepositoriesPage {
   protected readonly uncopied = computed(() => [...this.tokens().values()].some((t) => !t.copied));
   /** The repositories GitHub reported as C#, handed over by the navigation that started the run. */
   protected readonly csharp = signal<ReadonlySet<string>>(new Set());
-  /** The agent pool the run was started with, handed over by the same navigation. */
-  private readonly runPool = signal<string | null>(null);
   protected readonly retrying = signal<string | null>(null);
   protected readonly retryError = signal<string | null>(null);
   private runGeneration = 0;
@@ -219,8 +216,6 @@ export class AddRepositoriesPage {
     if (Array.isArray(csharp)) {
       this.csharp.set(new Set(csharp.filter((r): r is string => typeof r === 'string')));
     }
-    const azurePool = (state as RunState | null)?.azurePool;
-    if (typeof azurePool === 'string') this.runPool.set(azurePool);
     // The organisation's connections: to pick from, and to name a run's connection.
     effect(() => {
       if (this.org.organizations.isLoading()) return;
@@ -339,7 +334,7 @@ export class AddRepositoriesPage {
       const csharp = [...this.selected().values()]
         .filter((r) => r.language === 'C#')
         .map((r) => r.ref);
-      await this.openRun(id, connection.id, csharp, azurePool);
+      await this.openRun(id, connection.id, csharp);
     } catch (err) {
       if (fieldErrors(err)['body.ciSetup'] !== undefined) {
         await this.loadConnections(this.org.currentId());
@@ -354,15 +349,10 @@ export class AddRepositoriesPage {
     }
   }
 
-  private openRun(
-    id: string,
-    connectionId: string,
-    csharp: string[],
-    azurePool: string | null,
-  ): Promise<boolean> {
+  private openRun(id: string, connectionId: string, csharp: string[]): Promise<boolean> {
     return this.router.navigate(['/projects/add', id], {
       queryParams: { connection: connectionId },
-      state: { csharp, ...(azurePool === null ? {} : { azurePool }) } satisfies RunState,
+      state: { csharp } satisfies RunState,
     });
   }
 
@@ -477,12 +467,15 @@ export class AddRepositoriesPage {
     return errorText(item, connection);
   }
 
-  /** **Try again**: a new run for this one repository, on the same connection. */
+  /**
+   * **Try again**: a new run for this one repository, on the same connection, and on Azure DevOps
+   * with the agent pool the run names (read from the run, so a fresh page keeps it too).
+   */
   protected async retry(item: RunItem): Promise<void> {
     const connection = this.runConnection();
     const run = this.run();
     if (!connection || !run || this.retrying() !== null) return;
-    const pool = connection.provider === 'azure' ? this.runPool() : null;
+    const pool = connection.provider === 'azure' ? run.azurePool : null;
     this.retrying.set(item.ref);
     this.retryError.set(null);
     try {
@@ -497,7 +490,7 @@ export class AddRepositoriesPage {
           },
         }),
       );
-      await this.openRun(id, connection.id, this.csharp().has(item.ref) ? [item.ref] : [], pool);
+      await this.openRun(id, connection.id, this.csharp().has(item.ref) ? [item.ref] : []);
     } catch (err) {
       this.retryError.set(problemMessage(err));
     } finally {
