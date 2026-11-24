@@ -220,3 +220,74 @@ describe.each(FILES)('integrations/azure-devops/$name', ({ name, docker, dotnet 
     for (const c of commands) expect(() => parseCommandLine(c)).not.toThrow();
   });
 });
+
+describe.each([
+  { name: 'qualor-fix.yml', docker: false },
+  { name: 'qualor-fix-docker.yml', docker: true },
+] as const)('integrations/azure-devops/$name (fix pipeline)', ({ name, docker }) => {
+  const text = read(name);
+  const pipeline = parse(text) as Pipeline & {
+    pr?: unknown;
+    schedules?: { cron: string; branches: { include: string[] }; always: boolean }[];
+  };
+  const code = text
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('#'))
+    .join('\n');
+
+  it('runs on the main branch, daily, and never on pull requests', () => {
+    expect(pipeline.trigger).toEqual({ branches: { include: ['main'] } });
+    expect(pipeline.pr).toBe('none');
+    expect(pipeline.schedules).toEqual([
+      {
+        cron: '17 3 * * *',
+        displayName: 'Daily fix run',
+        branches: { include: ['main'] },
+        always: true,
+      },
+    ]);
+    expect(pipeline.pool).toEqual({ vmImage: 'ubuntu-latest' });
+  });
+
+  it('says it needs a project analysis token, and what the scanner image has', () => {
+    expect(text).toMatch(/project analysis token/);
+    expect(text).toMatch(/QUALOR_URL/);
+    expect(text).toMatch(/npm, Yarn classic and Go/);
+    expect(text).toMatch(/Linux agent with Docker/);
+  });
+
+  it('checks out the full history and keeps no credentials', () => {
+    expect(pipeline.steps[0]).toEqual({
+      checkout: 'self',
+      fetchDepth: 0,
+      persistCredentials: false,
+    });
+  });
+
+  it('pins a fixed image tag', () => {
+    if (docker) {
+      expect(pipeline.variables).toEqual({ QUALOR_SCANNER_IMAGE: `qualor/scanner:${TAG}` });
+      expect(text).not.toMatch(/qualor\/scanner[\w-]*:(0|latest|\d+\.\d+\.\d+)(?![.\d])/);
+    } else {
+      const task = pipeline.steps.find((s) => s.task === 'Qualor@0')!;
+      expect(task.inputs).toEqual({ command: 'fix', imageTag: TAG });
+    }
+  });
+
+  it('maps the token only as an env: entry on the one step that uses it', () => {
+    expect(text.match(/\$\(QUALOR_TOKEN\)/g)).toHaveLength(1);
+    const mapped = pipeline.steps.filter((s) => s.env !== undefined);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]!.env).toEqual({ QUALOR_TOKEN: '$(QUALOR_TOKEN)' });
+    expect(code).not.toMatch(/persistCredentials:\s*true/);
+    for (const s of pipeline.steps.filter((x) => x.script !== undefined))
+      expect((s.script ?? '').replace(/-e QUALOR_TOKEN\b/g, '')).not.toMatch(/QUALOR_TOKEN/);
+  });
+
+  it('has no pull request head checkout and no Trivy cache', () => {
+    expect(code).not.toMatch(
+      /SYSTEM_PULLREQUEST_SOURCECOMMITID:-|checkout --detach|QUALOR_TRIVY_CACHE_DIR/,
+    );
+    expect(code).not.toContain('Cache@2');
+  });
+});

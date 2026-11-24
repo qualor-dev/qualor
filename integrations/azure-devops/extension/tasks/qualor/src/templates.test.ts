@@ -32,7 +32,7 @@ const asExample = (arg: string): string =>
     ? '$(id -u):$(id -g)'
     : arg.replace(/^qualor\/scanner(-dotnet)?:TAG$/, '$(QUALOR_SCANNER_IMAGE)');
 
-function planned(dotnet: boolean): string[][] {
+function planned(dotnet: boolean, command: 'scan' | 'fix' = 'scan'): string[][] {
   const ctx: TaskContext = {
     platform: 'linux',
     uid: 1234,
@@ -48,7 +48,13 @@ function planned(dotnet: boolean): string[][] {
     taskVersion: 'TAG',
   };
   const plan = planRun(
-    { dotnet, dotnetBuild: 'dotnet build --no-incremental', imageTag: 'TAG', extraArgs: [] },
+    {
+      command,
+      dotnet,
+      dotnetBuild: 'dotnet build --no-incremental',
+      imageTag: 'TAG',
+      extraArgs: [],
+    },
     ctx,
   );
   if ('problem' in plan) throw new Error(plan.problem);
@@ -61,5 +67,11 @@ describe('the docker examples', () => {
     ['qualor-dotnet-docker.yml', true],
   ] as const)('%s runs the docker commands the task plans', (file, dotnet) => {
     expect(dockerRuns(file)).toEqual(planned(dotnet));
+  });
+});
+
+describe('the fix docker example', () => {
+  it('qualor-fix-docker.yml runs the docker command the task plans for command: fix', () => {
+    expect(dockerRuns('qualor-fix-docker.yml')).toEqual(planned(false, 'fix'));
   });
 });

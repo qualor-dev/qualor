@@ -16,6 +16,18 @@
   "instanceNameFormat": "Qualor scan",
   "inputs": [
     {
+      "name": "command",
+      "type": "pickList",
+      "label": "Command",
+      "defaultValue": "scan",
+      "required": false,
+      "options": {
+        "scan": "scan",
+        "fix": "fix"
+      },
+      "helpMarkDown": "`scan` analyses the repository and uploads the report. `fix` runs `qualor fix` on the main branch: it prepares the dependency fix pull requests that people or the automatic mode requested. Use `fix` in a pipeline of the main branch, with a project analysis token; it does not use the .NET option."
+    },
+    {
       "name": "dotnet",
       "type": "boolean",
       "label": "Analyse .NET with the MSBuild integration",
@@ -46,7 +58,7 @@
       "label": "Arguments",
       "defaultValue": "",
       "required": false,
-      "helpMarkDown": "Extra arguments of `qualor scan` (or `qualor dotnet end`), for example `--no-wait`. Never put a token or password here: the task logs its command line."
+      "helpMarkDown": "Extra arguments of `qualor scan` (`qualor fix` with the command fix, or `qualor dotnet end`), for example `--no-wait`. Never put a token or password here: the task logs its command line."
     }
   ],
   "execution": {

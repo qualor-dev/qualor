@@ -1,0 +1,48 @@
+# Qualor dependency fix pull requests in Azure Pipelines, with the Qualor@0 task.
+# Copy this file to azure-pipelines-fix.yml and add it as a second pipeline, next to the scan.
+#
+# Set two pipeline variables (Pipelines, Edit, Variables):
+#   - QUALOR_URL: your Qualor server;
+#   - QUALOR_TOKEN: a project analysis token of the Qualor project, marked as a secret.
+# A personal token is refused: the fix run needs a project analysis token.
+# The job needs a Linux agent with Docker. It runs on the main branch only, on each push and
+# daily; change `main` to your default branch in all three places.
+# `qualor fix` claims the fixes that people or the automatic mode requested, runs your package
+# managers in a scratch copy of the checkout and uploads the changed manifests and lockfiles. The
+# Qualor server opens the pull requests. It never changes the checkout.
+# The scanner image has npm, Yarn classic and Go. For pnpm, Yarn Berry, Maven, uv or Poetry, use
+# the docker form (qualor-fix-docker.yml) with your own image, or install the manager in a step
+# before the task.
+# The checkout fetches the full history and does not leave the build's token in .git/config,
+# where the package managers' scripts could read it.
+# imageTag pins the scanner to your Qualor server's release line: the extension updates itself
+# on Azure DevOps Services, so the default (its version) would move the scanner.
+# Its documentation: https://qualor.dev/docs/azure-devops
+trigger:
+  branches:
+    include: [main]
+
+pr: none
+
+schedules:
+  - cron: '17 3 * * *'
+    displayName: Daily fix run
+    branches:
+      include: [main]
+    always: true
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+    persistCredentials: false
+
+  - task: Qualor@0
+    displayName: Qualor fix
+    inputs:
+      command: fix
+      imageTag: '0.16'
+    env:
+      QUALOR_TOKEN: $(QUALOR_TOKEN)

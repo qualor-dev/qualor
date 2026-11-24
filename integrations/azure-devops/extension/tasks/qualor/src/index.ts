@@ -97,6 +97,7 @@ async function run(): Promise<string | null> {
   const tempDir = tl.getVariable('Agent.TempDirectory') || os.tmpdir();
   const plan = planRun(
     {
+      command: tl.getInput('command', false) === 'fix' ? 'fix' : 'scan',
       dotnet: tl.getBoolInput('dotnet', false),
       dotnetBuild: tl.getInput('dotnetBuild', false) ?? '',
       imageTag: tl.getInput('imageTag', false) ?? '',
@@ -121,10 +122,13 @@ async function run(): Promise<string | null> {
   // Created here, as the agent user: docker would create a missing bind-mount source as root.
   mkdirSync(path.join(tempDir, 'qualor-home'), { recursive: true });
 
-  const head = await headCheckout(git(sourcesDir), process.env);
-  if ('problem' in head) return head.problem;
-  if (head.checkedOut !== null)
-    console.log(`Checked out the pull request head ${head.checkedOut}.`);
+  // A fix run is on the main branch: there is no pull request head to check out.
+  if (plan.steps[0]?.name !== 'fix') {
+    const head = await headCheckout(git(sourcesDir), process.env);
+    if ('problem' in head) return head.problem;
+    if (head.checkedOut !== null)
+      console.log(`Checked out the pull request head ${head.checkedOut}.`);
+  }
 
   return runSteps(docker, plan.steps);
 }

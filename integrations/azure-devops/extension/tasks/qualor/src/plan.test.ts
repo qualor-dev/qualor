@@ -4,6 +4,9 @@ import { AZURE_PIPELINES_ENV } from '../../../../../../cli/src/config/ci';
 import { EXIT } from '../../../../../../cli/src/errors';
 import {
   planRun,
+  PROBLEM_PLATFORM,
+  PROBLEM_SERVER,
+  STEP_LABEL,
   stepFailure,
   stepProcessEnv,
   TASK_FORWARDED_ENV,
@@ -19,6 +22,7 @@ const MERGE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
 
 const SCAN: TaskInputs = {
+  command: 'scan',
   dotnet: false,
   dotnetBuild: 'dotnet build --no-incremental',
   imageTag: '0.16.0',
@@ -389,6 +393,65 @@ describe('stepFailure', () => {
   it('keeps a message without an exit code', () => {
     expect(stepFailure('scan', 'spawn docker ENOENT')).toBe(
       'qualor scan failed: spawn docker ENOENT',
+    );
+  });
+});
+
+describe('planRun: qualor fix', () => {
+  const FIX: TaskInputs = { ...SCAN, command: 'fix', extraArgs: ['--max', '3'] };
+
+  it('command fix plans one fix step, without the head checkout or the Trivy cache', () => {
+    expect(stepsOf(planRun(FIX, context()))).toEqual([
+      {
+        name: 'fix',
+        args: [
+          ...COMMON,
+          ...HOME_ISOLATION,
+          ...FORWARDED,
+          ...SERVER,
+          'qualor/scanner:0.16.0',
+          'fix',
+          '--max',
+          '3',
+        ],
+        env: { ...FORWARDED_ENV, QUALOR_URL: URL, QUALOR_TOKEN: TOKEN },
+      },
+    ]);
+  });
+
+  it('keeps the token out of the arguments', () => {
+    const [step] = stepsOf(planRun(FIX, context()));
+    expect(step!.args.join(' ')).not.toContain(TOKEN);
+    expect(step!.args).not.toContain('QUALOR_TRIVY_CACHE_DIR=/src/.qualor/trivy');
+  });
+
+  it('fix with dotnet is refused', () => {
+    expect(planRun({ ...FIX, dotnet: true }, context())).toEqual({
+      problem: 'The fix command does not use the .NET scanner: switch dotnet off.',
+    });
+  });
+
+  it('fix still needs the server and a Linux agent', () => {
+    expect(planRun(FIX, context({ platform: 'win32' }))).toEqual({ problem: PROBLEM_PLATFORM });
+    expect(planRun(FIX, context({ qualorToken: '' }))).toEqual({ problem: PROBLEM_SERVER });
+  });
+
+  it('names the fix step and its exit codes as the CLI reference does', () => {
+    const runner = (code: number): string =>
+      `The process '/usr/bin/docker' failed with exit code ${code}`;
+    expect(STEP_LABEL.fix).toBe('Qualor fix');
+    expect(stepFailure('fix', runner(2))).toBe(
+      'Qualor fix failed (exit code 2): a flag is wrong, there is no server, token or project key, HEAD is not the main branch (a detached HEAD, a tag pipeline, a commit other than the pipeline run), or the system is musl.',
+    );
+    expect(stepFailure('fix', runner(4))).toBe(
+      'Qualor fix failed (exit code 4): the Qualor server is unreachable or answered an error.',
+    );
+    expect(stepFailure('fix', runner(5))).toBe(
+      'Qualor fix failed (exit code 5): the token is wrong, revoked, of another project, or not a project analysis token.',
+    );
+    expect(stepFailure('fix', runner(1))).toBe('Qualor fix failed with exit code 1.');
+    expect(stepFailure('fix', 'spawn docker ENOENT')).toBe(
+      'Qualor fix failed: spawn docker ENOENT',
     );
   });
 });

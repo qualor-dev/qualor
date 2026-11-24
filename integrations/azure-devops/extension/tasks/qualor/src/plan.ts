@@ -26,6 +26,8 @@ export const TASK_FORWARDED_ENV: readonly string[] = [
 
 /** The task's inputs (task.json), `arguments` already split into `extraArgs`. */
 export interface TaskInputs {
+  /** `scan` (the default) or `fix`: `qualor fix` prepares the dependency fix pull requests. */
+  command: 'scan' | 'fix';
   dotnet: boolean;
   dotnetBuild: string;
   imageTag: string;
@@ -52,7 +54,7 @@ export interface TaskContext {
  * `-e NAME`, so it never appears in `args` (the task log prints the command line).
  */
 export interface DockerStep {
-  name: 'scan' | 'begin' | 'build' | 'end' | 'abort';
+  name: 'scan' | 'fix' | 'begin' | 'build' | 'end' | 'abort';
   args: string[];
   env: Record<string, string>;
   /** Runs only after an earlier step failed (`qualor dotnet abort`). */
@@ -61,6 +63,8 @@ export interface DockerStep {
 
 export const PROBLEM_PLATFORM = 'Qualor@0 runs on Linux agents with Docker.';
 export const PROBLEM_SERVER = 'Set the pipeline variables QUALOR_URL and QUALOR_TOKEN (a secret).';
+export const PROBLEM_FIX_DOTNET =
+  'The fix command does not use the .NET scanner: switch dotnet off.';
 export const PROBLEM_BUILD = 'Set dotnetBuild, the command that builds the solution.';
 
 /** In the container: the sources, the scanner's HOME and the vulnerability database cache. */
@@ -77,6 +81,7 @@ const TRIVY_CACHE = '/src/.qualor/trivy';
  * | Step | Then | Image and command |
  * | --- | --- | --- |
  * | scan | `C H F S` | `qualor/scanner:<tag> scan <arguments>` |
+ * | fix | `H F S` | `qualor/scanner:<tag> fix <arguments>` (`command: fix`: no head checkout, no cache) |
  * | begin | `C F` | `qualor/scanner-dotnet:<tag> dotnet begin` |
  * | build | `F` | `--entrypoint sh qualor/scanner-dotnet:<tag> -c <dotnetBuild>` |
  * | end | `C H F S` | `qualor/scanner-dotnet:<tag> dotnet end <arguments>` |
@@ -106,6 +111,7 @@ export function planRun(
   const token = ctx.qualorToken ?? '';
   if (ctx.platform !== 'linux') return { problem: PROBLEM_PLATFORM };
   if (url.trim() === '' || token.trim() === '') return { problem: PROBLEM_SERVER };
+  if (inputs.command === 'fix' && inputs.dotnet) return { problem: PROBLEM_FIX_DOTNET };
   if (inputs.dotnet && inputs.dotnetBuild.trim() === '') return { problem: PROBLEM_BUILD };
 
   const forwardedEnv: Record<string, string> = {};
@@ -152,15 +158,18 @@ export function planRun(
     name: DockerStep['name'],
     image: string,
     command: string[],
-    { distrustHome, upload }: { distrustHome: boolean; upload: boolean },
+    {
+      distrustHome,
+      upload,
+      cache = true,
+    }: { distrustHome: boolean; upload: boolean; cache?: boolean },
   ): DockerStep => {
     const env = upload ? { ...forwardedEnv, ...server } : forwardedEnv;
     return {
       name,
       args: [
         ...base(false),
-        '-e',
-        `QUALOR_TRIVY_CACHE_DIR=${TRIVY_CACHE}`,
+        ...(cache ? ['-e', `QUALOR_TRIVY_CACHE_DIR=${TRIVY_CACHE}`] : []),
         ...(distrustHome ? ['-e', 'GIT_CONFIG_GLOBAL=/dev/null', '-e', 'PYTHONNOUSERSITE=1'] : []),
         ...names(env),
         image,
@@ -170,6 +179,18 @@ export function planRun(
     };
   };
 
+  if (inputs.command === 'fix') {
+    const fix = ['fix', ...inputs.extraArgs];
+    return {
+      steps: [
+        qualor('fix', `qualor/scanner:${tag}`, fix, {
+          distrustHome: true,
+          upload: true,
+          cache: false,
+        }),
+      ],
+    };
+  }
   if (!inputs.dotnet) {
     const scan = ['scan', ...inputs.extraArgs];
     return {
@@ -231,10 +252,18 @@ export function stepProcessEnv(
 /** What the task says for a step that failed; `LABEL` names the step. */
 export const STEP_LABEL: Record<DockerStep['name'], string> = {
   scan: 'qualor scan',
+  fix: 'Qualor fix',
   begin: 'qualor dotnet begin',
   build: 'The build command',
   end: 'qualor dotnet end',
   abort: 'qualor dotnet abort',
+};
+
+/** The `qualor fix` exit codes that docs/guide/cli.md names (0 is a pass; 1 is not used). */
+const FIX_EXIT: Record<string, string> = {
+  '2': 'a flag is wrong, there is no server, token or project key, HEAD is not the main branch (a detached HEAD, a tag pipeline, a commit other than the pipeline run), or the system is musl.',
+  '4': 'the Qualor server is unreachable or answered an error.',
+  '5': 'the token is wrong, revoked, of another project, or not a project analysis token.',
 };
 
 /**
@@ -248,6 +277,8 @@ export function stepFailure(name: DockerStep['name'], message: string): string {
   const label = STEP_LABEL[name];
   const code = /exit code (\d+)/.exec(message)?.[1];
   if (code === undefined) return `${label} failed: ${message}`;
+  if (name === 'fix' && FIX_EXIT[code] !== undefined)
+    return `${label} failed (exit code ${code}): ${FIX_EXIT[code]}`;
   if (name !== 'build') {
     if (code === '1' && (name === 'scan' || name === 'end'))
       return `${label} failed: the quality gate did not pass. The scan report lists the conditions that failed.`;
