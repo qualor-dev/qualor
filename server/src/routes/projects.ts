@@ -64,6 +64,7 @@ import { projectAiReview } from '../review/settings';
 import { listAzureRepositories } from '../scm/azure/connections';
 import { AZURE_REPOSITORY_ID } from '../scm/azure/url';
 import { forgetForeignMergeRequestUrls, scmDepsOf } from '../scm/connections';
+import { codeSpan } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
 import { anyProjectRefProblem, PROVIDER } from '../scm/providers';
 import { projectAutoFixSchema } from './auto-fix';
@@ -428,7 +429,10 @@ async function resolvedAzureRef(
   const found = repositories.find((r) => r.name.toLowerCase() === wanted);
   if (!found) {
     throw validationFailed([
-      { path: 'body.scmProjectRef', message: `No repository \`${typed}\` in this connection` },
+      {
+        path: 'body.scmProjectRef',
+        message: `No repository ${codeSpan(typed)} in this connection`,
+      },
     ]);
   }
   return found.ref;

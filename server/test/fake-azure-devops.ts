@@ -156,8 +156,9 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     `{ value: null, isSecret: true }`, survives a PUT that leaves its value out and is replaced by
  *     one that sends it (`definitions[n].secrets`); a PUT keeps the body's unknown fields. The
  *     `triggers` are stored as sent and read back; a PUT that sends none drops them, as it replaces
- *     the definition (constructed: no recorded definition has a trigger). A name
- *     the project already has is 409 (`DefinitionExistsException`, constructed). `authoredBy` is
+ *     the definition (constructed: no recorded definition has a trigger). A name the project
+ *     already has is a 400 with typeKey `DefinitionExistsException` (`29-definition-name-taken`,
+ *     the message naming the pipeline and the project). `authoredBy` is
  *     the caller that wrote the revision (constructed: one identity made every recorded
  *     definition); `addDefinition` seeds one another identity made.
  *   - `policy/configurations` (GET with `repositoryId`, `refName`, `policyType`; POST): `26-policy-create`
@@ -1895,6 +1896,10 @@ export async function createFakeAzureDevOps(options: {
     'services',
     '26-definitions-search',
   ).body;
+  const recordedNameTaken = azureShape<{ status: number; contentType: string; body: Json }>(
+    'services',
+    '29-definition-name-taken',
+  );
   const recordedPolicy = azureShape<{ body: Json }>('services', '26-policy-create').body;
   const recordedPolicyList = azureShape<{ body: Json }>('services', '26-policies-search').body;
   const recordedRootItems = azureShape<{ body: { value: Json[] } }>('services', '26-root-items')
@@ -2162,11 +2167,16 @@ export async function createFakeAzureDevOps(options: {
         const queue = queues.find((q) => q.id === Number(queueSent?.id));
         if (!queue) return bad('the definition names no queue of the project');
         if (own.some((d) => d.body.name === name && d.id !== id)) {
-          wrapped(
+          // As Services answered (item 29): a 400, not a 409, with the recorded body.
+          const projectName = [...projectIds].find(([, pid]) => pid === projectId)?.[0];
+          send(
             res,
-            409,
-            `Build definition ${name} already exists.`,
-            'DefinitionExistsException',
+            recordedNameTaken.status,
+            {
+              ...recordedNameTaken.body,
+              message: `Build pipeline ${name} already exists for project ${projectName}.`,
+            },
+            { 'content-type': recordedNameTaken.contentType },
           );
           return true;
         }

@@ -24,6 +24,7 @@ import {
   gitlabPlainJob,
   projectKeyArg,
   yamlScalar,
+  type AzurePipelineOptions,
   type AzurePool,
   type ComponentOptions,
 } from './ci-templates';
@@ -494,12 +495,13 @@ function planGitlab(input: CiSetupInput): CiPlan {
 }
 
 /**
- * The file plus the steps Qualor would do outside it, as trailing comments (one YAML document):
- * every Azure DevOps snippet, the planner's and the setup run's (setup-run.ts `freshSnippet`).
+ * The file, with the header of a snippet, plus the steps Qualor would do outside it, as trailing
+ * comments (one YAML document): every Azure DevOps snippet, the planner's and the setup run's
+ * (setup-run.ts `freshSnippet`).
  */
-export function azureSnippet(content: string, serverUrl: string): string {
+export function azureSnippet(options: AzurePipelineOptions, serverUrl: string): string {
   return (
-    content +
+    azurePipeline({ ...options, snippet: true }) +
     [
       '',
       `# Save this as ${AZURE_FILE}, then:`,
@@ -519,12 +521,12 @@ function planAzure(input: CiSetupInput): CiPlan {
     existing: { pipelineFile: false, azurePipelinesYml: null, definition: null },
   };
   const { existing } = azure;
-  const content = azurePipeline({
+  const options: AzurePipelineOptions = {
     projectKey: input.projectKey,
     version: input.version,
     pool: azure.pool,
     csharp: input.csharp,
-  });
+  };
   const definitionSet =
     existing.definition?.yamlPath === AZURE_FILE && existing.definition.secretSet;
   if (
@@ -535,10 +537,10 @@ function planAzure(input: CiSetupInput): CiPlan {
     return {
       kind: 'snippet',
       reason: 'already_set_up',
-      snippet: azureSnippet(content, input.serverUrl),
+      snippet: azureSnippet(options, input.serverUrl),
     };
   }
-  return changePlan(input, [{ path: AZURE_FILE, content, update: false }]);
+  return changePlan(input, [{ path: AZURE_FILE, content: azurePipeline(options), update: false }]);
 }
 
 export function planCiSetup(input: CiSetupInput): CiPlan {

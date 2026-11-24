@@ -48,6 +48,7 @@ import type { GitLabClient } from '../scm/gitlab/client';
 import { gitlabHostKind } from '../scm/gitlab/url';
 import {
   AZURE_SECRET_VARIABLE,
+  AzureError,
   sameAzureIdentity,
   type AzureDefinition,
   type AzureDefinitionVariable,
@@ -705,6 +706,8 @@ interface AzureSetup {
   /** The pipeline's `QUALOR_URL`. */
   serverUrl: string;
   pool: AzurePool;
+  /** Where a pipeline re-save that failed after its create is noted (kind, status, route). */
+  logger?: WorkerLogger;
 }
 
 /**
@@ -726,9 +729,17 @@ function yamlPathOf(definition: AzureDefinition): string | null {
   return definition.yamlPath?.replace(/^\/+/, '') ?? null;
 }
 
-/** Whether Azure DevOps refused a pipeline's create because the project has one of that name. */
+/**
+ * Whether Azure DevOps refused a pipeline's create because the project has one of that name: a
+ * refusal (Services answered 400, probe item 29) whose typeKey is `DefinitionExistsException`. The
+ * typeKey decides, as a 400 has many causes and the message is translated.
+ */
 function nameTaken(err: unknown): boolean {
-  return err instanceof ScmError && err.kind === 'refused' && err.status === 409;
+  return (
+    err instanceof AzureError &&
+    err.kind === 'refused' &&
+    err.azureTypeKey === 'DefinitionExistsException'
+  );
 }
 
 /**
@@ -787,7 +798,7 @@ function azureRepository(
   found: AzureRepository,
   setup: AzureSetup,
 ): OpenedRepository {
-  const { db, item, serverUrl, pool } = setup;
+  const { db, item, serverUrl, pool, logger } = setup;
   const repositoryId = found.id;
   const projectId = found.projectId;
   const name = `${found.projectName}/${found.name}`;
@@ -843,16 +854,18 @@ function azureRepository(
     return queue;
   };
   /**
-   * The pipeline on the run's pool's queue, and nowhere else: open to every pipeline (or to this one
-   * already), authorised now, or the manual approval the setup result names (Ruling 2) when Azure
-   * DevOps refuses, when the pipeline runs on another queue, or when the pool has no queue.
+   * The pipeline on the run's pool's queue, and nowhere else: open to every pipeline, authorised
+   * (now, or already by an earlier run or job: the pool is still not open to all), or the manual
+   * approval the setup result names (Ruling 2) when Azure DevOps refuses, when the pipeline runs on
+   * another queue, or when the pool has no queue.
    */
   const settleQueue = async (definition: AzureDefinition): Promise<SetupAzureQueue> => {
     try {
       const target = await queueOfPool();
       if (definition.queueId !== target.id) return 'manual';
       const permissions = await client.queuePermissions(projectId, target.id);
-      if (permissions.open || permissions.pipelineIds.includes(definition.id)) return 'open';
+      if (permissions.open) return 'open';
+      if (permissions.pipelineIds.includes(definition.id)) return 'authorized';
       await client.authorizeOnQueue(projectId, target.id, definition.id);
       return 'authorized';
     } catch (err) {
@@ -869,15 +882,19 @@ function azureRepository(
     variables: Record<string, AzureDefinitionVariable>,
   ): Promise<AzureDefinition> => {
     const create = (pipelineName: string) =>
-      client.createDefinition(projectId, {
-        name: pipelineName,
-        yamlPath: AZURE_FILE,
-        repositoryId,
-        repositoryName: found.name,
-        defaultBranch: `refs/heads/${defaultBranch ?? 'main'}`,
-        queueId: target.id,
-        variables,
-      });
+      client.createDefinition(
+        projectId,
+        {
+          name: pipelineName,
+          yamlPath: AZURE_FILE,
+          repositoryId,
+          repositoryName: found.name,
+          defaultBranch: `refs/heads/${defaultBranch ?? 'main'}`,
+          queueId: target.id,
+          variables,
+        },
+        logger,
+      );
     try {
       return await create(AZURE_PIPELINE_NAME);
     } catch (err) {
@@ -1059,6 +1076,7 @@ async function openRepository(ctx: ItemContext, changesCi: boolean): Promise<Ope
         item,
         serverUrl: deps.publicUrl ?? URL_PLACEHOLDER,
         pool: azurePoolOf(run, connection),
+        ...(deps.logger ? { logger: deps.logger } : {}),
       });
     }
     default:
@@ -1288,8 +1306,9 @@ function freshSnippet(
         }),
   });
   if (plan.kind === 'snippet') return plan.snippet;
-  const content = plan.files[0]?.content ?? '';
-  return pool === null ? content : azureSnippet(content, input.serverUrl);
+  if (pool === null) return plan.files[0]?.content ?? '';
+  const { projectKey, version, csharp, serverUrl } = input;
+  return azureSnippet({ projectKey, version, pool, csharp }, serverUrl);
 }
 
 interface ItemContext {

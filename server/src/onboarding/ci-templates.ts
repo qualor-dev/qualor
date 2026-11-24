@@ -426,7 +426,30 @@ export interface AzurePipelineOptions {
   version: string;
   pool: AzurePool;
   csharp: boolean;
+  /**
+   * The file of a snippet (ci-setup.ts `azureSnippet`): the person creates the pipeline, its
+   * variable, its secret and the policy, so the header asks for them instead of naming Qualor.
+   */
+  snippet?: boolean;
 }
+
+/** Who made the pipeline and adds its policy: Qualor (the file it writes), or the person. */
+const AZURE_HEAD: Record<'written' | 'snippet', string[]> = {
+  written: [
+    '# Qualor in Azure Pipelines. The pipeline, its QUALOR_URL variable and its QUALOR_TOKEN secret',
+    '# were created by Qualor.',
+    '# The job needs a Linux agent with Docker.',
+    '# Azure Repos ignores `pr:`. Pull requests run through the Build validation branch policy that',
+    '# Qualor adds to the default branch after the first analysis of that branch.',
+  ],
+  snippet: [
+    '# Qualor in Azure Pipelines. Create a pipeline from this file, with a QUALOR_URL variable and a',
+    '# QUALOR_TOKEN secret: the steps are at the end.',
+    '# The job needs a Linux agent with Docker.',
+    '# Azure Repos ignores `pr:`. Pull requests run through a Build validation branch policy of the',
+    '# default branch, added after the first analysis of that branch.',
+  ],
+};
 
 /**
  * The pipeline file Qualor writes for Azure Repos: the docker form of
@@ -438,11 +461,7 @@ export function azurePipeline(o: AzurePipelineOptions): string {
   const pool =
     'vmImage' in o.pool ? `vmImage: ${o.pool.vmImage}` : `name: ${yamlScalar(o.pool.name)}`;
   const head = [
-    '# Qualor in Azure Pipelines. The pipeline, its QUALOR_URL variable and its QUALOR_TOKEN secret',
-    '# were created by Qualor.',
-    '# The job needs a Linux agent with Docker.',
-    '# Azure Repos ignores `pr:`. Pull requests run through the Build validation branch policy that',
-    '# Qualor adds to the default branch after the first analysis of that branch.',
+    ...AZURE_HEAD[o.snippet === true ? 'snippet' : 'written'],
     "# The checkout fetches the full history (the new-code baseline) and does not leave the build's",
     '# token in .git/config, where the analysed code could read it.',
     "# The pipeline also runs on tags. There the scan records a version: the release's dependency",

@@ -133,11 +133,11 @@ const itemSchema = z.object({
       }),
       queue: z.enum(SETUP_AZURE_QUEUES).nullable().meta({
         description:
-          "The pipeline on its agent pool's queue: `open` to every pipeline (or to it already), `authorized` by Qualor, or `manual`: Azure DevOps refused, a person approves it",
+          "The pipeline on its agent pool's queue: `open` to every pipeline, `authorized` for this pipeline (by this run or an earlier one), or `manual`: Azure DevOps refused, a person approves it",
       }),
       policy: z.enum(SETUP_AZURE_POLICIES).nullable().meta({
         description:
-          'The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (the identity may not edit policies) or `failed`',
+          'The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (Qualor did not add it: the identity may not edit policies, or a person disabled the policy for the pipeline) or `failed`',
       }),
       policyError: z
         .string()
@@ -154,6 +154,10 @@ const runSchema = z.object({
   id: z.uuid(),
   status: z.enum(SETUP_RUN_STATUSES),
   ciSetup: z.boolean(),
+  azurePool: z.string().nullable().meta({
+    description:
+      'Azure DevOps: the agent pool the run named, which a new run for its failed repositories names again; null when it named none, and on the other providers',
+  }),
   items: z.array(itemSchema),
 });
 
@@ -528,6 +532,7 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
         id: run.id,
         status: run.status,
         ciSetup: run.ciSetup,
+        azurePool: run.azurePool,
         items: rows.map(({ item, projectKey }) => ({
           ref: item.repositoryRef,
           name: item.repositoryName,

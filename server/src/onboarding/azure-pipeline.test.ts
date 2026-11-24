@@ -65,6 +65,25 @@ describe.each(CASES)('azurePipeline (csharp: $csharp)', ({ csharp, file, image }
     expect(text.match(/\$\(QUALOR_TOKEN\)/g)).toHaveLength(1);
   });
 
+  it('as a snippet, asks the person to create the pipeline, its variable and its secret', () => {
+    const options = { projectKey: 'k', version: '0.16.1', pool: { name: 'Linux' }, csharp };
+    const text = azurePipeline({ ...options, snippet: true });
+    expect(text.split('\n').slice(0, 2)).toEqual([
+      '# Qualor in Azure Pipelines. Create a pipeline from this file, with a QUALOR_URL variable and a',
+      '# QUALOR_TOKEN secret: the steps are at the end.',
+    ]);
+    expect(text).not.toMatch(/created by Qualor/);
+    expect(text).not.toMatch(/Qualor adds/);
+    expect(text).toMatch(/Build validation/);
+    // Only the comments differ from the file Qualor writes.
+    const code = (t: string) =>
+      t
+        .split('\n')
+        .filter((l) => !l.startsWith('#'))
+        .join('\n');
+    expect(code(text)).toBe(code(azurePipeline(options)));
+  });
+
   it('quotes a hostile key and pool name as scalars', () => {
     const text = azurePipeline({
       projectKey: "a: b #c' - x",

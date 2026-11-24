@@ -6,14 +6,21 @@ import {
   type FakeAzureRepository,
 } from '../../test/fake-azure-devops';
 import type { FakeAzurePolicy } from '../../test/fake-azure-devops';
+import { AZURE_TEST_PRINCIPAL, azureServerConfig, servicesUrlOf } from '../../test/azure';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { reportWith } from '../../test/reports';
 import { decorationDeps, silentLogger } from '../../test/scm';
+import { trustTestCa } from '../../test/tls';
 import { jobs, projects, repositorySetupItems, repositorySetupRuns } from '../db/schema';
 import { runUntilIdle } from '../queue/worker';
 import { parseInternalHosts } from '../scm/url';
 import { AZURE_FILE } from './ci-setup';
-import { AZURE_POLICY_QUEUE, AZURE_POLICY_TEXT, azurePolicyHandlers } from './azure-policy';
+import {
+  AZURE_POLICY_QUEUE,
+  AZURE_POLICY_TEXT,
+  azurePolicyHandlers,
+  enqueueAzurePolicy,
+} from './azure-policy';
 
 describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () => {
   let h: IngestHarness;
@@ -341,6 +348,33 @@ describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () =
     });
   });
 
+  it('a refused credential (401) fails with the fixed text, not the manual step', async () => {
+    const s = await setup('policy/401');
+    await ingest(s);
+    fake.inject('POST', /\/_apis\/policy\/configurations$/, {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message: 'TF400813: The user is not authorized' }),
+    });
+    await runJobs();
+    expect(await stateOf(s.items[0]!)).toEqual({
+      policy: 'failed',
+      error: "Qualor's Azure DevOps credential was refused",
+    });
+    expect(await queued(s.project.id)).toEqual([]);
+  });
+
+  it('a rate limit is retried', async () => {
+    const s = await setup('policy/429');
+    await ingest(s);
+    fake.inject('POST', /\/_apis\/policy\/configurations$/, { status: 429 });
+    await runJobs();
+    expect((await stateOf(s.items[0]!)).policy).toBe('pending');
+    expect(await queued(s.project.id)).toHaveLength(1);
+    await runJobs();
+    expect(await stateOf(s.items[0]!)).toEqual({ policy: 'on', error: null });
+  });
+
   it('a transient failure is retried, then failed with a fixed text', async () => {
     const s = await setup('policy/transient');
     await ingest(s);
@@ -361,5 +395,101 @@ describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () =
       error: AZURE_POLICY_TEXT.unreachable,
     });
     expect(await queued(s.project.id)).toEqual([]);
+  });
+});
+
+describe('the deferred policy when Microsoft Entra refuses the service principal', () => {
+  let h: IngestHarness;
+  let services: FakeAzureDevOps;
+  let untrust: () => void;
+  let connectionId: string;
+
+  beforeAll(async () => {
+    untrust = trustTestCa();
+    services = await createFakeAzureDevOps({
+      deployment: 'services',
+      principal: AZURE_TEST_PRINCIPAL,
+    });
+    h = await createIngestHarness({ config: azureServerConfig(services) });
+    // A secret Entra does not know: every token request is refused (`invalid_client`), an
+    // ScmError of the token endpoint rather than an AzureError of Azure DevOps.
+    const { tenantId, clientId } = AZURE_TEST_PRINCIPAL;
+    const created = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: servicesUrlOf(services),
+        azureAuth: 'service_principal_secret',
+        token: ['not-the-', 'secret'].join(''),
+        tenantId,
+        clientId,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    connectionId = (created.json() as { id: string }).id;
+  });
+  afterAll(async () => {
+    await h.close();
+    await services.close();
+    untrust();
+  });
+
+  it('fails with the fixed credential text, without a retry', async () => {
+    const repository = services.addRepository({ name: 'entra', projectName: 'Payments' });
+    services.setBranch(
+      repository.id,
+      'main',
+      services.addCommit(repository.id, { files: { [AZURE_FILE]: 'steps: []' } }),
+    );
+    const pipeline = services.addDefinition(repository.id, { name: 'Qualor' });
+    const project = await h.project('policy/entra');
+    await h.ctx.db
+      .update(projects)
+      .set({ scmConnectionId: connectionId, scmProjectRef: repository.id })
+      .where(eq(projects.id, project.id));
+    const [run] = await h.ctx.db
+      .insert(repositorySetupRuns)
+      .values({ organizationId: h.organizationId, connectionId, ciSetup: true })
+      .returning();
+    await h.ctx.db.insert(repositorySetupItems).values({
+      runId: run!.id,
+      position: 0,
+      repositoryRef: repository.id,
+      repositoryName: repository.name,
+      projectId: project.id,
+      azurePipelineId: pipeline.id,
+      azureQueue: 'authorized',
+      azurePolicy: 'pending',
+    });
+    await enqueueAzurePolicy(h.ctx.db, project.id);
+
+    const base = decorationDeps(h);
+    const deps = decorationDeps(h, {
+      scm: {
+        ...base.scm,
+        azureTokenOrigin: h.ctx.config.azureTokenOrigin,
+        azureTestOrigin: h.ctx.config.azureTestOrigin,
+      },
+    });
+    await runUntilIdle(h.ctx.db, azurePolicyHandlers(deps), silentLogger);
+
+    expect(services.tokenRequests.length).toBeGreaterThan(0);
+    const [row] = await h.ctx.db
+      .select({
+        policy: repositorySetupItems.azurePolicy,
+        error: repositorySetupItems.azurePolicyError,
+      })
+      .from(repositorySetupItems)
+      .where(eq(repositorySetupItems.runId, run!.id));
+    expect(row).toEqual({ policy: 'failed', error: AZURE_POLICY_TEXT.refused });
+    const left = await h.ctx.db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.queue, AZURE_POLICY_QUEUE), eq(jobs.status, 'queued')));
+    expect(left).toEqual([]);
+    expect(services.policies).toEqual([]);
   });
 });

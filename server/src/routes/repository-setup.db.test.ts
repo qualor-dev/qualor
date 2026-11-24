@@ -798,6 +798,19 @@ describe('Starting a repository setup on an Azure DevOps connection (Azure sub-p
       .from(repositorySetupRuns)
       .where(eq(repositorySetupRuns.id, runId));
     expect(run).toMatchObject({ azurePool: 'Build agents', ciSetup: true });
+    // The run gives its pool back: a Try again on a fresh page sends it again.
+    const read = (runId: string) =>
+      h.ctx.app.inject({
+        method: 'GET',
+        url: `/api/v0/repository-setups/${runId}`,
+        headers: h.orgAdmin.headers,
+      });
+    const got = await read(runId);
+    expect(got.statusCode, got.body).toBe(200);
+    expect(got.json()).toMatchObject({ id: runId, ciSetup: true, azurePool: 'Build agents' });
+    const plain = await start(connectionId, { repositories: [id], ciSetup: false });
+    const plainRun = await read((plain.json() as { id: string }).id);
+    expect(plainRun.json()).toMatchObject({ ciSetup: false, azurePool: null });
   });
 
   it('wants a pool name for CI setup on a Server, and a sane one', async () => {

@@ -55,20 +55,39 @@ export const AZURE_TEXT = {
 
 /** A failed Azure DevOps request; see {@link ScmError}. */
 export class AzureError extends ScmError {
+  /**
+   * The `typeKey` of Azure DevOps' error body (`DefinitionExistsException`), for decisions only:
+   * not enumerable, like the message. Unlike the message it is not translated.
+   */
+  declare readonly azureTypeKey: string | null;
+
   constructor(
     kind: ScmErrorKind,
     message: string,
-    options: Omit<ScmErrorOptions, 'providerMessage'> & { azureMessage?: string | null } = {},
+    options: Omit<ScmErrorOptions, 'providerMessage'> & {
+      azureMessage?: string | null;
+      azureTypeKey?: string | null;
+    } = {},
   ) {
-    const { azureMessage, ...rest } = options;
+    const { azureMessage, azureTypeKey, ...rest } = options;
     super(kind, message, { ...rest, providerMessage: azureMessage ?? null });
     this.name = 'AzureError';
+    Object.defineProperty(this, 'azureTypeKey', {
+      value: azureTypeKey ?? null,
+      enumerable: false,
+      writable: false,
+    });
   }
 
   /** The `message` of Azure DevOps' error body (decisions only, never logged or shown). */
   get azureMessage(): string | null {
     return this.providerMessage;
   }
+}
+
+/** Where the client says what it let pass: a re-save that failed after the create (warn only). */
+export interface AzureClientLogger {
+  warn(details: object, message: string): void;
 }
 
 /**
@@ -384,6 +403,8 @@ const repository = z.looseObject({
 const repositoryList = z.looseObject({ value: z.array(repository) });
 /** WrappedException, the error body (probe item 10). */
 const errorBody = z.looseObject({ message: z.string() });
+/** An exception's type name, as Azure DevOps' error body keys it (`DefinitionExistsException`). */
+const errorTypeKey = z.looseObject({ typeKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_.]{0,199}$/) });
 
 const commitRef = z.looseObject({ commitId: z.string().min(1) });
 const pullRequestAnswer = z.looseObject({
@@ -772,17 +793,29 @@ function textOf(body: Buffer): string {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
-/** Azure DevOps' error `message`, for decisions only, with the credential cut out. */
-function azureMessageOf(body: Buffer, secrets: string[]): string | null {
+/**
+ * Azure DevOps' error `message` (the credential cut out) and `typeKey` (a type name only), for
+ * decisions only.
+ */
+function azureErrorOf(
+  body: Buffer,
+  secrets: string[],
+): { azureMessage: string | null; azureTypeKey: string | null } {
+  let json: unknown;
   try {
-    const parsed = errorBody.safeParse(JSON.parse(textOf(body)));
-    if (!parsed.success) return null;
+    json = JSON.parse(textOf(body));
+  } catch {
+    return { azureMessage: null, azureTypeKey: null };
+  }
+  const parsed = errorBody.safeParse(json);
+  let azureMessage: string | null = null;
+  if (parsed.success) {
     let text = parsed.data.message;
     for (const secret of secrets) if (secret) text = text.split(secret).join('[credential]');
-    return text.slice(0, 1_000);
-  } catch {
-    return null;
+    azureMessage = text.slice(0, 1_000);
   }
+  const typed = errorTypeKey.safeParse(json);
+  return { azureMessage, azureTypeKey: typed.success ? typed.data.typeKey : null };
 }
 
 /** Milliseconds a success asks the next request to wait: `Retry-After`, else `X-RateLimit-Delay`. */
@@ -1090,8 +1123,17 @@ export class AzureDevOpsClient {
    * does not run its CI trigger on pushes for the first 5 to 12 minutes; a PUT right after the
    * create switches it on at once (probe item 28, Azure DevOps Services), and a quick merge of the
    * setup PR must still be analysed. A manual run does not do it.
+   *
+   * The re-save is best effort: once the POST answered 2xx the pipeline exists and holds the
+   * secret, so an error of the GET or PUT is never thrown (a caller would read a 4xx as "nothing
+   * stored"). It is logged with its kind, status and route only, and the created definition is
+   * returned; its trigger switches itself on within minutes (item 28 S2).
    */
-  async createDefinition(projectId: string, input: NewAzureDefinition): Promise<AzureDefinition> {
+  async createDefinition(
+    projectId: string,
+    input: NewAzureDefinition,
+    logger?: AzureClientLogger,
+  ): Promise<AzureDefinition> {
     this.#repositoryPath(input.repositoryId); // validates the id
     const created = await this.#call(
       'POST',
@@ -1116,7 +1158,16 @@ export class AzureDevOpsClient {
       'base',
       secretValues(input.variables),
     );
-    return this.#resave(projectId, created.id);
+    try {
+      return await this.#resave(projectId, created.id);
+    } catch (err) {
+      const scm = err instanceof ScmError ? err : null;
+      logger?.warn(
+        { kind: scm?.kind ?? 'unknown', status: scm?.status ?? null, route: scm?.request ?? null },
+        'could not re-save the new Azure DevOps pipeline; its CI trigger starts later',
+      );
+      return definitionOf(created);
+    }
   }
 
   async definition(projectId: string, id: number): Promise<AzureDefinition> {
@@ -1821,19 +1872,19 @@ export class AzureDevOpsClient {
       }
       throw new AzureError('auth', AZURE_TEXT.refused, { status, reason: 'http' });
     }
-    const azureMessage = azureMessageOf(answer, secrets);
+    const found = azureErrorOf(answer, secrets);
     if (status === 403) {
       throw new AzureError('auth', AZURE_TEXT.forbidden, {
         status,
         reason: 'permission_missing',
-        azureMessage,
+        ...found,
       });
     }
     if (status === 404) {
       throw new AzureError('not_found', AZURE_TEXT.notFound, {
         status,
         reason: 'http',
-        azureMessage,
+        ...found,
       });
     }
     if (status === 429) {
@@ -1841,7 +1892,7 @@ export class AzureDevOpsClient {
         status,
         reason: 'http',
         retryAfterSeconds: retryAfterSeconds(headers, now()),
-        azureMessage,
+        ...found,
       });
     }
     throw new AzureError(
@@ -1850,7 +1901,7 @@ export class AzureDevOpsClient {
       {
         status,
         reason: 'http',
-        azureMessage,
+        ...found,
       },
     );
   }

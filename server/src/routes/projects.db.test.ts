@@ -700,7 +700,14 @@ describe('mapping a project to a typed Azure DevOps Project/Repository (Azure su
       expect(res.json().errors[0].path).toBe('body.scmProjectRef');
     }
     const none = await map({ scmProjectRef: 'Payments/nope' });
-    expect(none.json().errors[0].message).toBe('No repository `Payments/nope` in this connection');
+    expect(none.json().errors[0].message).toBe(
+      'No repository ` Payments/nope ` in this connection',
+    );
+    // The typed value is a code span of its own: a backtick in it cannot close the span.
+    const ticked = await map({ scmProjectRef: 'Pay`ments/no`pe' });
+    expect(ticked.json().errors[0].message).toBe(
+      'No repository `` Pay`ments/no`pe `` in this connection',
+    );
     // The mapping kept what the last good request stored.
     const [row] = await h.ctx.db.select().from(projects).where(eq(projects.id, project.id));
     expect(row!.scmProjectRef).toBe(web.id);

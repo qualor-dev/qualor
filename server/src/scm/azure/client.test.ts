@@ -2300,19 +2300,59 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(made).toMatchObject({ id: 4242, name: 'From the PUT', yamlPath: 'put.yml' });
     });
 
-    it('an error on the re-save GET or PUT is the usual AzureError, without the secret', async () => {
-      for (const method of ['GET', 'PUT'] as const) {
+    it('a failed re-save GET or PUT (429, 409) returns the created definition, and only warns', async () => {
+      // The POST stored the pipeline and its secret: the re-save is best effort (the trigger
+      // switches itself on within minutes, probe item 28), so no error of it reaches the setup.
+      const cases = [
+        ['GET', 429, 'rate_limited'],
+        ['GET', 409, 'refused'],
+        ['PUT', 429, 'rate_limited'],
+        ['PUT', 409, 'refused'],
+      ] as const;
+      for (const [method, status, kind] of cases) {
         fake.inject(method, /build\/definitions\/\d+$/, {
-          status: 400,
+          status,
           body: { message: `echo QUALOR_TOKEN=${SECRET}` },
         });
-        const err = await failure(
-          clientOf(fake).createDefinition(projectId, newDefinition(`Qualor resave ${method}`)),
-        );
-        expect(err).toBeInstanceOf(AzureError);
-        expect(err).toMatchObject({ kind: 'refused', status: 400 });
-        expect(written(err)).not.toContain(SECRET);
+        const warned: unknown[] = [];
+        const name = `Qualor resave ${method} ${status}`;
+        const made = await clientOf(fake).createDefinition(projectId, newDefinition(name), {
+          warn: (details, message) => warned.push({ details, message }),
+        });
+        const stored = fake.definitions.find((d) => d.id === made.id);
+        expect(made).toMatchObject({
+          name,
+          secretSet: true,
+          yamlPath: '.azure-pipelines/qualor.yml',
+        });
+        expect(stored?.secrets).toEqual({ QUALOR_TOKEN: SECRET });
+        expect(warned).toEqual([
+          {
+            details: {
+              kind,
+              status,
+              route: `${method} /{id}/_apis/build/definitions/${made.id}`,
+            },
+            message: 'could not re-save the new Azure DevOps pipeline; its CI trigger starts later',
+          },
+        ]);
+        expect(JSON.stringify(warned)).not.toContain(SECRET);
       }
+      // Without a logger it passes silently too.
+      fake.inject('GET', /build\/definitions\/\d+$/, { status: 429 });
+      const quiet = await clientOf(fake).createDefinition(projectId, newDefinition('Qualor quiet'));
+      expect(quiet.name).toBe('Qualor quiet');
+    });
+
+    it('a refused create still throws, and creates nothing to re-save', async () => {
+      fake.inject('POST', /build\/definitions$/, { status: 429 });
+      fake.clearRequests();
+      const err = await failure(
+        clientOf(fake).createDefinition(projectId, newDefinition('Qualor refused')),
+      );
+      expect(err).toBeInstanceOf(AzureError);
+      expect(err).toMatchObject({ kind: 'rate_limited', status: 429 });
+      expect(fake.requests.map((r) => r.method)).toEqual(['POST']);
     });
 
     it('lists the definitions of a repository and reads one', async () => {
@@ -2398,7 +2438,7 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       });
     });
 
-    it('a refusal that echoes the secret is cut, and a taken name is a 409', async () => {
+    it('a refusal that echoes the secret is cut, and a taken name is a 400 DefinitionExistsException', async () => {
       const client = clientOf(fake);
       await client.createDefinition(projectId, newDefinition('Qualor twice'));
       fake.inject('POST', /build\/definitions$/, {
@@ -2409,9 +2449,50 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(err).toMatchObject({ kind: 'refused', status: 400 });
       expect(written(err)).not.toContain(SECRET);
       expect((err as AzureError).azureMessage).toContain('[credential]');
+      // As Services answered probe item 29: a 400 whose typeKey names the taken name.
       const dup = await failure(client.createDefinition(projectId, newDefinition('Qualor twice')));
-      expect(dup).toMatchObject({ kind: 'refused', status: 409 });
+      expect(dup).toMatchObject({ kind: 'refused', status: 400 });
+      expect((dup as AzureError).azureTypeKey).toBe('DefinitionExistsException');
+      expect((dup as AzureError).azureMessage).toBe(
+        'Build pipeline Qualor twice already exists for project Payments.',
+      );
       expect(written(dup)).not.toContain(SECRET);
+      // A decision field only: not enumerable, so no logger prints it.
+      expect(Object.keys(dup)).not.toContain('azureTypeKey');
+      expect(JSON.stringify(dup)).not.toContain('DefinitionExists');
+    });
+
+    it('the fake answers a taken name exactly as Services did (item 29)', async () => {
+      const client = clientOf(fake);
+      await client.createDefinition(projectId, newDefinition('Qualor recorded'));
+      fake.clearRequests();
+      const recorded = azureShape<{ status: number; contentType: string; body: object }>(
+        'services',
+        '29-definition-name-taken',
+      );
+      const res = await fetch(`${fake.url}/${projectId}/_apis/build/definitions?api-version=7.0`, {
+        method: 'POST',
+        headers: {
+          authorization: `Basic ${Buffer.from(`:${fake.pat}`).toString('base64')}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Qualor recorded',
+          process: { type: 2, yamlFilename: '.azure-pipelines/qualor.yml' },
+          repository: { id: repoId },
+          queue: { id: fake.queues(projectId)[0]!.id },
+        }),
+      });
+      expect(res.status).toBe(recorded.status);
+      expect(res.headers.get('content-type')).toBe(recorded.contentType);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(Object.keys(body).sort()).toEqual(Object.keys(recorded.body).sort());
+      expect(body).toMatchObject({
+        ...recorded.body,
+        message: expect.stringMatching(
+          /^Build pipeline Qualor recorded already exists for project /,
+        ),
+      });
     });
 
     it('replaceDefinition cuts the new secret from an error too', async () => {

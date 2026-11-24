@@ -4,6 +4,7 @@ import { addMember, createUser, login, type Session } from '../../test/app';
 import { servicesUrlOf } from '../../test/azure';
 import {
   createFakeAzureDevOps,
+  recordedAnswer,
   type FakeAzureDevOps,
   type FakeAzureRepository,
   type FakeAzureRepositoryInput,
@@ -1391,12 +1392,11 @@ describe('the repository-setup run', () => {
       const fake = await azure();
       const repo = repository(fake, { name: 'svc', projectName: 'Delta' });
       const connectionId = await connectAzure(fake);
-      // Two admins at once: both runs are queued before the worker takes the first.
-      const first = await start({ connectionId, repositories: [repo.id], ciSetup: true });
-      const second = await start(
-        { connectionId, repositories: [repo.id], ciSetup: true },
-        otherAdmin,
-      );
+      // Two admins at once: both runs are queued before the worker takes the first. `Default` is
+      // not open to every pipeline: the first authorises the pipeline on it.
+      const pooled = { connectionId, repositories: [repo.id], ciSetup: true, azurePool: 'Default' };
+      const first = await start(pooled);
+      const second = await start(pooled, otherAdmin);
       await runAzure(fake);
 
       const a = (await read(first)).items[0]!;
@@ -1404,9 +1404,10 @@ describe('the repository-setup run', () => {
       expect(a).toMatchObject({
         projectOutcome: 'created',
         ciOutcome: 'merge_request',
-        azure: { policy: 'pending' },
+        azure: { queue: 'authorized', policy: 'pending' },
       });
-      // The second finds the pull request open: it records the pipeline and the pending policy too.
+      // The second finds the pull request open: it records the pipeline and the pending policy too,
+      // and the pipeline already authorised on the pool (not a pool open to every pipeline).
       expect(b).toMatchObject({
         projectOutcome: 'adopted',
         project: a.project,
@@ -1414,7 +1415,7 @@ describe('the repository-setup run', () => {
         ciUrl: a.ciUrl,
         token: null,
         error: null,
-        azure: { pipelineUrl: a.azure!.pipelineUrl, queue: 'open', policy: 'pending' },
+        azure: { pipelineUrl: a.azure!.pipelineUrl, queue: 'authorized', policy: 'pending' },
       });
       expect(
         await h.ctx.db.select().from(projects).where(like(projects.key, 'Delta/svc%')),
@@ -1442,7 +1443,7 @@ describe('the repository-setup run', () => {
       fake.setBranch(repo.id, 'main', merged);
       fake.completePullRequest(repo.id, fake.pullRequests(repo.id)[0]!.id);
       fake.clearRequests();
-      const fourth = await start({ connectionId, repositories: [repo.id], ciSetup: true });
+      const fourth = await start(pooled);
       await runAzure(fake);
       const done = (await read(fourth)).items[0]!;
       expect(done).toMatchObject({
@@ -1531,11 +1532,9 @@ describe('the repository-setup run', () => {
         status: 403,
         body: { message: 'TF400813: the identity may not create pipelines' },
       });
-      // Qualor, then `Qualor (taken)`: both names are taken in the project.
-      const exists = {
-        status: 409,
-        body: { message: 'Build definition Qualor already exists.', typeKey: 'DefinitionExists' },
-      };
+      // Qualor, then `Qualor (taken)`: both names are taken in the project, answered as Services
+      // answered a taken name (probe item 29: a 400 with typeKey DefinitionExistsException).
+      const exists = recordedAnswer('services', '29-definition-name-taken');
       fake.inject(
         'POST',
         new RegExp(`^/${taken.projectId}/_apis/build/definitions$`),
@@ -1606,6 +1605,81 @@ describe('the repository-setup run', () => {
         true,
       );
       expect(lines.join('\n')).not.toMatch(/TF400813|Eta\/denied/);
+    });
+
+    it('a 400 that does not name a taken pipeline is a refusal: no second name is tried', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'bad', projectName: 'Zeta' });
+      const connectionId = await connectAzure(fake);
+      fake.inject('POST', new RegExp(`^/${repo.projectId}/_apis/build/definitions$`), {
+        status: 400,
+        body: { message: 'The pipeline is not valid.', typeKey: 'ArgumentException' },
+      });
+      const runId = await start({ connectionId, repositories: [repo.id], ciSetup: true });
+      await runAzure(fake);
+
+      expect((await read(runId)).items[0]).toMatchObject({
+        ciOutcome: 'failed',
+        error: { code: 'refused', stage: 'change' },
+      });
+      expect(
+        fake.requests.filter(
+          (r) => r.method === 'POST' && r.path === `/${repo.projectId}/_apis/build/definitions`,
+        ),
+      ).toHaveLength(1);
+      const project = await projectByKey('Zeta/bad');
+      expect((await tokensOf(project.id))[0]!.revokedAt).not.toBeNull();
+    });
+
+    it('keeps the token when the re-save after the create fails: the pipeline holds it', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'resave', projectName: 'Omicron' });
+      const connectionId = await connectAzure(fake);
+      // The create stored the pipeline and its secret; the re-save's GET is rate limited.
+      fake.inject('GET', new RegExp(`^/${repo.projectId}/_apis/build/definitions/\\d+$`), {
+        status: 429,
+        headers: { 'retry-after': '30' },
+      });
+      const runId = await start({ connectionId, repositories: [repo.id], ciSetup: true });
+      await runAzure(fake);
+
+      const done = await read(runId);
+      expect(done.status).toBe('done');
+      expect(done.items[0]).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'merge_request',
+        token: null,
+        error: null,
+        azure: { policy: 'pending' },
+      });
+      expect(fake.definitions).toHaveLength(1);
+      const secret = fake.definitions[0]!.secrets['QUALOR_TOKEN']!;
+      const project = await projectByKey('Omicron/resave');
+      const tokens = await tokensOf(project.id);
+      expect(tokens.map((t) => t.revokedAt)).toEqual([null]);
+      expect(tokens[0]!.secretHash.equals(hashToken(secret))).toBe(true);
+      expect(fake.pullRequests(repo.id)).toHaveLength(1);
+      // Noted with its kind, status and route only.
+      const warned = h.ctx.logs.filter((l) => l.includes('could not re-save the new Azure DevOps'));
+      expect(warned).toHaveLength(1);
+      expect(warned[0]).toContain('"kind":"rate_limited"');
+      expect(warned[0]).toContain('"status":429');
+      expect(warned[0]).toContain(
+        `"route":"GET /{id}/_apis/build/definitions/${fake.definitions[0]!.id}"`,
+      );
+      expect(h.ctx.logs.join('\n')).not.toContain(secret);
+
+      // A rerun adopts the pipeline: still one, with the same live token.
+      const again = await start({ connectionId, repositories: [repo.id], ciSetup: true });
+      await runAzure(fake);
+      expect((await read(again)).items[0]).toMatchObject({
+        projectOutcome: 'adopted',
+        ciOutcome: 'merge_request',
+        error: null,
+      });
+      expect(fake.definitions).toHaveLength(1);
+      expect(fake.definitions[0]!.secrets['QUALOR_TOKEN']).toBe(secret);
+      expect((await tokensOf(project.id)).map((t) => t.revokedAt)).toEqual([null]);
     });
 
     it('a queue that is open to all pipelines needs no authorisation; a refused authorisation is the manual step', async () => {
@@ -1881,6 +1955,70 @@ describe('the repository-setup run', () => {
       expect(queueOf(fake, repo, 'Default').pipelineIds).toEqual([lost.id]);
     });
 
+    it('never adopts a pipeline its own identity made under another name: it is foreign', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'renamed', projectName: 'Rho' });
+      // On the setup's file, written by Qualor's identity, but not named as Qualor names its
+      // pipelines and recorded by no setup: someone may use that identity for their own pipeline.
+      const other = fake.addDefinition(repo.id, {
+        name: 'Code analysis',
+        author: fake.patUser,
+        secrets: { QUALOR_TOKEN: 'theirs' },
+      });
+      const connectionId = await connectAzure(fake);
+      const runId = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      expect((await read(runId)).items[0]).toMatchObject({
+        ciOutcome: 'snippet',
+        ciReason: 'foreign_pipeline',
+        token: null,
+        error: null,
+        azure: null,
+      });
+      expect(writes(fake)).toEqual([]);
+      expect(other.secrets).toEqual({ QUALOR_TOKEN: 'theirs' });
+      expect(await tokensOf((await projectByKey('Rho/renamed')).id)).toEqual([]);
+    });
+
+    it('never adopts a Qualor-named pipeline of its own identity on another file', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'elsewhere', projectName: 'Nu' });
+      const other = fake.addDefinition(repo.id, {
+        name: 'Qualor',
+        yamlPath: 'azure-pipelines.yml',
+        author: fake.patUser,
+        secrets: { QUALOR_TOKEN: 'theirs' },
+      });
+      const connectionId = await connectAzure(fake);
+      const runId = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      // Not on the setup's file: left alone. The setup makes its own pipeline, under the second
+      // name, as `Qualor` is taken in the project.
+      expect((await read(runId)).items[0]).toMatchObject({
+        ciOutcome: 'merge_request',
+        error: null,
+      });
+      expect(fake.definitions.map((d) => d.body.name)).toEqual(['Qualor', 'Qualor (elsewhere)']);
+      const made = fake.definitions[1]!;
+      expect(made.body).toMatchObject({ process: { yamlFilename: FILE } });
+      expect(await itemRow(runId)).toMatchObject({ azurePipelineId: made.id });
+      expect(writes(fake).filter((w) => w.includes(`/build/definitions/${other.id}`))).toEqual([]);
+      expect(other.secrets).toEqual({ QUALOR_TOKEN: 'theirs' });
+      expect(queueOf(fake, repo, 'Default').pipelineIds).toEqual([made.id]);
+    });
+
     it('authorises only the run’s pool: a pipeline on another queue, or no queue for the pool, is the manual step', async () => {
       const fake = await azure();
       const moved = repository(fake, { name: 'moved', projectName: 'Phi' });
@@ -1976,7 +2114,8 @@ describe('the repository-setup run', () => {
         error: null,
         azure: {
           pipelineUrl: `${servicesUrlOf(fake)}/Chi/_build?definitionId=${definition.id}`,
-          queue: 'open',
+          // Authorised by the first run; `Default` is still not open to every pipeline.
+          queue: 'authorized',
           policy: 'pending',
         },
       });
@@ -2100,6 +2239,11 @@ describe('the repository-setup run', () => {
         expect(item.snippet).toContain('vmImage: ubuntu-latest');
         expect(item.snippet).toContain(STEPS);
         expect(item.snippet).toContain(`QUALOR_URL = ${PUBLIC_URL}`);
+        // The person creates the pipeline, the variable and the secret: the header says so.
+        expect(item.snippet).toContain(
+          '# Qualor in Azure Pipelines. Create a pipeline from this file',
+        );
+        expect(item.snippet).not.toContain('created by Qualor');
       }
       expect(writes(fake)).toEqual([]);
     });

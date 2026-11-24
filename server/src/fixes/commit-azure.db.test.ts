@@ -369,8 +369,8 @@ describe('the fix commit and close jobs on Azure DevOps (Azure sub-plan 6; 0.16 
   });
 
   it('a refused branch update is taken_over when the head moved, an error when it did not (FW4)', async () => {
-    // Azure DevOps has no distinct stale answer for this update (the stale answer of a ref update was never
-    // probed): any refusal while the head moved since the read is a person's push.
+    // Azure DevOps has no distinct stale answer for this update (the stale answer of a ref update
+    // was never probed): any refusal while the head moved since the read is a person's push.
     const moved = await freshRepo();
     const movedFix = await openFix(moved);
     const first = await row(movedFix);

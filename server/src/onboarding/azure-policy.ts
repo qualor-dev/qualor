@@ -6,9 +6,9 @@ import { projects, repositorySetupItems, repositorySetupRuns, scmConnections } f
 import type { SetupAzurePolicy } from '../db/schema';
 import { enqueue } from '../queue/queue';
 import type { JobHandlers } from '../queue/worker';
-import { AzureError } from '../scm/azure/client';
 import { azureClientFor } from '../scm/azure/connections';
 import type { DecorationDeps } from '../scm/decorate';
+import { ScmError } from '../scm/provider';
 import { decorationRetryDelaySeconds, inSeconds, MAX_DECORATION_ATTEMPTS } from '../scm/queue';
 
 /**
@@ -27,6 +27,7 @@ export const AZURE_POLICY_TEXT = {
   unreachable:
     'Azure DevOps could not be reached to add the Build validation policy: add it by hand',
   failed: 'The Build validation policy could not be added: add it by hand',
+  refused: "Qualor's Azure DevOps credential was refused",
 } as const;
 
 export const azurePolicyKey = (projectId: string): string => `azure-policy:${projectId}`;
@@ -181,9 +182,13 @@ async function run(deps: DecorationDeps, payload: Payload): Promise<void> {
     }
     await done('on', null);
   } catch (err) {
-    if (!(err instanceof AzureError)) throw err;
+    // Azure DevOps' errors, and Microsoft Entra's for a service principal's token.
+    if (!(err instanceof ScmError)) throw err;
     if (err.kind === 'auth') {
-      await done('manual', AZURE_POLICY_TEXT.manual);
+      // Only a missing right (403) is a step a person can take; a refused credential (401, a
+      // sign-in page, Entra) fails.
+      if (err.reason === 'permission_missing') await done('manual', AZURE_POLICY_TEXT.manual);
+      else await done('failed', AZURE_POLICY_TEXT.refused);
     } else if (err.kind === 'transient' || err.kind === 'rate_limited') {
       const next = payload.attempt + 1;
       if (next < MAX_DECORATION_ATTEMPTS) {
