@@ -17,8 +17,9 @@ it, for that one issue.
   own reason. The changelog records that the AI suggestion was shown and that the decision was
   yours.
 - **Suggest a fix**: a replacement for the flagged lines, shown as before and after. On a merge
-  request or pull request mapped to GitLab or GitHub, **Post to merge request** posts it as a GitLab
-  suggestion or a GitHub suggested change, which a person reviews and applies there.
+  request or pull request mapped to GitLab, GitHub or Azure DevOps, **Post to merge request** posts it
+  as a GitLab suggestion, a GitHub suggested change or an Azure DevOps thread with **Apply**, which a
+  person reviews and applies there.
 
 Triage and fix need an **open** issue. A fix also needs the issue's file, line and surrounding
 code. Qualor never commits, pushes, or opens a branch or merge request of its own.
@@ -372,14 +373,14 @@ cap: "Off: no cap, and organization admins may allow up to 1,000,000,000 tokens 
 
 With an Enterprise licence (feature `llm.auto-fix`, see [Enterprise](./enterprise.md)), Qualor
 suggests fixes for the new findings of a merge request or pull request by itself. It posts them as
-GitLab suggestions or GitHub suggested changes. It is **off by default** in every organisation.
-Nothing is committed or pushed: a person applies each suggestion on GitLab or GitHub, or ignores
+GitLab suggestions, GitHub suggested changes or Azure DevOps threads with **Apply**. It is **off by default** in every organisation.
+Nothing is committed or pushed: a person applies each suggestion on GitLab, GitHub or Azure DevOps, or ignores
 it.
 
 ### What runs, and when
 
-After each analysis of a merge request or pull request whose project is mapped to GitLab or GitHub
-([GitLab](./gitlab.md), [GitHub](./github.md)), Qualor picks the findings that get a suggestion:
+After each analysis of a merge request or pull request whose project is mapped to GitLab, GitHub or Azure
+DevOps ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md)), Qualor picks the findings that get a suggestion:
 
 - only **new-code** findings of that merge request: never the old issues of its target branch, and
   never an analysis of the main branch or another branch;

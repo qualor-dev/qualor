@@ -4,8 +4,7 @@ Qualor connects to Azure DevOps Services (`dev.azure.com`) and Azure DevOps Serv
 An organisation administrator adds a connection, tests it and maps each Qualor project to a
 repository.
 
-Not yet available in this release: fix pull requests, CI setup, and Azure Boards. A connection and a
-mapping prepare them.
+Not yet available in this release: CI setup and Azure Boards. A connection and a mapping prepare them.
 
 ## Before you start
 
@@ -242,6 +241,22 @@ that project.
 The service hooks need **Edit subscriptions**
 ([Let Qualor subscribe](#let-qualor-subscribe)).
 
+### Fix pull requests
+
+Qualor can open [fix pull requests](./fix-merge-requests.md) that bump a vulnerable dependency.
+Press the switch **Allow fix pull requests** on the connection in **Settings → Azure DevOps**. It is
+off, also for connections that existed before. The pull requests show as **PR !12**.
+
+Give the identity these rights on the repository, besides **Contribute to pull requests**:
+
+| Right | Why |
+|---|---|
+| **Contribute** | Qualor pushes its `qualor/fix/…` branches |
+| **Create branch** | each fix gets a new branch |
+| **Force push** | Qualor moves and deletes its own `qualor/fix/…` branches |
+
+The [fix job](./fix-merge-requests.md#azure-pipelines) runs in a pipeline of the main branch.
+
 ### Threads
 
 - Inline threads need the pipeline to check out the pull request's head. The Qualor task and the
@@ -273,6 +288,8 @@ repository mapping and a pipeline that uploads the scan.
 - A thread carries an **Apply** suggestion when the fix replaces up to 15 added lines, or deletes them.
 - Qualor reads replies in its open threads: **Active** or **Pending**.
 - A command is the first comment of a new thread, and Qualor answers in that thread.
+- An [AI fix suggestion](./ai-assistant.md#posting-a-fix) is posted as a thread with **Apply**, for
+  whole lines: one line, several lines, or a deletion.
 
 [AI review](./ai-review.md#replies-and-commands) has the rest, including
 [who may change a status](./ai-review.md#who-may-change-a-status).

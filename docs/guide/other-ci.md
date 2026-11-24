@@ -104,7 +104,8 @@ release page and your clang-tidy on `PATH`. See
 ## Fix merge requests
 
 The job that runs [`qualor fix`](./cli.md#qualor-fix) opens merge requests that bump vulnerable
-dependencies ([Fix merge requests](./fix-merge-requests.md)). It differs from the scan job:
+dependencies ([Fix merge requests](./fix-merge-requests.md)). Azure Pipelines has
+[its own files](./fix-merge-requests.md#azure-pipelines). It differs from the scan job:
 
 - It runs in the main branch's checkout, with the branch checked out by name. A detached HEAD or a
   tag exits 2.

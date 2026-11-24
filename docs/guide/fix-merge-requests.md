@@ -4,8 +4,8 @@ Qualor opens a merge request that bumps a vulnerable dependency to a version tha
 package manager regenerates the lockfile, so the merge request's own pipeline passes. You review and
 merge it.
 
-It works with GitLab and GitHub, and it is in every edition. On GitHub, read "pull request" for
-"merge request" and "PR" for "MR" throughout.
+It works with GitLab, GitHub and Azure DevOps, and it is in every edition. On GitHub and Azure
+DevOps, read "pull request" for "merge request" and "PR" for "MR" throughout.
 
 The fix is computed by a **fix job** in your CI. It runs `qualor fix` with your package manager and
 your registry access, then uploads only the changed manifests and lockfiles. The Qualor server never
@@ -30,9 +30,9 @@ Qualor.
 
 | Step | Who | Where |
 |---|---|---|
-| 1. Map the project to its repository | Organization admin | **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
-| 2. Allow fix MRs on the connection | Organization admin | **Settings → GitLab** or **Settings → GitHub**, the switch **Allow fix MRs**. It is off, also for connections that existed before |
-| 3. Give the connection's token the permissions below | whoever manages the token | GitLab or GitHub |
+| 1. Map the project to its repository | Organization admin | **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md#map-a-repository)) |
+| 2. Allow fix MRs on the connection | Organization admin | **Settings → GitLab**, **Settings → GitHub** or **Settings → Azure DevOps**, the switch **Allow fix MRs** (on Azure DevOps, **Allow fix pull requests**). It is off, also for connections that existed before |
+| 3. Give the connection's token the permissions below | whoever manages the token | GitLab, GitHub or Azure DevOps |
 | 4. Turn fix MRs on for the project | Project admin | **Project → Settings → Fix MRs**, **Enabled** |
 | 5. Add the [fix job](#the-fix-job) to CI | whoever owns the CI | the repository |
 | 6. Keep vulnerability monitoring on | Project admin | the project's settings ([Dependency vulnerabilities](./dependency-vulnerabilities.md)) |
@@ -47,9 +47,11 @@ The connection's token needs:
 |---|---|
 | GitLab | the `api` scope, and the Developer role or higher on the project |
 | GitHub | the App's permissions `contents: write` and `pull_requests: write` |
+| Azure DevOps | on the repository, for the connection's identity: **Contribute**, **Create branch**, **Force push** and **Contribute to pull requests**. **Force push** is there because Qualor moves and deletes its own `qualor/fix/…` branches. A personal access token also needs **Code: Read & write** |
 
 The permissions the connection already needs for [comments](./gitlab.md#3-merge-request-comments-and-commit-status)
-and [CI setup](./github.md#set-up-ci-with-a-pull-request) cover them. If the first commit fails with
+and [CI setup](./github.md#set-up-ci-with-a-pull-request) cover them on GitLab and GitHub. On Azure
+DevOps, [add the fix rights](./azure-devops.md#the-identitys-permissions). If the first commit fails with
 `scm_permission`, the token lacks one.
 
 ### The project settings
@@ -74,7 +76,7 @@ The row then shows the state:
 |---|---|---|
 | Requested | **Waiting for the fix job** | **Cancel** |
 | Preparing | **Preparing** (the job is working, or Qualor is writing the branch) | **Cancel** (not while Qualor writes the branch: try again in a few seconds) |
-| Open | the merge request, as **MR !12** or **PR #12**, and "to 4.17.21". **updating** while it is rebuilt | **Cancel** closes the merge request and deletes its branch |
+| Open | the merge request, as **MR !12**, **PR #12** or **PR !12**, and "to 4.17.21". **updating** while it is rebuilt | **Cancel** closes the merge request and deletes its branch |
 | Failed, no fix | the reason | **Retry**, and the [troubleshooting table](#troubleshooting) |
 | Merged, Fixed, Declined, Taken over, Cancelled | what happened | **Create again** |
 
@@ -173,6 +175,23 @@ The workflow needs no write permission: the GitHub App opens the pull requests. 
 the `qualor` binary out of the scanner image, so the runner needs Docker, and a glibc system
 (`ubuntu-latest`, not Alpine). Its other inputs are `project-key`, `scanner-image` and `args`.
 
+### Azure Pipelines
+
+Add a second pipeline next to the scan. Copy one file to `azure-pipelines-fix.yml`.
+
+| File | Use it for |
+|---|---|
+| [`integrations/azure-devops/qualor-fix.yml`](../../integrations/azure-devops/qualor-fix.yml) | The `Qualor@0` task with `command: fix` |
+| [`integrations/azure-devops/qualor-fix-docker.yml`](../../integrations/azure-devops/qualor-fix-docker.yml) | The same, with `docker run` and no extension |
+
+Both run on a push to the main branch and on a daily schedule. They need `QUALOR_URL` and the
+secret `QUALOR_TOKEN`, a **project analysis token**, as the
+[scan pipeline](./azure-devops.md#variables) does. The task form needs the
+[extension](./azure-devops.md#pick-a-pipeline).
+
+The scanner image has npm, Yarn classic and Go. For other package managers, use the docker form with
+your own image, as [Other CI](#other-ci) describes.
+
 ### Other CI
 
 Run `qualor fix` in a job of the main branch, in an image with your package manager. Take the binary
@@ -186,7 +205,7 @@ QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… \
   ./qualor-bin fix --project-key acme/payments-api
 ```
 
-Outside GitLab and GitHub, check out the branch by name: a detached HEAD, or a tag pipeline, exits 2.
+Outside GitLab, GitHub and Azure Pipelines, check out the branch by name: a detached HEAD, or a tag pipeline, exits 2.
 Schedule the job daily. [Other CI systems](./other-ci.md#fix-merge-requests) has the rest, and the
 [CLI reference](./cli.md#qualor-fix) lists the options and exit codes.
 
@@ -307,10 +326,10 @@ its merge requests:
 | What happens | Result |
 |---|---|
 | The merge request is current | nothing |
-| It has a conflict, or a vulnerability now needs a higher version | the next fix job rebuilds it from the current main, and Qualor force-updates its branch. The card shows **updating**. If the rebuild fails, the merge request stays open with the reason, and **Retry** asks again |
+| It has a conflict, or a vulnerability now needs a higher version | the next fix job rebuilds it from the current main, and Qualor force-updates its branch. The card shows **updating**. If the rebuild fails, the merge request stays open with the reason, and **Retry** asks again. Azure DevOps computes a conflict when the pull request changes, not when only main moves, so the rebuild can wait longer there |
 | The vulnerability is gone from main | Qualor comments "Qualor no longer finds a vulnerable `<package>` on `<main>`", closes the merge request and deletes the branch: **Fixed**. A branch your rules keep from deletion stays |
-| You merge it | **Merged** |
-| Someone closes it without merging | **Declined**. Qualor never proposes that version again; **Create again** can propose a higher one |
+| You merge it (Azure DevOps: complete it) | **Merged** |
+| Someone closes it without merging (Azure DevOps: abandons it) | **Declined**. Qualor never proposes that version again; **Create again** can propose a higher one |
 | Someone deletes it (GitLab) | **Declined**, as a close. **Fixed** when the vulnerability is gone |
 | Someone pushes to its branch | **Taken over**. Qualor never touches that branch or merge request again |
 | You ask again after a takeover | a new branch `qualor/fix/<family>/<package>-2`, then `-3`, and so on |
@@ -330,6 +349,7 @@ so no new merge request appears.
 | One fix | 10 minutes. A claimed fix's lease is 30 minutes, then it goes back to requested, or, with a merge request, to open with a rebuild |
 | An upload's answer | the job waits up to 10 minutes for the server, never past `--timeout` |
 | One upload | 50 files and 32 MiB, each UTF-8 text |
+| A pull request description on Azure DevOps | 4 000 characters. Qualor shortens its description to fit, by whole lines, and keeps the closing sentence |
 | A failure message | the last 2 KiB |
 
 ## Troubleshooting
@@ -404,6 +424,7 @@ fails the fix as `upload_refused`, with the rule and the file. Nothing is writte
 | The job exits 5 | the token is wrong, revoked, of another project, or personal | use a project analysis token |
 | The job exits 4 | the server is unreachable or answered an error | check `QUALOR_URL` and the proxy. Uploads wait for `Retry-After` and retry three times |
 | There is no **Create fix MR** | the package kind has no automatic fix, or no version fixes it, or you may not triage issues | [What it does](#what-it-does) |
+| A `refs/qualor/fix-tmp/*` ref remains in an Azure DevOps repository | a refresh pushes the new commit to `refs/qualor/fix-tmp/<id>` and then moves the branch to it. After a network failure the ref can stay. It is not a branch and starts no pipeline: delete it |
 | A merge request is open and old | the branch is current: it only changes on a conflict or a higher target | nothing to do |
 
 More in [Troubleshooting](./troubleshooting.md).
