@@ -18,14 +18,13 @@ const FIX_JOB_GUIDE = 'https://qualor.dev/docs/fix-merge-requests#the-fix-job';
 const MAX_OPEN_CHOICES = Array.from({ length: 20 }, (_, i) => i + 1);
 
 /** The provider whose token needs the panel names; none while it is not known. */
-function tokenNeedsOf(provider: ScmProvider | null): Exclude<ScmProvider, 'azure'> | null {
+function tokenNeedsOf(provider: ScmProvider | null): ScmProvider | null {
   if (provider === null) return null;
   switch (provider) {
     case 'gitlab':
     case 'github':
+    case 'azure':
       return provider;
-    case 'azure': // azure-pending(6): what an Azure DevOps connection needs for fix pull requests
-      return null;
     default:
       return assertNever(provider, 'provider');
   }

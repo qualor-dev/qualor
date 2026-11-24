@@ -185,6 +185,20 @@ describe('FixLinkView', () => {
       expect(text(github.root.querySelector('a.fix-mr'))).toBe('PR #12');
     });
 
+    it('an Azure fix reads PR !12 and links the PR web URL', async () => {
+      setup(fixSettings({ settings: { enabled: true }, preconditions: { provider: 'azure' } }));
+      const azure = await render({
+        fix: dependencyFix({
+          mrUrl: 'https://dev.azure.com/acme/shop/_git/payments/pullrequest/12',
+        }),
+      });
+      const link = azure.root.querySelector('a.fix-mr');
+      expect(text(link)).toBe('PR !12');
+      expect(link?.getAttribute('href')).toBe(
+        'https://dev.azure.com/acme/shop/_git/payments/pullrequest/12',
+      );
+    });
+
     it('does not link an MR address that is not http(s)', async () => {
       setup();
       const { root } = await render({ fix: dependencyFix({ mrUrl: 'javascript:alert(1)' }) });

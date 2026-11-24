@@ -486,6 +486,29 @@
           @if (results()[c.id]; as result) {
             <p class="prose-text connection-result">{{ result }}</p>
           }
+          <div class="switch-row fix-mrs">
+            <input
+              [id]="'fix-mrs-' + c.id"
+              type="checkbox"
+              role="switch"
+              class="switch"
+              [attr.aria-describedby]="'fix-mrs-help-' + c.id"
+              [checked]="c.fixMrsAllowed"
+              [disabled]="!canManage()"
+              (change)="setFixMrs(c, $event)"
+            />
+            <label [attr.for]="'fix-mrs-' + c.id">
+              <span class="sw-name" i18n="@@azure.fixMrs">Allow fix pull requests</span>&ngsp;<span
+                [id]="'fix-mrs-help-' + c.id"
+                class="sw-help"
+                i18n="@@azure.fixMrsHelp"
+                >A project turns them on in its own settings. Qualor pushes a branch of its own and
+                opens a pull request that bumps vulnerable dependencies; nothing changes on your
+                main branch until you merge it. The identity needs Contribute, Create branch, Force
+                push and Contribute to pull requests.</span
+              >
+            </label>
+          </div>
           @if (canManage()) {
             <details class="connection-edit">
               <summary i18n="@@azure.replace">

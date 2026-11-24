@@ -129,8 +129,8 @@ export class FixLinkView {
         return 'PR';
       case 'gitlab':
         return 'MR';
-      case 'azure': // azure-pending(6): what a fix pull request on Azure DevOps is called
-        return 'MR';
+      case 'azure':
+        return 'PR';
       default:
         return assertNever(provider, 'provider');
     }
@@ -143,7 +143,7 @@ export class FixLinkView {
   private readonly heading = viewChild<ElementRef<HTMLElement>>('heading');
 
   protected readonly url = computed(() => safeHelpUri(this.shown()?.mrUrl));
-  /** "MR !12" on GitLab, "PR #12" on GitHub. */
+  /** "MR !12" on GitLab, "PR #12" on GitHub, "PR !12" on Azure DevOps. */
   protected readonly mrLabel = computed(() => {
     const number = this.shown()?.mrNumber;
     if (number === null || number === undefined) return null;
@@ -156,8 +156,8 @@ export class FixLinkView {
         return $localize`:@@fix.link.pr:PR #${number}:number:`;
       case 'gitlab':
         return $localize`:@@fix.link.mr:MR !${number}:number:`;
-      case 'azure': // azure-pending(6): how a fix pull request on Azure DevOps is named
-        return $localize`:@@fix.link.mr:MR !${number}:number:`;
+      case 'azure':
+        return $localize`:@@fix.link.pr.azure:PR !${number}:number:`;
       default:
         return assertNever(provider, 'provider');
     }

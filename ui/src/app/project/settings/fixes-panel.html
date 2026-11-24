@@ -173,6 +173,12 @@
                 GitHub: the App's permissions contents: write and pull_requests: write.
               </p>
             }
+            @case ('azure') {
+              <p i18n="@@fix.panel.token.azure">
+                Azure DevOps: the identity needs the permissions Contribute, Create branch, Force
+                push and Contribute to pull requests.
+              </p>
+            }
             @default never;
           }
         </div>

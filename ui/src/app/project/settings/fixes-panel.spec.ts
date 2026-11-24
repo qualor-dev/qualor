@@ -262,6 +262,23 @@ describe('ProjectFixesPanel', () => {
     expect(neither).not.toContain("What the connection's token needs");
   });
 
+  it("an Azure connection shows the identity's four permissions", async () => {
+    setup(fixSettings({ preconditions: { provider: 'azure' } }));
+    const azure = await render();
+    const line = azure.querySelector('[data-line="token"]')?.textContent ?? '';
+    expect(line).toContain("What the connection's token needs");
+    for (const permission of [
+      'Contribute',
+      'Create branch',
+      'Force push',
+      'Contribute to pull requests',
+    ]) {
+      expect(line).toContain(permission);
+    }
+    expect(line).not.toContain('api scope');
+    expect(line).not.toContain('contents: write');
+  });
+
   it('shows a viewer the settings read-only', async () => {
     const server = setup(fixSettings({ settings: { enabled: true, maxOpen: 7 } }));
     const root = await render(['project.read']);

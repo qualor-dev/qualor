@@ -19,6 +19,7 @@ import { OrgContext } from '../org/org-context';
 import { DateTimePipe } from '../shared/date-time.pipe';
 import { closeModal, openAfterRender } from '../shared/dialog';
 import { keepFocus } from '../shared/focus';
+import { isChecked } from '../shared/forms';
 import { Icon } from '../shared/icon';
 import { KeysetList } from '../shared/keyset';
 import {
@@ -415,6 +416,42 @@ export class AzureDevOpsPage {
         return true;
       },
     );
+  }
+
+  /**
+   * The fix-pull-request switch of a connection, saved at once. Refused (or while another change
+   * runs), the switch goes back to what the connection says.
+   */
+  protected async setFixMrs(connection: Connection, event: Event): Promise<void> {
+    const toggle = event.target instanceof HTMLInputElement ? event.target : null;
+    const allowed = isChecked(event);
+    const was = connection.fixMrsAllowed;
+    if (this.busy()) {
+      if (toggle) toggle.checked = was;
+      return;
+    }
+    const generation = this.orgGeneration;
+    let saved = false;
+    await this.run(async () => {
+      const updated = await ok(
+        this.api.client.PATCH('/api/v0/scm-connections/{id}', {
+          params: { path: { id: connection.id } },
+          body: { fixMrsAllowed: allowed },
+        }),
+      );
+      saved = true;
+      this.connections.items.update((items) =>
+        items.map((c) => (c.id === updated.id ? updated : c)),
+      );
+      if (generation !== this.orgGeneration) return;
+      const url = updated.baseUrl;
+      this.announcement.set(
+        allowed
+          ? $localize`:@@azure.fixMrsOn:Fix pull requests are on for ${url}:url:.`
+          : $localize`:@@azure.fixMrsOff:Fix pull requests are off for ${url}:url:.`,
+      );
+    });
+    if (!saved && toggle) toggle.checked = was;
   }
 
   protected async test(connection: Connection): Promise<void> {
