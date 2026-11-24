@@ -287,7 +287,8 @@ function githubWrites(client: GitHubClient, mainBranch: string): FixWrites {
 /** Where a refresh's commit waits while the branch is moved to it: no branch, so no build. */
 const AZURE_TEMPORARY_REF = 'refs/qualor/fix-tmp/';
 
-type Logged = Pick<WorkerLogger, 'warn'> | undefined;
+/** Where a best-effort SCM step that failed is reported. */
+type FixLogger = Pick<WorkerLogger, 'warn'>;
 
 /**
  * Azure DevOps (sub-plan 6, probe item 22): a push takes an expected old head, but a commit whose
@@ -297,9 +298,9 @@ function azureWrites(
   client: AzureDevOpsClient,
   repositoryId: string,
   mainBranch: string,
-  logger: Logged,
+  branchHead: (name: string) => Promise<string | null>,
+  logger: FixLogger | undefined,
 ): FixWrites {
-  const branchHead = (name: string) => client.branchHead(repositoryId, name);
   const pushTo = (ref: string, input: FixCommitInput) =>
     client.push(repositoryId, {
       ref,
@@ -341,7 +342,8 @@ function azureWrites(
   /**
    * B10 on Azure DevOps (ruling 2): the commit goes to a temporary ref, the head is read again,
    * then the branch is moved from Qualor's last commit to it (a ref update need not be a
-   * fast-forward; a stale old id is a person's push), and the temporary ref is deleted.
+   * fast-forward; a refusal while the head has moved is a person's push), and the temporary ref is
+   * deleted.
    */
   const refresh = async (input: FixCommitInput, head: string) => {
     const temporary = `${AZURE_TEMPORARY_REF}${randomUUID()}`;
@@ -351,7 +353,11 @@ function azureWrites(
       try {
         await client.updateRef(repositoryId, `refs/heads/${input.branch}`, head, sha);
       } catch (err) {
-        if (err instanceof ScmError && err.reason === 'stale') return { takenOver: true as const };
+        // Azure DevOps has no stale answer of its own for this update (probe 22e): a refusal while
+        // the head has moved is a person's push; one while it has not is a real refusal.
+        const refused = err instanceof ScmError && (err.kind === 'refused' || err.kind === 'auth');
+        if (refused && (await branchHead(input.branch)) !== head)
+          return { takenOver: true as const };
         throw err;
       }
       return { sha };
@@ -402,7 +408,7 @@ export interface FixScmDeps {
   scm: ScmDeps;
   runtime?: ScmRuntime;
   /** Where a best-effort SCM step that failed is reported (Azure DevOps' temporary ref). */
-  logger?: Pick<WorkerLogger, 'warn'>;
+  logger?: FixLogger;
 }
 
 /**
@@ -498,7 +504,7 @@ export function azureRepository(
   client: AzureDevOpsClient,
   repositoryId: string,
   mainBranch: string,
-  logger?: Pick<WorkerLogger, 'warn'>,
+  logger?: FixLogger,
 ): FixRepository {
   const branchHead = (name: string) => client.branchHead(repositoryId, name);
   return {
@@ -531,7 +537,7 @@ export function azureRepository(
           return true;
         },
       ),
-    ...azureWrites(client, repositoryId, mainBranch, logger),
+    ...azureWrites(client, repositoryId, mainBranch, branchHead, logger),
   };
 }
 

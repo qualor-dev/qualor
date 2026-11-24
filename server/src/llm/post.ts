@@ -325,8 +325,8 @@ interface Target {
 const failed = (reason: PostFailureReason): Outcome => ({ kind: 'failed', reason });
 
 /**
- * llm.md §8.3: every line `startLine..endLine` is an added line of the file (`added`: line number to text), and its text
- * there is the line the model was shown, character for character.
+ * llm.md §8.3: every line `startLine..endLine` is an added line of the file (`added`: line number to
+ * text), and its text there is the line the model was shown, character for character.
  */
 function placement(added: ReadonlyMap<number, string>, fix: FixedResult): Outcome | null {
   for (let line = fix.startLine; line <= fix.endLine; line++) {

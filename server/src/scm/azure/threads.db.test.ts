@@ -944,6 +944,23 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(s.aiThread(id)?.comments[0]?.content).toContain('```suggestion\nTHREE\n```');
   });
 
+  it('selects the anchor line only when the note leaves the suggestion out', async () => {
+    const s = await reviewed('ai/dropped');
+    // A hidden character makes the suggestion one the note does not post.
+    const id = await s.aiFinding({
+      line: 3,
+      suggestion: { startLine: 3, endLine: 4, lines: ['3', 'four‮'] },
+    });
+    await decorate();
+    const thread = s.aiThread(id);
+    expect(thread?.comments[0]?.content).not.toContain('```suggestion');
+    expect(thread?.threadContext).toEqual({
+      filePath: '/src/a.ts',
+      rightFileStart: { line: 3, offset: 1 },
+      rightFileEnd: { line: 3, offset: 'THREE'.length + 1 },
+    });
+  });
+
   it('writes a suggestion over two lines as a range thread', async () => {
     const s = await reviewed('ai/multi');
     const id = await s.aiFinding({

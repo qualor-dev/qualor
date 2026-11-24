@@ -368,6 +368,39 @@ describe('the fix commit and close jobs on Azure DevOps (Azure sub-plan 6; 0.16 
     expect(await row(lateFix)).toMatchObject({ state: 'taken_over', headSha: lateFirst.headSha });
   });
 
+  it('a refused branch update is taken_over when the head moved, an error when it did not (FW4)', async () => {
+    // Azure DevOps has no distinct stale answer for this update: any refusal while the head moved
+    // since the read is a person's push.
+    const moved = await freshRepo();
+    const movedFix = await openFix(moved);
+    const first = await row(movedFix);
+    await refreshed(moved, movedFix);
+    let racer = '';
+    fake.inject('POST', /\/refs$/, {
+      ...REFUSED_REF_UPDATE,
+      before: async () => {
+        racer = personPushes(moved, first.headSha!);
+      },
+    });
+    await runFixJobs();
+    expect(headOf(moved)).toBe(racer);
+    expect(temporaryRefs(moved)).toEqual([]);
+    expect(await row(movedFix)).toMatchObject({ state: 'taken_over', headSha: first.headSha });
+
+    // The head did not move: the refusal stands, here a missing right (FW5).
+    const still = await freshRepo();
+    const stillFix = await openFix(still);
+    await refreshed(still, stillFix);
+    fake.inject('POST', /\/refs$/, {
+      status: 200,
+      body: { value: [{ success: false, updateStatus: 'forcePushRequired' }], count: 1 },
+    });
+    await runFixJobs();
+    expect(temporaryRefs(still)).toEqual([]);
+    expect(await row(stillFix)).toMatchObject({ state: 'open' });
+    expect((await row(stillFix)).failure?.code).toBe('scm_permission');
+  });
+
   it('a temporary ref that cannot be deleted is logged without Azure DevOps’ words, and the refresh stands', async () => {
     const repo = await freshRepo();
     const fixId = await openFix(repo);

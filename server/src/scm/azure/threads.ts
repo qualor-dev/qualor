@@ -420,23 +420,23 @@ async function createThreads(
       const text = place?.get(issue.anchorLine);
       if (place === undefined || text === undefined) continue;
       const found = await liveSuggestion(ctx.deps.db, ctx.loaded.branch.id, ai.head, issue, place);
-      // A kept suggestion's lines are all added lines (`liveSuggestion`): the thread selects them whole.
-      const endText = found === null ? undefined : place.get(found.endLine);
-      const suggestion = endText === undefined ? null : found;
-      const range =
-        suggestion !== null && endText !== undefined
-          ? {
-              startLine: suggestion.startLine,
-              endLine: suggestion.endLine,
-              endLineLength: endText.length,
-            }
-          : { startLine: issue.anchorLine, endLine: issue.anchorLine, endLineLength: text.length };
       const note = aiFindingNote(
         'azure',
         issue,
-        suggestion,
+        found,
         issueUrl(ctx.deps.publicUrl, ctx.loaded.project.id, issue.id),
       );
+      // The thread selects what the note kept: a suggestion's lines whole (all are added lines,
+      // `liveSuggestion`), or the anchor alone when the note left it out.
+      const kept = note.suggestion;
+      const range =
+        kept === null
+          ? { startLine: issue.anchorLine, endLine: issue.anchorLine, endLineLength: text.length }
+          : {
+              startLine: kept.startLine,
+              endLine: kept.endLine,
+              endLineLength: (place.get(kept.endLine) ?? text).length,
+            };
       if (!postsAiThread(issue, note)) continue;
       try {
         await client.createThread(repositoryId, prId, {

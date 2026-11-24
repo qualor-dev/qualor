@@ -577,6 +577,31 @@ describe('posting a fix suggestion (llm.md §8)', () => {
       expect(logs).not.toContain('if (a === 1)');
     });
 
+    it('does not take a thread of another identity with the marker for a lost post', async () => {
+      const { project, pr, repository } = await azureCase('fix-az-foreign');
+      const { issueId, requestId } = await suggestFix(project);
+      const deps = decorationDeps(h);
+      await runDecorations(h, deps);
+      const foreign = azure.addThread(repository.id, 7, {
+        filePath: 'src/a.ts',
+        line: 2,
+        comments: [
+          {
+            content: `<!-- qualor:ai-fix ${issueId} ${requestId} -->\nsomeone else`,
+            authorId: 'someone-else',
+          },
+        ],
+      });
+      expect((await post(requestId)).statusCode).toBe(202);
+      await runDecorations(h, deps);
+      const threads = azureFixThreads(pr);
+      expect(threads).toHaveLength(2);
+      const mine = threads.find((t) => t.id !== foreign.id)!;
+      expect(mine.comments[0]!.content).toContain('**AI-generated fix suggestion**');
+      const url = await postedUrl(requestId);
+      expect(url).toBe(`${(url ?? '').split('?')[0]}?discussionId=${mine.id}`);
+    });
+
     it('selects whole lines: rightFileStart {2, 1}, rightFileEnd {3, length of line 3 + 1}', async () => {
       const { project, pr } = await azureCase('fix-az-range');
       llm.say(twoLines);

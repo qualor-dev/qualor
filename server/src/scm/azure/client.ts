@@ -548,12 +548,31 @@ function pullRequestOf(
   };
 }
 
-/** A ref update that did not succeed: a stale old id, or a refusal by policy. */
+/** The update statuses that say the identity lacks a right of the repository. */
+const REF_RIGHT_MISSING = new Set([
+  'createBranchPermissionRequired',
+  'createTagPermissionRequired',
+  'forcePushRequired',
+  'writePermissionRequired',
+  'manageNotePermissionRequired',
+]);
+
+/**
+ * A ref update that did not succeed: a stale old id, a missing right (an auth failure, as a 403
+ * is), or a refusal by policy.
+ */
 function throwRefRefused(updateStatus: string | undefined): never {
   if (updateStatus === 'staleOldObjectId') {
     throw new AzureError('refused', AZURE_TEXT.refStale, { status: 409, reason: 'stale' });
   }
-  // The update status is Azure DevOps' own word: kept for decisions (), never shown.
+  if (updateStatus !== undefined && REF_RIGHT_MISSING.has(updateStatus)) {
+    throw new AzureError('auth', AZURE_TEXT.forbidden, {
+      status: 403,
+      reason: 'permission_missing',
+      azureMessage: updateStatus,
+    });
+  }
+  // The update status is Azure DevOps' own word: kept for decisions only, never shown.
   throw new AzureError('refused', AZURE_TEXT.refRefused, {
     status: 403,
     azureMessage: updateStatus ?? null,

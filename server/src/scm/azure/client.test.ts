@@ -1861,6 +1861,23 @@ describe('fix writes: branches, pushes, refs, raw reads and pull requests (sub-p
       expect((refused as AzureError).azureMessage).toBe('rejectedByPolicy');
     });
 
+    it.each([
+      'createBranchPermissionRequired',
+      'createTagPermissionRequired',
+      'forcePushRequired',
+      'writePermissionRequired',
+      'manageNotePermissionRequired',
+    ])('%s is a missing right: kind auth, reason permission_missing, 403', async (word) => {
+      const { head } = await pushed();
+      fake.inject('POST', /\/refs$/, {
+        status: 200,
+        body: { value: [{ success: false, updateStatus: word, name: NAME }] },
+      });
+      const error = await failure(clientOf(fake).updateRef(repoId, NAME, head, head));
+      expect(error).toMatchObject({ kind: 'auth', status: 403, reason: 'permission_missing' });
+      expect((error as AzureError).azureMessage).toBe(word);
+    });
+
     it('deleteRef sends the zero new id; the old id is not enforced (succeededCorruptRef)', async () => {
       await pushed();
       const client = clientOf(fake);
