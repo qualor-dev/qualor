@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "repositoryId": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+        "name": "refs/qualor/fix-tmp/20261124130022",
+        "oldObjectId": "3590e8c87599299d15417805802c0117ff66f90a",
+        "newObjectId": "0000000000000000000000000000000000000000",
+        "isLocked": false,
+        "updateStatus": "succeeded",
+        "success": true
+      }
+    ],
+    "count": 1
+  }
+}

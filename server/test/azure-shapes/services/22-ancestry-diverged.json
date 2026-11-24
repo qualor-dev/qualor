@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "changeCounts": {
+      "Edit": 2
+    },
+    "changes": [
+      {
+        "item": {
+          "objectId": "9e8b73b35a44d472c94f4c88e16aeda7e2738a12",
+          "originalObjectId": "c9e8b585ba0d12bd175f7743c68782ba1b309a9d",
+          "gitObjectType": "tree",
+          "commitId": "288f6d372cd736683bc7ae0b42a3cc0340d5d410",
+          "path": "/probe",
+          "isFolder": true,
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/items/probe?versionType=Commit&version=288f6d372cd736683bc7ae0b42a3cc0340d5d410"
+        },
+        "changeType": "edit"
+      }
+    ],
+    "commonCommit": "182b4e8034ed5c7fc2842e81c9ddf31d55811058",
+    "baseCommit": "aae92b6c8ebf6f09fe82c62957572cbf82c2c0a6",
+    "targetCommit": "288f6d372cd736683bc7ae0b42a3cc0340d5d410",
+    "aheadCount": 1,
+    "behindCount": 1
+  }
+}

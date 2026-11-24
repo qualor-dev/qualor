@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "The combination of parameters is either not valid or not complete.\r\nParameter name: baseCommitId",
+    "typeName": "Microsoft.TeamFoundation.SourceControl.WebServer.InvalidArgumentValueException, Microsoft.TeamFoundation.SourceControl.WebServer",
+    "typeKey": "InvalidArgumentValueException",
+    "errorCode": 0,
+    "eventId": 0
+  }
+}

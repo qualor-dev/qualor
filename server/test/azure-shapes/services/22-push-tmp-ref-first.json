@@ -1,0 +1,85 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "commits": [
+      {
+        "treeId": "15af503fd5b635962d5d8e3ba9e8520abbca6ce5",
+        "commitId": "3590e8c87599299d15417805802c0117ff66f90a",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-24T13:00:28Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-24T13:00:28Z"
+        },
+        "comment": "Qualor probe item 22: fix 2",
+        "parents": ["aae92b6c8ebf6f09fe82c62957572cbf82c2c0a6"],
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/3590e8c87599299d15417805802c0117ff66f90a"
+      }
+    ],
+    "refUpdates": [
+      {
+        "repositoryId": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+        "name": "refs/qualor/fix-tmp/20261124130022",
+        "oldObjectId": "0000000000000000000000000000000000000000",
+        "newObjectId": "3590e8c87599299d15417805802c0117ff66f90a"
+      }
+    ],
+    "repository": {
+      "id": "4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+      "name": "probe",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2",
+      "project": {
+        "id": "a1532079-a512-4327-8d28-fa6e00004469",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+        "state": "wellFormed",
+        "revision": 19,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+      },
+      "size": 956,
+      "remoteUrl": "https://user@example.invalid/probe-org/probe-org/_git/probe",
+      "sshUrl": "user@example.invalid:v3/probe-org/probe-org/probe",
+      "webUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pushedBy": {
+      "displayName": "Probe User",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        }
+      },
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "pushId": 157,
+    "date": "2026-11-24T13:00:28.46197Z",
+    "url": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pushes/157",
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pushes/157"
+      },
+      "repository": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+      },
+      "commits": {
+        "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pushes/157/commits"
+      },
+      "pusher": {
+        "href": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d"
+      },
+      "refs": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/refs/qualor/fix-tmp/20261124130022"
+      }
+    }
+  }
+}

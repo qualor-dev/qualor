@@ -5,6 +5,7 @@
  * Each item exercises one REST behaviour the design depends on, records the redacted answers under
  * server/test/azure-shapes/<target>/ and appends its answer to the results file
  * (`AZURE_PROBE_RESULTS_FILE`, kept out of the repository).
+ * `--items 23 --verify-apply <prId>` reads item 23's file after the Apply clicks and judges each thread.
  * `--cleanup-manual` closes the pull requests and branches the manual items left open.
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -38,6 +39,7 @@ import {
   type TargetName,
 } from './items/common.js';
 import { ITEMS } from './items/index.js';
+import { verifyApply } from './items/23-suggestion-ranges.js';
 
 /** The keys the probe needs besides the targets' (loadTarget names those). */
 function requiredEnv(key: 'AZURE_PROBE_RESULTS_FILE' | 'AZURE_PROBE_ID_SALT'): string {
@@ -333,7 +335,10 @@ async function main(): Promise<void> {
     console.log(`item ${item.id}: ${item.title} …`);
     let res: ProbeResult;
     try {
-      res = await item.run(ctx);
+      res =
+        args.verifyApply === undefined
+          ? await item.run(ctx)
+          : await verifyApply(ctx, args.verifyApply);
     } catch (err) {
       const e = err as Error;
       if (err instanceof InterruptedError) {

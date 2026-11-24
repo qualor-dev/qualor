@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "Invalid argument value.\r\nParameter name: A description for a pull request must not be longer than 4000 characters.",
+    "typeName": "Microsoft.TeamFoundation.SourceControl.WebServer.InvalidArgumentValueException, Microsoft.TeamFoundation.SourceControl.WebServer",
+    "typeKey": "InvalidArgumentValueException",
+    "errorCode": 0,
+    "eventId": 0
+  }
+}

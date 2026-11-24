@@ -268,11 +268,13 @@ export function parseArgs(argv: string[]): {
   items?: number[];
   cleanupManual?: true;
   auth?: AuthKind;
+  verifyApply?: number;
 } {
   let target: string | undefined;
   let items: number[] | undefined;
   let cleanupManual = false;
   let auth: AuthKind | undefined;
+  let verifyApply: number | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const [flag, inline] = (arg ?? '').split('=', 2);
@@ -288,6 +290,11 @@ export function parseArgs(argv: string[]): {
         throw new Error(`--auth pat|secret|certificate, not ${kind}`);
       }
       auth = kind;
+    } else if (flag === '--verify-apply') {
+      const raw = value();
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n <= 0) throw new Error(`not a pull request id: ${raw}`);
+      verifyApply = n;
     } else if (flag === '--cleanup-manual' && inline === undefined) cleanupManual = true;
     else if (flag === '--items') {
       items = value()
@@ -307,7 +314,13 @@ export function parseArgs(argv: string[]): {
   if (target === 'server' && auth && auth !== 'pat') {
     throw new Error(`--auth ${auth}: server has no Entra (pat only)`);
   }
-  const withAuth = auth ? { auth } : {};
+  if (verifyApply !== undefined && !(items?.length === 1 && items[0] === 23)) {
+    throw new Error('--verify-apply <prId> goes with --items 23 only');
+  }
+  const withAuth = {
+    ...(auth ? { auth } : {}),
+    ...(verifyApply !== undefined ? { verifyApply } : {}),
+  };
   if (cleanupManual) return { target, cleanupManual: true, ...withAuth };
   return items ? { target, items, ...withAuth } : { target, ...withAuth };
 }
