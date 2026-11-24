@@ -809,15 +809,68 @@ export async function createBranchAt(
   return refName;
 }
 
-export async function deleteBranch(ctx: ProbeContext, refName: string): Promise<void> {
+const RefUpdateAnswerSchema = z.object({
+  value: z.array(z.object({ success: z.boolean(), updateStatus: z.string().optional() }).loose()),
+});
+
+/** The first update of a `POST refs` answer: whether it succeeded, and Azure DevOps's word for it. */
+export function refUpdateOf(json: unknown): { success: boolean; updateStatus: string } {
+  const parsed = RefUpdateAnswerSchema.safeParse(json);
+  const first = parsed.success ? parsed.data.value[0] : undefined;
+  return { success: first?.success === true, updateStatus: first?.updateStatus ?? 'unreadable' };
+}
+
+/** A ref update Azure DevOps answered 2xx but refused; `updateStatus` is its word for why. */
+export class RefUpdateError extends Error {
+  override readonly name = 'RefUpdateError';
+  constructor(
+    message: string,
+    readonly updateStatus: string,
+  ) {
+    super(message);
+  }
+}
+
+export type RefDeleteOps = {
+  /** The ref's head now; undefined when it is gone. */
+  head: () => Promise<string | undefined>;
+  /** `POST refs` of the ref with `oldObjectId` and the zero new id: the answer, whatever it is. */
+  remove: (oldObjectId: string) => Promise<AzureResponse>;
+};
+
+/**
+ * Deletes a ref by its head read right before the delete; a ref already gone is done. A stale old
+ * id (the ref moved in between) is read again and tried once more. Any other refusal throws a
+ * {@link RefUpdateError} with Azure DevOps's `updateStatus` word and nothing else of the answer.
+ */
+export async function deleteRefWith(ops: RefDeleteOps, name: string): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    const head = await ops.head();
+    if (!head) return;
+    const update = refUpdateOf(ok(await ops.remove(head), `delete ${name}`).json);
+    if (update.success) return;
+    if (update.updateStatus !== 'staleOldObjectId' || attempt >= 2) {
+      throw new RefUpdateError(`delete ${name}: ${update.updateStatus}`, update.updateStatus);
+    }
+  }
+}
+
+/** Deletes a branch of the context's repository by its current head ({@link deleteRefWith}). */
+export async function deleteBranch(
+  ctx: ProbeContext,
+  refName: string,
+  client: AzureClient = ctx.bot,
+): Promise<void> {
   const repo = await repoInfo(ctx);
-  const head = await refHead(ctx, refName);
-  if (!head) return;
-  ok(
-    await ctx.bot.request('POST', gitPath(ctx, repo, '/refs'), [
-      { name: refName, oldObjectId: head, newObjectId: '0'.repeat(40) },
-    ]),
-    `delete ${refName}`,
+  await deleteRefWith(
+    {
+      head: () => refHead(ctx, refName),
+      remove: (oldObjectId) =>
+        client.request('POST', gitPath(ctx, repo, '/refs'), [
+          { name: refName, oldObjectId, newObjectId: '0'.repeat(40) },
+        ]),
+    },
+    refName,
   );
 }
 

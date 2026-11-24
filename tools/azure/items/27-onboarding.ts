@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { azureStatusName } from '../../../server/src/scm/render';
-import type { AzureResponse } from '../client.js';
+import type { AzureClient, AzureResponse } from '../client.js';
 import { BENCH_IMAGE_TAG } from './18-ci.js';
 import { check, needEnv, rec, servicePrincipalId, type Check } from './19-decoration.js';
 import { QualorApi } from './21-review.js';
@@ -20,10 +20,12 @@ import {
   answerOf,
   BUILD_POLICY,
   BuildSchema,
+  CallError,
   cancelBuilds,
   createPr,
   defaultQueueId,
   deleteBranch,
+  deleteRefWith,
   evaluations,
   getBuild,
   getPr,
@@ -34,6 +36,7 @@ import {
   pushFiles,
   queueBuild,
   queuePermissions,
+  RefUpdateError,
   refHead,
   remove,
   repoInfo,
@@ -773,17 +776,63 @@ const PrListSchema = z.object({
 const gitById = (ctx: ProbeContext, repoId: string, rest: string): string =>
   `/${ctx.project}/_apis/git/repositories/${repoId}${rest}`;
 
-/** Deletes `name` (a full ref name) of a repository read by id, when it is there. */
-async function deleteRef(ctx: ProbeContext, repoId: string, name: string): Promise<void> {
-  const head = await headOf(ctx, repoId, name);
-  if (!head) return;
-  const res = ok(
-    await ctx.bot.request('POST', gitById(ctx, repoId, '/refs'), [
-      { name, oldObjectId: head, newObjectId: ZEROS },
-    ]),
-    `delete ${name}`,
+/**
+ * Deletes `name` (a full ref name) of a repository read by id by its current head, when it is
+ * there ({@link deleteRefWith}: a stale head is read again once; a refusal says Azure's word).
+ */
+async function deleteRef(
+  ctx: ProbeContext,
+  repoId: string,
+  name: string,
+  client: AzureClient = ctx.bot,
+): Promise<void> {
+  await deleteRefWith(
+    {
+      head: () => headOf(ctx, repoId, name),
+      remove: (oldObjectId) =>
+        client.request('POST', gitById(ctx, repoId, '/refs'), [
+          { name, oldObjectId, newObjectId: ZEROS },
+        ]),
+    },
+    name,
   );
-  if (!refUpdatesSucceeded(res.json)) throw new Error(`delete ${name}: the ref update failed`);
+}
+
+const refusal = (err: unknown): string | null => {
+  if (err instanceof RefUpdateError) return err.updateStatus;
+  if (err instanceof CallError) return `HTTP ${err.status}`;
+  return null;
+};
+
+/**
+ * Deletes the setup branch an earlier run left. It is Qualor's: when the probe's identity may not
+ * delete it, Qualor's own (the service principal, which pushed it) tries. A branch still there is
+ * no stop: the setup reuses a `qualor/setup` it finds (product behaviour). The note says why.
+ */
+async function deleteSetupBranch(
+  ctx: ProbeContext,
+  repoId: string,
+  notes: string[],
+): Promise<void> {
+  const words: string[] = [];
+  for (const [who, client] of [
+    ['the probe', ctx.bot],
+    ["Qualor's service principal", ctx.entra?.('secret')],
+  ] as const) {
+    if (!client) continue;
+    try {
+      await deleteRef(ctx, repoId, SETUP_REF, client);
+      if (words.length > 0) notes.push(`${SETUP_BRANCH} deleted by ${who} (${words.join('; ')})`);
+      return;
+    } catch (err) {
+      const word = refusal(err);
+      if (word === null) throw err;
+      words.push(`${who}: ${word}`);
+    }
+  }
+  notes.push(
+    `${SETUP_BRANCH} of an earlier run could not be deleted (${words.join('; ')}); the run goes on and the setup reuses the branch`,
+  );
 }
 
 /**
@@ -867,7 +916,10 @@ async function clearEarlierRun(ctx: ProbeContext, repoId: string, notes: string[
     ...(await listRefs('heads/')),
     ...(await listRefs(TMP_PREFIX.slice('refs/'.length))),
   ]);
-  for (const r of stale) await deleteRef(ctx, repoId, r.name);
+  for (const r of stale) {
+    if (r.name === SETUP_REF) await deleteSetupBranch(ctx, repoId, notes);
+    else await deleteRef(ctx, repoId, r.name);
+  }
   notes.push(
     `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retired.length ? ` (${retired.join(', ')})` : ''}, ${stale.length} ref(s) deleted`,
   );
@@ -1181,7 +1233,14 @@ export const item: ProbeItem = {
         for (const pr of await activePrsFrom(setupCtx, repo, SETUP_REF)) {
           await abandonPr(setupCtx, pr.pullRequestId);
         }
-        await deleteBranch(setupCtx, SETUP_REF);
+        try {
+          await deleteBranch(setupCtx, SETUP_REF);
+        } catch (err) {
+          // Qualor's service principal pushed the branch: it tries when the probe may not.
+          const sp = ctx.entra?.('secret');
+          if (!sp || refusal(err) === null) throw err;
+          await deleteBranch(setupCtx, SETUP_REF, sp);
+        }
       },
     );
 

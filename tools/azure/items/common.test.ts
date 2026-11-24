@@ -12,8 +12,12 @@ import { aclAnswer, contributeSource } from './16-acl.js';
 import {
   addIdentity,
   buildRedactionTable,
+  CallError,
+  deleteRefWith,
   excerpt,
   Cleanup,
+  RefUpdateError,
+  refUpdateOf,
   InterruptedError,
   keptLogLines,
   leaks,
@@ -641,5 +645,105 @@ describe('trimTypes (item 13)', () => {
     expect(names(type['fieldInstances'])).toEqual(['System.Title', 'System.AreaId']);
     expect(names(type['fields'])).toEqual(['System.Title', 'System.AreaId']);
     expect(trimTypes(trimmed)).toEqual(trimmed);
+  });
+});
+
+describe('deleteRefWith', () => {
+  const NAME = 'refs/heads/qualor/setup';
+  const answer = (status: number, json: unknown) => ({ status, headers: {}, json });
+  const update = (success: boolean, updateStatus: string, extra: Record<string, unknown> = {}) =>
+    answer(200, { count: 1, value: [{ name: NAME, success, updateStatus, ...extra }] });
+
+  /** Heads read one after another, and the old ids each delete sent. */
+  const opsOf = (heads: (string | undefined)[], answers: ReturnType<typeof answer>[]) => {
+    const sent: string[] = [];
+    let reads = 0;
+    return {
+      sent,
+      reads: () => reads,
+      ops: {
+        head: () => Promise.resolve(heads[reads++]),
+        remove: (old: string) => {
+          sent.push(old);
+          const next = answers.shift();
+          if (!next) throw new Error('no answer left');
+          return Promise.resolve(next);
+        },
+      },
+    };
+  };
+
+  it('a ref already gone is done: no delete is sent', async () => {
+    const t = opsOf([undefined], []);
+    await deleteRefWith(t.ops, NAME);
+    expect(t.sent).toEqual([]);
+  });
+
+  it('deletes by the head read right before', async () => {
+    const t = opsOf(['aaa'], [update(true, 'succeeded')]);
+    await deleteRefWith(t.ops, NAME);
+    expect(t.sent).toEqual(['aaa']);
+  });
+
+  it('a stale old id: the head is read again and the delete tried once more', async () => {
+    const t = opsOf(['aaa', 'bbb'], [update(false, 'staleOldObjectId'), update(true, 'succeeded')]);
+    await deleteRefWith(t.ops, NAME);
+    expect(t.sent).toEqual(['aaa', 'bbb']);
+  });
+
+  it('a ref gone between the stale answer and the second read is done', async () => {
+    const t = opsOf(['aaa', undefined], [update(false, 'staleOldObjectId')]);
+    await deleteRefWith(t.ops, NAME);
+    expect(t.sent).toEqual(['aaa']);
+  });
+
+  it('stale twice: says so', async () => {
+    const t = opsOf(
+      ['aaa', 'bbb'],
+      [update(false, 'staleOldObjectId'), update(false, 'staleOldObjectId')],
+    );
+    const err = await deleteRefWith(t.ops, NAME).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RefUpdateError);
+    expect((err as RefUpdateError).updateStatus).toBe('staleOldObjectId');
+    expect((err as Error).message).toBe(`delete ${NAME}: staleOldObjectId`);
+  });
+
+  it("another refusal throws at once with Azure DevOps's word only", async () => {
+    const t = opsOf(
+      ['aaa', 'bbb'],
+      [update(false, 'forcePushRequired', { customMessage: 'Some text of the server' })],
+    );
+    const err = await deleteRefWith(t.ops, NAME).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RefUpdateError);
+    expect((err as RefUpdateError).updateStatus).toBe('forcePushRequired');
+    expect((err as Error).message).toBe(`delete ${NAME}: forcePushRequired`);
+    expect(t.sent).toEqual(['aaa']);
+    expect(t.reads()).toBe(1);
+  });
+
+  it('an answer that is not 2xx is a CallError, an unreadable one says so', async () => {
+    const refused = await deleteRefWith(
+      opsOf(['aaa'], [answer(403, { message: 'no' })]).ops,
+      NAME,
+    ).catch((e: unknown) => e);
+    expect(refused).toBeInstanceOf(CallError);
+    expect((refused as CallError).status).toBe(403);
+    const odd = await deleteRefWith(opsOf(['aaa'], [answer(200, { nope: 1 })]).ops, NAME).catch(
+      (e: unknown) => e,
+    );
+    expect((odd as Error).message).toBe(`delete ${NAME}: unreadable`);
+  });
+
+  it('reads the first update of a refs answer', () => {
+    expect(refUpdateOf({ value: [{ success: true, updateStatus: 'succeeded' }] })).toEqual({
+      success: true,
+      updateStatus: 'succeeded',
+    });
+    expect(refUpdateOf({ value: [{ success: false }] })).toEqual({
+      success: false,
+      updateStatus: 'unreadable',
+    });
+    expect(refUpdateOf({ value: [] })).toEqual({ success: false, updateStatus: 'unreadable' });
+    expect(refUpdateOf(null)).toEqual({ success: false, updateStatus: 'unreadable' });
   });
 });
