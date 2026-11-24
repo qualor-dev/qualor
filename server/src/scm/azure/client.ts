@@ -600,6 +600,20 @@ function definitionOf(d: z.infer<typeof definitionAnswer>): AzureDefinition {
   };
 }
 
+/**
+ * The pipeline's CI trigger: `settingsSourceType` 2 makes the YAML file's own `trigger:` block
+ * decide which pushes run it. A definition created without a trigger does not run on a push (the
+ * probe items queued every build by hand), so a merged setup would never analyse main.
+ */
+export const AZURE_YAML_CI_TRIGGER = {
+  triggerType: 'continuousIntegration',
+  settingsSourceType: 2,
+  branchFilters: [],
+  pathFilters: [],
+  batchChanges: false,
+  maxConcurrentBuildsPerBranch: 1,
+} as const;
+
 /** Variables as a definition body takes them: a secret is flagged, none may be overridden by a run. */
 function variablesBody(
   variables: Readonly<Record<string, AzureDefinitionVariable>>,
@@ -1090,6 +1104,7 @@ export class AzureDevOpsClient {
           defaultBranch: input.defaultBranch,
         },
         variables: variablesBody(input.variables),
+        triggers: [AZURE_YAML_CI_TRIGGER],
       },
       AZURE_API_VERSION,
       'base',
@@ -1114,8 +1129,9 @@ export class AzureDevOpsClient {
   }
 
   /**
-   * GET then PUT: the definition as Azure DevOps has it (unknown fields kept; a secret reads back
-   * `null` and survives the PUT) with `variables` laid over its own.
+   * GET then PUT: the definition as Azure DevOps has it (unknown fields kept, its `triggers` too: a
+   * PUT replaces the whole definition; a secret reads back `null` and survives the PUT) with
+   * `variables` laid over its own.
    */
   async replaceDefinition(
     projectId: string,

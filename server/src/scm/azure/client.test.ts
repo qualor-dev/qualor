@@ -2200,7 +2200,19 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
   });
 
   describe('build definitions', () => {
-    it('creates one with a YAML process, the queue, the repository and the variables', async () => {
+    /** A CI trigger whose settings come from the YAML's own `trigger:` block (settingsSourceType 2). */
+    const YAML_CI_TRIGGER = [
+      {
+        triggerType: 'continuousIntegration',
+        settingsSourceType: 2,
+        branchFilters: [],
+        pathFilters: [],
+        batchChanges: false,
+        maxConcurrentBuildsPerBranch: 1,
+      },
+    ];
+
+    it('creates one with a YAML process, its CI trigger from the YAML, the queue, the repository and the variables', async () => {
       const input = newDefinition('Qualor create');
       const made = await clientOf(fake).createDefinition(projectId, input);
       const request = lastRequest();
@@ -2223,7 +2235,12 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
           QUALOR_TOKEN: { value: SECRET, isSecret: true, allowOverride: false },
           QUALOR_PROJECT_KEY: { value: 'payments/ci', allowOverride: false },
         },
+        triggers: YAML_CI_TRIGGER,
       });
+      // The pipeline runs on pushes: the trigger is stored and read back.
+      expect(fake.definitions.find((d) => d.id === made.id)?.body.triggers).toEqual(
+        YAML_CI_TRIGGER,
+      );
       expect(made).toEqual({
         id: expect.any(Number),
         name: 'Qualor create',
@@ -2281,7 +2298,7 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(made.secretSet).toBe(false);
     });
 
-    it('replaceDefinition GETs, keeps unknown fields and the secret, and PUTs the variables', async () => {
+    it('replaceDefinition GETs, keeps unknown fields, the CI trigger and the secret, and PUTs the variables', async () => {
       const client = clientOf(fake);
       const made = await client.createDefinition(projectId, newDefinition('Qualor replace'));
       const row = fake.definitions.find((d) => d.id === made.id)!;
@@ -2296,6 +2313,10 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(apiVersion(put.query)).toBe('7.0');
       const sent = bodyOf(put);
       expect(sent.somethingNew).toEqual({ kept: true });
+      expect(sent.triggers).toEqual(YAML_CI_TRIGGER);
+      expect(fake.definitions.find((x) => x.id === made.id)?.body.triggers).toEqual(
+        YAML_CI_TRIGGER,
+      );
       expect(sent.variables).toMatchObject({
         QUALOR_TOKEN: { value: null, isSecret: true },
         QUALOR_PROJECT_KEY: { value: 'payments/ci' },

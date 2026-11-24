@@ -86,6 +86,17 @@ const ALL = {
 } as const;
 const WORKFLOW = '.github/workflows/qualor.yml';
 const BRANCH = 'qualor/setup';
+/** The Azure DevOps pipeline's CI trigger: its settings are the YAML's own `trigger:` block. */
+const YAML_CI_TRIGGER = [
+  {
+    triggerType: 'continuousIntegration',
+    settingsSourceType: 2,
+    branchFilters: [],
+    pathFilters: [],
+    batchChanges: false,
+    maxConcurrentBuildsPerBranch: 1,
+  },
+];
 
 describe('the repository-setup run', () => {
   let h: IngestHarness;
@@ -1250,6 +1261,8 @@ describe('the repository-setup run', () => {
           QUALOR_URL: { value: PUBLIC_URL, allowOverride: false },
           QUALOR_TOKEN: { value: null, isSecret: true },
         },
+        // Runs on pushes: a CI trigger whose settings are the YAML's own `trigger:` block.
+        triggers: YAML_CI_TRIGGER,
       });
       const secret = definition.secrets['QUALOR_TOKEN']!;
       expect(secret).toMatch(/^qlr_prj_/);
@@ -1474,6 +1487,8 @@ describe('the repository-setup run', () => {
       expect(fake.definitions[0]!.secrets['QUALOR_TOKEN']).toBe(secret);
       expect(fake.definitions[0]!.body).toMatchObject({
         variables: { QUALOR_URL: { value: PUBLIC_URL } },
+        // The PUT keeps the CI trigger the create sent.
+        triggers: YAML_CI_TRIGGER,
       });
       expect(
         writes(fake).filter((w) => w.startsWith('POST') && w.endsWith('/definitions')),

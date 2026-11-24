@@ -154,7 +154,9 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *   - `build/definitions` (GET with `repositoryId` and `repositoryType`, POST), `build/definitions/{id}`
  *     (GET, PUT): `26-definition-create` with the definition's values. A secret variable reads back
  *     `{ value: null, isSecret: true }`, survives a PUT that leaves its value out and is replaced by
- *     one that sends it (`definitions[n].secrets`); a PUT keeps the body's unknown fields. A name
+ *     one that sends it (`definitions[n].secrets`); a PUT keeps the body's unknown fields. The
+ *     `triggers` are stored as sent and read back; a PUT that sends none drops them, as it replaces
+ *     the definition (constructed: no recorded definition has a trigger). A name
  *     the project already has is 409 (`DefinitionExistsException`, constructed). `authoredBy` is
  *     the caller that wrote the revision (constructed: one identity made every recorded
  *     definition); `addDefinition` seeds one another identity made.
@@ -2005,9 +2007,12 @@ export async function createFakeAzureDevOps(options: {
   ): Json => {
     const { id, revision, queue, repository } = input;
     const self = `${url}/${projectId}/_apis/build/Definitions/${id}?revision=${revision}`;
+    // A PUT replaces the definition: its triggers are the ones it sends (none: none).
+    const { triggers: _replaced, ...current } = input.current ?? {};
+    void _replaced;
     return {
       ...recordedDefinition,
-      ...(input.current ?? {}),
+      ...current,
       ...input.sent,
       variables: input.variables,
       process: { ...(recordedDefinition.process as Json), yamlFilename: input.yaml },
@@ -2146,6 +2151,9 @@ export async function createFakeAzureDevOps(options: {
         const queueSent = body?.queue as Json | undefined;
         if (!body || typeof name !== 'string' || typeof yaml !== 'string') {
           return bad('a definition needs a name and a process with a yamlFilename');
+        }
+        if (body.triggers !== undefined && !Array.isArray(body.triggers)) {
+          return bad('a definition takes its triggers as a list');
         }
         const repository = repositories.find(
           (r) => r.projectId === projectId && r.id === String(repoSent?.id).toLowerCase(),
