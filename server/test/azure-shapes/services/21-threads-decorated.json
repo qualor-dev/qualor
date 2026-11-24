@@ -1,0 +1,304 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 89,
+        "publishedDate": "2026-11-24T11:26:59.397Z",
+        "lastUpdatedDate": "2026-11-24T11:26:59.397Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:issue 25ee8253-ad1d-4f4d-828f-fa6e00006aa9 -->\n**High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186)\n\nUnexpected empty function ` 'emptyHandler' `.\n\n[View in Qualor](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/25ee8253-ad1d-4f4d-828f-fa6e00006aa9)",
+            "publishedDate": "2026-11-24T11:26:59.397Z",
+            "lastUpdatedDate": "2026-11-24T11:26:59.397Z",
+            "lastContentUpdatedDate": "2026-11-24T11:26:59.397Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/89/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/89"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261124112507.js",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 2,
+            "offset": 33
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "ad5f063386204b498baefa6e000007f1"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/89"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 90,
+        "publishedDate": "2026-11-24T11:26:59.967Z",
+        "lastUpdatedDate": "2026-11-24T11:27:30.503Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:summary 6d581179-0227-4214-891e-fa6e0000c552 -->\n### ❌ Qualor: quality gate failed\n\n**Qualor way** · analysis ` 2e050f16cb48 ` · **1 new issue** in this pull request\n\n| | Condition | Value | Required |\n|---|---|---|---|\n| ❌ | New issues | 1 | ≤ 0 |\n| ➖ | Coverage on new code | — | skipped: fewer than 20 new lines |\n| ➖ | Duplication on new code | — | skipped: fewer than 20 new lines |\n\n**By severity:** 🔴 1 high\n\n#### Most severe new issues\n\n1. 🔴 **High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186) · [` probe/item-21-20261124112507.js:2 `](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/25ee8253-ad1d-4f4d-828f-fa6e00006aa9)\\\n   Unexpected empty function ` 'emptyHandler' `.\n\n1 new issue is commented inline. · **[Open in Qualor →](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/branches/bbe903a6-d8fa-4ee9-844b-fa6e0000346b)**\n\n#### AI review\n\nOne critical authorization bug: the admin-only delete predicate is inverted and throws on a null user. The probe adds no test that would catch it.\n\n**Findings:** 1 high · 1 medium · 0 low\n\n- Adds a Qualor scan pipeline for Azure Pipelines that runs a docker scanner image with the token passed through the step environment.\n- Checkout fetches full history and resolves the pull request head commit before the scan runs.\n- Adds the probe module exporting an empty emptyHandler function, already flagged by the analyzers.\n- Adds canDeleteAccount, whose condition ` !user.isAdmin ` grants deletion to non-admins and denies admins.\n- No test covers the new authorization predicate, so the inversion would not be caught.\n\nReviewed commit: ` 2e050f16cb48 `\n\n<details><summary>Prompt for an AI agent</summary>\n\n```text\nFix the problems below, which an AI review found in this pull request.\nThe review can be wrong: read the code first and skip a finding that does not hold.\nKeep each change small and run the tests afterwards.\n\n1. probe/item-21-20261124112507.js:6 canDeleteAccount returns true for non-admins, inverting the documented admin-only rule\n   The doc comment says only administrators may delete accounts, but `!user.isAdmin` is true for every non-admin and false for administrators. Any caller that uses this as the deletion gate lets ordinary users delete accounts and blocks admins. The condition should be `user.isAdmin`. The function also throws a TypeError when `user` is null or undefined, so the fix should return false for a missing user.\n2. probe/item-21-20261124112507.js:6 No test covers the admin-only rule of the new canDeleteAccount predicate\n   The merge request adds an authorization predicate with no accompanying test. Nothing would fail if the check were inverted, as it is now, or if admins and ordinary users were not distinguished. Add a unit test asserting that an administrator gets true, a non-admin gets false, and a user without an `isAdmin` field gets false.\n```\n\n</details>",
+            "publishedDate": "2026-11-24T11:26:59.967Z",
+            "lastUpdatedDate": "2026-11-24T11:27:30.503Z",
+            "lastContentUpdatedDate": "2026-11-24T11:27:30.503Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/90/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/90"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "closed",
+        "threadContext": null,
+        "properties": null,
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/90"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 91,
+        "publishedDate": "2026-11-24T11:27:30.013Z",
+        "lastUpdatedDate": "2026-11-24T11:27:30.013Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:issue 1b335464-00d3-4ddb-8c96-fa6e0000ac38 -->\n**AI review** · High · Logic · likely · ` ai:logic `\n\n**canDeleteAccount returns true for non-admins, inverting the documented admin-only rule**\n\nThe doc comment says only administrators may delete accounts, but ` !user.isAdmin ` is true for every non-admin and false for administrators. Any caller that uses this as the deletion gate lets ordinary users delete accounts and blocks admins. The condition should be ` user.isAdmin `. The function also throws a TypeError when ` user ` is null or undefined, so the fix should return false for a missing user.\n\nAssumes: Callers use the return value directly as the permission check for account deletion.\n\n```suggestion\nexport const canDeleteAccount = (user) => Boolean(user && user.isAdmin);\n```\n\n[View in Qualor](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/1b335464-00d3-4ddb-8c96-fa6e0000ac38)",
+            "publishedDate": "2026-11-24T11:27:30.013Z",
+            "lastUpdatedDate": "2026-11-24T11:27:30.013Z",
+            "lastContentUpdatedDate": "2026-11-24T11:27:30.013Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/91/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/91"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261124112507.js",
+          "rightFileStart": {
+            "line": 6,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 6,
+            "offset": 57
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "a2d1bf84599447c180d5fa6e0000676a"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/91"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 92,
+        "publishedDate": "2026-11-24T11:27:30.24Z",
+        "lastUpdatedDate": "2026-11-24T11:27:30.24Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:issue 690fd517-14f0-4745-8039-fa6e0000fa4f -->\n**AI review** · Medium · Tests · likely · ` ai:tests `\n\n**No test covers the admin-only rule of the new canDeleteAccount predicate**\n\nThe merge request adds an authorization predicate with no accompanying test. Nothing would fail if the check were inverted, as it is now, or if admins and ordinary users were not distinguished. Add a unit test asserting that an administrator gets true, a non-admin gets false, and a user without an ` isAdmin ` field gets false.\n\nAssumes: No test file in the change covers this function, as the changed paths show.\n\n[View in Qualor](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/690fd517-14f0-4745-8039-fa6e0000fa4f)",
+            "publishedDate": "2026-11-24T11:27:30.24Z",
+            "lastUpdatedDate": "2026-11-24T11:27:30.24Z",
+            "lastContentUpdatedDate": "2026-11-24T11:27:30.24Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/92/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/92"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261124112507.js",
+          "rightFileStart": {
+            "line": 6,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 6,
+            "offset": 57
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "da35b2ac18a84b7088c4fa6e000041b9"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/25/threads/92"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      }
+    ],
+    "count": 4
+  }
+}
