@@ -1,0 +1,6 @@
+{
+  "scenario": "S2 after 12 minutes",
+  "fired": true,
+  "reason": "individualCI",
+  "secondsAfterPush": 6
+}

@@ -1,0 +1,6 @@
+{
+  "scenario": "S4 after a re-save",
+  "fired": true,
+  "reason": "individualCI",
+  "secondsAfterPush": 5
+}

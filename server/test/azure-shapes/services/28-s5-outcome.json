@@ -1,0 +1,6 @@
+{
+  "scenario": "S5 second push at 15 minutes",
+  "fired": true,
+  "reason": "individualCI",
+  "secondsAfterPush": 0
+}
