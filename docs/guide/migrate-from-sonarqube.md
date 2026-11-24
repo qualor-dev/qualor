@@ -196,7 +196,7 @@ Running the import again is safe. Objects already in place are reported as `unch
 A safe migration runs Qualor next to SonarQube for a few weeks:
 
 1. Import the configuration. Add the Qualor job with `allow-failure: true` (GitLab), or as a check
-   that is not required yet (GitHub).
+   that is not required yet (GitHub, Azure DevOps).
 2. Compare the verdicts on real merge requests, and tune the gate and profiles ([Quality
    gates](./quality-gates.md)).
 3. Make the Qualor check required and remove the SonarQube step.

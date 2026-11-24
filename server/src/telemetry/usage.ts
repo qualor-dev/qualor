@@ -29,7 +29,7 @@ export interface UsageBlocks {
   /** The organisations with a dependency licence policy. */
   licensePolicyOrgs: number;
   /** Analyses of merge requests, by the SCM provider the report named. */
-  mergeRequests30d: Record<ScmProvider, number>; // azure-pending(9): the telemetry receiver learns azure here, in ci and in scm
+  mergeRequests30d: Record<ScmProvider, number>;
   /** Analyses by the CI system whose context they carried; `other` carried none of SCM_PROVIDERS. */
   ci: Record<ScmProvider | 'other', number>;
   /** The booleans of `features`. */

@@ -1,14 +1,14 @@
 # Qualor documentation
 
 Qualor is one self-hosted server for code quality, AI code review and dependency vulnerability
-tracking. It runs in your CI and comments on GitLab merge requests and GitHub pull requests. There
+tracking. It runs in your CI and comments on GitLab merge requests, GitHub pull requests and Azure DevOps pull requests. There
 is no lines-of-code licence.
 
 | Part | What it does | Read |
 |---|---|---|
 | Code quality and security | Runs open-source analyzers you already know, such as ESLint, PMD, SpotBugs, Ruff, staticcheck and Gitleaks, plus Qualor's own security rules and any tool that writes SARIF. Trivy checks infrastructure as code: Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles and Azure ARM. Tracks their issues across commits, measures coverage, duplication and complexity, and applies a quality gate to **new code** | [Languages and analyzers](./languages-and-analyzers.md), [Quality gates, profiles and issues](./quality-gates.md) |
-| AI code review | A model of your choice, hosted or local, reviews merge requests in threads with suggested changes. The AI assistant explains an issue or suggests a fix, and the MCP server lets coding agents read the gate and the issues | [AI review](./ai-review.md), [AI assistant](./ai-assistant.md), [MCP server for AI agents](./mcp.md) |
-| Dependency vulnerability tracking | Keeps the dependency list of the main branch, chosen branches and released versions. The server re-checks them against its own copy of the vulnerability database, without a new scan. Each vulnerability is triaged once, with a VEX reason. Uploaded SBOMs, such as an image's, are tracked the same way. **Packages** shows where a package is used. Qualor opens merge requests that bump a vulnerable dependency. Vulnerabilities and code issues become Jira issues. | [Dependency vulnerabilities](./dependency-vulnerabilities.md), [SBOM upload](./sbom-upload.md), [The vulnerability database](./vulnerability-database.md), [Releases and versions](./releases.md), [Dependency licences](./dependency-licenses.md), [Fix merge requests](./fix-merge-requests.md), [Jira](./jira.md) |
+| AI code review | A model of your choice, hosted or local, reviews merge and pull requests in threads with suggested changes. The AI assistant explains an issue or suggests a fix, and the MCP server lets coding agents read the gate and the issues | [AI review](./ai-review.md), [AI assistant](./ai-assistant.md), [MCP server for AI agents](./mcp.md) |
+| Dependency vulnerability tracking | Keeps the dependency list of the main branch, chosen branches and released versions. The server re-checks them against its own copy of the vulnerability database, without a new scan. Each vulnerability is triaged once, with a VEX reason. Uploaded SBOMs, such as an image's, are tracked the same way. **Packages** shows where a package is used. Qualor opens merge and pull requests that bump a vulnerable dependency. Vulnerabilities and code issues become Jira issues. | [Dependency vulnerabilities](./dependency-vulnerabilities.md), [SBOM upload](./sbom-upload.md), [The vulnerability database](./vulnerability-database.md), [Releases and versions](./releases.md), [Dependency licences](./dependency-licenses.md), [Fix merge requests](./fix-merge-requests.md), [Jira](./jira.md) |
 
 AI review is off by default in every edition, and its findings never count in the quality gate.
 [Enterprise](./enterprise.md) lists what each edition adds.
@@ -26,7 +26,8 @@ guide of its own release, under **Docs** in the top bar (`/docs`, for signed-in 
    tokens CI uses.
 4. [GitLab](./gitlab.md): the CI/CD component, merge request comments and replies.
 5. [GitHub](./github.md): the Actions workflow and the GitHub App for check runs and comments.
-6. [Azure DevOps](./azure-devops.md): connect Services or Server and map repositories.
+6. [Azure DevOps](./azure-devops.md): connect Services or Server, set up CI, and get pull request
+   comments and AI review.
 7. [Other CI systems and local scans](./other-ci.md): Jenkins, Bitbucket, any other CI, or a
    laptop.
 8. [Languages and analyzers](./languages-and-analyzers.md): what runs for each language, plus

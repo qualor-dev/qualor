@@ -196,18 +196,18 @@ finding older than that commit.
 ### Values read from CI
 
 When present, the scanner reads the revision, the branch, the merge or pull request id and its
-target, the default branch and the project path: from `CI_*` on GitLab, and from `GITHUB_*` and the
-event payload on GitHub. Outside CI, it uses `git rev-parse HEAD` and the current branch, and never
+target, the default branch and the project path: from `CI_*` on GitLab, from `GITHUB_*` and the
+event payload on GitHub, and from `BUILD_*` and `SYSTEM_*` on Azure Pipelines. Outside CI, it uses `git rev-parse HEAD` and the current branch, and never
 assumes a merge request.
 
 For [AI review](./ai-review.md#what-your-ci-needs) it also reads three values. They go into the AI
 review snapshot only, never into the report.
 
-| Value | GitLab | GitHub (the event) |
-| --- | --- | --- |
-| the merge request's last commit | `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` in a merged-result or merge-train pipeline, else `CI_COMMIT_SHA` | `pull_request.head.sha` |
-| its title | `CI_MERGE_REQUEST_TITLE` | `pull_request.title` |
-| its description | `CI_MERGE_REQUEST_DESCRIPTION` | `pull_request.body` |
+| Value | GitLab | GitHub (the event) | Azure Pipelines |
+| --- | --- | --- | --- |
+| the merge request's last commit | `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` in a merged-result or merge-train pipeline, else `CI_COMMIT_SHA` | `pull_request.head.sha` | `SYSTEM_PULLREQUEST_SOURCECOMMITID` |
+| its title | `CI_MERGE_REQUEST_TITLE` | `pull_request.title` | not read |
+| its description | `CI_MERGE_REQUEST_DESCRIPTION` | `pull_request.body` | not read |
 
 ## Examples
 

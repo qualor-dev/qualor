@@ -13,7 +13,7 @@ The scanner's exit codes are in the [CLI reference](./cli.md#exit-codes).
 
 | Message or symptom | Cause | Fix |
 | --- | --- | --- |
-| exit 2, `no project key` | no CI project path is detected outside GitLab and GitHub | set `QUALOR_PROJECT_KEY`, `--project-key` or `project.key` |
+| exit 2, `no project key` | no CI project path is detected outside GitLab, GitHub and Azure Pipelines | set `QUALOR_PROJECT_KEY`, `--project-key` or `project.key` |
 | exit 2, `server.url comes only from qualor.yml` | the token is sent only to a URL from `QUALOR_URL` or `--server-url` | set `QUALOR_URL` in the CI |
 | exit 2, `invalid qualor.yml` and `analyzers: Unrecognized key: "eslnt"` | a typo in `qualor.yml`: unknown keys are errors | fix the key. The JSON Schema helps in the editor |
 | exit 2, `invalid qualor.yml` naming `token` | secrets may not be in the config | remove it and use `QUALOR_TOKEN` |
@@ -65,7 +65,7 @@ The reasons of `TAINT_ENGINE_FALLBACK` ([C#](./languages-and-analyzers.md#c)):
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| gate `error`, "new code unavailable" | a shallow clone, and the baseline could not be fetched | `GIT_DEPTH: 0` (GitLab), `fetch-depth: 0` (GitHub), `git fetch --unshallow` elsewhere |
+| gate `error`, "new code unavailable" | a shallow clone, and the baseline could not be fetched | `GIT_DEPTH: 0` (GitLab), `fetch-depth: 0` (GitHub), `fetchDepth: 0` (Azure Pipelines), `git fetch --unshallow` elsewhere |
 | gate `error` on the main branch, "`<sha>` could not be fetched from origin", with the full history | the project holds analyses of another git history (the repository was re-created, or the project key reused), so the baseline commit is not in this repository. A 30-day new-code period does not help: its baseline is still an old-history analysis | set the [new-code definition](./quality-gates.md#new-code) to an analysis of the new history (`{ "type": "analysis", "analysisId": "…" }`), or use a new project |
 | every merge request analysis shows up as a branch | the job ran in a branch pipeline | GitLab: use `merge_request_event` rules. Other CI: pass `--mr` and `--mr-target` |
 | a coverage condition shows "no value" | no coverage report was imported | run the tests with coverage before the scan, and list the report in `coverage.reports` |
@@ -82,6 +82,7 @@ and its message says what is wrong.
 | Symptom | Cause and fix |
 | --- | --- |
 | nothing on GitLab | no connection or mapping, or the analysis did not come from GitLab CI. Local scans are never decorated |
+| nothing on Azure DevOps | no connection or mapping, or the analysis did not come from Azure Pipelines. The table of [Azure DevOps](./azure-devops.md#when-azure-devops-refuses-qualor) lists what Azure DevOps refuses |
 | "This GitLab is on an internal address" | the operator must list the host in `QUALOR_SCM_INTERNAL_HOSTS` |
 | "GitLab refused the token" | the token is wrong, revoked or expired. Enter a new one |
 | "The token lacks a permission" | the token lacks the `api` scope or the Maintainer role. Developer is enough for comments, but not for a commit status on a protected branch |
@@ -155,7 +156,7 @@ The server logs a key it refuses as `licence key rejected`, with a `reason`:
 | `PROJECT_GRANT_LIMIT_REACHED` (409) | the project already has 1 000 roles granted directly on it | remove a grant you no longer need, or give the role at organisation level |
 | a bulk status change answers 200, but lists some issues in `failed` with `code: "FORBIDDEN"` | the caller's role may read those issues but not triage them (a Viewer). The other issues in the request changed | ask an org admin for the right role, then retry the refused ones |
 | `LAST_ADMIN` (409) changing a member's role or removing a member | the member is the organisation's last Organization admin, and an organisation always keeps one | make someone else Organization admin first |
-| `FORBIDDEN` (403) setting `scmConnectionId` or `scmProjectRef` on a project | mapping a project to a GitLab or GitHub repository needs an org admin, even for a Project admin | ask an org admin to set the mapping (**Settings → Repositories**, or the same `PATCH`) |
+| `FORBIDDEN` (403) setting `scmConnectionId` or `scmProjectRef` on a project | mapping a project to a GitLab, GitHub or Azure DevOps repository needs an org admin, even for a Project admin | ask an org admin to set the mapping (**Settings → Repositories**, or the same `PATCH`) |
 | a status change answers `CONCURRENCY_CONFLICT` (503) with `Retry-After` | another change to the same issue, or the audit log's recording of it, ran at the same moment. Nothing was written | wait as long as `Retry-After` says, and send the request again |
 | "The chain breaks at event N" (**Settings → Audit log → Verify chain**) | event N's content, or its link to the event before it, no longer matches its stored hash. A row was changed, a row was deleted outside retention, or the retention anchor was changed | compare event N with an earlier export or your SIEM receiver's copy. If they agree with what came before it, the database changed since: ask whoever administers it |
 | `AUDIT_CHAIN_ANCHOR_MALFORMED` (409) on changes, or sign-in refused with it | the stored anchor of the audit chain was changed and no longer parses | see [Repair the audit-chain anchor](#repair-the-audit-chain-anchor) |

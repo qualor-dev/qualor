@@ -121,8 +121,8 @@ saving is refused and the box shows the new warning.
   Other CI systems, such as Jenkins, Bitbucket, TeamCity or a laptop, send no snapshot, even with
   `--mr` and `--mr-target`: the scanner reads the merge request, last commit, title and description
   only from these (table below).
-- **The full history**: `GIT_DEPTH: 0` on GitLab, `fetch-depth: 0` on GitHub. A shallow clone that
-  cannot be deepened sends no snapshot.
+- **The full history**: `GIT_DEPTH: 0` on GitLab, `fetch-depth: 0` on GitHub, `fetchDepth: 0` on Azure
+  Pipelines. A shallow clone that cannot be deepened sends no snapshot.
 - **The last commit in the clone.** GitHub's default checkout is a merge commit, so the scanner
   fetches the last commit from `origin` with the checkout's credentials. On a private repository
   with `persist-credentials: false` that fails: check out the pull request's head, as the
@@ -136,11 +136,11 @@ saving is refused and the box shows the new warning.
   server to unpack the snapshot. A snapshot not built within **10 minutes** (a stalled fetch, say)
   is not sent, and the job goes on to the quality gate.
 
-| | GitLab | GitHub (the event's) |
-|---|---|---|
-| Last commit | `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` in a merged-result or merge-train pipeline, `CI_COMMIT_SHA` otherwise | `pull_request.head.sha` |
-| Title | `CI_MERGE_REQUEST_TITLE` | `pull_request.title` |
-| Description | `CI_MERGE_REQUEST_DESCRIPTION` | `pull_request.body` |
+| | GitLab | GitHub (the event's) | Azure Pipelines |
+|---|---|---|---|
+| Last commit | `CI_MERGE_REQUEST_SOURCE_BRANCH_SHA` in a merged-result or merge-train pipeline, `CI_COMMIT_SHA` otherwise | `pull_request.head.sha` | `SYSTEM_PULLREQUEST_SOURCECOMMITID` |
+| Title | `CI_MERGE_REQUEST_TITLE` | `pull_request.title` | not read |
+| Description | `CI_MERGE_REQUEST_DESCRIPTION` | `pull_request.body` | not read |
 
 **The snapshot never changes the scan's result.** A failure while it is built or sent is a warning
 in the log, and the exit code stays the quality gate's.
@@ -371,7 +371,7 @@ character, no GitLab quick action. Otherwise the thread says in words how to fix
 
 ### The text
 
-The model's prose reaches GitLab and GitHub as plain text. Anything that could become a link, a
+The model's prose reaches GitLab, GitHub and Azure DevOps as plain text. Anything that could become a link, a
 mention, a reference or markup goes in code formatting: addresses, `@name`, `#1`, `!1`, commit
 hashes, issue keys such as `ABC-123`, file paths and HTML. Hidden and direction-reversing characters
 are removed. So the model cannot mention a person, run a GitLab quick action or add a link. Qualor's
@@ -401,7 +401,7 @@ custom autolink of a GitHub repository) and whatever a GitLab project's `jira_is
 
 When an issue is fixed or marked in Qualor, Qualor resolves its thread, unless a person replied in
 it. Then, for a fix, Qualor writes one note instead: "Fixed in `<sha>`". Resolving a thread on
-GitLab or GitHub only hides it. To dismiss the finding, mark the issue in Qualor or say so in a
+GitLab, GitHub or Azure DevOps only hides it. To dismiss the finding, mark the issue in Qualor or say so in a
 reply.
 
 ## Replies and commands
@@ -533,7 +533,7 @@ gets the answer above.
 
 ### At once, or at the next analysis
 
-- **With a webhook**, GitLab or GitHub tells Qualor that someone commented. Qualor reads the
+- **With a webhook**, GitLab, GitHub or Azure DevOps tells Qualor that someone commented. Qualor reads the
   comments through the API, never trusting the webhook's text, and answers as soon as the model has
   decided. Set it up on [GitLab](./gitlab.md#answers-to-replies-and-commands-webhook) (Comments
   events) or [GitHub](./github.md#turn-on-the-webhook-recommended) (Issue comment and Pull request
@@ -701,7 +701,7 @@ record per file in seconds. Qualor deletes it at the first of these:
 - **Merge or close.** Qualor deletes the copy when it sees the merge request merged or closed: when
   it posts comments, when a review reads the merge request, and in an hourly check of every merge
   request that holds a snapshot. So the copy is gone within an hour. If the check cannot reach
-  GitLab or GitHub, it tries again an hour later.
+  GitLab, GitHub or Azure DevOps, it tries again an hour later.
 - **AI review stops covering the project.** The project's copies go at once when:
   - you switch AI review off, or leave the project out of **Projects to review**;
   - an instance admin stops allowing the organisation to use AI, excludes the project from AI, or
@@ -965,7 +965,7 @@ What `reason` says, for a note that was skipped or failed. Nothing is posted:
 | `closed` (skipped) | The merge request was merged or closed. Nothing to do. |
 | `thread_gone` (skipped) | The thread or the command's note was deleted, someone resolved the thread before Qualor answered, or the project is no longer mapped to that provider. Nothing to do. |
 | `superseded` (skipped) | A newer round in the same thread covers this one, and its answer reads these notes too. |
-| `expired` (skipped) | The note waited over 30 days while its GitLab or GitHub connection or the model provider kept failing. Nothing to do: a new reply starts a new round. |
+| `expired` (skipped) | The note waited over 30 days while its SCM connection or the model provider kept failing. Nothing to do: a new reply starts a new round. |
 | `provider_error` (failed) | The model could not be asked or gave no answer ([When the model provider fails](#when-the-model-provider-fails)). The log has an `AI review reply call finished` line for each call, with its error code. While Qualor pauses calls to a failing provider, a reply does not fail: it waits for the pause to end (the log says `AI reply waits for the circuit of its model provider`). |
 | `provider_no_tools` (failed) | The model's server refuses tool calls ([Models that work](#models-that-work)). For OpenAI's newest models, choose **Responses** under **API** in the **Connection options** of **Settings → AI provider**. |
 | `bad_answer` (failed) | The model's answer could not be read, or named a status the thread does not allow, even after a second try. Nothing is posted, on purpose. A stronger model fails less often. |
@@ -1003,7 +1003,7 @@ the messages that call for action. Other lines say what the snapshot holds and m
 | `no snapshot sent, the secret scan's output could not be read` | Run the scan again. If it repeats, read the debug log. |
 | `no snapshot sent, the merge request's head commit <sha> is not in the clone and could not be fetched` | Give the job the full history, or check out the pull request's head ([What your CI needs](#what-your-ci-needs)). |
 | `… is not in the clone (scm.autoFetch is false)` | Allow the fetch (`scm.autoFetch: true`), or give the clone the commit. |
-| `no snapshot sent, the merge request's head commit is unknown (…)` | The CI did not name the commit: run in merge request pipelines on GitLab, on the `pull_request` event on GitHub. |
+| `no snapshot sent, the merge request's head commit is unknown (…)` | The CI did not name the commit: run in merge request pipelines on GitLab, on the `pull_request` event on GitHub, through a Build validation policy on Azure DevOps. |
 | `no snapshot sent, the merge request's head and origin/<target> have no common commit in this clone` | The clone lacks the history: `GIT_DEPTH: 0` or `fetch-depth: 0`. |
 | `no snapshot sent, the merge request's changes alone are over the server's snapshot limits` | The merge request is very large. The operator can raise the [limits](#snapshot-limits-and-workers). |
 | `no snapshot sent, the head files that differ from the scanned checkout could not be scanned` | Gitleaks failed on them. Run the scan again, or rebase the merge request if the target branch changed a file your Gitleaks configuration extends, or read the debug log. |
@@ -1031,7 +1031,7 @@ the messages that call for action. Other lines say what the snapshot holds and m
 | `review_disabled` | An organisation admin presses **Switch on AI review…** in **Settings → AI**. |
 | `consent_outdated` | The provider, or one of its models (a strong or a fast model counts), changed. An organisation admin presses **Review and confirm…** in **Settings → AI**. |
 | `project_not_selected` | Add the project to **Projects to review** in **Settings → AI**. A project the instance admin excluded from AI is never reviewed. |
-| `not_mapped` | Map the project to its GitLab or GitHub repository ([GitLab](./gitlab.md), [GitHub](./github.md)). |
+| `not_mapped` | Map the project to its GitLab, GitHub or Azure DevOps repository ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md#map-a-repository)). |
 | `provider_changed` | The instance admin changed the provider, or one of its models, while a review was running, and the confirmation covers the new setup. The review stopped, and the next push is reviewed with the new provider. |
 
 ## API
