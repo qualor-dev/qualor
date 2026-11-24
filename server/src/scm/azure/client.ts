@@ -310,6 +310,8 @@ export interface AzureDefinition {
   queueId: number | null;
   webUrl: string | null;
   secretSet: boolean;
+  /** `authoredBy.id`: the identity that wrote the definition; null when Azure DevOps names none. */
+  authoredBy: string | null;
 }
 
 export interface AzureBuildPolicy {
@@ -442,6 +444,7 @@ const definitionAnswer = z.looseObject({
     .record(z.string(), z.looseObject({ isSecret: z.boolean().nullish() }).nullable())
     .nullish(),
   _links: z.looseObject({ web: z.looseObject({ href: z.string().min(1) }).nullish() }).nullish(),
+  authoredBy: z.looseObject({ id: z.string().min(1).nullish() }).nullish(),
 });
 const definitionList = z.looseObject({ value: z.array(definitionAnswer) });
 const policyAnswer = z.looseObject({
@@ -593,6 +596,7 @@ function definitionOf(d: z.infer<typeof definitionAnswer>): AzureDefinition {
     queueId: d.queue?.id ?? null,
     webUrl: d._links?.web?.href ?? null,
     secretSet: d.variables?.[AZURE_SECRET_VARIABLE]?.isSecret === true,
+    authoredBy: d.authoredBy?.id ?? null,
   };
 }
 

@@ -20,6 +20,7 @@ import {
 import { notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, noNul } from '../http/schemas';
 import {
+  FOREIGN_PIPELINE_TEXT,
   MAX_SETUP_REPOSITORIES,
   REPOSITORY_SETUP_QUEUE,
   SETUP_CI_REASONS,
@@ -104,7 +105,12 @@ const itemSchema = z.object({
       '`merge_request`: opened, or already open (`ciUrl`); `snippet`: CI could not be set up (`ciReason`), copy the snippet; `already`: the repository has a Qualor job or token; `skipped`: the run did not set up CI',
   }),
   ciUrl: z.string().nullable(),
-  ciReason: z.enum(SETUP_CI_REASONS).nullable(),
+  ciReason: z
+    .enum(SETUP_CI_REASONS)
+    .nullable()
+    .meta({
+      description: `Why the repository got the snippet. \`foreign_pipeline\` (Azure DevOps): ${FOREIGN_PIPELINE_TEXT}; Qualor wrote nothing and made no token`,
+    }),
   snippet: z.string().nullable(),
   token: z.string().nullable().meta({
     description:

@@ -2232,6 +2232,7 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
         queueId: input.queueId,
         webUrl: `${fake.url}/${projectId}/_build/definition?definitionId=${made.id}`,
         secretSet: true,
+        authoredBy: fake.patUser.id,
       });
       expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
         QUALOR_TOKEN: SECRET,
@@ -2251,6 +2252,25 @@ describe('the CI setup calls (sub-plan 7, task 3)', () => {
       expect(listed).toContainEqual(made);
       expect(await client.definition(projectId, made.id)).toEqual(made);
       expect(lastRequest().path).toBe(`/${projectId}/_apis/build/definitions/${made.id}`);
+    });
+
+    it('reads who wrote a definition: the recorded author, or none', async () => {
+      const recorded = azureShape<{ body: { value: Record<string, unknown>[] } }>(
+        'services',
+        '26-definitions-search',
+      ).body.value[0]!;
+      const anonymous: Record<string, unknown> = { ...recorded, id: 99 };
+      delete anonymous['authoredBy'];
+      fake.inject('GET', /build\/definitions$/, {
+        status: 200,
+        body: { count: 2, value: [recorded, anonymous] },
+      });
+      const listed = await clientOf(fake).definitions(projectId, repoId);
+      expect(listed.map((d) => d.authoredBy)).toEqual([
+        (recorded['authoredBy'] as { id: string }).id,
+        null,
+      ]);
+      expect(listed[0]!.authoredBy).toBe('7c429e0c-e3c7-43e0-8633-fa6e0000136d');
     });
 
     it('a definition without the secret variable has secretSet false', async () => {

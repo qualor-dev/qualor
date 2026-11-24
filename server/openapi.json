@@ -27267,13 +27267,15 @@
                                   "no_public_url",
                                   "not_allowed",
                                   "missing_permissions",
-                                  "empty_repository"
+                                  "empty_repository",
+                                  "foreign_pipeline"
                                 ]
                               },
                               {
                                 "type": "null"
                               }
-                            ]
+                            ],
+                            "description": "Why the repository got the snippet. `foreign_pipeline` (Azure DevOps): A pipeline Qualor did not create already uses .azure-pipelines/qualor.yml; Qualor wrote nothing and made no token"
                           },
                           "snippet": {
                             "type": [

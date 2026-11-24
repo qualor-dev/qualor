@@ -12358,7 +12358,8 @@ export interface paths {
                                  */
                                 ciOutcome: "pending" | "merge_request" | "snippet" | "already" | "skipped" | "failed";
                                 ciUrl: string | null;
-                                ciReason: ("already_set_up" | "yaml_unsupported" | "custom_ci_path" | "no_public_url" | "not_allowed" | "missing_permissions" | "empty_repository") | null;
+                                /** @description Why the repository got the snippet. `foreign_pipeline` (Azure DevOps): A pipeline Qualor did not create already uses .azure-pipelines/qualor.yml; Qualor wrote nothing and made no token */
+                                ciReason: ("already_set_up" | "yaml_unsupported" | "custom_ci_path" | "no_public_url" | "not_allowed" | "missing_permissions" | "empty_repository" | "foreign_pipeline") | null;
                                 snippet: string | null;
                                 /** @description The project's new CI setup token, for the snippet: shown to the run's creator on the first read after the repository is done, never again */
                                 token: string | null;

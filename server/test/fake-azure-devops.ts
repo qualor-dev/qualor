@@ -155,7 +155,9 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     (GET, PUT): `26-definition-create` with the definition's values. A secret variable reads back
  *     `{ value: null, isSecret: true }`, survives a PUT that leaves its value out and is replaced by
  *     one that sends it (`definitions[n].secrets`); a PUT keeps the body's unknown fields. A name
- *     the project already has is 409 (`DefinitionExistsException`, constructed).
+ *     the project already has is 409 (`DefinitionExistsException`, constructed). `authoredBy` is
+ *     the caller that wrote the revision (constructed: one identity made every recorded
+ *     definition); `addDefinition` seeds one another identity made.
  *   - `policy/configurations` (GET with `repositoryId`, `refName`, `policyType`; POST): `26-policy-create`
  *     / `26-policies-search`; only the Build policy type is known, the matchKind reads back `Exact`.
  *   - `items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.…` (GET) of a repository: the root
@@ -554,6 +556,22 @@ export interface FakeAzureDevOps {
   ): FakeAzureQueue;
   /** The build definitions of every project, in creation order. */
   readonly definitions: readonly FakeAzureDefinition[];
+  /**
+   * A build definition as a person or another tool made it, without a request: `author` wrote it
+   * (`authoredBy`, default the PAT's user), on the project's queue `queueName` (default `Default`),
+   * running `yamlPath` (default `.azure-pipelines/qualor.yml`), with plain `variables` and `secrets`.
+   */
+  addDefinition(
+    repositoryId: string,
+    input: {
+      name: string;
+      yamlPath?: string;
+      queueName?: string;
+      author?: FakeAzureIdentity;
+      variables?: Record<string, string>;
+      secrets?: Record<string, string>;
+    },
+  ): FakeAzureDefinition;
   /** The policy configurations of every project (the Build policy type). */
   readonly policies: readonly FakeAzurePolicy[];
   /** The commit statuses posted, in order. */
@@ -1965,8 +1983,77 @@ export async function createFakeAzureDevOps(options: {
     }
     return { shown, kept };
   };
+  /**
+   * A definition as GET answers it: the recorded one with the fake's values. `author` is
+   * `authoredBy`, the identity that wrote this revision (constructed: one identity made every
+   * recorded definition).
+   */
+  const definitionJson = (
+    projectId: string,
+    input: {
+      id: number;
+      revision: number;
+      sent: Json;
+      yaml: string;
+      repository: FakeAzureRepository;
+      queue: FakeAzureQueue;
+      variables: Variables;
+      branch: unknown;
+      author: FakeAzureIdentity;
+      current?: Json;
+    },
+  ): Json => {
+    const { id, revision, queue, repository } = input;
+    const self = `${url}/${projectId}/_apis/build/Definitions/${id}?revision=${revision}`;
+    return {
+      ...recordedDefinition,
+      ...(input.current ?? {}),
+      ...input.sent,
+      variables: input.variables,
+      process: { ...(recordedDefinition.process as Json), yamlFilename: input.yaml },
+      repository: {
+        ...(recordedDefinition.repository as Json),
+        id: repository.id,
+        type: 'TfsGit',
+        name: repository.name,
+        defaultBranch: input.branch,
+      },
+      queue: {
+        ...(recordedDefinition.queue as Json),
+        id: queue.id,
+        name: queue.name,
+        pool: { id: queue.poolId, name: queue.poolName, isHosted: queue.hosted },
+      },
+      authoredBy: {
+        ...(recordedDefinition.authoredBy as Json),
+        id: input.author.id,
+        displayName: input.author.displayName,
+        uniqueName: input.author.displayName,
+      },
+      id,
+      revision,
+      url: self,
+      uri: `vstfs:///Build/Definition/${id}`,
+      _links: {
+        ...(recordedDefinition._links as Json),
+        self: { href: self },
+        web: { href: `${url}/${projectId}/_build/definition?definitionId=${id}` },
+      },
+      project: {
+        ...(recordedDefinition.project as Json),
+        id: projectId,
+        name: projectNameOf(projectId),
+      },
+      createdDate: input.current?.createdDate ?? clock(),
+    };
+  };
 
-  const buildRoute = (req: RecordedRequest, res: ServerResponse, version: string): boolean => {
+  const buildRoute = (
+    req: RecordedRequest,
+    res: ServerResponse,
+    version: string,
+    who: 'pat' | 'secret' | 'certificate',
+  ): boolean => {
     const route =
       /^\/([^/]+)\/_apis\/(distributedtask\/queues|pipelines\/pipelinePermissions\/queue\/(\d+)|build\/definitions(?:\/(\d+))?|policy\/configurations)$/.exec(
         req.path,
@@ -2001,9 +2088,6 @@ export async function createFakeAzureDevOps(options: {
     }
     const query = new URLSearchParams(req.query);
     const queues = queuesOf(projectId);
-    const web = `${url}/${projectId}/_build/definition?definitionId=`;
-    const self = (id: number, revision: number) =>
-      `${url}/${projectId}/_apis/build/Definitions/${id}?revision=${revision}`;
 
     if (kind === 'distributedtask' && req.method === 'GET') {
       const name = query.get('queueName');
@@ -2085,41 +2169,18 @@ export async function createFakeAzureDevOps(options: {
           typeof repoSent?.defaultBranch === 'string'
             ? repoSent.defaultBranch
             : (current?.body.repository as Json | undefined)?.defaultBranch;
-        const stored: Json = {
-          ...recordedDefinition,
-          ...(current?.body ?? {}),
-          ...body,
-          variables: shown,
-          process: { ...(recordedDefinition.process as Json), yamlFilename: yaml },
-          repository: {
-            ...(recordedDefinition.repository as Json),
-            id: repository.id,
-            type: 'TfsGit',
-            name: repository.name,
-            defaultBranch: branch,
-          },
-          queue: {
-            ...(recordedDefinition.queue as Json),
-            id: queue.id,
-            name: queue.name,
-            pool: { id: queue.poolId, name: queue.poolName, isHosted: queue.hosted },
-          },
+        const stored = definitionJson(projectId, {
           id: next,
           revision,
-          url: self(next, revision),
-          uri: `vstfs:///Build/Definition/${next}`,
-          _links: {
-            ...(recordedDefinition._links as Json),
-            self: { href: self(next, revision) },
-            web: { href: `${web}${next}` },
-          },
-          project: {
-            ...(recordedDefinition.project as Json),
-            id: projectId,
-            name: projectNameOf(projectId),
-          },
-          createdDate: current?.body.createdDate ?? clock(),
-        };
+          sent: body,
+          yaml,
+          repository,
+          queue,
+          variables: shown,
+          branch,
+          author: who === 'pat' ? patUser : principalUser!,
+          ...(current ? { current: current.body } : {}),
+        });
         if (current) {
           current.body = stored;
           current.secrets = kept;
@@ -2251,7 +2312,7 @@ export async function createFakeAzureDevOps(options: {
     const version = new URLSearchParams(req.query).get('api-version') ?? '';
     const other = otherRoute(req, res, who, version);
     if (other) return;
-    if (buildRoute(req, res, version)) return;
+    if (buildRoute(req, res, version, who)) return;
     const one = /^\/_apis\/git\/repositories\/([^/]+)$/.exec(req.path);
     const route =
       req.method !== 'GET'
@@ -2556,6 +2617,38 @@ export async function createFakeAzureDevOps(options: {
       return addQueueTo(projectId, input);
     },
     definitions: definitionRows,
+    addDefinition(repositoryId, input) {
+      const repository = repositories.find((r) => r.id === repositoryId.toLowerCase());
+      if (!repository) throw new Error(`fake Azure DevOps: no repository ${repositoryId}`);
+      const queueName = input.queueName ?? 'Default';
+      const queue = queuesOf(repository.projectId).find((q) => q.name === queueName);
+      if (!queue) throw new Error(`fake Azure DevOps: no queue ${queueName}`);
+      const variables: Variables = {};
+      for (const [name, value] of Object.entries(input.variables ?? {}))
+        variables[name] = { value };
+      for (const name of Object.keys(input.secrets ?? {})) {
+        variables[name] = { value: null, isSecret: true };
+      }
+      const id = (definitionCounter += 1);
+      const row: FakeAzureDefinition = {
+        id,
+        projectId: repository.projectId,
+        body: definitionJson(repository.projectId, {
+          id,
+          revision: 1,
+          sent: { name: input.name, path: '\\', type: 'build' },
+          yaml: input.yamlPath ?? '.azure-pipelines/qualor.yml',
+          repository,
+          queue,
+          variables,
+          branch: `refs/heads/${repository.defaultBranch ?? 'main'}`,
+          author: input.author ?? patUser,
+        }),
+        secrets: { ...input.secrets },
+      };
+      definitionRows.push(row);
+      return row;
+    },
     policies: policyRows,
     commitStatuses,
     requests,

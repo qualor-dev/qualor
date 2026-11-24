@@ -1375,6 +1375,7 @@ describe('the repository-setup run', () => {
         ciOutcome: 'merge_request',
         azure: { policy: 'pending' },
       });
+      // The second finds the pull request open: it records the pipeline and the pending policy too.
       expect(b).toMatchObject({
         projectOutcome: 'adopted',
         project: a.project,
@@ -1382,6 +1383,7 @@ describe('the repository-setup run', () => {
         ciUrl: a.ciUrl,
         token: null,
         error: null,
+        azure: { pipelineUrl: a.azure!.pipelineUrl, queue: 'open', policy: 'pending' },
       });
       expect(
         await h.ctx.db.select().from(projects).where(like(projects.key, 'Delta/svc%')),
@@ -1533,7 +1535,7 @@ describe('the repository-setup run', () => {
         token: null,
         error: {
           code: 'pipeline_name_taken',
-          message: 'A pipeline named Qualor already exists in this project',
+          message: 'Pipelines named Qualor and Qualor (taken) already exist in this project',
           stage: null,
         },
         azure: null,
@@ -1625,7 +1627,13 @@ describe('the repository-setup run', () => {
       const pipeline = repository(fake, { name: 'pipeline', projectName: 'Mu' });
       const pull = repository(fake, { name: 'pull', projectName: 'Nu' });
       const read403 = repository(fake, { name: 'read', projectName: 'Xi' });
+      const pools = repository(fake, { name: 'pools', projectName: 'Omega' });
       const forbidden = { status: 403, body: { message: 'TF401027: You need the Git permission' } };
+      fake.inject(
+        'GET',
+        new RegExp(`^/${pools.projectId}/_apis/distributedtask/queues$`),
+        forbidden,
+      );
       fake.inject('POST', new RegExp(`/repositories/${branch.id}/pushes$`), forbidden);
       fake.inject(
         'POST',
@@ -1637,12 +1645,23 @@ describe('the repository-setup run', () => {
       const connectionId = await connectAzure(fake);
       const runId = await start({
         connectionId,
-        repositories: [branch.id, pipeline.id, pull.id, read403.id],
+        repositories: [branch.id, pipeline.id, pull.id, read403.id, pools.id],
         ciSetup: true,
       });
       await runAzure(fake);
 
       const items = (await read(runId)).items;
+      // The agent pools are read before anything is written: that refusal names its own right.
+      expect([items[4]!.ciOutcome, items[4]!.error]).toEqual([
+        'failed',
+        {
+          code: 'permission',
+          message: "The Azure DevOps identity needs to read the project's agent pools",
+          stage: 'change',
+        },
+      ]);
+      expect(Object.keys(fake.branches(pools.id))).toEqual(['main']);
+      items.pop();
       expect(items.map((i) => [i.projectOutcome, i.ciOutcome, i.error])).toEqual([
         [
           'created',
@@ -1690,11 +1709,250 @@ describe('the repository-setup run', () => {
       expect(await live('Mu/pipeline')).toEqual([]);
       expect(await live('Nu/pull')).toHaveLength(1);
       expect(await live('Xi/read')).toEqual([]);
+      expect(await live('Omega/pools')).toEqual([]);
       // The pipeline of the refused pull request is there, open to it on the hosted queue.
       expect(fake.definitions.map((d) => (d.body.repository as { id: string }).id)).toEqual([
         pull.id,
       ]);
       expect(items[2]!.azure).toMatchObject({ queue: 'open', policy: null });
+    });
+
+    it('leaves a pipeline Qualor did not create on the file alone: no write, a foreign_pipeline snippet, no token', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'planted', projectName: 'Sigma' });
+      // Planted by a contributor, named like Qualor's, on the pool the run names, with a secret.
+      const mallory = fake.addUser({ role: 'contributor', displayName: 'Mallory' });
+      const planted = fake.addDefinition(repo.id, {
+        name: 'Qualor',
+        author: mallory,
+        secrets: { QUALOR_TOKEN: 'theirs' },
+      });
+      const connectionId = await connectAzure(fake);
+      const runId = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      const [item] = (await read(runId)).items;
+      expect(item).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'snippet',
+        ciReason: 'foreign_pipeline',
+        token: null,
+        error: null,
+        azure: null,
+      });
+      expect(item!.snippet).toContain(
+        '# A pipeline Qualor did not create already uses .azure-pipelines/qualor.yml.',
+      );
+      expect(item!.snippet).toContain(STEPS);
+      // No PUT of the planted pipeline, no PATCH of the pool, no branch; no token made.
+      expect(writes(fake)).toEqual([]);
+      expect(planted.secrets).toEqual({ QUALOR_TOKEN: 'theirs' });
+      expect(queueOf(fake, repo, 'Default').pipelineIds).toEqual([]);
+      expect(await tokensOf((await projectByKey('Sigma/planted')).id)).toEqual([]);
+    });
+
+    it('adopts the pipeline an earlier setup of the repository recorded, and writes the token into it', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'kept', projectName: 'Tau' });
+      // Qualor's pipeline, renamed by a person since: neither its name nor its author is Qualor's.
+      const someone = fake.addUser({ role: 'owner', displayName: 'Someone' });
+      const kept = fake.addDefinition(repo.id, { name: 'Code analysis', author: someone });
+      const connectionId = await connectAzure(fake);
+      const earlier = await start({ connectionId, repositories: [repo.id], ciSetup: false });
+      await runAzure(fake);
+      await h.ctx.db
+        .update(repositorySetupItems)
+        .set({ azurePipelineId: kept.id })
+        .where(eq(repositorySetupItems.runId, earlier));
+      fake.clearRequests();
+
+      const runId = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      const [item] = (await read(runId)).items;
+      expect(item).toMatchObject({
+        projectOutcome: 'adopted',
+        ciOutcome: 'merge_request',
+        error: null,
+        azure: {
+          pipelineUrl: `${servicesUrlOf(fake)}/Tau/_build?definitionId=${kept.id}`,
+          queue: 'authorized',
+          policy: 'pending',
+        },
+      });
+      // GET+PUT of that pipeline with the secret and the address: no second pipeline.
+      expect(fake.definitions).toHaveLength(1);
+      expect(writes(fake).filter((w) => w.includes('/build/definitions'))).toEqual([
+        `PUT /${repo.projectId}/_apis/build/definitions/${kept.id}`,
+      ]);
+      expect(kept.body).toMatchObject({
+        name: 'Code analysis',
+        variables: { QUALOR_URL: { value: PUBLIC_URL }, QUALOR_TOKEN: { isSecret: true } },
+      });
+      const secret = kept.secrets['QUALOR_TOKEN']!;
+      const live = (await tokensOf(item!.project!.id)).filter((t) => t.revokedAt === null);
+      expect(live.filter((t) => t.secretHash.equals(hashToken(secret)))).toHaveLength(1);
+      expect(queueOf(fake, repo, 'Default').pipelineIds).toEqual([kept.id]);
+      expect(fake.pullRequests(repo.id)[0]!.description).toContain(
+        'the pipeline ` Code analysis `',
+      );
+    });
+
+    it('adopts the Qualor pipeline its own identity made when the create answer was lost', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'lost', projectName: 'Upsilon' });
+      // The first job pushed the branch and created the pipeline with the secret; its answer was
+      // lost before the pipeline was recorded.
+      const pushed = fake.addCommit(repo.id, {
+        parents: [fake.branches(repo.id)['main']!],
+        files: { [FILE]: 'steps: []\n' },
+      });
+      fake.setBranch(repo.id, BRANCH, pushed);
+      const lost = fake.addDefinition(repo.id, {
+        name: 'Qualor',
+        author: fake.patUser,
+        secrets: { QUALOR_TOKEN: 'stored-before' },
+      });
+      const connectionId = await connectAzure(fake);
+      const runId = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      expect((await read(runId)).items[0]).toMatchObject({
+        ciOutcome: 'merge_request',
+        error: null,
+        azure: { queue: 'authorized', policy: 'pending' },
+      });
+      expect(await itemRow(runId)).toMatchObject({ azurePipelineId: lost.id });
+      expect(fake.requests.some((r) => r.path === '/_apis/connectionData')).toBe(true);
+      expect(fake.definitions).toHaveLength(1);
+      expect(writes(fake).filter((w) => w.includes('/build/definitions'))).toEqual([
+        `PUT /${repo.projectId}/_apis/build/definitions/${lost.id}`,
+      ]);
+      expect(lost.secrets).toEqual({ QUALOR_TOKEN: 'stored-before' });
+      expect(pushes(fake)).toEqual([]);
+      expect(queueOf(fake, repo, 'Default').pipelineIds).toEqual([lost.id]);
+    });
+
+    it('authorises only the run’s pool: a pipeline on another queue, or no queue for the pool, is the manual step', async () => {
+      const fake = await azure();
+      const moved = repository(fake, { name: 'moved', projectName: 'Phi' });
+      const gone = repository(fake, { name: 'gone', projectName: 'Psi' });
+      fake.addQueue(moved.projectId, { name: 'Protected' });
+      // Both resumed: the branch pushed, Qualor's pipeline made with the secret.
+      for (const [repo, queueName] of [
+        [moved, 'Protected'],
+        [gone, 'Default'],
+      ] as const) {
+        fake.setBranch(
+          repo.id,
+          BRANCH,
+          fake.addCommit(repo.id, {
+            parents: [fake.branches(repo.id)['main']!],
+            files: { [FILE]: 'steps: []\n' },
+          }),
+        );
+        fake.addDefinition(repo.id, {
+          name: 'Qualor',
+          author: fake.patUser,
+          queueName,
+          secrets: { QUALOR_TOKEN: 'stored' },
+        });
+      }
+      const connectionId = await connectAzure(fake);
+      const a = await start({
+        connectionId,
+        repositories: [moved.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      const b = await start({
+        connectionId,
+        repositories: [gone.id],
+        ciSetup: true,
+        azurePool: 'Nowhere',
+      });
+      await runAzure(fake);
+
+      for (const runId of [a, b]) {
+        expect((await read(runId)).items[0]).toMatchObject({
+          ciOutcome: 'merge_request',
+          error: null,
+          azure: { queue: 'manual', policy: 'pending' },
+        });
+      }
+      expect(writes(fake).filter((w) => w.startsWith('PATCH'))).toEqual([]);
+      expect(queueOf(fake, moved, 'Protected').pipelineIds).toEqual([]);
+      expect(queueOf(fake, moved, 'Default').pipelineIds).toEqual([]);
+      expect(queueOf(fake, gone, 'Default').pipelineIds).toEqual([]);
+    });
+
+    it('records the pipeline and the pending policy when it finds the pull request open, as after a lost answer', async () => {
+      const fake = await azure();
+      const repo = repository(fake, { name: 'found', projectName: 'Chi' });
+      const connectionId = await connectAzure(fake);
+      // Azure DevOps opens the pull request, and its answer is lost.
+      fake.inject('POST', new RegExp(`/repositories/${repo.id}/pullrequests$`), {
+        status: 503,
+        before: async () => {
+          fake.addPullRequest(repo.id, {
+            sourceRefName: 'refs/heads/qualor/setup',
+            targetRefName: 'refs/heads/main',
+            title: 'Add Qualor code analysis',
+          });
+        },
+      });
+      const first = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+      expect((await read(first)).items[0]).toMatchObject({
+        ciOutcome: 'failed',
+        error: { code: 'unavailable' },
+        azure: { queue: 'authorized', policy: null },
+      });
+
+      const again = await start({
+        connectionId,
+        repositories: [repo.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+      const definition = fake.definitions[0]!;
+      expect((await read(again)).items[0]).toMatchObject({
+        ciOutcome: 'merge_request',
+        ciUrl: `${fake.url}/Chi/_git/found/pullrequest/1`,
+        error: null,
+        azure: {
+          pipelineUrl: `${servicesUrlOf(fake)}/Chi/_build?definitionId=${definition.id}`,
+          queue: 'open',
+          policy: 'pending',
+        },
+      });
+      expect(await itemRow(again)).toMatchObject({
+        azurePipelineId: definition.id,
+        azurePolicy: 'pending',
+      });
+      expect(fake.pullRequests(repo.id)).toHaveLength(1);
+      expect(fake.definitions).toHaveLength(1);
     });
 
     it('no pool of that name: fails before writing', async () => {
