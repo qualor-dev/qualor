@@ -27,13 +27,13 @@
   min-height: 10rem;
   margin: 0 calc(-1 * var(--space-10)) calc(-1 * var(--space-10));
   background:
-    linear-gradient(180deg, var(--ink), rgb(10 27 51 / 0) 30%),
-    url('/art/signin.webp') center bottom / cover no-repeat;
+    linear-gradient(180deg, var(--ink), rgb(10 27 51 / 0) 12%),
+    url('/art/signin.svg') center bottom / cover no-repeat;
 }
 .auth-art.offline .auth-illustration {
   background:
     linear-gradient(180deg, var(--ink), rgb(10 27 51 / 0) 25%, rgb(10 27 51 / 0) 75%, var(--ink)),
-    url('/art/offline.webp') center / 130% auto no-repeat;
+    url('/art/offline.svg') center / 130% auto no-repeat;
 }
 .auth-art .brand {
   font-size: 19px;

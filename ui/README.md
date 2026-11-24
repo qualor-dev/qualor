@@ -36,10 +36,10 @@ The Qualor web app: Angular 22 (standalone components, signals, zoneless), plain
 
 Look: the one of qualor.dev (ink navy, cobalt, Schibsted Grotesk and JetBrains Mono), in
 `src/styles.css`. The fonts are the `@fontsource-variable` packages (SIL OFL 1.1), bundled and served
-from the same origin, so the CSP's `font-src 'self'` holds. The illustrations in `public/art/` are the
-site's two-colour screen prints, made by the site's generator: their prompts are the `ui-*` slots in
-`qualor.dev/scripts/generate-images.ts`, and `npm run images:gen -- ui-band --force` there rewrites
-`public/art/band.webp` here (`QUALOR_UI_ART_DIR` points it at a worktree).
+from the same origin, so the CSP's `font-src 'self'` holds. The illustrations in `public/art/` are
+SVG, drawn by the site's art module (`qualor.dev/marketing/brand/art/`): `node marketing/brand/art.mjs`
+there rewrites them here (`QUALOR_UI_ART_DIR` points it at a worktree). Edit the scenes there, not the
+files here.
 
 Rules: every user-facing string is marked for i18n with a stable `@@id` (`i18n="@@area.key"` in
 templates, `` $localize`:@@area.key:Text` `` in code); templates live in `.html` files; no

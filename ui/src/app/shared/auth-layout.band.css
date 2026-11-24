@@ -20,13 +20,13 @@
     width: 50%;
     min-height: 0;
     margin: 0;
-    background: url('/art/signin.webp') 50% 72% / 150% auto no-repeat;
+    background: url('/art/signin.svg') 50% 61% / auto 171% no-repeat;
     -webkit-mask-image: linear-gradient(90deg, transparent, #000 70%);
     mask-image: linear-gradient(90deg, transparent, #000 70%);
     opacity: 0.7;
   }
   .auth-art.offline .auth-illustration {
-    background: url('/art/offline.webp') 45% center / auto 170% no-repeat;
+    background: url('/art/offline.svg') 45% center / auto 170% no-repeat;
   }
   .auth-art .tagline {
     max-width: 14rem;

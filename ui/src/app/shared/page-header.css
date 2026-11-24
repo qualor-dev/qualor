@@ -6,26 +6,32 @@
   background: var(--ink);
   color: var(--ink-text);
 }
-/* The brand's halftone circle and scan lines at the right, faded into ink toward the title. */
-:host::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(90deg, var(--ink) 38%, rgb(10 27 51 / 0.72) 62%, rgb(10 27 51 / 0.15)),
-    url('/art/band.webp') right 38% / 58% auto no-repeat;
-}
-/* A compact band carries its actions at the right: the art stays darker behind them. */
-:host(.compact)::before {
-  background:
-    linear-gradient(90deg, var(--ink) 40%, rgb(10 27 51 / 0.84) 72%, rgb(10 27 51 / 0.6)),
-    url('/art/band.webp') right 42% / 58% auto no-repeat;
-}
 .page-band-inner {
+  position: relative;
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   margin: 0 auto;
   padding: 26px var(--gutter) 0;
+}
+/*
+ * The brand mark, solid in the track tone, in the band's free corner under the actions: its right
+ * edge on the content's edge, its bottom 20 px above the band's. A compact band has no free corner
+ * and no mark, and below 80rem the band's tabs can run into the corner. header-mark.svg is the
+ * mark's whole 64-unit box: the ring is 44 units across, with 10 units free to its right and 8.93
+ * under the dot.
+ */
+@media (min-width: 80rem) {
+  :host(:not(.compact)) .page-band-inner::after {
+    --ring: 52px;
+    content: '';
+    position: absolute;
+    right: calc(var(--gutter) - var(--ring) * 10 / 44);
+    bottom: calc(20px - var(--ring) * 8.93 / 44);
+    z-index: -1;
+    width: calc(var(--ring) * 64 / 44);
+    aspect-ratio: 1;
+    background: url('/art/header-mark.svg') center / contain no-repeat;
+    pointer-events: none;
+  }
 }
 :host(.compact) .page-band-inner {
   padding-bottom: 26px;
