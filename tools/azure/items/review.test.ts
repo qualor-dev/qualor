@@ -32,10 +32,11 @@ describe('isAiNote', () => {
 });
 
 describe('reviewSource', () => {
-  it('has the analyzer finding on line 2 and eval on line 6', () => {
+  it('has the analyzer finding on line 2 and the inverted admin check on line 6', () => {
     const lines = reviewSource('x').split('\n');
     expect(lines[1]).toBe('export function emptyHandler() {');
-    expect(lines[5]).toContain('eval(input)');
+    expect(lines[5]).toBe('export const canDeleteAccount = (user) => !user.isAdmin;');
+    expect(lines.join('\n')).not.toContain('eval(');
   });
 });
 

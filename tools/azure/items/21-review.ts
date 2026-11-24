@@ -79,16 +79,20 @@ export function isAiNote(content: string | undefined): boolean {
   return ((content ?? '').split(/\r?\n/)[1] ?? '').startsWith('**AI review**');
 }
 
-/** The file's text (test data for the model to find: nothing here is run): an empty function (the analyzer's finding, line 2) and input passed to `eval` (the model's). */
+/**
+ * The file's text (test data for the model to find: nothing here is run): an empty function (the
+ * analyzer's finding, line 2) and an inverted permission check on line 6 (the model's). The model's
+ * defect is one no analyzer reports: the AI review leaves out what analyzers already cover, and
+ * `eval(input)` was left out on the 2026-11-24 run for that reason.
+ */
 export function reviewSource(stamp: string): string {
   return [
     `// Qualor probe item 21 (${stamp})`,
     'export function emptyHandler() {',
     '}',
     '',
-    'export function runCommand(input) {',
-    '  return eval(input);',
-    '}',
+    '/** Only administrators may delete accounts. */',
+    'export const canDeleteAccount = (user) => !user.isAdmin;',
     '',
   ].join('\n');
 }
@@ -631,7 +635,7 @@ export const item: ProbeItem = {
       );
     } else {
       notes.push(
-        `the model reported no AI thread within the wait (the defect is eval(input) on line 6); the summary says: ${excerpt(aiSection(summaryText, 400), ctx.redaction, 400) || 'no AI review section'}`,
+        `the model reported no AI thread within the wait (the defect is the inverted admin check on line 6); the summary says: ${excerpt(aiSection(summaryText, 400), ctx.redaction, 400) || 'no AI review section'}`,
       );
     }
 
