@@ -4,6 +4,7 @@ import {
   azureBaseUrlProblem,
   azureDeployment,
   azureIdentitiesBase,
+  azurePipelineWebUrl,
   azurePullRequestWebUrl,
   azureWebBase,
   azureWebhookUrl,
@@ -104,6 +105,15 @@ describe('web URLs', () => {
   it('builds a pull request URL from the repository web URL', () => {
     expect(azurePullRequestWebUrl('https://dev.azure.com/acme/p/_git/r', 42)).toBe(
       'https://dev.azure.com/acme/p/_git/r/pullrequest/42',
+    );
+  });
+
+  it('builds a pipeline URL from the project name, encoded', () => {
+    expect(azurePipelineWebUrl('https://dev.azure.com/acme', 'My Project', 7)).toBe(
+      'https://dev.azure.com/acme/My%20Project/_build?definitionId=7',
+    );
+    expect(azurePipelineWebUrl('https://ado.example.com/tfs/Coll', 'p#1', 8)).toBe(
+      'https://ado.example.com/tfs/Coll/p%231/_build?definitionId=8',
     );
   });
 });

@@ -695,6 +695,23 @@ describe('Listing an Azure DevOps connection’s repositories (Azure DevOps desi
     ]);
     expect(refused.body).not.toContain('wrong-pat');
   });
+
+  it('offers to adopt the project whose key a name with spaces and accents gets', async () => {
+    const odd = fake.addRepository({ name: 'Repo é', projectName: 'My Project' });
+    const id = await connect(fake);
+    const adoptable = await h.project('My-Project/Repo');
+    const { items: rows } = await items(id, '?filter=my project/');
+    expect(rows).toEqual([
+      {
+        ref: odd.id,
+        name: 'My Project/Repo é',
+        defaultBranch: 'main',
+        language: null,
+        archived: false,
+        project: { id: adoptable.id, key: 'My-Project/Repo', state: 'adoptable' },
+      },
+    ]);
+  });
 });
 
 describe('Starting a repository setup on an Azure DevOps connection (Azure sub-plan 7)', () => {

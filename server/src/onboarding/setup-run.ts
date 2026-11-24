@@ -21,6 +21,7 @@ import {
   scmConnections,
   users,
   type EncryptedValue,
+  type SetupAzureQueue,
   type SetupCiOutcome,
   type SetupProjectOutcome,
 } from '../db/schema';
@@ -45,9 +46,28 @@ import { githubClientFor } from '../scm/github/connections';
 import { githubHostKind, parseRepoRef } from '../scm/github/url';
 import type { GitLabClient } from '../scm/gitlab/client';
 import { gitlabHostKind } from '../scm/gitlab/url';
+import {
+  AZURE_SECRET_VARIABLE,
+  type AzureDefinition,
+  type AzureDefinitionVariable,
+  type AzureDevOpsClient,
+  type AzureQueue,
+  type AzureRepository,
+} from '../scm/azure/client';
+import { azureClientFor } from '../scm/azure/connections';
 import { azureDeployment } from '../scm/azure/url';
+import { MAX_VALUE_CHARS, plainValue } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
-import { planCiSetup, type CiPlan, type CiSetupInput, type CiSnippetReason } from './ci-setup';
+import {
+  AZURE_FILE,
+  azurePipelineNamed,
+  azureSnippet,
+  planCiSetup,
+  type CiPlan,
+  type CiSetupInput,
+  type CiSnippetReason,
+} from './ci-setup';
+import type { AzurePool } from './ci-templates';
 
 export const REPOSITORY_SETUP_QUEUE = 'repository-setup';
 /** Repositories one run takes at most. */
@@ -59,7 +79,10 @@ export const SETUP_TITLE = 'Add Qualor code analysis';
 export const SETUP_TOKEN_NAME = 'CI setup';
 /** The AAD of `repository_setup_items.token_enc`. */
 export const SETUP_TOKEN_AAD = 'repository_setup_items.token_enc';
-/** A repository's name is its project's key; when taken, `-2` … `-20` are tried. */
+/**
+ * A repository's name (on Azure DevOps made a key) is its project's key; when taken, `-2` … `-20`
+ * are tried.
+ */
 const MAX_KEY_SUFFIX = 20;
 /** Where a snippet points while the server has no public URL: the address the guide uses. */
 const URL_PLACEHOLDER = 'https://qualor.example.com';
@@ -103,11 +126,15 @@ export const SETUP_ERROR_CODES = [
   'budget',
   'internal',
   'abandoned',
+  // Azure DevOps: the run's agent pool has no queue in the repository's project, checked before
+  // anything is written; both names Qualor gives a pipeline are taken in the project.
+  'no_agent_pool',
+  'pipeline_name_taken',
 ] as const;
 export type SetupErrorCode = (typeof SETUP_ERROR_CODES)[number];
 
 /** The fixed texts of the item errors: never the provider's words, which could quote a secret. */
-const ERROR_TEXT: Record<Exclude<SetupErrorCode, 'permission'>, string> = {
+const ERROR_TEXT: Record<Exclude<SetupErrorCode, 'permission' | 'no_agent_pool'>, string> = {
   not_found: 'The repository was not found, or the connection cannot reach it',
   key_taken: 'Every project key Qualor would give this repository is taken',
   connection_gone: 'The SCM connection was deleted',
@@ -120,22 +147,74 @@ const ERROR_TEXT: Record<Exclude<SetupErrorCode, 'permission'>, string> = {
   budget: 'Too many provider requests for one repository',
   internal: 'Something went wrong; the server log has the details',
   abandoned: 'The run stopped before this repository',
+  pipeline_name_taken: 'A pipeline named Qualor already exists in this project',
 };
+/** The agent pool named for the run has no queue in the Azure DevOps project. */
+function noAgentPool(pool: string): ItemError {
+  return {
+    code: 'no_agent_pool',
+    message: `No agent pool named "${plainValue(pool, MAX_VALUE_CHARS)}" in this project`,
+  };
+}
 /** A refused permission while reading the repository, or while changing it for CI setup. */
 const PERMISSION_TEXT = {
   read: 'The connection was refused access to the repository',
   github: 'The GitHub App needs Contents, Workflows and Secrets write',
   gitlab: 'The GitLab token needs the api scope and the Maintainer role',
-  azure: 'CI setup through Azure DevOps is not available yet', // azure-pending(7): what an Azure DevOps CI setup needs
 } as const;
 /** A refusal (`refused`) of a request that only reads, before CI setup changes anything. */
 const REFUSED_READ_TEXT = 'The provider refused a request to read the repository';
 
 /**
  * What CI setup was doing when the provider failed, for the log line: reading the repository,
- * the branch, the files, the token's secret, the variables (GitLab), the merge request.
+ * the branch, the files, the token's secret, the variables (GitLab; on Azure DevOps the pipeline's
+ * address and its agent pool), the merge request.
  */
 type CiStep = 'read' | 'branch' | 'files' | 'secret' | 'variables' | 'merge_request';
+
+/**
+ * Azure DevOps rights are found per step (Ruling 2): a refusal names the right that step needs.
+ * A refused read says what any read says ({@link PERMISSION_TEXT}`.read`).
+ */
+const AZURE_PERMISSION_TEXT: Record<Exclude<CiStep, 'read'>, string> = {
+  branch: 'The Azure DevOps identity needs Contribute and Create branch on the repository',
+  files: 'The Azure DevOps identity needs Contribute and Create branch on the repository',
+  secret: 'The Azure DevOps identity needs Edit build pipeline in the project',
+  variables: 'The Azure DevOps identity needs Edit build pipeline in the project',
+  merge_request: 'The Azure DevOps identity needs Contribute to pull requests',
+};
+
+/** What a refused permission tells: the read, else what CI setup needs on the provider. */
+function permissionText(provider: ScmProvider, stage: 'open' | 'ci_read' | 'change', step: CiStep) {
+  if (stage === 'open') return PERMISSION_TEXT.read;
+  switch (provider) {
+    case 'github':
+    case 'gitlab':
+      return PERMISSION_TEXT[provider];
+    case 'azure':
+      return step === 'read' ? PERMISSION_TEXT.read : AZURE_PERMISSION_TEXT[step];
+    default:
+      return assertNever(provider, 'provider');
+  }
+}
+
+/**
+ * Where a provider's refusal happened, for the page, which never reads the message (Ruling 9):
+ * `read` while Qualor opened or read the repository, `change` while CI setup wrote to it. No
+ * column keeps the stage: the fixed texts above tell it (a refused permission while reading for
+ * GitHub or GitLab CI setup names what the change needs, so it counts as `change`). Null for the
+ * other codes.
+ */
+export function setupErrorStage(code: string, message: string): 'read' | 'change' | null {
+  switch (code) {
+    case 'permission':
+      return message === PERMISSION_TEXT.read ? 'read' : 'change';
+    case 'refused':
+      return message === REFUSED_READ_TEXT ? 'read' : 'change';
+    default:
+      return null;
+  }
+}
 
 export interface SetupRunDeps {
   db: Db;
@@ -201,28 +280,37 @@ interface ItemError {
   message: string;
 }
 
-function errorOf(code: Exclude<SetupErrorCode, 'permission'>): ItemError {
+/**
+ * CI setup stops for a reason in Qualor's own words, not a provider error: the Azure DevOps agent
+ * pool has no queue, or the pipeline's names are taken. Nothing it was about to write was written.
+ */
+class SetupFailure extends Error {
+  constructor(readonly error: ItemError) {
+    super(error.code);
+  }
+}
+
+function errorOf(code: Exclude<SetupErrorCode, 'permission' | 'no_agent_pool'>): ItemError {
   return { code, message: ERROR_TEXT[code] };
 }
 
 /**
  * An SCM failure as an item error: a fixed text per kind. `stage`: opening the repository, reading
- * it for CI setup, or changing it. A refused permission names what CI setup needs once the
- * repository is open; a refusal says whether a read or the change was refused.
+ * it for CI setup, or changing it; `step`: the CI step, for the right Azure DevOps refused. A
+ * refused permission names what CI setup needs once the repository is open; a refusal says
+ * whether a read or the change was refused.
  */
 function scmErrorOf(
   err: ScmError,
   provider: ScmProvider,
   stage: 'open' | 'ci_read' | 'change',
+  step: CiStep = 'read',
 ): ItemError {
   switch (err.kind) {
     case 'not_found':
       return errorOf('not_found');
     case 'auth':
-      return {
-        code: 'permission',
-        message: stage === 'open' ? PERMISSION_TEXT.read : PERMISSION_TEXT[provider],
-      };
+      return { code: 'permission', message: permissionText(provider, stage, step) };
     case 'rate_limited':
       return errorOf('rate_limited');
     case 'transient':
@@ -287,9 +375,12 @@ async function actorOf(db: Executor, userId: string | null): Promise<AuditActorC
 
 // ─── The repository, as the provider names it ─────────────────────────────────────────────
 
-/** What a CI change does on either provider, on the branch {@link SETUP_BRANCH}. */
+/** What a CI change does on each provider, on the branch {@link SETUP_BRANCH}. */
 interface CiRepository {
-  /** Whether C# is the repository's main language (GitHub: or a .sln or .csproj at the root). */
+  /**
+   * Whether the repository is C#: GitHub's main language or a .sln or .csproj at the root, GitLab's
+   * main language, a .sln or .csproj at the root on Azure DevOps (Ruling 7).
+   */
   csharp(): Promise<boolean>;
   /** What the planner needs, read from the default branch; `empty`: no commit to branch from. */
   read(): Promise<{
@@ -297,7 +388,13 @@ interface CiRepository {
     empty: boolean;
     customCiPath: boolean;
     existing: CiSetupInput['existing'];
+    azure?: CiSetupInput['azure'];
   }>;
+  /**
+   * Checks what the change needs besides the repository, before anything is written (Azure
+   * DevOps: the agent pool's queue in the project). A {@link SetupFailure} says what is missing.
+   */
+  prepare?(): Promise<void>;
   branchExists(): Promise<boolean>;
   createBranch(): Promise<void>;
   /** Writes the files on the branch, skipping those it already holds as planned. */
@@ -306,21 +403,62 @@ interface CiRepository {
     reused: boolean,
   ): Promise<void>;
   storeToken(token: string): Promise<void>;
+  /**
+   * Sets the variables (an upsert). Azure DevOps keeps them in the pipeline, which the secret's
+   * write made; here the pipeline is authorised on its agent pool, and a resumed setup's pipeline
+   * gets its address again.
+   */
   setVariables(variables: { key: string; value: string }[]): Promise<void>;
   findMergeRequest(): Promise<string | null>;
   openMergeRequest(description: string): Promise<string>;
 }
 
 interface OpenedRepository {
-  /** `owner/repo`, or the GitLab project's full path: the project's key and name. */
+  /** `owner/repo`, the GitLab project's full path, `<project>/<repository>`: the project's name. */
   name: string;
-  /** What the project maps to: GitHub `owner/repo`, the GitLab project id. */
+  /**
+   * The project's key, or the base of its `-2` … `-20` keys: the name (on Azure DevOps, the name
+   * made a key).
+   */
+  key: string;
+  /** What the project maps to: GitHub `owner/repo`, the GitLab project id, the Azure DevOps id. */
   mappingRef: string;
-  /** Null: an empty GitLab project. */
+  /** Null: an empty GitLab project or Azure DevOps repository. */
   defaultBranch: string | null;
-  /** The GitHub installation grants what a CI change needs (always true on GitLab). */
+  /**
+   * The GitHub installation grants what a CI change needs (always true on GitLab, and on Azure
+   * DevOps, whose rights are found per step: Ruling 2).
+   */
   mayChange: boolean;
   ci: CiRepository;
+}
+
+/**
+ * The project key of an Azure DevOps repository (Ruling 8): `<project>/<repository>` with every
+ * character a key may not hold made `-`, runs of `-` collapsed and trimmed. A name of other
+ * scripts only leaves no letter or digit: the repository's id is the key then. The project's name
+ * keeps the original.
+ */
+export function azureProjectKey(name: string, repositoryId: string): string {
+  const key = [...name]
+    .map((c) => (PROJECT_KEY_PATTERN.test(c) ? c : '-'))
+    .join('')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return /[A-Za-z0-9]/.test(key) ? key : repositoryId.toLowerCase();
+}
+
+/** The key a repository's project gets before a `-2` … `-20` suffix: the one a run adopts. */
+export function setupKeyOf(provider: ScmProvider, name: string, ref: string): string {
+  switch (provider) {
+    case 'github':
+    case 'gitlab':
+      return name;
+    case 'azure':
+      return azureProjectKey(name, ref);
+    default:
+      return assertNever(provider, 'provider');
+  }
 }
 
 const WORKFLOWS = '.github/workflows';
@@ -361,6 +499,7 @@ function githubRepository(
   };
   return {
     name: found.full_name,
+    key: found.full_name,
     mappingRef: found.full_name,
     defaultBranch,
     mayChange: ['contents', 'workflows', 'secrets'].every((p) => granted[p] === 'write'),
@@ -439,6 +578,7 @@ function gitlabRepository(
   const csharp = async () => (await client.languages(ref))[0] === 'C#';
   return {
     name: found.path_with_namespace,
+    key: found.path_with_namespace,
     mappingRef: ref,
     defaultBranch,
     mayChange: true,
@@ -518,17 +658,287 @@ function gitlabRepository(
   };
 }
 
+/** The pipeline's name; `Qualor (<repository>)` when the project has a pipeline of that name. */
+const AZURE_PIPELINE_NAME = 'Qualor';
+/** The queue of the Microsoft-hosted agents on Azure DevOps Services (probe item 26). */
+const AZURE_HOSTED_QUEUE = 'Azure Pipelines';
+const AZURE_PIPELINES_YML = 'azure-pipelines.yml';
+
+/** What an Azure DevOps CI setup needs of its run: where its outcomes go, the address, the pool. */
+interface AzureSetup {
+  db: Db;
+  item: Pick<ItemRow, 'runId' | 'position'>;
+  /** The pipeline's `QUALOR_URL`. */
+  serverUrl: string;
+  pool: AzurePool;
+}
+
+/**
+ * The agent pool of a run's pipelines (Ruling 3): the pool named, else the Microsoft-hosted agents
+ * of Services; a Server has none, so `Default` (which a run with CI setup on Server always names).
+ */
+function azurePoolOf(
+  run: Pick<RunRow, 'azurePool'>,
+  connection: Pick<ScmConnectionRow, 'baseUrl'>,
+): AzurePool {
+  if (run.azurePool !== null) return { name: run.azurePool };
+  return azureDeployment(connection.baseUrl) === 'services'
+    ? { vmImage: 'ubuntu-latest' }
+    : { name: 'Default' };
+}
+
+/** A pipeline's file without the leading `/` Azure DevOps may keep. */
+function yamlPathOf(definition: AzureDefinition): string | null {
+  return definition.yamlPath?.replace(/^\/+/, '') ?? null;
+}
+
+/** Whether Azure DevOps refused a pipeline's create because the project has one of that name. */
+function nameTaken(err: unknown): boolean {
+  return err instanceof ScmError && err.kind === 'refused' && err.status === 409;
+}
+
+/**
+ * Azure DevOps (spec §7.7, Ruling 4): the push of `.azure-pipelines/qualor.yml` on a new branch,
+ * the pipeline with its secret and `QUALOR_URL`, its authorisation on the agent pool's queue, then
+ * the pull request. Every build, queue and permission call goes to the project's GUID. The item
+ * records the pipeline, the queue's state and the pending Build validation policy as they happen.
+ */
+function azureRepository(
+  client: AzureDevOpsClient,
+  found: AzureRepository,
+  setup: AzureSetup,
+): OpenedRepository {
+  const { db, item, serverUrl, pool } = setup;
+  const repositoryId = found.id;
+  const projectId = found.projectId;
+  const name = `${found.projectName}/${found.name}`;
+  const defaultBranch = found.defaultBranch;
+  /** The default branch's head, read once: undefined until then, null for an empty repository. */
+  let base: string | null | undefined;
+  /** The repository's pipeline for the file, as the read found it. */
+  let listed: AzureDefinition | null = null;
+  /** The pool's queue, found before anything is written. */
+  let queue: AzureQueue | null = null;
+  /** The pipeline this job wrote the secret to. */
+  let written: AzureDefinition | null = null;
+
+  const baseHead = async (): Promise<string | null> => {
+    base ??= defaultBranch === null ? null : await client.branchHead(repositoryId, defaultBranch);
+    return base;
+  };
+  const csharp = async () => {
+    const head = await baseHead();
+    if (head === null) return false;
+    return (await client.rootItems(repositoryId, head)).some(
+      (entry) => !entry.isFolder && /\.(sln|csproj)$/i.test(entry.path),
+    );
+  };
+  /** The pool's queue: the hosted one, or the one named for the run. */
+  const queueOfPool = async (): Promise<AzureQueue> => {
+    if (queue !== null) return queue;
+    const wanted = 'vmImage' in pool ? AZURE_HOSTED_QUEUE : pool.name;
+    const same = (value: string) => value.toLowerCase() === wanted.toLowerCase();
+    const match = (await client.queues(projectId, wanted)).find(
+      (q) => same(q.name) || same(q.poolName),
+    );
+    if (!match) throw new SetupFailure(noAgentPool(wanted));
+    queue = match;
+    return match;
+  };
+  /**
+   * The pipeline's queue permission: open to every pipeline (or to this one already), authorised
+   * now, or a refusal, which the setup result names as the manual approval (Ruling 2).
+   */
+  const authorise = async (definitionId: number, queueId: number | null): Promise<void> => {
+    if (queueId === null) return;
+    let state: SetupAzureQueue;
+    try {
+      const permissions = await client.queuePermissions(projectId, queueId);
+      if (permissions.open || permissions.pipelineIds.includes(definitionId)) {
+        state = 'open';
+      } else {
+        await client.authorizeOnQueue(projectId, queueId, definitionId);
+        state = 'authorized';
+      }
+    } catch (err) {
+      const refused =
+        err instanceof ScmError &&
+        (err.kind === 'auth' || err.kind === 'refused' || err.kind === 'not_found');
+      if (!refused) throw err;
+      state = 'manual';
+    }
+    await updateItem(db, item, { azureQueue: state });
+  };
+  const createPipeline = async (
+    target: AzureQueue,
+    variables: Record<string, AzureDefinitionVariable>,
+  ): Promise<AzureDefinition> => {
+    const create = (pipelineName: string) =>
+      client.createDefinition(projectId, {
+        name: pipelineName,
+        yamlPath: AZURE_FILE,
+        repositoryId,
+        repositoryName: found.name,
+        defaultBranch: `refs/heads/${defaultBranch ?? 'main'}`,
+        queueId: target.id,
+        variables,
+      });
+    try {
+      return await create(AZURE_PIPELINE_NAME);
+    } catch (err) {
+      if (!nameTaken(err)) throw err;
+    }
+    try {
+      return await create(`${AZURE_PIPELINE_NAME} (${found.name})`);
+    } catch (err) {
+      if (!nameTaken(err)) throw err;
+      throw new SetupFailure(errorOf('pipeline_name_taken'));
+    }
+  };
+
+  return {
+    name,
+    key: azureProjectKey(name, repositoryId),
+    mappingRef: repositoryId,
+    defaultBranch,
+    mayChange: true,
+    ci: {
+      csharp,
+      async read() {
+        const head = await baseHead();
+        const existing = {
+          gitlabCi: null,
+          workflowFiles: [],
+          workflowTexts: [],
+          tokenSecretSet: false,
+          inheritedTokenSet: false,
+        };
+        if (head === null) {
+          return {
+            csharp: false,
+            empty: true,
+            customCiPath: false,
+            existing,
+            azure: {
+              pool,
+              existing: { pipelineFile: false, azurePipelinesYml: null, definition: null },
+            },
+          };
+        }
+        const file = await client.fileText(repositoryId, AZURE_FILE, head);
+        const yml = await client.fileText(repositoryId, AZURE_PIPELINES_YML, head);
+        listed =
+          (await client.definitions(projectId, repositoryId)).find(
+            (d) => yamlPathOf(d) === AZURE_FILE,
+          ) ?? null;
+        return {
+          csharp: await csharp(),
+          empty: false,
+          // Qualor writes a file of its own and never edits another: no custom path to refuse.
+          customCiPath: false,
+          existing: { ...existing, tokenSecretSet: listed?.secretSet ?? false },
+          azure: {
+            pool,
+            existing: {
+              pipelineFile: !('skipped' in file && file.skipped === 'missing'),
+              azurePipelinesYml: 'text' in yml ? yml.text : null,
+              definition:
+                listed === null
+                  ? null
+                  : { yamlPath: yamlPathOf(listed), secretSet: listed.secretSet },
+            },
+          },
+        };
+      },
+      async prepare() {
+        await queueOfPool();
+      },
+      branchExists: async () => (await client.branchHead(repositoryId, SETUP_BRANCH)) !== null,
+      // The branch is made by the first push, on the default branch's head (probe item 26).
+      async createBranch() {
+        if ((await baseHead()) === null) throw new ScmError('not_found', ERROR_TEXT.not_found);
+      },
+      async writeFiles(files, reused) {
+        const head = reused ? await client.branchHead(repositoryId, SETUP_BRANCH) : null;
+        const parent = head ?? (await baseHead());
+        if (parent === null) throw new ScmError('not_found', ERROR_TEXT.not_found);
+        const changes: { path: string; content: string; change: 'add' | 'edit' }[] = [];
+        for (const file of files) {
+          const current = await client.fileText(repositoryId, file.path, parent);
+          if ('text' in current && current.text === file.content) continue;
+          const absent = 'skipped' in current && current.skipped === 'missing';
+          changes.push({ path: file.path, content: file.content, change: absent ? 'add' : 'edit' });
+        }
+        if (changes.length === 0) return;
+        await client.push(repositoryId, {
+          ref: `refs/heads/${SETUP_BRANCH}`,
+          // A new branch: the zero id, on the default branch's head.
+          oldObjectId: head,
+          parent,
+          message: SETUP_TITLE,
+          files: changes,
+        });
+      },
+      // The pipeline with the secret and QUALOR_URL in one write: created, or the repository's
+      // pipeline for the file (GET+PUT, which keeps what it has: rule 15).
+      async storeToken(token) {
+        const variables: Record<string, AzureDefinitionVariable> = {
+          [AZURE_SECRET_VARIABLE]: { value: token, isSecret: true },
+          QUALOR_URL: { value: serverUrl },
+        };
+        const target = await queueOfPool();
+        written =
+          listed === null
+            ? await createPipeline(target, variables)
+            : await client.replaceDefinition(projectId, listed, variables);
+        await updateItem(db, item, { azurePipelineId: written.id });
+      },
+      async setVariables(variables) {
+        if (written !== null) {
+          // QUALOR_URL went with the secret; the pool the file names is the run's.
+          return authorise(written.id, queue?.id ?? written.queueId);
+        }
+        // A resumed setup: the pipeline an earlier job made, its address set again.
+        if (listed === null) return;
+        const again = await client.replaceDefinition(
+          projectId,
+          listed,
+          Object.fromEntries(variables.map((v) => [v.key, { value: v.value }])),
+        );
+        await updateItem(db, item, { azurePipelineId: again.id });
+        await authorise(again.id, again.queueId);
+      },
+      async findMergeRequest() {
+        if (defaultBranch === null) return null;
+        const open = await client.pullRequestsFrom(repositoryId, SETUP_BRANCH, defaultBranch);
+        return open[0]?.webUrl ?? null;
+      },
+      async openMergeRequest(description) {
+        if (defaultBranch === null) throw new ScmError('not_found', ERROR_TEXT.not_found);
+        const pipeline = written ?? listed;
+        const opened = await client.createPullRequest(repositoryId, {
+          sourceBranch: SETUP_BRANCH,
+          targetBranch: defaultBranch,
+          title: SETUP_TITLE,
+          description:
+            pipeline === null ? description : azurePipelineNamed(description, pipeline.name),
+        });
+        // The Build validation policy follows the first main-branch analysis (azure-policy.ts).
+        await updateItem(db, item, { azurePolicy: 'pending', azurePolicyError: null });
+        return opened.webUrl;
+      },
+    },
+  };
+}
+
 /**
  * One client for the repository (the request budget is per client), and what the provider calls
  * it. GitHub's token asks for Workflows and Secrets (write) only when the run changes CI (Contents
  * (write) whenever the installation grants it).
  */
-async function openRepository(
-  deps: SetupRunDeps,
-  connection: ScmConnectionRow,
-  ref: string,
-  changesCi: boolean,
-): Promise<OpenedRepository> {
+async function openRepository(ctx: ItemContext, changesCi: boolean): Promise<OpenedRepository> {
+  const { deps, connection, run, item } = ctx;
+  const ref = item.repositoryRef;
   switch (connection.provider) {
     case 'github': {
       const repo = parseRepoRef(ref);
@@ -543,8 +953,16 @@ async function openRepository(
       if ('problem' in made) throw new UnusableConnection();
       return gitlabRepository(made.client, await made.client.project(ref));
     }
-    case 'azure': // azure-pending(7): adding Azure DevOps repositories (the connection is unusable here)
-      throw new UnusableConnection();
+    case 'azure': {
+      const made = azureClientFor(connection, deps.scm, deps.runtime);
+      if ('problem' in made) throw new UnusableConnection();
+      return azureRepository(made.client, await made.client.repository(ref), {
+        db: deps.db,
+        item,
+        serverUrl: deps.publicUrl ?? URL_PLACEHOLDER,
+        pool: azurePoolOf(run, connection),
+      });
+    }
     default:
       return assertNever(connection.provider, 'provider');
   }
@@ -597,8 +1015,8 @@ async function mapProject(
 /**
  * The item's project, in one transaction with its outcome: the project of the organisation that
  * already maps this repository through this connection (a second run, a retry), else the unmapped
- * project whose key is the repository's name (adopted), else a new one with the first free key of
- * `name`, `name-2` … `name-20`. Null when the item failed (saved too).
+ * project whose key is the repository's key (adopted), else a new one with the first free key of
+ * `key`, `key-2` … `key-20`, named as the repository. Null when the item failed (saved too).
  */
 async function settleProject(
   deps: SetupRunDeps,
@@ -653,7 +1071,7 @@ async function settleProject(
       .where(
         and(
           eq(projects.organizationId, run.organizationId),
-          eq(projects.key, repo.name),
+          eq(projects.key, repo.key),
           isNull(projects.scmConnectionId),
         ),
       )
@@ -662,8 +1080,8 @@ async function settleProject(
       return settled('adopted', await mapProject(tx, free, connection.id, repo.mappingRef, by));
     }
     const candidates = [
-      repo.name,
-      ...Array.from({ length: MAX_KEY_SUFFIX - 1 }, (_, i) => `${repo.name}-${i + 2}`),
+      repo.key,
+      ...Array.from({ length: MAX_KEY_SUFFIX - 1 }, (_, i) => `${repo.key}-${i + 2}`),
     ].filter((key) => PROJECT_KEY_PATTERN.test(key));
     const taken = new Set(
       candidates.length === 0
@@ -744,8 +1162,13 @@ function createSetupToken(
   });
 }
 
-/** The snippet a repository without CI would get: the planner's change for a fresh repository. */
-function freshSnippet(input: Omit<CiSetupInput, 'existing'>): string {
+/**
+ * The snippet a repository without CI would get: the planner's change for a fresh repository. On
+ * Azure DevOps (the run's pool) the file comes with the steps outside it: the pipeline, its
+ * `QUALOR_URL` and its secret.
+ */
+function freshSnippet(input: Omit<CiSetupInput, 'existing' | 'azure'>, pool: AzurePool): string {
+  const azure = input.provider === 'azure';
   const plan = planCiSetup({
     ...input,
     existing: {
@@ -755,8 +1178,18 @@ function freshSnippet(input: Omit<CiSetupInput, 'existing'>): string {
       tokenSecretSet: false,
       inheritedTokenSet: false,
     },
+    ...(azure
+      ? {
+          azure: {
+            pool,
+            existing: { pipelineFile: false, azurePipelinesYml: null, definition: null },
+          },
+        }
+      : {}),
   });
-  return plan.kind === 'change' ? (plan.files[0]?.content ?? '') : plan.snippet;
+  if (plan.kind === 'snippet') return plan.snippet;
+  const content = plan.files[0]?.content ?? '';
+  return azure ? azureSnippet(content, input.serverUrl) : content;
 }
 
 interface ItemContext {
@@ -824,10 +1257,15 @@ async function settleAlreadySetUp(
     const resumed = planCiSetup({
       ...input,
       existing: { ...input.existing, tokenSecretSet: false },
+      // Azure DevOps: the pipeline holding the secret is what counted as set up.
+      ...(input.azure
+        ? { azure: { ...input.azure, existing: { ...input.azure.existing, definition: null } } }
+        : {}),
     });
     ctx.ciStep = 'branch';
     if (resumed.kind === 'change' && (await repo.ci.branchExists())) {
-      // What failed after the token may be a variable: set them again (an upsert) first.
+      // What failed after the token may be a variable (on Azure DevOps the pipeline's agent pool
+      // authorisation): set them again (an upsert) first.
       ctx.ciStep = 'variables';
       await repo.ci.setVariables(resumed.variables);
       ctx.ciStep = 'merge_request';
@@ -850,6 +1288,8 @@ async function applyCiChange(
   plan: Extract<CiPlan, { kind: 'change' }>,
 ): Promise<void> {
   const { deps, run, item } = ctx;
+  // Still a read: what the change needs besides the repository, before anything is written.
+  await repo.ci.prepare?.();
   ctx.ciStep = 'branch';
   const reused = await repo.ci.branchExists();
   if (!reused) await repo.ci.createBranch();
@@ -865,8 +1305,8 @@ async function applyCiChange(
     try {
       await repo.ci.storeToken(token);
     } catch (err) {
-      // A refusal stored nothing; a lost answer may have stored it.
-      stored = !definitelyRefused(err);
+      // A refusal, or a stop in Qualor's words, stored nothing; a lost answer may have stored it.
+      stored = !(definitelyRefused(err) || err instanceof SetupFailure);
       throw err;
     }
     stored = true;
@@ -918,7 +1358,7 @@ async function setUpCi(
       projectId,
       outcome,
       reason,
-      freshSnippet({ ...base, csharp: isCsharp }),
+      freshSnippet({ ...base, csharp: isCsharp }, azurePoolOf(run, connection)),
     );
   };
   if (!run.ciSetup) return snippet('skipped', null);
@@ -932,7 +1372,12 @@ async function setUpCi(
   const read = await repo.ci.read();
   if (read.empty) return snippet('snippet', 'empty_repository', read.csharp);
   if (read.customCiPath) return snippet('snippet', 'custom_ci_path', read.csharp);
-  const input: CiSetupInput = { ...base, csharp: read.csharp, existing: read.existing };
+  const input: CiSetupInput = {
+    ...base,
+    csharp: read.csharp,
+    existing: read.existing,
+    ...(read.azure ? { azure: read.azure } : {}),
+  };
   const plan: CiPlan = planCiSetup(input);
   if (plan.kind === 'snippet') {
     if (plan.reason !== 'already_set_up') {
@@ -1002,6 +1447,18 @@ async function projectOfItem(
 /** The CI setup of a repository failed with a provider error: the item stays pending or fails. */
 async function recordCiFailure(ctx: ItemContext, err: unknown, log: ItemLog): Promise<void> {
   const { deps, connection, item } = ctx;
+  if (err instanceof SetupFailure) {
+    // Its code only: the message may hold the pool's name, which a person typed.
+    deps.logger?.warn(
+      { ...log, step: ctx.ciStep, code: err.error.code },
+      'repository setup could not set up CI',
+    );
+    return updateItem(deps.db, item, {
+      ciOutcome: 'failed',
+      errorCode: err.error.code,
+      errorMessage: err.error.message,
+    });
+  }
   if (!(err instanceof ScmError)) throw err;
   // The item stays pending: the next job resumes it (the branch is reused, the files kept).
   if (err.kind === 'rate_limited' && ctx.mayPause) throw pauseFor(err);
@@ -1016,7 +1473,12 @@ async function recordCiFailure(ctx: ItemContext, err: unknown, log: ItemLog): Pr
     },
     'repository setup could not set up CI',
   );
-  const error = scmErrorOf(err, connection.provider, ctx.ciStep === 'read' ? 'ci_read' : 'change');
+  const error = scmErrorOf(
+    err,
+    connection.provider,
+    ctx.ciStep === 'read' ? 'ci_read' : 'change',
+    ctx.ciStep,
+  );
   await updateItem(deps.db, item, {
     ciOutcome: 'failed',
     errorCode: error.code,
@@ -1030,7 +1492,7 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   const log = { runId: run.id, position: item.position };
   let repo: OpenedRepository;
   try {
-    repo = await openRepository(deps, connection, item.repositoryRef, changesCi);
+    repo = await openRepository(ctx, changesCi);
   } catch (err) {
     return recordOpenFailure(ctx, err, log);
   }

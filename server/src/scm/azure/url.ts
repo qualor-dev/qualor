@@ -52,6 +52,15 @@ export function azureWebBase(normalisedBaseUrl: string): string {
   return normalisedBaseUrl;
 }
 
+/** A pipeline's web URL: the project by name (`<project>/_build?definitionId=<id>`). */
+export function azurePipelineWebUrl(
+  normalisedBaseUrl: string,
+  projectName: string,
+  definitionId: number,
+): string {
+  return `${azureWebBase(normalisedBaseUrl)}/${encodeURIComponent(projectName)}/_build?definitionId=${definitionId}`;
+}
+
 /** A pull request's web URL, from the repository's `webUrl`. */
 export function azurePullRequestWebUrl(repositoryWebUrl: string, id: number): string {
   return `${repositoryWebUrl}/pullrequest/${id}`;

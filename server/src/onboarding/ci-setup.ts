@@ -327,16 +327,30 @@ function gitlabDescription(i: CiSetupInput): string[] {
   ];
 }
 
+/** The name of the pipeline Qualor creates, as the description names it. */
+const PIPELINE_MENTION = 'the pipeline `Qualor`';
+
+/**
+ * The description with the pipeline's own name, when `Qualor` was taken in the Azure DevOps project
+ * and the pipeline got another (setup-run.ts): every mention, as a code span.
+ */
+export function azurePipelineNamed(description: string, name: string): string {
+  if (name === 'Qualor') return description;
+  return description.replaceAll(PIPELINE_MENTION, `the pipeline ${codeSpan(name)}`);
+}
+
 function azureDescription(i: CiSetupInput): string[] {
   const pool = i.azure?.pool ?? { vmImage: 'ubuntu-latest' as const };
-  const hosted = 'vmImage' in pool;
   const image = codeSpan(`${scannerImage(i)}:${i.version}`);
   return [
     `The pipeline file ${codeSpan(AZURE_FILE)} runs the Qualor scanner image ${image}.`,
-    'Qualor creates the pipeline `Qualor` from it. The token is its secret variable `QUALOR_TOKEN` and the server address its variable `QUALOR_URL`; neither is in any file.',
-    `The pipeline runs on ${hosted ? 'the Microsoft-hosted image' : 'the agent pool'} ${codeSpan(hosted ? pool.vmImage : pool.name)}. It needs a Linux agent with Docker, and the agent pool must be authorised for the pipeline \`Qualor\`. The agents must be able to pull the image from Docker Hub.`,
+    `Qualor creates ${PIPELINE_MENTION} from it. The token is its secret variable \`QUALOR_TOKEN\` and the server address its variable \`QUALOR_URL\`; neither is in any file.`,
+    // Probe item 26: the hosted queue is open to every pipeline; another pool's queue is not.
+    'vmImage' in pool
+      ? `The pipeline runs on the Microsoft-hosted image ${codeSpan(pool.vmImage)}, whose agent pool is open to every pipeline.`
+      : `The pipeline runs on the agent pool ${codeSpan(pool.name)}. It needs a Linux agent with Docker, and the agent pool must be authorised for ${PIPELINE_MENTION}. The agents must be able to pull the image from Docker Hub.`,
     'After the first analysis of the default branch, Qualor adds the Build validation policy that runs the pipeline on every pull request into that branch.',
-    `To remove it, delete ${codeSpan(AZURE_FILE)}, the pipeline \`Qualor\` (its secret goes with it) and the Build validation policy.`,
+    `To remove it, delete ${codeSpan(AZURE_FILE)}, ${PIPELINE_MENTION} (its secret goes with it) and the Build validation policy.`,
   ];
 }
 
@@ -479,8 +493,11 @@ function planGitlab(input: CiSetupInput): CiPlan {
   return changePlan(input, [{ path: GITLAB_FILE, content, update: text !== null }]);
 }
 
-/** The file plus the steps Qualor would do outside it, as trailing comments (one YAML document). */
-function azureSnippet(content: string, serverUrl: string): string {
+/**
+ * The file plus the steps Qualor would do outside it, as trailing comments (one YAML document):
+ * every Azure DevOps snippet, the planner's and the setup run's (setup-run.ts `freshSnippet`).
+ */
+export function azureSnippet(content: string, serverUrl: string): string {
   return (
     content +
     [

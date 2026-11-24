@@ -120,6 +120,7 @@ function item(ref: string, over: Partial<RunItem> = {}): RunItem {
     snippet: null,
     token: null,
     error: null,
+    azure: null,
     ...over,
   };
 }
@@ -645,7 +646,7 @@ describe('AddRepositoriesPage', () => {
         }),
         done('acme/mobile-app', {
           ciOutcome: 'failed',
-          error: { code: 'refused', message: 'The provider refused the change' },
+          error: { code: 'refused', message: 'The provider refused the change', stage: 'change' },
         }),
         item('acme/website', {
           projectOutcome: 'adopted',
@@ -658,7 +659,7 @@ describe('AddRepositoriesPage', () => {
         item('acme/gone', {
           projectOutcome: 'failed',
           ciOutcome: 'failed',
-          error: { code: 'not_found', message: 'The repository was not found' },
+          error: { code: 'not_found', message: 'The repository was not found', stage: null },
         }),
       ]);
       server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, { body: first });
@@ -737,6 +738,7 @@ describe('AddRepositoriesPage', () => {
             error: {
               code: 'permission',
               message: 'The GitHub App needs Contents, Workflows and Secrets write',
+              stage: 'change',
             },
           }),
         ]),
@@ -825,7 +827,11 @@ describe('AddRepositoriesPage', () => {
         body: run('done', [
           done('acme/mobile-app', {
             ciOutcome: 'failed',
-            error: { code: 'unavailable', message: 'The provider could not be reached' },
+            error: {
+              code: 'unavailable',
+              message: 'The provider could not be reached',
+              stage: null,
+            },
           }),
         ]),
       });
@@ -856,7 +862,11 @@ describe('AddRepositoriesPage', () => {
           done('acme/website', { ciOutcome: 'snippet', snippet: WORKFLOW, token }),
           done('acme/mobile-app', {
             ciOutcome: 'failed',
-            error: { code: 'unavailable', message: 'The provider could not be reached' },
+            error: {
+              code: 'unavailable',
+              message: 'The provider could not be reached',
+              stage: null,
+            },
           }),
         ]);
       }

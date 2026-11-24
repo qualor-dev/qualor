@@ -1,7 +1,14 @@
 import { expectDbCache } from '@qualor/shared/test/ci-cache';
 import { describe, expect, it } from 'vitest';
 import { parse, parseAllDocuments, parseDocument, type YAMLMap } from 'yaml';
-import { editIsSound, minorOf, planCiSetup, type CiPlan, type CiSetupInput } from './ci-setup';
+import {
+  azurePipelineNamed,
+  editIsSound,
+  minorOf,
+  planCiSetup,
+  type CiPlan,
+  type CiSetupInput,
+} from './ci-setup';
 
 const URL_ = 'https://qualor.acme.io';
 /** The project's key: not the repository's path, as when `acme/app` was taken. */
@@ -960,6 +967,25 @@ describe('CI setup on Azure DevOps', () => {
     expect(plan.description).toMatch(/agent pool/);
     expect(plan.description).toMatch(/pull request/);
     expect(plan.description).toContain('` .azure-pipelines/qualor.yml `');
+  });
+
+  it('asks to authorise a named pool only: the hosted pool is open to every pipeline', () => {
+    const hosted = change(az()).description;
+    expect(hosted).not.toContain('must be authorised');
+    expect(hosted).toContain('open to every pipeline');
+    expect(change(az({ pool: { name: 'p' } })).description).toContain(
+      'the agent pool must be authorised for the pipeline `Qualor`',
+    );
+  });
+
+  it('names the pipeline by the name it got when `Qualor` was taken', () => {
+    const description = azurePipelineNamed(
+      change(az({ pool: { name: 'p' } })).description,
+      'Qualor (web `1`)',
+    );
+    expect(description).not.toContain('`Qualor`');
+    expect(description.split('the pipeline `` Qualor (web `1`) ``')).toHaveLength(4);
+    expect(azurePipelineNamed('the pipeline `Qualor`', 'Qualor')).toBe('the pipeline `Qualor`');
   });
 
   it('uses the .NET image and the named pool', () => {

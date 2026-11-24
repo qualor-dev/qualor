@@ -27066,7 +27066,7 @@
                     "description": "Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available`"
                   },
                   "azurePool": {
-                    "description": "Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent",
+                    "description": "Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services uses Microsoft-hosted agents unless a pool is named",
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100
@@ -27201,7 +27201,7 @@
                           },
                           "name": {
                             "type": "string",
-                            "description": "owner/repo (GitHub) or the full path (GitLab) once read; the ref until then"
+                            "description": "owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps) once read; the ref until then"
                           },
                           "project": {
                             "anyOf": [
@@ -27308,16 +27308,34 @@
                                       "bad_answer",
                                       "budget",
                                       "internal",
-                                      "abandoned"
+                                      "abandoned",
+                                      "no_agent_pool",
+                                      "pipeline_name_taken"
                                     ]
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "stage": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "read",
+                                          "change"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "`permission` and `refused` only: `read` when Qualor was refused while opening or reading the repository, `change` while CI setup wrote to it (a permission message then names what CI setup needs); null for the other codes"
                                   }
                                 },
                                 "required": [
                                   "code",
-                                  "message"
+                                  "message",
+                                  "stage"
                                 ],
                                 "additionalProperties": false
                               },
@@ -27325,6 +27343,73 @@
                                 "type": "null"
                               }
                             ]
+                          },
+                          "azure": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "pipelineUrl": {
+                                    "description": "The pipeline Qualor created or found, once its secret is written",
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "queue": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "authorized",
+                                          "open",
+                                          "manual"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The pipeline on its agent pool's queue: `open` to every pipeline (or to it already), `authorized` by Qualor, or `manual`: Azure DevOps refused, a person approves it"
+                                  },
+                                  "policy": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "pending",
+                                          "on",
+                                          "manual",
+                                          "failed"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ],
+                                    "description": "The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (the identity may not edit policies) or `failed`"
+                                  },
+                                  "policyError": {
+                                    "description": "Why the policy is `manual` or `failed`",
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "pipelineUrl",
+                                  "queue",
+                                  "policy",
+                                  "policyError"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "Azure DevOps CI setup: what Qualor made outside the pull request; null elsewhere"
                           }
                         },
                         "required": [
@@ -27337,7 +27422,8 @@
                           "ciReason",
                           "snippet",
                           "token",
-                          "error"
+                          "error",
+                          "azure"
                         ],
                         "additionalProperties": false
                       }

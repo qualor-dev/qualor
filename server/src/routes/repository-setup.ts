@@ -11,6 +11,8 @@ import {
   repositorySetupItems,
   repositorySetupRuns,
   scmConnections,
+  SETUP_AZURE_POLICIES,
+  SETUP_AZURE_QUEUES,
   SETUP_CI_OUTCOMES,
   SETUP_PROJECT_OUTCOMES,
   SETUP_RUN_STATUSES,
@@ -23,6 +25,8 @@ import {
   SETUP_CI_REASONS,
   SETUP_ERROR_CODES,
   SETUP_TOKEN_AAD,
+  setupErrorStage,
+  setupKeyOf,
   type SetupCiReason,
   type SetupErrorCode,
 } from '../onboarding/setup-run';
@@ -33,7 +37,7 @@ import { gitlabClientFor, scmDepsOf } from '../scm/connections';
 import { listInstallationRepositories } from '../scm/github/installations';
 import { ScmError } from '../scm/provider';
 import { notAFieldText, PROVIDER } from '../scm/providers';
-import { azureDeployment } from '../scm/azure/url';
+import { azureDeployment, azurePipelineWebUrl } from '../scm/azure/url';
 import { scmProjectRef } from './scm-connections';
 
 /** Repositories to a page: what GitLab and GitHub list at most, and Azure DevOps' pages here. */
@@ -87,7 +91,8 @@ const azurePoolSchema = z
 const itemSchema = z.object({
   ref: z.string().meta({ description: 'The repository as the run was given it' }),
   name: z.string().meta({
-    description: 'owner/repo (GitHub) or the full path (GitLab) once read; the ref until then',
+    description:
+      'owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps) once read; the ref until then',
   }),
   project: z.object({ id: z.uuid(), key: z.string() }).nullable(),
   projectOutcome: z.enum(SETUP_PROJECT_OUTCOMES).meta({
@@ -105,7 +110,39 @@ const itemSchema = z.object({
     description:
       "The project's new CI setup token, for the snippet: shown to the run's creator on the first read after the repository is done, never again",
   }),
-  error: z.object({ code: z.enum(SETUP_ERROR_CODES), message: z.string() }).nullable(),
+  error: z
+    .object({
+      code: z.enum(SETUP_ERROR_CODES),
+      message: z.string(),
+      stage: z.enum(['read', 'change']).nullable().meta({
+        description:
+          '`permission` and `refused` only: `read` when Qualor was refused while opening or reading the repository, `change` while CI setup wrote to it (a permission message then names what CI setup needs); null for the other codes',
+      }),
+    })
+    .nullable(),
+  azure: z
+    .object({
+      pipelineUrl: z.string().nullable().meta({
+        description: 'The pipeline Qualor created or found, once its secret is written',
+      }),
+      queue: z.enum(SETUP_AZURE_QUEUES).nullable().meta({
+        description:
+          "The pipeline on its agent pool's queue: `open` to every pipeline (or to it already), `authorized` by Qualor, or `manual`: Azure DevOps refused, a person approves it",
+      }),
+      policy: z.enum(SETUP_AZURE_POLICIES).nullable().meta({
+        description:
+          'The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (the identity may not edit policies) or `failed`',
+      }),
+      policyError: z
+        .string()
+        .nullable()
+        .meta({ description: 'Why the policy is `manual` or `failed`' }),
+    })
+    .nullable()
+    .meta({
+      description:
+        'Azure DevOps CI setup: what Qualor made outside the pull request; null elsewhere',
+    }),
 });
 const runSchema = z.object({
   id: z.uuid(),
@@ -259,13 +296,14 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
       // Azure DevOps id is stored in lower case.
       const mapped = new Map<string, { id: string; key: string }>();
       for (const p of mappedRows) if (p.ref !== null) mapped.set(p.ref.toLowerCase(), p);
-      // Keys are case-sensitive: an unmapped project is adoptable only by the exact name.
+      // Keys are case-sensitive: an unmapped project is adoptable only by the exact key the run
+      // gives the repository (its name; on Azure DevOps, the name made a key).
       const adoptable = new Map(unmappedRows.map((p) => [p.key, p]));
 
       const projectOf = (r: (typeof listed)[number]) => {
         const found = mapped.get(r.ref.toLowerCase()) ?? mapped.get(r.name.toLowerCase());
         if (found) return { id: found.id, key: found.key, state: 'mapped' as const };
-        const free = adoptable.get(r.name);
+        const free = adoptable.get(setupKeyOf(row.provider, r.name, r.ref));
         return free ? { id: free.id, key: free.key, state: 'adoptable' as const } : null;
       };
       const items = listed.map((r) => ({ ...r, project: projectOf(r) }));
@@ -300,7 +338,7 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
           }),
           azurePool: azurePoolSchema.optional().meta({
             description:
-              'Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent',
+              'Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services uses Microsoft-hosted agents unless a pool is named',
           }),
         }),
         response: { 202: z.object({ id: z.uuid() }) },
@@ -466,6 +504,20 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
         return { rows: found, tokens: shownTokens };
       });
       if (run.status !== 'done') void reply.header('retry-after', POLL_SECONDS);
+      // Azure DevOps: a pipeline's web address from the connection's (none once it is deleted).
+      const [connection] =
+        run.connectionId === null
+          ? []
+          : await deps.db
+              .select({ provider: scmConnections.provider, baseUrl: scmConnections.baseUrl })
+              .from(scmConnections)
+              .where(eq(scmConnections.id, run.connectionId));
+      const pipelineUrlOf = (pipelineId: number | null, repositoryName: string) => {
+        // The name is `<project>/<repository>` once the pipeline exists; neither holds a `/`.
+        const slash = repositoryName.indexOf('/');
+        if (pipelineId === null || connection?.provider !== 'azure' || slash <= 0) return null;
+        return azurePipelineWebUrl(connection.baseUrl, repositoryName.slice(0, slash), pipelineId);
+      };
       return {
         id: run.id,
         status: run.status,
@@ -486,7 +538,20 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
           error:
             item.errorCode === null
               ? null
-              : { code: item.errorCode as SetupErrorCode, message: item.errorMessage ?? '' },
+              : {
+                  code: item.errorCode as SetupErrorCode,
+                  message: item.errorMessage ?? '',
+                  stage: setupErrorStage(item.errorCode, item.errorMessage ?? ''),
+                },
+          azure:
+            item.azurePipelineId === null && item.azureQueue === null && item.azurePolicy === null
+              ? null
+              : {
+                  pipelineUrl: pipelineUrlOf(item.azurePipelineId, item.repositoryName),
+                  queue: item.azureQueue,
+                  policy: item.azurePolicy,
+                  policyError: item.azurePolicyError,
+                },
         })),
       };
     },

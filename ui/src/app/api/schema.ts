@@ -12244,7 +12244,7 @@ export interface paths {
                         repositories: string[];
                         /** @description Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available` */
                         ciSetup: boolean;
-                        /** @description Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent */
+                        /** @description Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services uses Microsoft-hosted agents unless a pool is named */
                         azurePool?: string;
                     };
                 };
@@ -12340,7 +12340,7 @@ export interface paths {
                             items: {
                                 /** @description The repository as the run was given it */
                                 ref: string;
-                                /** @description owner/repo (GitHub) or the full path (GitLab) once read; the ref until then */
+                                /** @description owner/repo (GitHub), the full path (GitLab) or project/repository (Azure DevOps) once read; the ref until then */
                                 name: string;
                                 project: {
                                     /** Format: uuid */
@@ -12364,8 +12364,21 @@ export interface paths {
                                 token: string | null;
                                 error: {
                                     /** @enum {string} */
-                                    code: "not_found" | "key_taken" | "connection_gone" | "connection_unusable" | "project_gone" | "permission" | "rate_limited" | "unavailable" | "refused" | "bad_answer" | "budget" | "internal" | "abandoned";
+                                    code: "not_found" | "key_taken" | "connection_gone" | "connection_unusable" | "project_gone" | "permission" | "rate_limited" | "unavailable" | "refused" | "bad_answer" | "budget" | "internal" | "abandoned" | "no_agent_pool" | "pipeline_name_taken";
                                     message: string;
+                                    /** @description `permission` and `refused` only: `read` when Qualor was refused while opening or reading the repository, `change` while CI setup wrote to it (a permission message then names what CI setup needs); null for the other codes */
+                                    stage: ("read" | "change") | null;
+                                } | null;
+                                /** @description Azure DevOps CI setup: what Qualor made outside the pull request; null elsewhere */
+                                azure: {
+                                    /** @description The pipeline Qualor created or found, once its secret is written */
+                                    pipelineUrl: string | null;
+                                    /** @description The pipeline on its agent pool's queue: `open` to every pipeline (or to it already), `authorized` by Qualor, or `manual`: Azure DevOps refused, a person approves it */
+                                    queue: ("authorized" | "open" | "manual") | null;
+                                    /** @description The non-blocking Build validation policy: `pending` until the first analysis of the default branch after the setup, then `on`, `manual` (the identity may not edit policies) or `failed` */
+                                    policy: ("pending" | "on" | "manual" | "failed") | null;
+                                    /** @description Why the policy is `manual` or `failed` */
+                                    policyError: string | null;
                                 } | null;
                             }[];
                         };
