@@ -121,14 +121,14 @@ original characters.
 Press the switch **Allow Qualor to set up CI (opens pull requests, creates pipelines and
 policies)** on the connection, in **Settings → Azure DevOps**. It is off until you press it. The
 server also needs `QUALOR_PUBLIC_URL` ([Server settings](./install-server.md#server-settings)).
-Without them, **Add repositories** still creates the projects and shows the snippet and the token.
+Without either, **Add repositories** still creates the projects and shows the snippet and the token.
 
 ### What Qualor does
 
 | Step | What Qualor does |
 |---|---|
 | 1 | Pushes the branch `qualor/setup` with one new file, `.azure-pipelines/qualor.yml`. It is the [docker pipeline](#pick-a-pipeline) without an extension, with the project key in its `variables:` and the scanner image pinned to the server's version |
-| 2 | Creates the pipeline `Qualor` in the folder `\`, pointing at that file. It has the variable `QUALOR_URL` and the secret variable `QUALOR_TOKEN`, a project analysis token named **CI setup**. The token is never in the pull request |
+| 2 | Creates the pipeline `Qualor` in the folder `\` (`Qualor (<repository>)` when the project already has a pipeline of that name), pointing at that file. It has the variable `QUALOR_URL` and the secret variable `QUALOR_TOKEN`, a project analysis token named **CI setup**. The token is never in the pull request |
 | 3 | Lets the pipeline use its agent pool |
 | 4 | Opens the pull request **Add Qualor code analysis**. Its description lists everything Qualor did outside the pull request |
 | 5 | After the pull request is merged and the first analysis of the main branch has arrived, adds a Build validation policy `Qualor` on the default branch |
@@ -138,9 +138,10 @@ the merge. To block on the gate, see [Block the merge on the gate](#block-the-me
 
 ### The agent pool
 
-On Azure DevOps Services the pipeline runs on the Microsoft-hosted pool `ubuntu-latest`, unless you
-name another pool. On Azure DevOps Server you must name the pool; the default is `Default`. The
-pool's agents need Linux and Docker.
+Name the pool in the field **Agent pool** of **Add repositories**. On Azure DevOps Services you may
+leave it empty: the pipeline then runs on the Microsoft-hosted pool `ubuntu-latest`. On Azure
+DevOps Server the field is required, because it has no Microsoft-hosted agents. The pool's agents
+need Linux and Docker.
 
 A Microsoft-hosted pool is open to all pipelines, so step 3 needs nothing there. For a self-hosted
 pool Qualor authorises the pipeline. When its identity may not, the result names the approval you
@@ -161,7 +162,7 @@ The result of the setup shows the state of the policy.
 
 Qualor names the missing right when Azure DevOps refuses a step. A Project Administrator can do
 every step. The minimal role set for a service principal is the **Basic** access level and
-**Contributors**, plus **Edit policies**. A smaller set is described in a later release.
+**Contributors**, plus **Edit policies**. Whether Contributors alone are enough is not checked yet.
 
 | Step | Right |
 |---|---|
@@ -186,7 +187,7 @@ own.
 ### Undo CI setup
 
 1. Close the pull request and delete the branch `qualor/setup`.
-2. Delete the pipeline `Qualor`.
+2. Delete the pipeline `Qualor` (or `Qualor (<repository>)`).
 3. Delete the Build validation policy `Qualor` on the default branch, if it exists.
 4. In Qualor, revoke the project's **CI setup** token in the project's token settings.
 
