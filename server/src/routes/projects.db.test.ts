@@ -13,6 +13,8 @@ import {
   type Session,
   type TestContext,
 } from '../../test/app';
+import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../test/fake-azure-devops';
+import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { gzipJson, sampleReport, uploadReport } from '../../test/reports';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import {
@@ -603,7 +605,7 @@ describe('projects', () => {
       repository.toLowerCase(),
     ]);
     // A GitLab project or a GitHub owner/repo is no Azure DevOps repository.
-    for (const bad of ['acme/api', 'Payments/api', '7', `{${repository}}`, `${repository}0`]) {
+    for (const bad of ['acme', '7', `{${repository}}`, `${repository}0`]) {
       const res = await map({ scmProjectRef: bad });
       expect([res.statusCode, res.json().errors], bad).toEqual([
         422,
@@ -632,5 +634,75 @@ describe('projects', () => {
       repository.toLowerCase(),
     ]);
     await ctx.db.delete(scmConnections).where(eq(scmConnections.organizationId, defaultOrg));
+  });
+});
+
+describe('mapping a project to a typed Azure DevOps Project/Repository (Azure sub-plan 7)', () => {
+  let h: IngestHarness;
+  let server: FakeAzureDevOps;
+  let connectionId: string;
+
+  beforeAll(async () => {
+    server = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: [
+        { name: 'web', projectName: 'Payments' },
+        { name: 'api', projectName: 'Payments' },
+      ],
+    });
+    h = await createIngestHarness({
+      config: { scmInternalHosts: new Set([new URL(server.url).host]) },
+    });
+    const res = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: server.url,
+        azureAuth: 'pat',
+        token: server.pat,
+      },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    connectionId = res.json().id as string;
+  });
+  afterAll(async () => {
+    await h.close();
+    await server.close();
+  });
+
+  it('stores the repository id of the exact name, without case, and refuses an unknown name', async () => {
+    const project = await h.project('typed-ref');
+    const map = (payload: object) =>
+      h.ctx.app.inject({
+        method: 'PATCH',
+        url: `/api/v0/projects/${project.id}`,
+        headers: h.orgAdmin.headers,
+        payload,
+      });
+    const web = server.repositories[0]!;
+    const typed = await map({ scmConnectionId: connectionId, scmProjectRef: 'payments/WEB' });
+    expect([typed.statusCode, typed.json().scmProjectRef], typed.body).toEqual([200, web.id]);
+    // An id is stored as sent, and asks Azure DevOps nothing.
+    server.clearRequests();
+    const byId = await map({ scmProjectRef: server.repositories[1]!.id.toUpperCase() });
+    expect([byId.statusCode, byId.json().scmProjectRef]).toEqual([200, server.repositories[1]!.id]);
+    expect(server.requests).toEqual([]);
+    // The connection kept, a name typed alone resolves through it.
+    const again = await map({ scmProjectRef: 'Payments/web' });
+    expect(again.json().scmProjectRef).toBe(web.id);
+    for (const unknown of ['Payments/we', 'Payments/web/x', 'Other/web']) {
+      const res = await map({ scmProjectRef: unknown });
+      expect(res.statusCode, unknown).toBe(422);
+      expect(res.json().errors).toHaveLength(1);
+      expect(res.json().errors[0].path).toBe('body.scmProjectRef');
+    }
+    const none = await map({ scmProjectRef: 'Payments/nope' });
+    expect(none.json().errors[0].message).toBe('No repository `Payments/nope` in this connection');
+    // The mapping kept what the last good request stored.
+    const [row] = await h.ctx.db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row!.scmProjectRef).toBe(web.id);
   });
 });

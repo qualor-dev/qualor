@@ -9,7 +9,7 @@ import { parseInternalHosts } from './url';
 const SECRET_KEY = 'ci-setup-status-test-key-of-at-least-32-characters';
 const PUBLIC_URL = 'https://qualor.example.com';
 
-describe('the CI-setup status of an Azure DevOps connection: not available yet (Azure sub-plan 2, Task 2)', () => {
+describe('the CI-setup status of an Azure DevOps connection (Azure sub-plan 7)', () => {
   let listener: RecordingListener;
   let deps: ScmDeps;
   let row: ScmConnectionRow;
@@ -31,7 +31,6 @@ describe('the CI-setup status of an Azure DevOps connection: not available yet (
       tokenEnc: encryptSecret(encryptionKey(SECRET_KEY), 'azure-pat-test', SCM_TOKEN_AAD),
       appId: null,
       webhookSecretEnc: null,
-      // Allowed in the row (the API cannot set it for Azure yet), so the Azure arm itself answers.
       ciSetupAllowed: true,
       fixMrsAllowed: false,
       azureAuth: 'pat',
@@ -43,15 +42,31 @@ describe('the CI-setup status of an Azure DevOps connection: not available yet (
   });
   afterAll(() => listener.close());
 
-  it('is not allowed, with or without a public URL, and nothing is asked', async () => {
+  it('is available with the setting and a public URL, and nothing is asked', async () => {
     const warned: string[] = [];
     const warn = (message: string) => warned.push(message);
-    const notAllowed = { available: false, reason: 'not_allowed', missing: [] };
-    for (const publicUrl of [PUBLIC_URL, null]) {
-      expect(await createCiSetupStatus({ deps, publicUrl, warn })(row)).toEqual(notAllowed);
-      expect(await readCiSetupStatus(row, deps, publicUrl)).toEqual(notAllowed);
-    }
+    const available = { available: true, reason: null, missing: [] };
+    expect(await createCiSetupStatus({ deps, publicUrl: PUBLIC_URL, warn })(row)).toEqual(
+      available,
+    );
+    expect(await readCiSetupStatus(row, deps, PUBLIC_URL)).toEqual(available);
     expect(warned).toEqual([]);
+    expect(listener.requests).toEqual([]);
+  });
+
+  it('is not available without a public URL, or without the setting', async () => {
+    const warn = () => undefined;
+    const noUrl = { available: false, reason: 'no_public_url', missing: [] };
+    expect(await createCiSetupStatus({ deps, publicUrl: null, warn })(row)).toEqual(noUrl);
+    expect(await readCiSetupStatus(row, deps, null)).toEqual(noUrl);
+    // The missing URL is told first, as for GitLab.
+    const off = { ...row, ciSetupAllowed: false };
+    expect(await createCiSetupStatus({ deps, publicUrl: null, warn })(off)).toEqual(noUrl);
+    const notAllowed = { available: false, reason: 'not_allowed', missing: [] };
+    expect(await createCiSetupStatus({ deps, publicUrl: PUBLIC_URL, warn })(off)).toEqual(
+      notAllowed,
+    );
+    expect(await readCiSetupStatus(off, deps, PUBLIC_URL)).toEqual(notAllowed);
     expect(listener.requests).toEqual([]);
   });
 });

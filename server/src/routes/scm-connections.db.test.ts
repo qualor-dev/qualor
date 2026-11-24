@@ -1708,6 +1708,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       github: null,
       gitlab: null,
       azure: {
+        ciSetupAllowed: false,
         deployment: 'services',
         auth: 'pat',
         tenantId: null,
@@ -1720,7 +1721,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         hooksCurrent: false,
         publicUrlHttps: false,
       },
-      ciSetup: { available: false, reason: 'not_allowed', missing: [] },
+      ciSetup: { available: false, reason: 'no_public_url', missing: [] },
       fixMrsAllowed: false,
       problem: null,
     });
@@ -1731,6 +1732,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       clientId: clientId.toUpperCase(),
     });
     expect(secret.azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_secret',
       tenantId,
@@ -1745,6 +1747,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     });
     const certificate = await created(SP_CERTIFICATE);
     expect(certificate.azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_certificate',
       tenantId,
@@ -1873,9 +1876,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         appId: '1',
         privateKey: 'x',
         webhookSecret: 'w'.repeat(20),
-        ciSetupAllowed: false,
       },
-      ['body.appId', 'body.ciSetupAllowed', 'body.privateKey', 'body.webhookSecret'],
+      ['body.appId', 'body.privateKey', 'body.webhookSecret'],
     ],
     [
       'dev.azure.com alone',
@@ -1991,6 +1993,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     // A certificate instead of the secret, with the ids; then a new certificate alone.
     const toCertificate = await patch(id, { ...SP_CERTIFICATE, tenantId: tenantId.toUpperCase() });
     expect(toCertificate.json().azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_certificate',
       tenantId,
@@ -2008,6 +2011,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     // A PAT instead: the ids go with the service principal.
     const toPat = await patch(id, { azureAuth: 'pat', token: services.pat });
     expect(toPat.json().azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'pat',
       tenantId: null,
@@ -2065,6 +2069,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     expect(await rowOf(id)).toMatchObject({ azureAuth: 'pat', azureTenantId: null });
     const certificate = await patch(id, SP_CERTIFICATE);
     expect(certificate.json().azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_certificate',
       tenantId,
@@ -2089,6 +2094,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     expect((await rowOf(id)).azureAuth).toBe(toCertificate);
     const secret = await patch(id, SP_SECRET);
     expect(secret.json().azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_secret',
       tenantId,
@@ -2133,6 +2139,7 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       .where(eq(scmConnections.id, id));
     const listed = await inject('GET', `/scm-connections?organizationId=${h.organizationId}`);
     expect((listed.json().items as AzureConnection[]).find((c) => c.id === id)?.azure).toEqual({
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'service_principal_certificate',
       tenantId,
@@ -2194,11 +2201,10 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       appId: '1',
       privateKey: 'x',
       webhookSecret: null,
-      ciSetupAllowed: true,
     });
     expect([own.statusCode, errorPaths(own.body)]).toEqual([
       422,
-      ['body.appId', 'body.ciSetupAllowed', 'body.privateKey', 'body.webhookSecret'],
+      ['body.appId', 'body.privateKey', 'body.webhookSecret'],
     ]);
     expect(own.json().errors[0].message).toBe('Not a field of an Azure DevOps connection');
     const tokenEnc = encryptSecret(encryptionKey(h.ctx.config.secretKey), 'x', SCM_TOKEN_AAD);
@@ -2240,6 +2246,44 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       });
       expect(post.statusCode, other.provider).toBe(422);
     }
+  });
+
+  it('takes ciSetupAllowed on create (off unless asked) and in a PATCH, stored and audited, and the status follows it (Azure sub-plan 7)', async () => {
+    const off = await post({ azureAuth: 'pat', token: services.pat });
+    expect([off.statusCode, off.json().azure.ciSetupAllowed]).toEqual([201, false]);
+    // The harness has no public URL: that is told first, as for GitLab.
+    expect(off.json().ciSetup.reason).toBe('no_public_url');
+    const on = await post({ azureAuth: 'pat', token: services.pat, ciSetupAllowed: true });
+    expect([on.statusCode, on.json().azure.ciSetupAllowed], on.body).toEqual([201, true]);
+    expect((await rowOf(on.json().id as string)).ciSetupAllowed).toBe(true);
+
+    const id = off.json().id as string;
+    const patched = await patch(id, { ciSetupAllowed: true });
+    expect([patched.statusCode, patched.json().azure.ciSetupAllowed], patched.body).toEqual([
+      200,
+      true,
+    ]);
+    expect((await rowOf(id)).ciSetupAllowed).toBe(true);
+    expect(await auditOf('scm_connection.updated', id)).toEqual([{ changed: ['ciSetupAllowed'] }]);
+    expect((await patch(id, { ciSetupAllowed: 'yes' })).statusCode).toBe(422);
+    expect(
+      (await post({ azureAuth: 'pat', token: services.pat, ciSetupAllowed: 'yes' })).statusCode,
+    ).toBe(422);
+    const back = await patch(id, { ciSetupAllowed: false });
+    expect([back.statusCode, back.json().azure.ciSetupAllowed]).toEqual([200, false]);
+    // Setting it asks Azure DevOps and Entra nothing, and the status reads no rights.
+    expect([services.requests, services.tokenRequests]).toEqual([[], []]);
+  });
+
+  it("lists a service principal's repositories with one Entra token for two requests (Azure sub-plan 7)", async () => {
+    const { id } = await created(SP_SECRET);
+    const first = await inject('GET', `/scm-connections/${id}/repositories`);
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().items).toHaveLength(3);
+    const second = await inject('GET', `/scm-connections/${id}/repositories?filter=docs`);
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json().items).toHaveLength(1);
+    expect(services.tokenRequests).toHaveLength(1);
   });
 
   it('takes fixMrsAllowed on create (off unless asked) and on its own in a PATCH, the audit naming it (Azure sub-plan 6)', async () => {

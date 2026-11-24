@@ -6,7 +6,7 @@ import { createFakeGitHub, type FakeGitHub, type FakeRepository } from '../../te
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { PUBLIC_URL } from '../../test/scm';
-import { scmConnections } from '../db/schema';
+import { repositorySetupItems, repositorySetupRuns, scmConnections } from '../db/schema';
 import {
   CI_SETUP_CACHE_MS,
   CI_SETUP_FAILURE_CACHE_MS,
@@ -694,5 +694,125 @@ describe('Listing an Azure DevOps connection’s repositories (Azure DevOps desi
       'Azure DevOps refused the credential (HTTP 401)',
     ]);
     expect(refused.body).not.toContain('wrong-pat');
+  });
+});
+
+describe('Starting a repository setup on an Azure DevOps connection (Azure sub-plan 7)', () => {
+  let h: IngestHarness;
+  let server: FakeAzureDevOps;
+  let gitlab: FakeGitLab;
+  const hosts = new Set<string>();
+  const connect = async (
+    body: Record<string, unknown>,
+  ): Promise<{ id: string; ciSetup: CiSetup }> => {
+    const res = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: { organizationId: h.organizationId, ...body },
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    return res.json() as { id: string; ciSetup: CiSetup };
+  };
+  const connectAzure = (extra: Record<string, unknown> = {}) =>
+    connect({
+      provider: 'azure',
+      baseUrl: server.url,
+      azureAuth: 'pat',
+      token: server.pat,
+      ...extra,
+    });
+  const start = (connectionId: string, extra: Record<string, unknown>) =>
+    h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/repository-setups',
+      headers: h.orgAdmin.headers,
+      payload: { organizationId: h.organizationId, connectionId, ...extra },
+    });
+  const errorOf = (res: { json(): unknown }) =>
+    (res.json() as { errors: { path: string; message: string }[] }).errors;
+
+  beforeAll(async () => {
+    server = await createFakeAzureDevOps({
+      deployment: 'server',
+      repositories: [{ name: 'web', projectName: 'Payments' }],
+    });
+    gitlab = await createFakeGitLab();
+    hosts.add(new URL(server.url).host).add(new URL(gitlab.url).host);
+    h = await createIngestHarness({
+      config: { scmInternalHosts: hosts as ReadonlySet<string>, publicUrl: PUBLIC_URL },
+    });
+  });
+  afterEach(async () => {
+    await h.ctx.db.delete(scmConnections);
+    server.clearRequests();
+  });
+  afterAll(async () => {
+    await h.close();
+    await server.close();
+    await gitlab.close();
+  });
+
+  it('answers the CI-setup status without a request to Azure DevOps', async () => {
+    const off = await connectAzure();
+    const on = await connectAzure({ ciSetupAllowed: true });
+    expect(off.ciSetup).toEqual({ available: false, reason: 'not_allowed', missing: [] });
+    expect(on.ciSetup).toEqual({ available: true, reason: null, missing: [] });
+    expect(server.requests).toEqual([]);
+  });
+
+  it('stores the references lower-cased, and the pool on the run', async () => {
+    const { id: connectionId } = await connectAzure({ ciSetupAllowed: true });
+    const id = server.repositories[0]!.id;
+    const res = await start(connectionId, {
+      repositories: [id.toUpperCase()],
+      ciSetup: true,
+      azurePool: 'Build agents',
+    });
+    expect(res.statusCode, res.body).toBe(202);
+    const runId = (res.json() as { id: string }).id;
+    const items = await h.ctx.db
+      .select()
+      .from(repositorySetupItems)
+      .where(eq(repositorySetupItems.runId, runId));
+    expect(items.map((i) => [i.repositoryRef, i.repositoryName])).toEqual([[id, id]]);
+    const [run] = await h.ctx.db
+      .select()
+      .from(repositorySetupRuns)
+      .where(eq(repositorySetupRuns.id, runId));
+    expect(run).toMatchObject({ azurePool: 'Build agents', ciSetup: true });
+  });
+
+  it('wants a pool name for CI setup on a Server, and a sane one', async () => {
+    const { id: connectionId } = await connectAzure({ ciSetupAllowed: true });
+    const repositories = [server.repositories[0]!.id];
+    const missing = await start(connectionId, { repositories, ciSetup: true });
+    expect(missing.statusCode).toBe(422);
+    expect(errorOf(missing)).toEqual([
+      { path: 'body.azurePool', message: 'Name the agent pool the pipeline runs on.' },
+    ]);
+    for (const azurePool of ['', 'x'.repeat(101), 'a\nb']) {
+      const res = await start(connectionId, { repositories, ciSetup: true, azurePool });
+      expect(res.statusCode, JSON.stringify(azurePool)).toBe(422);
+    }
+    // Without CI setup the pool is not needed.
+    expect((await start(connectionId, { repositories, ciSetup: false })).statusCode).toBe(202);
+  });
+
+  it('refuses a pool on a GitLab connection', async () => {
+    const { id: connectionId } = await connect({
+      provider: 'gitlab',
+      baseUrl: gitlab.url,
+      token: gitlab.token,
+    });
+    const res = await start(connectionId, {
+      repositories: ['group/project'],
+      ciSetup: false,
+      azurePool: 'Default',
+    });
+    expect(res.statusCode).toBe(422);
+    expect(errorOf(res)).toEqual([
+      { path: 'body.azurePool', message: 'Not a field of a GitLab connection' },
+    ]);
   });
 });

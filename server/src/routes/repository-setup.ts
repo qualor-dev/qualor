@@ -32,7 +32,8 @@ import { listAzureRepositories } from '../scm/azure/connections';
 import { gitlabClientFor, scmDepsOf } from '../scm/connections';
 import { listInstallationRepositories } from '../scm/github/installations';
 import { ScmError } from '../scm/provider';
-import { PROVIDER } from '../scm/providers';
+import { notAFieldText, PROVIDER } from '../scm/providers';
+import { azureDeployment } from '../scm/azure/url';
 import { scmProjectRef } from './scm-connections';
 
 /** Repositories to a page: what GitLab and GitHub list at most, and Azure DevOps' pages here. */
@@ -73,6 +74,15 @@ const CI_SETUP_UNAVAILABLE: Record<CiSetupReason, string> = {
     'The GitHub App lacks the Contents, Workflows and Secrets (write) permissions',
   no_public_url: 'CI setup needs QUALOR_PUBLIC_URL',
 };
+
+/** A pool name: 1 to 100 characters, none of them a control character. */
+const azurePoolSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine((name) => ![...name].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127), {
+    message: 'Use a name without control characters',
+  });
 
 const itemSchema = z.object({
   ref: z.string().meta({ description: 'The repository as the run was given it' }),
@@ -211,11 +221,12 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
             break;
           }
           case 'azure': {
-            const found = await listAzureRepositories(row, scmDeps, {
-              page,
-              perPage: PAGE_SIZE,
-              filter,
-            });
+            const found = await listAzureRepositories(
+              row,
+              scmDeps,
+              { page, perPage: PAGE_SIZE, filter },
+              deps.scmRuntime,
+            );
             listed = found.repositories.map((r) => ({ ...r, language: null }));
             hasMore = found.hasMore;
             break;
@@ -287,6 +298,10 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
             description:
               "Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available`",
           }),
+          azurePool: azurePoolSchema.optional().meta({
+            description:
+              'Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent',
+          }),
         }),
         response: { 202: z.object({ id: z.uuid() }) },
       },
@@ -312,6 +327,11 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
       if (!connection) {
         throw validationFailed([{ path: 'body.connectionId', message: 'Unknown SCM connection' }]);
       }
+      if (body.azurePool !== undefined && connection.provider !== 'azure') {
+        throw validationFailed([
+          { path: 'body.azurePool', message: notAFieldText(connection.provider) },
+        ]);
+      }
       const problems = body.repositories.flatMap((ref, i) => {
         const problem = PROVIDER[connection.provider].projectRefProblem(ref);
         return problem === null ? [] : [{ path: `body.repositories.${i}`, message: problem }];
@@ -329,6 +349,16 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
           ]);
         }
       }
+      if (
+        body.ciSetup &&
+        connection.provider === 'azure' &&
+        azureDeployment(connection.baseUrl) === 'server' &&
+        body.azurePool === undefined
+      ) {
+        throw validationFailed([
+          { path: 'body.azurePool', message: 'Name the agent pool the pipeline runs on.' },
+        ]);
+      }
       const id = await deps.db.transaction(async (tx) => {
         const run = first(
           await tx
@@ -338,16 +368,16 @@ export const repositorySetupRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> =
               connectionId: connection.id,
               createdBy: principal.user.id,
               ciSetup: body.ciSetup,
+              azurePool: body.azurePool ?? null,
             })
             .returning({ id: repositorySetupRuns.id }),
         );
         await tx.insert(repositorySetupItems).values(
-          body.repositories.map((ref, position) => ({
-            runId: run.id,
-            position,
-            repositoryRef: ref,
-            repositoryName: ref,
-          })),
+          body.repositories.map((ref, position) => {
+            // Stored in the provider's own form (an Azure DevOps id in lower case).
+            const stored = PROVIDER[connection.provider].storedRef(ref);
+            return { runId: run.id, position, repositoryRef: stored, repositoryName: stored };
+          }),
         );
         // One run at a time per connection: the provider's pacing and limits are per connection.
         await enqueue(tx, {

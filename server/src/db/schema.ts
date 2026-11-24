@@ -263,7 +263,7 @@ export const scmConnections = pgTable(
      * for its App's webhook, and since migration 0017 GitLab's for the note webhook.
      */
     webhookSecretEnc: jsonb('webhook_secret_enc').$type<WebhookSecretValue>(),
-    /** Onboarding (migration 0019): whether Qualor may open CI-setup merge requests; GitLab only. */
+    /** Onboarding (migration 0019): whether Qualor may open CI-setup merge requests; GitLab and Azure DevOps. */
     ciSetupAllowed: boolean('ci_setup_allowed').notNull().default(false),
     /** Fix MRs (migration 0033): whether Qualor may open fix merge requests; an org admin sets it. */
     fixMrsAllowed: boolean('fix_mrs_allowed').notNull().default(false),

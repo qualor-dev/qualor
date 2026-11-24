@@ -13,6 +13,7 @@ import type { Edition } from '../src/license/edition';
 import type { Limits } from '../src/limits';
 import { freezePlugins, type LoadedPlugins } from '../src/plugins/mount';
 import type { PluginRegistry } from '../src/plugins/registry';
+import { createScmRuntime } from '../src/scm/runtime';
 import { testConfig } from './config';
 import { createTestDatabase, type TestDatabase } from './db';
 import type { UpdateSource } from '../src/update-check/checker';
@@ -92,6 +93,7 @@ export async function createTestContext(
     plugins,
     ...(loaded?.audit ? { audit: loaded.audit } : {}),
     ...(options.updates ? { updates: options.updates } : {}),
+    scmRuntime: createScmRuntime(),
     checkReady: async () => true,
   });
   options.beforeReady?.(app);

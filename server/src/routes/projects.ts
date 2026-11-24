@@ -32,7 +32,7 @@ import {
   type ProjectRole,
 } from '../db/schema';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
-import { conflict, notFound, validationFailed } from '../http/problem';
+import { conflict, notFound, ProblemError, validationFailed } from '../http/problem';
 import {
   createdTokenSchema,
   expiresAtFrom,
@@ -61,7 +61,10 @@ import { createProject } from '../projects/create';
 import { createProjectToken } from '../projects/tokens';
 import { queueRemapPurgeIfCopies, queueSnapshotPurge } from '../review/jobs';
 import { projectAiReview } from '../review/settings';
-import { forgetForeignMergeRequestUrls } from '../scm/connections';
+import { listAzureRepositories } from '../scm/azure/connections';
+import { AZURE_REPOSITORY_ID } from '../scm/azure/url';
+import { forgetForeignMergeRequestUrls, scmDepsOf } from '../scm/connections';
+import { ScmError } from '../scm/provider';
 import { anyProjectRefProblem, PROVIDER } from '../scm/providers';
 import { projectAutoFixSchema } from './auto-fix';
 import { vulnerabilitySettingsOf } from '../versions/settings';
@@ -380,6 +383,57 @@ async function checkedScmProjectRef(
   return kind === null ? ref : PROVIDER[kind].storedRef(ref);
 }
 
+/**
+ * Azure DevOps design §7.2: a `Project/Repository` typed as the mapping is resolved to the
+ * repository's id here, before the transaction (it asks Azure DevOps): the listing's exact name,
+ * without case. An id, or a reference of another provider's connection, is left as sent.
+ */
+async function resolvedAzureRef(
+  deps: RouteDeps,
+  body: ProjectPatch,
+  project: ProjectRow,
+): Promise<string | null | undefined> {
+  const typed = body.scmProjectRef;
+  if (typeof typed !== 'string' || AZURE_REPOSITORY_ID.test(typed)) return typed;
+  // Only the shape of a name is looked up; anything else keeps the id rule's answer.
+  if (typed.split('/').length !== 2 || typed.startsWith('/') || typed.endsWith('/')) return typed;
+  const connectionId =
+    body.scmConnectionId !== undefined ? body.scmConnectionId : project.scmConnectionId;
+  if (connectionId === null) return typed;
+  const [row] = await deps.db
+    .select()
+    .from(scmConnections)
+    .where(
+      and(
+        eq(scmConnections.id, connectionId),
+        eq(scmConnections.organizationId, project.organizationId),
+      ),
+    );
+  if (row?.provider !== 'azure') return typed;
+  let repositories;
+  try {
+    ({ repositories } = await listAzureRepositories(
+      row,
+      scmDepsOf(deps.config),
+      { page: 1, perPage: Number.MAX_SAFE_INTEGER, filter: typed },
+      deps.scmRuntime,
+    ));
+  } catch (err) {
+    if (!(err instanceof ScmError)) throw err;
+    throw new ProblemError(502, 'SCM_UNAVAILABLE', 'The SCM provider could not list repositories', {
+      detail: err.message,
+    });
+  }
+  const wanted = typed.toLowerCase();
+  const found = repositories.find((r) => r.name.toLowerCase() === wanted);
+  if (!found) {
+    throw validationFailed([
+      { path: 'body.scmProjectRef', message: `No repository \`${typed}\` in this connection` },
+    ]);
+  }
+  return found.ref;
+}
+
 /** The columns a PATCH sets from its body, besides the main branch. */
 function patchedColumns(body: ProjectPatch): Partial<typeof projects.$inferInsert> {
   const changes: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() };
@@ -620,7 +674,7 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
       schema: {
         tags: ['projects'],
         summary:
-          'Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin)',
+          'Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id, or a typed Project/Repository that is looked up; the mapping needs an organization admin)',
         params: idParams,
         body: z
           .strictObject({
@@ -668,6 +722,9 @@ export const projectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
         if (!gate)
           throw validationFailed([{ path: 'body.qualityGateId', message: 'Unknown quality gate' }]);
       }
+      // A typed Azure DevOps `Project/Repository` becomes the id the mapping stores.
+      const resolved = await resolvedAzureRef(deps, body, project);
+      if (resolved !== undefined) body.scmProjectRef = resolved;
       let updated: ProjectRow;
       try {
         updated = await deps.db.transaction(async (tx) => {

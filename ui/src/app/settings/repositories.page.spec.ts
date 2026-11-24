@@ -360,6 +360,7 @@ describe('RepositoriesPage with Azure DevOps', () => {
     baseUrl: 'https://dev.azure.com/acme',
     gitlab: null,
     azure: {
+      ciSetupAllowed: false,
       deployment: 'services',
       auth: 'pat',
       tenantId: null,

@@ -112,6 +112,8 @@ const gitlabSchema = z.object({
 });
 
 const azureSchema = z.object({
+  /** Whether Qualor may set up CI (a pipeline and its pull request) in this connection's repositories. */
+  ciSetupAllowed: z.boolean(),
   /** From the host alone: dev.azure.com and *.visualstudio.com are Services. */
   deployment: z.enum(['services', 'server']),
   auth: z.enum(AZURE_AUTH_KINDS),
@@ -288,6 +290,7 @@ function connectionDto(
       const view = azureViewOf(row, key);
       azure = {
         ...view,
+        ciSetupAllowed: row.ciSetupAllowed,
         webhookSecretSet: secretSet,
         webhookUrl: secretSet && publicUrl !== null ? azureWebhookUrl(publicUrl, row.id) : null,
         webhookSecretReadable: secretReadable,
@@ -713,7 +716,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             appId: notAField('azure'),
             privateKey: notAField('azure'),
             webhookSecret: notAField('azure'),
-            ciSetupAllowed: notAField('azure'),
+            ciSetupAllowed: z.boolean().optional(),
             fixMrsAllowed: z.boolean().optional(),
           }),
         ]),
@@ -768,6 +771,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             baseUrl: url,
             ...azure.columns,
             tokenEnc: encryptSecret(key, azure.credential, SCM_TOKEN_AAD),
+            ciSetupAllowed: body.ciSetupAllowed ?? false,
             fixMrsAllowed: body.fixMrsAllowed ?? false,
           };
           break;

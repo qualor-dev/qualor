@@ -337,6 +337,7 @@ async function main(): Promise<void> {
     // The recorder the plugin services record through (rbac-audit.md §9, §15).
     audit,
     ...(updates ? { updates } : {}),
+    scmRuntime,
   });
   // data-model.md §7: one daily housekeeping job, (re)scheduled at boot and after every reap.
   await ensureHousekeepingScheduled(database.db);

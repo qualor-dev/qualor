@@ -86,6 +86,7 @@ describe('the repository-setup run', () => {
     let clock = Date.now();
     return {
       githubTokens: new InstallationTokenCache(),
+      azureTokens: new InstallationTokenCache(),
       githubPacer: new MutationPacer(
         () => clock,
         async (ms) => {
@@ -1291,5 +1292,10 @@ describe('the repository-setup run', () => {
     expect(ciHostOf({ provider: 'gitlab', baseUrl: 'https://gitlab.acme.test' })).toBe(
       'self-hosted',
     );
+    expect(ciHostOf({ provider: 'azure', baseUrl: 'https://dev.azure.com/acme' })).toBe('cloud');
+    expect(ciHostOf({ provider: 'azure', baseUrl: 'https://acme.visualstudio.com' })).toBe('cloud');
+    expect(
+      ciHostOf({ provider: 'azure', baseUrl: 'https://tfs.acme.test/DefaultCollection' }),
+    ).toBe('self-hosted');
   });
 });

@@ -3565,7 +3565,7 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin) */
+        /** Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id, or a typed Project/Repository that is looked up; the mapping needs an organization admin) */
         patch: {
             parameters: {
                 query?: never;
@@ -11298,6 +11298,7 @@ export interface paths {
                                     ciSetupAllowed: boolean;
                                 } | null;
                                 azure: {
+                                    ciSetupAllowed: boolean;
                                     /** @enum {string} */
                                     deployment: "services" | "server";
                                     /** @enum {string} */
@@ -11433,8 +11434,7 @@ export interface paths {
                         privateKey?: unknown;
                         /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
                         webhookSecret?: unknown;
-                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
-                        ciSetupAllowed?: unknown;
+                        ciSetupAllowed?: boolean;
                         fixMrsAllowed?: boolean;
                     };
                 };
@@ -11470,6 +11470,7 @@ export interface paths {
                                 ciSetupAllowed: boolean;
                             } | null;
                             azure: {
+                                ciSetupAllowed: boolean;
                                 /** @enum {string} */
                                 deployment: "services" | "server";
                                 /** @enum {string} */
@@ -11695,6 +11696,7 @@ export interface paths {
                                 ciSetupAllowed: boolean;
                             } | null;
                             azure: {
+                                ciSetupAllowed: boolean;
                                 /** @enum {string} */
                                 deployment: "services" | "server";
                                 /** @enum {string} */
@@ -12242,6 +12244,8 @@ export interface paths {
                         repositories: string[];
                         /** @description Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available` */
                         ciSetup: boolean;
+                        /** @description Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent */
+                        azurePool?: string;
                     };
                 };
             };

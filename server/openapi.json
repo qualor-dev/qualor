@@ -6607,7 +6607,7 @@
         }
       },
       "patch": {
-        "summary": "Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id; the mapping needs an organization admin)",
+        "summary": "Update name, main branch, new-code definition, quality gate or SCM mapping (GitLab project, GitHub owner/repo or Azure DevOps repository id, or a typed Project/Repository that is looked up; the mapping needs an organization admin)",
         "tags": [
           "projects"
         ],
@@ -24908,6 +24908,9 @@
                               {
                                 "type": "object",
                                 "properties": {
+                                  "ciSetupAllowed": {
+                                    "type": "boolean"
+                                  },
                                   "deployment": {
                                     "type": "string",
                                     "enum": [
@@ -24983,6 +24986,7 @@
                                   }
                                 },
                                 "required": [
+                                  "ciSetupAllowed",
                                   "deployment",
                                   "auth",
                                   "tenantId",
@@ -25341,8 +25345,7 @@
                         "description": "Not a field of an Azure DevOps connection: sending it is a 422"
                       },
                       "ciSetupAllowed": {
-                        "not": {},
-                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                        "type": "boolean"
                       },
                       "fixMrsAllowed": {
                         "type": "boolean"
@@ -25472,6 +25475,9 @@
                         {
                           "type": "object",
                           "properties": {
+                            "ciSetupAllowed": {
+                              "type": "boolean"
+                            },
                             "deployment": {
                               "type": "string",
                               "enum": [
@@ -25547,6 +25553,7 @@
                             }
                           },
                           "required": [
+                            "ciSetupAllowed",
                             "deployment",
                             "auth",
                             "tenantId",
@@ -25928,6 +25935,9 @@
                         {
                           "type": "object",
                           "properties": {
+                            "ciSetupAllowed": {
+                              "type": "boolean"
+                            },
                             "deployment": {
                               "type": "string",
                               "enum": [
@@ -26003,6 +26013,7 @@
                             }
                           },
                           "required": [
+                            "ciSetupAllowed",
                             "deployment",
                             "auth",
                             "tenantId",
@@ -27053,6 +27064,12 @@
                   "ciSetup": {
                     "type": "boolean",
                     "description": "Also open a merge request per repository that adds the Qualor job; only where the connection's `ciSetup.available`"
+                  },
+                  "azurePool": {
+                    "description": "Azure DevOps only: the agent pool the pipeline runs on. Required with `ciSetup` on Azure DevOps Server (which has no hosted pool); Azure DevOps Services runs the pipeline on a hosted agent",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
                 "required": [

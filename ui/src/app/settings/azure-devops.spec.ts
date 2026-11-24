@@ -33,6 +33,7 @@ const PAT: Connection = {
   github: null,
   gitlab: null,
   azure: {
+    ciSetupAllowed: false,
     deployment: 'services',
     auth: 'pat',
     tenantId: null,
@@ -54,6 +55,7 @@ const CERTIFICATE: Connection = {
   ...PAT,
   id: 'a2',
   azure: {
+    ciSetupAllowed: false,
     deployment: 'services',
     auth: 'service_principal_certificate',
     tenantId: TENANT,

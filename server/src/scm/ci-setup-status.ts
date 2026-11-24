@@ -81,8 +81,12 @@ function statusOf(
         ? { available: true, reason: null, missing: [] }
         : { available: false, reason: 'missing_permissions', missing };
     }
-    case 'azure': // azure-pending(7): CI setup through an Azure DevOps connection
-      return { available: false, reason: 'not_allowed', missing: [] };
+    case 'azure':
+      // The rights each step needs are found per step in the run, not up front: no request here.
+      if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
+      return row.ciSetupAllowed
+        ? { available: true, reason: null, missing: [] }
+        : { available: false, reason: 'not_allowed', missing: [] };
     default:
       return assertNever(row.provider, 'provider');
   }

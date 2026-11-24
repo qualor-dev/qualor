@@ -28,6 +28,7 @@ import { oauthRoutes } from './oauth/routes';
 import { mcpUrls } from './oauth/urls';
 import { mountPluginRoutes, type LoadedPlugins } from './plugins/mount';
 import type { PluginRegistry } from './plugins/registry';
+import type { ScmRuntime } from './scm/runtime';
 import { registerRoutes } from './routes';
 import type { UpdateSource } from './update-check/checker';
 
@@ -58,6 +59,12 @@ export interface AppDeps {
   logBuffer?: LogBuffer;
   /** The update check (main.ts, only while telemetry is on); without it `/system/version` has no `latest`. */
   updates?: UpdateSource;
+  /**
+   * The `scm` worker's runtime (main.ts): the repository listing and the Azure DevOps project
+   * mapping reuse its Microsoft Entra tokens instead of asking for one per request. Without it
+   * (tests), each request has its own.
+   */
+  scmRuntime?: Pick<ScmRuntime, 'azureTokens'>;
 }
 
 /**

@@ -680,8 +680,9 @@ export async function listAzureRepositories(
   row: ScmConnectionRow,
   deps: ScmDeps,
   options: { page: number; perPage: number; filter: string },
+  runtime?: { azureTokens: InstallationTokenCache },
 ): Promise<{ repositories: AzureListedRepository[]; hasMore: boolean }> {
-  const made = azureClientFor(row, deps);
+  const made = azureClientFor(row, deps, runtime);
   if ('problem' in made) throw new ScmError('refused', made.problem, { reason: 'invalid_input' });
   const needle = options.filter.toLowerCase();
   const all = (await made.client.repositories())

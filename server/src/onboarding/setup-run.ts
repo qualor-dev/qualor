@@ -45,6 +45,7 @@ import { githubClientFor } from '../scm/github/connections';
 import { githubHostKind, parseRepoRef } from '../scm/github/url';
 import type { GitLabClient } from '../scm/gitlab/client';
 import { gitlabHostKind } from '../scm/gitlab/url';
+import { azureDeployment } from '../scm/azure/url';
 import { ScmError } from '../scm/provider';
 import { planCiSetup, type CiPlan, type CiSetupInput, type CiSnippetReason } from './ci-setup';
 
@@ -140,7 +141,12 @@ export interface SetupRunDeps {
   db: Db;
   scm: ScmDeps;
   /** The `scm` worker's GitHub token cache and mutation pacer (scm/runtime.ts). */
-  runtime?: { githubTokens: InstallationTokenCache; githubPacer: MutationPacer };
+  runtime?: {
+    githubTokens: InstallationTokenCache;
+    githubPacer: MutationPacer;
+    /** Microsoft Entra tokens of Azure DevOps service principals. */
+    azureTokens: InstallationTokenCache;
+  };
   publicUrl: string | null;
   audit: AuditRecorder;
   logger?: WorkerLogger;
@@ -158,8 +164,8 @@ export function ciHostOf(row: { provider: ScmProvider; baseUrl: string }): 'clou
       return githubHostKind(row.baseUrl) === 'cloud' ? 'cloud' : 'self-hosted';
     case 'gitlab':
       return gitlabHostKind(row.baseUrl) === 'gitlab.com' ? 'cloud' : 'self-hosted';
-    case 'azure': // azure-pending(7): where an Azure Pipelines CI setup runs
-      return 'self-hosted';
+    case 'azure':
+      return azureDeployment(row.baseUrl) === 'services' ? 'cloud' : 'self-hosted';
     default:
       return assertNever(row.provider, 'provider');
   }
