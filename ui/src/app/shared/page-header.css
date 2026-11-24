@@ -13,30 +13,32 @@
   padding: 26px var(--gutter) 0;
 }
 /*
- * The brand ring behind the band's right end: header-mark.svg, the lit ring in halftone and its dot
- * (style C), in one ink (#22406b) that every text and control colour of the band keeps its contrast
- * over: the muted text 6.0:1, white 10.4:1, the focus and tab blue 3.2:1. Its ring is 1.2 times the
- * band's height across, so it reads as the whole mark on a compact band too; the bottom of its dot
- * sits at 97 % of the height, and its right 6 % runs past the band's edge: the band crops its top
- * and right. Still and opaque (no opacity, so reduced transparency changes nothing), a
+ * The brand ring behind the band's right end, large: header-mark.svg, the ring and its dot in a
+ * fine, flat halftone (style C), in one ink (#22406b) that every text and control colour of the band
+ * keeps its contrast over: the muted text 6.0:1, white 10.4:1, a secondary button's white text 8.3:1,
+ * the focus and tab blue 3.2:1. The ring is 2.5 times the band's height across, its centre at 10 %
+ * of the height and 45 % of its width in from the band's right edge: the band crops its top half
+ * and bottom, and 5 % at the right, so the lower arc, the gap and the dot cross the band. (Centred
+ * on the band, a ring that size shows only a slice of its left arc: the gap and the dot fall below
+ * the band.) Still and opaque (no opacity, so reduced transparency changes nothing), a
  * pseudo-element out of the layout and the accessibility tree. From 64rem; none in forced colours,
  * where the band's ink gives way to the system's.
  *
- * The file is the mark's 128-unit box: the ring is 88 units across with 20 free to its right, and
- * the dot's bottom is 110.14 units down. So the box is 128/88 of the ring, its top 110.14/88 of the
- * ring above the dot's bottom, and it moves right by (88 × 0.06 + 20) / 128 of its width.
+ * The file is the mark's 128-unit box: the ring is 88 units across, centred at (64, 62), with 20
+ * free to its right. So the box is 128/88 of the ring, its top 62/88 of the ring above the ring's
+ * centre, and it moves right by (20 + 88 × 0.05) / 128 of its width.
  */
 @media (min-width: 64rem) {
   :host::before {
-    --ring: 120%;
+    --ring: 250%;
     content: '';
     position: absolute;
-    top: calc(97% - var(--ring) * 110.14 / 88);
+    top: calc(10% - var(--ring) * 62 / 88);
     right: 0;
     z-index: -1;
     height: calc(var(--ring) * 128 / 88);
     aspect-ratio: 1;
-    transform: translateX(19.75%);
+    transform: translateX(19.06%);
     background: url('/art/header-mark.svg') center / contain no-repeat;
     pointer-events: none;
   }
