@@ -12,8 +12,8 @@ import {
 import path from 'node:path';
 import { must, REPO_ROOT, run, type RunResult } from '../deploy/stack';
 import { NEVER_PUBLISHED } from '../deploy/release';
-import { IMAGE_SOURCES, writeAssets } from './assets';
-import { SUMS, SUMS_BUNDLE, sumsProblems } from './checksums';
+import { assetPlan, IMAGE_SOURCES, writeAssets } from './assets';
+import { releaseFiles, SUMS, SUMS_BUNDLE, sumsProblems } from './checksums';
 import {
   attestArgs,
   signBlobArgs,
@@ -177,6 +177,7 @@ async function publishableProblems(
   if (!existsSync(sums)) problems.push(`${SUMS} is missing from the release directory`);
   else problems.push(...(await sumsProblems(dir, readFileSync(sums, 'utf8'))));
   problems.push(...tagProblems(m, v, released));
+  problems.push(...assetProblems(dir, v));
   for (const image of IMAGE_SOURCES) {
     if (!existsSync(path.join(root, '.tmp', `${image}-sources`))) {
       problems.push(`.tmp/${image}-sources is missing: run pnpm deploy:sources`);
@@ -192,6 +193,16 @@ async function publishableProblems(
     );
   }
   return problems;
+}
+
+/** A release-directory path no asset name exists for would fail writeAssets after the pushes. */
+function assetProblems(dir: string, v: Version): string[] {
+  try {
+    assetPlan(releaseFiles(dir), v.text);
+    return [];
+  } catch (e) {
+    return [e instanceof Error ? e.message : String(e)];
+  }
 }
 
 /** The manifest's files, its chart and the images' SBOMs: each a file in the release directory. */

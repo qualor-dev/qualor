@@ -322,6 +322,16 @@ describe('release:publish (release.md §11)', () => {
     expect(calls).toEqual([]);
   });
 
+  it('refuses a folder no asset name exists for, before any command', async () => {
+    await writeRelease(v, [], () => {
+      mkdirSync(path.join(dir, 'unknown'), { recursive: true });
+      writeFileSync(path.join(dir, 'unknown', 'file.bin'), 'x');
+    });
+    const { exec, calls } = recorder();
+    await expect(run(exec)).rejects.toThrow(/unknown\/file\.bin: no release asset name/);
+    expect(calls).toEqual([]);
+  });
+
   it('refuses an untracked cosign.pub and a HEAD on no release branch; accepts release/<M>.<m>', async () => {
     repo = { ...repo, tracks: () => false };
     const a = recorder();

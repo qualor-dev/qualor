@@ -38,7 +38,8 @@ so development servers do not report.
 - `pnpm helm:test`, `pnpm helm:smoke`: the Helm chart's render tests, and an install on k3s in
   Docker
 - `pnpm release:test`, `pnpm release:dry-run`, `pnpm release:verify`: the release tools' tests, a
-  complete local release signed with a throwaway key (nothing is published), and its verification
+  complete local release signed with a throwaway key (nothing is published; run
+  `pnpm extension:package` first), and its verification
 - `pnpm license:keygen`, `pnpm license:sign`, `pnpm license:inspect`: the offline licence tool: an
   Ed25519 signing key pair written outside any repository, a signed licence key, and a key decoded
   and verified against the compiled public keys (a private key is never committed)

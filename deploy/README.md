@@ -410,7 +410,7 @@ than rely on written offers. So every release of `qualor/<image>:<tag>` also pub
 
 Keep the images and archives available for as long as those images are distributed.
 
-`pnpm release:dry-run` runs all of this, pushes only to a registry on 127.0.0.1,
+`pnpm release:dry-run` runs all of this (a local run needs `pnpm extension:package` first), pushes only to a registry on 127.0.0.1,
 and signs with a throwaway key; publishing is `release.yml`, never by hand.
 `pnpm release:verify <dir> [--key <cosign.pub> | --self-check]` checks a release
 directory, or a download of a release: `SHA256SUMS` and its signature, and that no file is
