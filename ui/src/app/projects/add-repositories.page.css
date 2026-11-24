@@ -105,6 +105,14 @@
   display: block;
   margin-top: 2px;
 }
+.pool-row {
+  display: grid;
+  gap: 6px;
+}
+.pool-row label {
+  font-size: 14px;
+  font-weight: 600;
+}
 .sw-help.off {
   color: var(--text-2);
 }

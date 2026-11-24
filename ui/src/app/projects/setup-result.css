@@ -149,3 +149,14 @@ q-secret-once ::ng-deep input {
     flex-wrap: wrap;
   }
 }
+
+/* What Qualor made on Azure DevOps outside the pull request: the pipeline, its pool, its policy. */
+.azure-lines {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text-muted);
+}
+
+.azure-lines li + li {
+  margin-top: 0.25rem;
+}

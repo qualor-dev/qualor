@@ -23,7 +23,6 @@ import {
   mergeRequestNumber,
   pathParts,
   type Provider,
-  providerName,
   type RunItem,
 } from './repository-setup';
 import { SetupBadge } from './setup-badge';
@@ -31,17 +30,19 @@ import { SetupBadge } from './setup-badge';
 /** The files a snippet goes into. */
 const WORKFLOW_FILE = '.github/workflows/qualor.yml';
 const GITLAB_CI_FILE = '.gitlab-ci.yml';
+const AZURE_PIPELINE_FILE = '.azure-pipelines/qualor.yml';
 /** The name of the secret or CI/CD variable the token goes into: a name, not text to translate. */
 const SECRET_NAME = 'QUALOR_TOKEN';
 
 /**
  * The provider a snippet is for, told by its first line; null for any other text. It mirrors the
  * snippets of server/src/onboarding/ci-templates.ts: GitHub's workflow starts `name: qualor`,
- * GitLab's start `include:` or `qualor:`.
+ * GitLab's start `include:` or `qualor:`, Azure Pipelines' starts `# Qualor in Azure Pipelines`.
  */
 export function providerOfSnippet(snippet: string): Provider | null {
   if (/^name: /.test(snippet)) return 'github';
   if (/^(include|qualor):/.test(snippet)) return 'gitlab';
+  if (/^# Qualor in Azure Pipelines/.test(snippet)) return 'azure';
   return null;
 }
 
@@ -57,8 +58,8 @@ function noPublicUrlText(provider: Provider | null): string {
       return $localize`:@@addRepos.reason.noPublicUrlGithub:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Replace https://qualor.example.com in the file with this server's address.`;
     case 'gitlab':
       return $localize`:@@addRepos.reason.noPublicUrlGitlab:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the CI/CD variable QUALOR_URL to this server's address.`;
-    case 'azure': // azure-pending(7): where the address goes in an Azure Pipelines setup
-      return otherReason();
+    case 'azure':
+      return $localize`:@@addRepos.reason.noPublicUrlAzure:Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI. Set the pipeline variable QUALOR_URL to this server's address.`;
     default:
       return assertNever(provider, 'provider');
   }
@@ -83,8 +84,12 @@ function secretText(provider: Provider | null): { title: string; intro: string; 
         intro: $localize`:@@addRepos.secret.gitlabIntro:Add it to the project's CI/CD variables, masked.`,
         where: $localize`:@@addRepos.secret.gitlabWhere:On GitLab: the project's Settings, then CI/CD, Variables, Add variable. Add QUALOR_URL with this server's address too.`,
       };
-    case 'azure': // azure-pending(7): where the token goes in Azure Pipelines
-      return NO_SECRET_TEXT;
+    case 'azure':
+      return {
+        title: $localize`:@@addRepos.secret.azure:Secret variable`,
+        intro: $localize`:@@addRepos.secret.azureIntro:Add it to the pipeline's variables, as a secret.`,
+        where: $localize`:@@addRepos.secret.azureWhere:On Azure DevOps: the pipeline, Edit, Variables, New variable, with Keep this value secret ticked. Add QUALOR_URL with this server's address too.`,
+      };
     default:
       return assertNever(provider, 'provider');
   }
@@ -139,7 +144,7 @@ export class SetupResult {
   });
   protected readonly error = computed(() => {
     const connection = this.connection();
-    return errorText(this.item(), connection ? providerName(connection) : null);
+    return errorText(this.item(), connection);
   });
   /**
    * The provider: the connection's, else told by the snippet (a GitHub workflow starts with its
@@ -158,12 +163,19 @@ export class SetupResult {
         return WORKFLOW_FILE;
       case 'gitlab':
         return GITLAB_CI_FILE;
-      case 'azure': // azure-pending(7): the file of an Azure Pipelines snippet
-        return '';
+      case 'azure':
+        return AZURE_PIPELINE_FILE;
       default:
         return assertNever(provider, 'provider');
     }
   });
+  /** Qualor made no token for it: a pipeline of someone else owns the file. */
+  protected readonly noToken = computed(() => this.item().ciReason === 'foreign_pipeline');
+  /** What Qualor made on Azure DevOps outside the pull request, as lines of text. */
+  protected readonly azureLines = computed(() => azureLines(this.item().azure));
+  protected readonly pipelineLink = computed(() =>
+    safeHelpUri(this.item().azure?.pipelineUrl ?? null),
+  );
   protected readonly copyState = signal<'idle' | 'copied' | 'failed'>('idle');
   protected readonly secretName = SECRET_NAME;
 
@@ -178,6 +190,8 @@ export class SetupResult {
         return $localize`:@@addRepos.reason.already:The repository already has a Qualor job or a QUALOR_TOKEN secret, so Qualor did not change it.`;
       case 'not_allowed':
         return $localize`:@@addRepos.reason.notAllowed:CI setup is off for this connection, so Qualor did not change the repository.`;
+      case 'foreign_pipeline':
+        return $localize`:@@addRepos.reason.foreignPipeline:A pipeline that Qualor did not create already uses .azure-pipelines/qualor.yml, so Qualor wrote nothing and made no token. Rename that pipeline's file or delete the pipeline, or copy the job below into a file of your own.`;
       case 'missing_permissions':
         return $localize`:@@addRepos.reason.permissions:The connection may not change this repository's CI files and secrets, so Qualor did not change it.`;
       case 'empty_repository':
@@ -232,4 +246,54 @@ export class SetupResult {
       this.copyState.set('failed');
     }
   }
+}
+
+/** The pool and policy lines of an Azure DevOps setup, each in the page's words. */
+function azureLines(azure: RunItem['azure']): string[] {
+  if (azure === null) return [];
+  const lines: string[] = [];
+  switch (azure.queue) {
+    case 'authorized':
+      lines.push(
+        $localize`:@@addRepos.azure.queueAuthorized:Qualor authorised the pipeline to use its agent pool.`,
+      );
+      break;
+    case 'open':
+      lines.push($localize`:@@addRepos.azure.queueOpen:The agent pool is open to every pipeline.`);
+      break;
+    case 'manual':
+      lines.push(
+        $localize`:@@addRepos.azure.queueManual:Approve the pipeline for its agent pool: Azure DevOps asks for it before the first run, and Qualor's identity may not do it.`,
+      );
+      break;
+    case null:
+      break;
+    default:
+      return assertNever(azure.queue, 'queue');
+  }
+  switch (azure.policy) {
+    case 'pending':
+      lines.push(
+        $localize`:@@addRepos.azure.policyPending:The pull request check starts after the first analysis of the main branch.`,
+      );
+      break;
+    case 'on':
+      lines.push($localize`:@@addRepos.azure.policyOn:The pull request check is on.`);
+      break;
+    case 'manual':
+      lines.push(
+        $localize`:@@addRepos.azure.policyManual:Add the Build validation policy to the main branch yourself: Qualor's identity may not edit policies.`,
+      );
+      break;
+    case 'failed':
+      lines.push(
+        $localize`:@@addRepos.azure.policyFailed:Qualor could not add the pull request check. Add the Build validation policy to the main branch yourself.`,
+      );
+      break;
+    case null:
+      break;
+    default:
+      return assertNever(azure.policy, 'policy');
+  }
+  return lines;
 }

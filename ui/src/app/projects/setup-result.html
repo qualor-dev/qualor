@@ -57,6 +57,7 @@
             >
           </p>
         }
+        <ng-container *ngTemplateOutlet="azureBlock" />
       }
       @case ('failed') {
         <p class="fail-reason">{{ error() }}</p>
@@ -71,50 +72,53 @@
       }
       @default {
         <p>{{ reason() }}</p>
+        <ng-container *ngTemplateOutlet="azureBlock" />
         <div class="result-split">
-          <div>
-            <h3 class="part-title">
-              {{ secretTitle() }} <code>{{ secretName }}</code>
-            </h3>
-            @if (token(); as value) {
-              <q-secret-once
-                [value]="value"
-                [label]="tokenLabel()"
-                [fieldId]="'token-' + i"
-                [intro]="secretIntro()"
-                [autofocus]="false"
-                [showDone]="false"
-                (copied)="tokenCopied.emit()"
-              />
-            } @else {
-              <p class="note token-gone">
-                <q-icon name="info" />
-                @if (it.project; as project) {
-                  @if (state() === 'already') {
-                    <span i18n="@@addRepos.result.tokenAlready"
-                      >If the repository has no QUALOR_TOKEN of this project, create one in
-                      <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
-                        >the project's token settings</a
-                      >.</span
-                    >
+          @if (!noToken()) {
+            <div>
+              <h3 class="part-title">
+                {{ secretTitle() }} <code>{{ secretName }}</code>
+              </h3>
+              @if (token(); as value) {
+                <q-secret-once
+                  [value]="value"
+                  [label]="tokenLabel()"
+                  [fieldId]="'token-' + i"
+                  [intro]="secretIntro()"
+                  [autofocus]="false"
+                  [showDone]="false"
+                  (copied)="tokenCopied.emit()"
+                />
+              } @else {
+                <p class="note token-gone">
+                  <q-icon name="info" />
+                  @if (it.project; as project) {
+                    @if (state() === 'already') {
+                      <span i18n="@@addRepos.result.tokenAlready"
+                        >If the repository has no QUALOR_TOKEN of this project, create one in
+                        <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
+                          >the project's token settings</a
+                        >.</span
+                      >
+                    } @else {
+                      <span i18n="@@addRepos.result.tokenGone"
+                        >The token is shown only once, and this page no longer has it. Create a new
+                        one in
+                        <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
+                          >the project's token settings</a
+                        >.</span
+                      >
+                    }
                   } @else {
-                    <span i18n="@@addRepos.result.tokenGone"
-                      >The token is shown only once, and this page no longer has it. Create a new
-                      one in
-                      <a [routerLink]="['/projects', project.id, 'settings']" fragment="tokens"
-                        >the project's token settings</a
-                      >.</span
+                    <span i18n="@@addRepos.result.tokenGoneNoProject"
+                      >The token is shown only once, and this page no longer has it.</span
                     >
                   }
-                } @else {
-                  <span i18n="@@addRepos.result.tokenGoneNoProject"
-                    >The token is shown only once, and this page no longer has it.</span
-                  >
-                }
-              </p>
-            }
-            <p class="hint where">{{ secretWhere() }}</p>
-          </div>
+                </p>
+              }
+              <p class="hint where">{{ secretWhere() }}</p>
+            </div>
+          }
           @if (it.snippet !== null) {
             <div>
               <h3 class="part-title" i18n="@@addRepos.result.job">The job Qualor would add</h3>
@@ -191,5 +195,23 @@
         </button>
       </p>
     }
+  }
+</ng-template>
+
+<ng-template #azureBlock>
+  @if (azureLines().length > 0 || pipelineLink()) {
+    <ul class="azure-lines">
+      @if (pipelineLink(); as href) {
+        <li>
+          <a [href]="href" target="_blank" rel="noopener noreferrer"
+            ><ng-container i18n="@@addRepos.azure.pipeline">The pipeline</ng-container>
+            <q-icon name="external"
+          /></a>
+        </li>
+      }
+      @for (line of azureLines(); track line) {
+        <li>{{ line }}</li>
+      }
+    </ul>
   }
 </ng-template>

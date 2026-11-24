@@ -184,7 +184,7 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       expect(root.querySelector('[role="dialog"], dialog, [aria-modal]')).toBeNull();
       expect(text(root.querySelector('.setup-count'))).toBe('2 of 5 done');
       expect(rows(root).map((li) => text(li.querySelector('.step-name')))).toEqual([
-        'Connect GitHub or GitLab',
+        'Connect GitHub, GitLab or Azure DevOps',
         'Add repositories',
         'Get the first analysis',
         'Turn on AI review',
@@ -211,8 +211,8 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       const { root } = await render();
       const links = (name: string) =>
         [...row(root, name).querySelectorAll('a')].map((a) => [text(a), a.getAttribute('href')]);
-      expect(links('Connect GitHub or GitLab')).toEqual([
-        ['Connect GitHub or GitLab', '/settings/github'],
+      expect(links('Connect GitHub, GitLab or Azure DevOps')).toEqual([
+        ['Connect GitHub, GitLab or Azure DevOps', '/settings/github'],
         ['connect GitLab', '/settings/gitlab'],
       ]);
       expect(links('Add repositories')).toEqual([

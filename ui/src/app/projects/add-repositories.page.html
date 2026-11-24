@@ -91,15 +91,11 @@
             <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
           } @else if (connections()?.length === 0) {
             <p class="panel-body no-connection" i18n="@@addRepos.noConnection">
-              Connect GitHub or GitLab first, in
-              <a routerLink="/settings/github">Settings → GitHub</a> or
-              <a routerLink="/settings/gitlab">Settings → GitLab</a>.
+              Connect GitHub, GitLab or Azure DevOps first, in
+              <a routerLink="/settings/github">Settings → GitHub</a>,
+              <a routerLink="/settings/gitlab">Settings → GitLab</a> or
+              <a routerLink="/settings/azure-devops">Settings → Azure DevOps</a>.
             </p>
-            @if (azureHidden()) {
-              <p class="panel-body no-connection" i18n="@@addRepos.azureNotYet">
-                Azure DevOps repositories cannot be added here yet.
-              </p>
-            }
           } @else {
             <fieldset class="conn-list" [attr.aria-busy]="connections() === null">
               <legend class="visually-hidden" i18n="@@addRepos.connection">Connection</legend>
@@ -132,7 +128,7 @@
                     @case ('not_allowed') {
                       <q-requirement
                         [noteId]="'conn-why-' + i"
-                        place="gitlab"
+                        [place]="c.provider"
                         text="CI setup is off for this connection. Turn it on in"
                         i18n-text="@@addRepos.why.notAllowed"
                       />
@@ -243,7 +239,12 @@
                       }
                       @case (undefined) {}
                       @case ('azure') {
-                        <!-- azure-pending(7): what CI setup does on Azure DevOps -->
+                        <ng-container i18n="@@addRepos.ciSetup.azure"
+                          >Qualor opens a pull request that adds the Qualor pipeline. Your pipelines
+                          don't change until you merge it. Qualor creates the pipeline and stores
+                          the project's token as its secret variable QUALOR_TOKEN right
+                          away.</ng-container
+                        >
                       }
                       @default never;
                     }
@@ -251,6 +252,36 @@
                 </span>
               </label>
             </div>
+            @if (poolShown()) {
+              <div class="pool-row">
+                <label for="azure-pool" i18n="@@addRepos.pool">Agent pool</label>
+                <input
+                  id="azure-pool"
+                  type="text"
+                  maxlength="100"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-describedby="azure-pool-help"
+                  [required]="poolRequired()"
+                  [attr.aria-invalid]="poolOk() ? null : true"
+                  [value]="pool()"
+                  (input)="setPool($event)"
+                />
+                <span id="azure-pool-help" class="hint">
+                  @if (poolRequired()) {
+                    <ng-container i18n="@@addRepos.poolRequired"
+                      >The agent pool the pipeline runs on. Azure DevOps Server has no
+                      Microsoft-hosted agents, so name one.</ng-container
+                    >
+                  } @else {
+                    <ng-container i18n="@@addRepos.poolOptional"
+                      >The agent pool the pipeline runs on. Leave empty to use Microsoft-hosted
+                      agents.</ng-container
+                    >
+                  }
+                </span>
+              </div>
+            }
           </div>
         </section>
       </div>
@@ -291,7 +322,7 @@
         <button
           type="button"
           class="btn btn-primary"
-          [disabled]="count() === 0"
+          [disabled]="count() === 0 || !poolOk()"
           [attr.aria-disabled]="starting() ? true : null"
           (click)="start()"
         >

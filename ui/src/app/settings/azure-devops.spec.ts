@@ -721,6 +721,50 @@ describe('AzureDevOpsPage fix pull requests', () => {
   });
 });
 
+describe('AzureDevOpsPage CI setup', () => {
+  const LABEL = 'Allow Qualor to set up CI (opens pull requests, creates pipelines and policies)';
+  const nameOf = (input: HTMLInputElement | null) =>
+    (input?.labels?.[0]?.querySelector('.sw-name')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const withCi = (allowed: boolean): Connection => ({
+    ...PAT,
+    azure: { ...PAT.azure!, ciSetupAllowed: allowed },
+  });
+
+  it('the CI setup switch patches ciSetupAllowed and shows the saved state', async () => {
+    const server = setup();
+    server.on('PATCH', '/api/v0/scm-connections/a1', { body: withCi(true) });
+    const { fixture, root } = await render();
+    const toggle = root.querySelector<HTMLInputElement>('#ci-setup-a1')!;
+    expect(toggle.getAttribute('role')).toBe('switch');
+    expect(nameOf(toggle)).toBe(LABEL);
+    expect(toggle.checked).toBe(false);
+    toggle.click();
+    await settle(fixture);
+    expect(server.requestsTo('PATCH', '/api/v0/scm-connections/a1').map((r) => r.body)).toEqual([
+      { ciSetupAllowed: true },
+    ]);
+    expect(root.querySelector<HTMLInputElement>('#ci-setup-a1')!.checked).toBe(true);
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(
+      'CI setup is on for https://dev.azure.com/acme.',
+    );
+  });
+
+  it('shows the saved state and puts the switch back when refused', async () => {
+    const server = setup([withCi(true)]);
+    server.on('PATCH', '/api/v0/scm-connections/a1', {
+      status: 403,
+      body: problem(403, 'FORBIDDEN'),
+    });
+    const { fixture, root } = await render();
+    const toggle = root.querySelector<HTMLInputElement>('#ci-setup-a1')!;
+    expect(toggle.checked).toBe(true);
+    toggle.click();
+    await settle(fixture);
+    expect(root.querySelector<HTMLInputElement>('#ci-setup-a1')!.checked).toBe(true);
+    expect(root.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
 describe('AzureDevOpsPage service hooks', () => {
   const HTTPS_URL = 'https://qualor.example.com/api/v0/scm-connections/a1/azure-webhook';
   const SUBSCRIBE = "Create or update Qualor's subscriptions";

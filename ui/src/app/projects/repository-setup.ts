@@ -53,7 +53,7 @@ export function connectionHost(connection: Pick<Connection, 'provider' | 'baseUr
   return githubApi ? host.slice(4) : host;
 }
 
-/** `#7` for a GitHub pull request, `!7` for a GitLab merge request, from its address. */
+/** `#7` for a GitHub pull request, `!7` for a GitLab merge request or an Azure DevOps pull request. */
 export function mergeRequestNumber(url: string): string | null {
   for (const provider of SCM_PROVIDERS) {
     const { pattern, prefix } = MERGE_REQUEST_URL[provider];
@@ -67,7 +67,7 @@ export function mergeRequestNumber(url: string): string | null {
 export const MERGE_REQUEST_URL: Record<ScmProvider, { pattern: RegExp; prefix: string }> = {
   github: { pattern: /\/pull\/(\d+)\/?$/, prefix: '#' },
   gitlab: { pattern: /\/merge_requests\/(\d+)\/?$/, prefix: '!' },
-  azure: { pattern: /[^\s\S]/, prefix: '!' }, // azure-pending(7): an Azure DevOps pull request's address (this matches nothing)
+  azure: { pattern: /\/_git\/[^/]+\/pullrequest\/(\d+)\/?$/, prefix: '!' },
 };
 
 /** A repository's path split for reading: the owner muted, the last segment set in bold. */
@@ -100,11 +100,17 @@ export function itemState(item: RunItem, run: SetupRun | null): ItemState {
 
 /**
  * Why a repository failed, in the page's own words: the server's are English (setup-run.ts).
- * `provider` names GitHub or GitLab when the run's connection is known.
+ * The run's `connection` names the provider when it is known. The texts never read the server's
+ * message, only its code and, for a refusal, the stage it happened in.
  */
-export function errorText(item: RunItem, provider: string | null): string {
+export function errorText(
+  item: RunItem,
+  connection: Pick<Connection, 'provider' | 'baseUrl'> | null,
+): string {
   const error = item.error;
-  const who = provider ?? $localize`:@@addRepos.error.theProvider:The provider`;
+  const who =
+    (connection ? providerName(connection) : null) ??
+    $localize`:@@addRepos.error.theProvider:The provider`;
   switch (error?.code) {
     case 'not_found':
       return $localize`:@@addRepos.error.notFound:The repository was not found, or the connection cannot reach it.`;
@@ -117,14 +123,14 @@ export function errorText(item: RunItem, provider: string | null): string {
     case 'project_gone':
       return $localize`:@@addRepos.error.projectGone:The project was deleted.`;
     case 'permission':
-      return permissionText(error.message);
+      return permissionText(connection?.provider ?? null, error.stage);
     case 'rate_limited':
       return $localize`:@@addRepos.error.rateLimited:${who}:provider: is rate limiting Qualor. Try again later.`;
     case 'unavailable':
       return $localize`:@@addRepos.error.unavailable:${who}:provider: could not be reached. Try again later.`;
     case 'refused':
-      // The server's text tells a refused read (before any change) from a refused change.
-      if (error.message.startsWith('The provider refused a request to read')) {
+      // The stage tells a refused read (before any change) from a refused change.
+      if (error.stage === 'read') {
         return $localize`:@@addRepos.error.refusedRead:${who}:provider: refused a request to read the repository.`;
       }
       return $localize`:@@addRepos.error.refused:${who}:provider: refused the change.`;
@@ -132,6 +138,10 @@ export function errorText(item: RunItem, provider: string | null): string {
       return $localize`:@@addRepos.error.badAnswer:The answer of ${who}:provider: was not understood.`;
     case 'budget':
       return $localize`:@@addRepos.error.budget:Qualor needed too many requests to ${who}:provider: for this repository.`;
+    case 'no_agent_pool':
+      return $localize`:@@addRepos.error.noAgentPool:This Azure DevOps project has no agent pool with that name. Check the name, or leave it empty to use Microsoft-hosted agents.`;
+    case 'pipeline_name_taken':
+      return $localize`:@@addRepos.error.pipelineNameTaken:Both names Qualor gives a pipeline (Qualor, and Qualor with the repository's name) are taken in this project. Rename or delete one of those pipelines, then try again.`;
     case 'abandoned':
       return $localize`:@@addRepos.error.abandoned:The run stopped before this repository.`;
     default:
@@ -139,13 +149,22 @@ export function errorText(item: RunItem, provider: string | null): string {
   }
 }
 
-/** The server's three permission texts (setup-run.ts), in the page's words. */
-function permissionText(message: string): string {
-  if (message.startsWith('The GitHub App')) {
-    return $localize`:@@addRepos.error.githubPermission:The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.`;
+/**
+ * What a refused permission needs, by provider and stage: a read (or an unknown provider or
+ * stage) says the same for all; a change names what CI setup needs on the provider.
+ */
+function permissionText(provider: Provider | null, stage: 'read' | 'change' | null): string {
+  if (provider === null || stage !== 'change') {
+    return $localize`:@@addRepos.error.readPermission:The connection was refused access to the repository.`;
   }
-  if (message.startsWith('The GitLab token')) {
-    return $localize`:@@addRepos.error.gitlabPermission:The GitLab token needs the api scope and the Maintainer role.`;
+  switch (provider) {
+    case 'github':
+      return $localize`:@@addRepos.error.githubPermission:The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.`;
+    case 'gitlab':
+      return $localize`:@@addRepos.error.gitlabPermission:The GitLab token needs the api scope and the Maintainer role.`;
+    case 'azure':
+      return $localize`:@@addRepos.error.azurePermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, and read access to its agent pools.`;
+    default:
+      return assertNever(provider, 'provider');
   }
-  return $localize`:@@addRepos.error.readPermission:The connection was refused access to the repository.`;
 }

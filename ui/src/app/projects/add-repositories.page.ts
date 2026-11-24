@@ -55,9 +55,25 @@ const MAX_RETRY_AFTER_S = 60;
 /** Connections listed at once: an organisation has a handful. */
 const CONNECTIONS_LIMIT = 100;
 
-/** What the navigation that starts a run hands its page: the repositories GitHub calls C#. */
+/**
+ * What the navigation that starts a run hands its page: the repositories GitHub calls C#, and the
+ * agent pool of an Azure DevOps run (for **Try again**).
+ */
 interface RunState {
   csharp?: unknown;
+  azurePool?: unknown;
+}
+
+/** The longest agent pool name the server takes. */
+const POOL_MAX = 100;
+
+/** A pool name the server takes: at most 100 characters, none a control character. */
+function poolNameOk(name: string): boolean {
+  if (name.length > POOL_MAX) return false;
+  return ![...name].some((c) => {
+    const code = c.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
 }
 
 /** Why CI setup is not available for a connection, as its note says it. */
@@ -65,7 +81,7 @@ type WhyNot = 'not_allowed' | 'permissions' | 'unread' | 'url';
 
 /**
  * **Add repositories** (`/projects/add`, onboarding spec "Add repositories"): pick one of the
- * organisation's GitHub or GitLab connections, tick up to 50 of the repositories it reaches, and
+ * organisation's GitHub, GitLab or Azure DevOps connections, tick up to 50 of the repositories it reaches, and
  * add them as projects in a background run, with a merge request per repository that adds the
  * Qualor CI job where the connection allows it (`ciSetup.available`). The run's own address
  * (`/projects/add/<run>?connection=<id>`) follows its progress, read every 2 s (or as
@@ -114,8 +130,6 @@ export class AddRepositoriesPage {
 
   protected readonly connections = signal<Connection[] | null>(null);
   protected readonly connectionsError = signal<string | null>(null);
-  /** The organisation has Azure DevOps connections, which this page does not list yet. */
-  protected readonly azureHidden = signal(false);
   protected readonly chosenId = signal<string | null>(null);
   protected readonly chosen = computed(
     () => this.connections()?.find((c) => c.id === this.chosenId()) ?? null,
@@ -124,6 +138,22 @@ export class AddRepositoriesPage {
   /** The switch's own state; CI setup happens only where the connection allows it too. */
   protected readonly ciWanted = signal(true);
   protected readonly ciSetup = computed(() => this.ciAvailable() && this.ciWanted());
+  /** The agent pool an Azure DevOps pipeline runs on, as typed. */
+  protected readonly pool = signal('');
+  /** The pool field is shown for an Azure DevOps connection while CI setup is on. */
+  protected readonly poolShown = computed(
+    () => this.chosen()?.provider === 'azure' && this.ciSetup(),
+  );
+  /** Azure DevOps Server has no Microsoft-hosted agents: its pool must be named. */
+  protected readonly poolRequired = computed(
+    () => this.poolShown() && this.chosen()?.azure?.deployment === 'server',
+  );
+  /** Add stays off while the pool is missing where it is required, or is not one the server takes. */
+  protected readonly poolOk = computed(() => {
+    if (!this.poolShown()) return true;
+    const name = this.pool().trim();
+    return poolNameOk(name) && (name !== '' || !this.poolRequired());
+  });
   /** The ticked repositories by ref (`q-repository-list`), dropped with another connection. */
   protected readonly selected = signal<ReadonlyMap<string, Repository>>(new Map());
   protected readonly count = computed(() => this.selected().size);
@@ -151,6 +181,8 @@ export class AddRepositoriesPage {
   protected readonly uncopied = computed(() => [...this.tokens().values()].some((t) => !t.copied));
   /** The repositories GitHub reported as C#, handed over by the navigation that started the run. */
   protected readonly csharp = signal<ReadonlySet<string>>(new Set());
+  /** The agent pool the run was started with, handed over by the same navigation. */
+  private readonly runPool = signal<string | null>(null);
   protected readonly retrying = signal<string | null>(null);
   protected readonly retryError = signal<string | null>(null);
   private runGeneration = 0;
@@ -187,6 +219,8 @@ export class AddRepositoriesPage {
     if (Array.isArray(csharp)) {
       this.csharp.set(new Set(csharp.filter((r): r is string => typeof r === 'string')));
     }
+    const azurePool = (state as RunState | null)?.azurePool;
+    if (typeof azurePool === 'string') this.runPool.set(azurePool);
     // The organisation's connections: to pick from, and to name a run's connection.
     effect(() => {
       if (this.org.organizations.isLoading()) return;
@@ -220,8 +254,7 @@ export class AddRepositoriesPage {
         }),
       );
       if (organizationId !== this.org.currentId()) return;
-      const usable = answer.items.filter((c) => c.provider !== 'azure'); // provider-guard: Azure DevOps is left out; azure-pending(7): adding its repositories and CI setup here
-      this.azureHidden.set(usable.length < answer.items.length);
+      const usable = answer.items;
       this.connections.set(usable);
       if (this.runId() || usable.some((c) => c.id === this.chosenId())) return;
       const first = usable.find((c) => c.id === this.connection()) ?? usable[0];
@@ -239,6 +272,7 @@ export class AddRepositoriesPage {
     if (id === this.chosenId()) return;
     this.chosenId.set(id);
     this.ciWanted.set(true);
+    this.pool.set('');
     this.selected.set(new Map());
     this.startError.set(null);
   }
@@ -262,6 +296,10 @@ export class AddRepositoriesPage {
     return ciSetupMissingText(connection.ciSetup.missing);
   }
 
+  protected setPool(event: Event): void {
+    if (event.target instanceof HTMLInputElement) this.pool.set(event.target.value);
+  }
+
   /** "github.com, App 12345": where a connection is, and which App for GitHub. */
   protected connectionMeta(connection: Connection): string {
     const host = connectionHost(connection);
@@ -281,9 +319,11 @@ export class AddRepositoriesPage {
   protected async start(): Promise<void> {
     const connection = this.chosen();
     const repositories = [...this.selected().keys()];
-    if (!connection || repositories.length === 0 || this.starting()) return;
+    if (!connection || repositories.length === 0 || this.starting() || !this.poolOk()) return;
     this.starting.set(true);
     this.startError.set(null);
+    const name = this.pool().trim();
+    const azurePool = this.poolShown() && name !== '' ? name : null;
     try {
       const { id } = await ok(
         this.api.client.POST('/api/v0/repository-setups', {
@@ -292,13 +332,14 @@ export class AddRepositoriesPage {
             connectionId: connection.id,
             repositories,
             ciSetup: this.ciSetup(),
+            ...(azurePool === null ? {} : { azurePool }),
           },
         }),
       );
       const csharp = [...this.selected().values()]
         .filter((r) => r.language === 'C#')
         .map((r) => r.ref);
-      await this.openRun(id, connection.id, csharp);
+      await this.openRun(id, connection.id, csharp, azurePool);
     } catch (err) {
       if (fieldErrors(err)['body.ciSetup'] !== undefined) {
         await this.loadConnections(this.org.currentId());
@@ -313,10 +354,15 @@ export class AddRepositoriesPage {
     }
   }
 
-  private openRun(id: string, connectionId: string, csharp: string[]): Promise<boolean> {
+  private openRun(
+    id: string,
+    connectionId: string,
+    csharp: string[],
+    azurePool: string | null,
+  ): Promise<boolean> {
     return this.router.navigate(['/projects/add', id], {
       queryParams: { connection: connectionId },
-      state: { csharp } satisfies RunState,
+      state: { csharp, ...(azurePool === null ? {} : { azurePool }) } satisfies RunState,
     });
   }
 
@@ -428,7 +474,7 @@ export class AddRepositoriesPage {
 
   protected errorOf(item: RunItem): string {
     const connection = this.runConnection();
-    return errorText(item, connection ? providerName(connection) : null);
+    return errorText(item, connection);
   }
 
   /** **Try again**: a new run for this one repository, on the same connection. */
@@ -436,6 +482,7 @@ export class AddRepositoriesPage {
     const connection = this.runConnection();
     const run = this.run();
     if (!connection || !run || this.retrying() !== null) return;
+    const pool = connection.provider === 'azure' ? this.runPool() : null;
     this.retrying.set(item.ref);
     this.retryError.set(null);
     try {
@@ -446,10 +493,11 @@ export class AddRepositoriesPage {
             connectionId: connection.id,
             repositories: [item.ref],
             ciSetup: run.ciSetup && connection.ciSetup.available,
+            ...(pool === null ? {} : { azurePool: pool }),
           },
         }),
       );
-      await this.openRun(id, connection.id, this.csharp().has(item.ref) ? [item.ref] : []);
+      await this.openRun(id, connection.id, this.csharp().has(item.ref) ? [item.ref] : [], pool);
     } catch (err) {
       this.retryError.set(problemMessage(err));
     } finally {

@@ -454,6 +454,42 @@ export class AzureDevOpsPage {
     if (!saved && toggle) toggle.checked = was;
   }
 
+  /**
+   * The CI-setup switch of a connection, saved at once. Refused (or while another change runs), the
+   * switch goes back to what the connection says.
+   */
+  protected async setCiSetup(connection: Connection, event: Event): Promise<void> {
+    const toggle = event.target instanceof HTMLInputElement ? event.target : null;
+    const allowed = isChecked(event);
+    const was = connection.azure?.ciSetupAllowed ?? false;
+    if (this.busy()) {
+      if (toggle) toggle.checked = was;
+      return;
+    }
+    const generation = this.orgGeneration;
+    let saved = false;
+    await this.run(async () => {
+      const updated = await ok(
+        this.api.client.PATCH('/api/v0/scm-connections/{id}', {
+          params: { path: { id: connection.id } },
+          body: { ciSetupAllowed: allowed },
+        }),
+      );
+      saved = true;
+      this.connections.items.update((items) =>
+        items.map((c) => (c.id === updated.id ? updated : c)),
+      );
+      if (generation !== this.orgGeneration) return;
+      const url = updated.baseUrl;
+      this.announcement.set(
+        allowed
+          ? $localize`:@@azure.ciSetupOn:CI setup is on for ${url}:url:.`
+          : $localize`:@@azure.ciSetupOff:CI setup is off for ${url}:url:.`,
+      );
+    });
+    if (!saved && toggle) toggle.checked = was;
+  }
+
   protected async test(connection: Connection): Promise<void> {
     if (this.busy()) return;
     const generation = this.orgGeneration;

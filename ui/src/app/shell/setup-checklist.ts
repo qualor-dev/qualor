@@ -73,7 +73,7 @@ function parseRemembered(raw: string | null): Remembered | null {
 }
 
 const NAMES: Record<StepId, string> = {
-  connect: $localize`:@@setup.step.connect:Connect GitHub or GitLab`,
+  connect: $localize`:@@setup.step.connect:Connect GitHub, GitLab or Azure DevOps`,
   repositories: $localize`:@@setup.step.repositories:Add repositories`,
   analysis: $localize`:@@setup.step.analysis:Get the first analysis`,
   ai_review: $localize`:@@setup.step.aiReview:Turn on AI review`,

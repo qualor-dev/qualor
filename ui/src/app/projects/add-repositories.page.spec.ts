@@ -29,6 +29,7 @@ function connection(
   provider: 'github' | 'gitlab' | 'azure',
   baseUrl: string,
   ciSetup: Connection['ciSetup'],
+  deployment: 'services' | 'server' = 'services',
 ): Connection {
   return {
     id,
@@ -55,7 +56,23 @@ function connection(
             ciSetupAllowed: ciSetup.available,
           }
         : null,
-    azure: null,
+    azure:
+      provider === 'azure'
+        ? {
+            ciSetupAllowed: ciSetup.available,
+            deployment,
+            auth: 'pat',
+            tenantId: null,
+            clientId: null,
+            credentialReadable: true,
+            certificate: null,
+            webhookSecretSet: false,
+            webhookUrl: null,
+            webhookSecretReadable: false,
+            hooksCurrent: false,
+            publicUrlHttps: true,
+          }
+        : null,
     ciSetup,
     fixMrsAllowed: false,
     problem: null,
@@ -79,10 +96,18 @@ const GHES = connection(GHES_ID, 'github', 'https://github.acme.example/api/v3',
 });
 
 const AZURE = connection(AZURE_ID, 'azure', 'https://dev.azure.com/acme', {
-  available: false,
-  reason: 'not_allowed',
+  available: true,
+  reason: null,
   missing: [],
 });
+const AZURE_SERVER_ID = '0190a6c2-0000-7000-8000-0000000000c5';
+const AZURE_SERVER = connection(
+  AZURE_SERVER_ID,
+  'azure',
+  'https://tfs.acme.example/tfs/DefaultCollection',
+  { available: true, reason: null, missing: [] },
+  'server',
+);
 
 function repo(name: string, over: Partial<Repository> = {}): Repository {
   return {
@@ -492,30 +517,123 @@ describe('AddRepositoriesPage', () => {
       server.on('GET', '/api/v0/scm-connections', { body: page([]) });
       const { root } = await render();
       expect(text(root.querySelector('.no-connection'))).toContain(
-        'Connect GitHub or GitLab first',
+        'Connect GitHub, GitLab or Azure DevOps first',
       );
       expect(root.querySelector('.repo-table')).toBeNull();
     });
 
-    it('leaves Azure DevOps connections out and says so when they are the only ones', async () => {
+    it('lists Azure DevOps connections and their repositories, selectable', async () => {
       server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
       const { root } = await render();
-      expect(root.querySelector('input[name=connection]')).toBeNull();
-      expect(text(root.querySelector('.panel'))).toContain(
-        'Azure DevOps repositories cannot be added here yet.',
-      );
-      expect(root.textContent).not.toContain('Turn it on');
-      expect(server.requests.some((r) => r.path.includes('/repositories'))).toBe(false);
+      expect(radios(root)).toHaveLength(1);
+      expect(text(root.querySelector('.conn-name'))).toBe('Azure DevOps');
+      expect(text(root.querySelector('.conn-meta'))).toBe('dev.azure.com');
+      expect(root.textContent).not.toContain('cannot be added here yet');
+      expect(repoRequests(AZURE_ID)).toHaveLength(1);
+      tick(boxOf(root, 'acme/website'));
+      await flush();
+      expect(text(root.querySelector('.bar-count strong'))).toBe('1 selected');
     });
 
-    it('lists only the other connections when Azure DevOps ones exist too', async () => {
-      server.on('GET', '/api/v0/scm-connections', { body: page([AZURE, GITHUB]) });
-      server.on('GET', `/api/v0/scm-connections/${GITHUB_ID}/repositories`, {
-        body: page(REPOS),
-      });
+    it('says what CI setup does on Azure DevOps', async () => {
+      server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
       const { root } = await render();
-      expect(root.querySelectorAll('input[name=connection]')).toHaveLength(1);
-      expect(root.textContent).not.toContain('Azure DevOps');
+      expect(text(root.querySelector('#ci-setup-help'))).toContain(
+        'opens a pull request that adds the Qualor pipeline',
+      );
+    });
+
+    it('points a connection that does not allow CI setup to the Azure DevOps settings', async () => {
+      const off = connection(AZURE_ID, 'azure', 'https://dev.azure.com/acme', {
+        available: false,
+        reason: 'not_allowed',
+        missing: [],
+      });
+      server.on('GET', '/api/v0/scm-connections', { body: page([off]) });
+      const { root } = await render();
+      const note = root.querySelector('.conn .req');
+      expect(text(note)).toContain('CI setup is off for this connection');
+      expect(note?.querySelector('a')?.getAttribute('href')).toBe('/settings/azure-devops');
+    });
+
+    describe('the agent pool', () => {
+      const poolField = (root: HTMLElement) => root.querySelector<HTMLInputElement>('#azure-pool');
+      const addButton = (root: HTMLElement) =>
+        root.querySelector<HTMLButtonElement>('.add-bar .btn-primary')!;
+
+      it('is optional on Azure DevOps Services, with the Microsoft-hosted help text', async () => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
+        const { root } = await render();
+        expect(poolField(root)).not.toBeNull();
+        expect(poolField(root)!.required).toBe(false);
+        expect(text(root.querySelector('#azure-pool-help'))).toContain(
+          'Leave empty to use Microsoft-hosted agents',
+        );
+      });
+
+      it('is required on Azure DevOps Server: Add stays off until it is named', async () => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE_SERVER]) });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
+        const { root } = await render();
+        expect(poolField(root)!.required).toBe(true);
+        tick(boxOf(root, 'acme/website'));
+        await flush();
+        expect(addButton(root).disabled).toBe(true);
+        const field = poolField(root)!;
+        field.value = 'Default';
+        field.dispatchEvent(new Event('input'));
+        await flush();
+        expect(addButton(root).disabled).toBe(false);
+        addButton(root).click();
+        await flush();
+        expect(server.requestsTo('POST', '/api/v0/repository-setups')[0]?.body).toEqual({
+          organizationId: ORG_ID,
+          connectionId: AZURE_SERVER_ID,
+          repositories: ['acme/website'],
+          ciSetup: true,
+          azurePool: 'Default',
+        });
+      });
+
+      it('is sent only when named: not when empty, not on other providers', async () => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE, GITHUB]) });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
+        const { root } = await render();
+        tick(boxOf(root, 'acme/website'));
+        await flush();
+        addButton(root).click();
+        await flush();
+        const bodies = () =>
+          server.requestsTo('POST', '/api/v0/repository-setups').map((r) => r.body);
+        expect(bodies()[0]).not.toHaveProperty('azurePool');
+        radios(root)[1]!.click();
+        await flush();
+        expect(root.querySelector('#azure-pool')).toBeNull();
+        tick(boxOf(root, 'acme/website'));
+        await flush();
+        addButton(root).click();
+        await flush();
+        expect(bodies()[1]).not.toHaveProperty('azurePool');
+      });
+
+      it('is not asked for while CI setup is off', async () => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE_SERVER]) });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
+        const { root } = await render();
+        root.querySelector<HTMLInputElement>('#ci-setup')!.click();
+        tick(boxOf(root, 'acme/website'));
+        await flush();
+        expect(poolField(root)).toBeNull();
+        expect(addButton(root).disabled).toBe(false);
+        addButton(root).click();
+        await flush();
+        expect(server.requestsTo('POST', '/api/v0/repository-setups')[0]?.body).toEqual({
+          organizationId: ORG_ID,
+          connectionId: AZURE_SERVER_ID,
+          repositories: ['acme/website'],
+          ciSetup: false,
+        });
+      });
     });
   });
 
@@ -991,6 +1109,144 @@ describe('AddRepositoriesPage', () => {
       expect(text(root.querySelector('.result .note'))).toContain(
         'check the build command in the merge request before you merge it',
       );
+    });
+
+    describe('on Azure DevOps', () => {
+      const PIPELINE = 'https://dev.azure.com/acme/web/_build?definitionId=7';
+      const azureRun = (items: RunItem[]) => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
+        server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, { body: run('done', items) });
+      };
+      const merged = (azure: RunItem['azure']) =>
+        done('acme/website', {
+          ciOutcome: 'merge_request',
+          ciUrl: 'https://dev.azure.com/acme/web/_git/website/pullrequest/12',
+          azure,
+        });
+
+      it('links the pull request as !12 and the pipeline', async () => {
+        azureRun([
+          merged({ pipelineUrl: PIPELINE, queue: 'open', policy: 'pending', policyError: null }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(text(root.querySelector('a.mr-link'))).toBe('Add Qualor code analysis !12');
+        const link = root.querySelector<HTMLAnchorElement>('.azure-lines a');
+        expect(link?.getAttribute('href')).toBe(PIPELINE);
+      });
+
+      it.each([
+        ['authorized', 'Qualor authorised the pipeline to use its agent pool'],
+        ['open', 'The agent pool is open to every pipeline'],
+        ['manual', 'Approve the pipeline for its agent pool'],
+      ] as const)('says the agent pool is %s', async (queue, expected) => {
+        azureRun([merged({ pipelineUrl: PIPELINE, queue, policy: null, policyError: null })]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(text(root.querySelector('.azure-lines'))).toContain(expected);
+      });
+
+      it.each([
+        ['pending', 'The pull request check starts after the first analysis of the main branch'],
+        ['on', 'The pull request check is on'],
+        ['manual', 'Add the Build validation policy to the main branch yourself'],
+        ['failed', 'Qualor could not add the pull request check'],
+      ] as const)('says the policy is %s', async (policy, expected) => {
+        azureRun([merged({ pipelineUrl: PIPELINE, queue: 'open', policy, policyError: 'why' })]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(text(root.querySelector('.azure-lines'))).toContain(expected);
+      });
+
+      it('shows no Azure lines for a repository without them', async () => {
+        azureRun([merged(null)]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(root.querySelector('.azure-lines')).toBeNull();
+      });
+
+      it('names the Azure file, the secret variable and where the address goes without a public URL', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'snippet',
+            ciReason: 'no_public_url',
+            snippet: '# Qualor in Azure Pipelines\ntrigger:\n',
+            token: 'qlr_prj_az',
+          }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        const result = root.querySelector('article.result')!;
+        expect(text(result.querySelector('.code-head code'))).toBe('.azure-pipelines/qualor.yml');
+        expect(text(result)).toContain('Set the pipeline variable QUALOR_URL');
+        expect(text(result.querySelector('.part-title'))).toContain('Secret variable QUALOR_TOKEN');
+        expect(text(result.querySelector('.where'))).toContain('On Azure DevOps');
+      });
+
+      it('gives a pipeline Qualor did not create its own text and no token section', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'snippet',
+            ciReason: 'foreign_pipeline',
+            snippet: '# Qualor in Azure Pipelines\ntrigger:\n',
+          }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        const result = root.querySelector('article.result')!;
+        expect(text(result)).toContain(
+          'A pipeline that Qualor did not create already uses .azure-pipelines/qualor.yml',
+        );
+        expect(text(result)).not.toContain('Qualor did not change the repository.');
+        expect(result.querySelector('.token-gone')).toBeNull();
+      });
+
+      it.each([
+        ['read', 'The connection was refused access to the repository.'],
+        ['change', 'The Azure DevOps identity needs Contribute and Create branch'],
+      ] as const)(
+        'words a permission error by its %s stage, not by its message',
+        async (stage, expected) => {
+          azureRun([
+            done('acme/website', {
+              ciOutcome: 'failed',
+              error: { code: 'permission', message: 'An unrelated message', stage },
+            }),
+          ]);
+          const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+          expect(text(root.querySelector('article.result .fail-reason'))).toContain(expected);
+        },
+      );
+
+      it.each([
+        ['no_agent_pool', 'has no agent pool with that name'],
+        ['pipeline_name_taken', 'are taken in this project'],
+      ] as const)('words %s', async (code, expected) => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'failed',
+            error: { code, message: 'x', stage: null },
+          }),
+        ]);
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_ID });
+        expect(text(root.querySelector('article.result .fail-reason'))).toContain(expected);
+      });
+
+      it('sends the pool again with Try again', async () => {
+        azureRun([
+          done('acme/website', {
+            ciOutcome: 'failed',
+            error: { code: 'no_agent_pool', message: 'x', stage: null },
+          }),
+        ]);
+        server.on('GET', '/api/v0/scm-connections', { body: page([AZURE_SERVER]) });
+        server.on('POST', '/api/v0/repository-setups', { status: 202, body: { id: RUN_ID } });
+        const navigated = TestBed.inject(Router).navigate(['/projects/add', RUN_ID], {
+          state: { csharp: [], azurePool: 'Default' },
+        });
+        await flush();
+        await navigated;
+        const { root } = await render({ runId: RUN_ID, connection: AZURE_SERVER_ID });
+        button(root, 'Try again')!.click();
+        await flush();
+        expect(server.requestsTo('POST', '/api/v0/repository-setups')[0]?.body).toMatchObject({
+          azurePool: 'Default',
+        });
+      });
     });
   });
 });
