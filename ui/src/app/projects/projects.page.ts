@@ -16,7 +16,7 @@ import { Api, ok } from '../api/api';
 import { ApiError, fieldErrors, problemMessage } from '../api/errors';
 import type { ItemOf } from '../api/types';
 import { Distribution, type DistributionItem } from '../charts/distribution';
-import { Lens } from '../charts/lens';
+import { RingMeter } from '../charts/ring';
 import { label } from '../i18n/labels';
 import { OrgContext } from '../org/org-context';
 import { SeverityChips } from '../project/vulnerabilities/severity-chips';
@@ -49,9 +49,9 @@ const MAX_TEXT = 255;
     Distribution,
     GateBadge,
     Icon,
-    Lens,
     MeasurePipe,
     PageHeader,
+    RingMeter,
     RouterLink,
     SeverityChips,
   ],

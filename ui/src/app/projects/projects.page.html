@@ -54,7 +54,7 @@
       <div class="kpi" data-kpi="coverage">
         <span class="kpi-label" i18n="@@projects.summary.coverage">Average coverage</span>
         <div class="kpi-main">
-          <q-lens [value]="summary().coverage" [size]="64" />
+          <q-ring [value]="summary().coverage" [size]="64" />
           <span class="kpi-value">{{ summary().coverage | measure: 'coverage' }}</span>
         </div>
       </div>
@@ -79,7 +79,7 @@
       i18n-aria-label="@@projects.title"
     >
       <div class="empty-state">
-        <img src="art/empty.webp" alt="" width="900" height="675" />
+        <img src="art/empty.svg" alt="" width="900" height="675" />
         @if (org.canChange('org.projects.create')) {
           <p i18n="@@projects.noneYetAdmin">
             No projects yet. Add your repositories from GitHub or GitLab, or create one with New
@@ -192,7 +192,7 @@
                 <tr>
                   <td colspan="8">
                     <div class="empty-state">
-                      <img src="art/empty.webp" alt="" width="900" height="675" />
+                      <img src="art/nomatch.svg" alt="" width="900" height="675" />
                       <p i18n="@@projects.empty">No projects match.</p>
                     </div>
                   </td>

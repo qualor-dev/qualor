@@ -14,7 +14,7 @@
           }
         </h2>
         <div class="gate-word-row">
-          <q-lens [value]="0" [size]="34" [tone]="emblem().tone" [mark]="emblem().mark" />
+          <q-ring [value]="100" [size]="34" [status]="emblemStatus()" />
           <span class="gate-word"><q-gate-badge [status]="b.gateStatus" /></span>
         </div>
         <p class="gate-meta">
@@ -103,7 +103,7 @@
         <h2 id="new-code-heading" i18n="@@overview.newCode">New code</h2>
       </div>
       <div class="panel-body new-code">
-        <q-lens [value]="newCode().coverage" [size]="96" />
+        <q-ring [value]="newCode().coverage" [size]="96" />
         <dl class="stat-list">
           <div>
             <dt>{{ names.newCoverage }}</dt>
@@ -134,7 +134,7 @@
           <span class="kpi-label">{{ k.metric | label: 'metric' }}</span>
           <div class="kpi-main">
             @if (k.metric === 'coverage') {
-              <q-lens [value]="k.value" [size]="76" />
+              <q-ring [value]="k.value" [size]="76" />
             }
             <div class="kpi-figure">
               <span class="kpi-value">{{ k.value | measure: k.metric }}</span>

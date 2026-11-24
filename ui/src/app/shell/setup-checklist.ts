@@ -17,7 +17,7 @@ import { NavigationEnd, Router } from '@angular/router';
 import { Api, ok } from '../api/api';
 import { problemMessage } from '../api/errors';
 import { SessionStore } from '../auth/session';
-import { Lens } from '../charts/lens';
+import { RingMeter } from '../charts/ring';
 import { OrgContext } from '../org/org-context';
 import { Icon } from '../shared/icon';
 import { PHONE_WIDTH } from '../shared/media';
@@ -97,8 +97,8 @@ const ALL_SET = $localize`:@@setup.allSet:All set`;
 /**
  * "Set up Qualor" (onboarding design, "The checklist (UI)"; notes, Layout): the first-setup steps
  * of the current organization for those who may create projects there (its admins), in the
- * corner. On ink, with the product's lens as its progress: one band of dots per step done, green
- * with a check at "All set".
+ * corner. On ink, with the product's ring as its progress: filled by the share of steps done, its
+ * dot green at "All set".
  *
  * - The steps and their ticks come from the server only, asked again when the organization
  *   changes, when the person comes back to the tab and on a move to another page: never on a timer.
@@ -113,7 +113,7 @@ const ALL_SET = $localize`:@@setup.allSet:All set`;
  */
 @Component({
   selector: 'q-setup-checklist',
-  imports: [Icon, Lens, SetupSteps],
+  imports: [Icon, RingMeter, SetupSteps],
   templateUrl: './setup-checklist.html',
   styleUrl: './setup-checklist.css',
 })
@@ -165,7 +165,7 @@ export class SetupChecklist {
   protected readonly expanded = computed(
     () => this.open() && (!this.floatBar() || this.openedOverBar()),
   );
-  /** The reveal running now: from which value the lens fills, and which ticks draw. */
+  /** The reveal running now: from which value the ring fills, and which ticks draw. */
   private readonly reveal = signal<{ orgId: string; from: number; steps: StepId[] } | null>(null);
   protected readonly announcement = signal('');
   protected readonly closing = signal(false);

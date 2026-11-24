@@ -7,9 +7,10 @@ export interface Crumb {
 }
 
 /**
- * `q-page-header` (spec §4): a page's title on the ink band under the top bar, with the brand's
- * halftone circle at its right: breadcrumbs, the title with its status, actions, a meta line and
- * tabs on the band's bottom edge. `compact` drops the extra room of list pages.
+ * `q-page-header` (spec §4): a page's title on the ink band under the top bar: breadcrumbs, the
+ * title with its status, actions, a meta line and tabs on the band's bottom edge, and on wide
+ * screens the brand mark in the free corner. `compact` drops the extra room (and the mark) of list
+ * pages.
  */
 @Component({
   selector: 'q-page-header',

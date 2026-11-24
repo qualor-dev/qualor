@@ -25,7 +25,7 @@ export interface StepView {
 }
 
 /**
- * The setup checklist's steps (onboarding notes, Layout): a ring per step, filled in the lens's
+ * The setup checklist's steps (onboarding notes, Layout): a ring per step, filled in the brand
  * blue with a check when done (green with the rest at "All set"), dashed while the step is not
  * counted. An open step is a link to where it is done, the whole row its target; done steps are
  * text. Step 1 also offers GitLab and step 2 the SonarQube import.

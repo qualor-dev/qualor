@@ -1,7 +1,7 @@
 /*
  * The setup checklist (onboarding notes, Layout): shell chrome on ink in the bottom-right corner,
- * the same in both schemes. The lens on ink takes the band's fixed halftone blue, and the green of
- * the passed badge at "All set", its check drawn in ink over the dots.
+ * the same in both schemes. Its ring takes the dark surfaces' inks in both schemes; at "All set"
+ * its dot turns the passed green.
  */
 .setup {
   position: fixed;
@@ -17,15 +17,14 @@
 .setup :focus-visible {
   outline-color: var(--cobalt-bright);
 }
-q-lens {
-  --lens-ink: var(--cobalt-bright);
-  --lens-track: #14305a;
-}
-.all-set q-lens {
-  --lens-ink: #5fd39c;
-  --lens-track: #0f3a2c;
-  --lens-mark: var(--ink);
-  --lens-mark-width: 3.4;
+q-ring {
+  --ring-fill: #dce8fa;
+  --ring-track: #35598e;
+  --ring-brand: var(--cobalt-bright);
+  --ring-ok: #5fd39c;
+  --ring-bad: #ff8a80;
+  --ring-warn: #f0c35a;
+  --ring-glow: 1;
 }
 .setup-panel {
   width: 352px;

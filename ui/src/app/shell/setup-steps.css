@@ -1,4 +1,4 @@
-/* The checklist's steps, on ink (onboarding notes): a tick per step in the lens's blue. */
+/* The checklist's steps, on ink (onboarding notes): a tick per step in the brand blue. */
 :host {
   display: block;
 }
@@ -103,7 +103,7 @@ a:focus-visible {
   fill: #5fd39c;
   stroke: #5fd39c;
 }
-/* A step just done: its ring fills, then its check draws (after the lens's new dots). */
+/* A step just done: its ring fills, then its check draws (after the meter's reveal). */
 @keyframes fill-in {
   from {
     fill: transparent;

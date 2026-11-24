@@ -4,7 +4,7 @@
 @if (answer(); as a) {
   @if (a.monitoring === 'off') {
     <div class="empty-state">
-      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <img src="art/empty.svg" alt="" width="900" height="675" />
       @if (a.offBy === 'instance') {
         <p i18n="@@vuln.off.instance">Vulnerability monitoring is turned off for this server.</p>
         @if (isInstanceAdmin()) {
@@ -156,7 +156,12 @@
     @if (view() === 'version' && !target()) {
       @if (clean() && !expanded()) {
         <div class="empty-state">
-          <img src="art/empty.webp" alt="" width="900" height="675" />
+          <img
+            [src]="a.checkedAt ? 'art/clean.svg' : 'art/empty.svg'"
+            alt=""
+            width="900"
+            height="675"
+          />
           @if (a.checkedAt) {
             <p i18n="@@vuln.empty.clean">
               No open vulnerabilities in tracked branches and versions.
@@ -337,7 +342,7 @@
     }
   } @else {
     <div class="empty-state">
-      <img src="art/empty.webp" alt="" width="900" height="675" />
+      <img src="art/empty.svg" alt="" width="900" height="675" />
       <p i18n="@@vuln.empty.noData">No vulnerability data yet.</p>
       @if (isInstanceAdmin()) {
         <p>

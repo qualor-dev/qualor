@@ -15,9 +15,9 @@ import { Api, ok } from '../api/api';
 import { problemMessage } from '../api/errors';
 import { Delta } from '../charts/delta';
 import { Distribution, type DistributionItem } from '../charts/distribution';
-import { Lens } from '../charts/lens';
 import { LineChart, type ChartSeries } from '../charts/line-chart';
 import { Rating } from '../charts/rating';
+import { RingMeter, type RingStatus } from '../charts/ring';
 import { Sparkline } from '../charts/sparkline';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
@@ -70,10 +70,10 @@ const SPARK_POINTS = 12;
     GateBadge,
     Icon,
     LabelPipe,
-    Lens,
     LineChart,
     MeasurePipe,
     Rating,
+    RingMeter,
     RouterLink,
     SlicePipe,
     Sparkline,
@@ -245,18 +245,14 @@ export class BranchOverviewPage {
   protected readonly gateStatus = computed(
     () => this.gate()?.status ?? this.current()?.gateStatus ?? null,
   );
-  /** The gate's emblem: the lens in the status colour with its mark. */
-  protected readonly emblem = computed(() => {
-    switch (this.gateStatus()) {
-      case 'passed':
-        return { tone: 'ok' as const, mark: 'check' as const };
-      case 'failed':
-        return { tone: 'bad' as const, mark: 'cross' as const };
-      case 'error':
-        return { tone: 'bad' as const, mark: null };
-      default:
-        return { tone: 'accent' as const, mark: null };
-    }
+  /**
+   * The gate's emblem: the whole ring with the status in its dot; hollow when no gate applies or
+   * there is no result yet. It never pulses: the page reads the analyses once, so it cannot tell
+   * that one runs now.
+   */
+  protected readonly emblemStatus = computed<RingStatus>(() => {
+    const status = this.gateStatus();
+    return status === 'passed' || status === 'failed' || status === 'error' ? status : 'none';
   });
   private readonly byMetric = computed(
     () =>

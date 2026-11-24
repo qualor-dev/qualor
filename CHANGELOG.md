@@ -10,6 +10,12 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 - A new Qualor icon: a ring that reads as Q, with a dot set into it. It replaces the magnifier in
   the browser tab, the header, the sign-in page and the email header.
+- The coverage meters and the quality gate's emblem are now the Qualor ring. Coverage fills the
+  ring clockwise; with no data the ring stays empty and its dot hollow. The gate's dot is green when
+  the gate passed, red when it failed and amber on an error.
+- New illustrations in the same style on the sign-in, server-unavailable and not-found pages and in
+  empty lists. A filter that matches nothing has its own picture. On wide screens a project's
+  header shows the mark in its corner, in place of the halftone picture.
 
 ## [0.16.0] - 2026-11-19
 

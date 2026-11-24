@@ -10,11 +10,10 @@
   >
     <div class="setup-panel" id="setup-panel" [hidden]="!expanded()">
       <div class="setup-head">
-        <q-lens
+        <q-ring
           [value]="v.value"
           [size]="72"
-          [tone]="v.allSet ? 'ok' : 'accent'"
-          [mark]="v.allSet ? 'check' : null"
+          [status]="v.allSet ? 'passed' : null"
           [from]="v.from"
         />
         <div>
@@ -64,11 +63,10 @@
       aria-controls="setup-panel"
       (click)="toggle()"
     >
-      <q-lens
+      <q-ring
         [value]="v.value"
         [size]="phone() ? 26 : 34"
-        [tone]="v.allSet ? 'ok' : 'accent'"
-        [mark]="v.allSet ? 'check' : null"
+        [status]="v.allSet ? 'passed' : null"
         [from]="v.from"
       />
       <span class="launch-text" aria-hidden="true"
