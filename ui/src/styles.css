@@ -2426,7 +2426,7 @@ input.switch[type='checkbox']:focus-visible {
  * Shared page parts (spec §5): stat lists, KPI strips, a segmented switch, chips and rule lists,
  * first used by the project overview.
  */
-/* New code: the coverage lens and four figures. */
+/* New code: the coverage ring and four figures. */
 .new-code {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

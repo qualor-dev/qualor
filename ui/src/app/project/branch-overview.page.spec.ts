@@ -190,6 +190,8 @@ describe('BranchOverviewPage', () => {
   }
 
   const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim();
+  const emblemDot = (root: HTMLElement) =>
+    root.querySelector('.gate-word-row q-ring .ring-dot')?.getAttribute('class');
 
   it('shows the gate verdict with its conditions, the KPIs and the charts', async () => {
     const { root } = await render();
@@ -197,6 +199,8 @@ describe('BranchOverviewPage', () => {
     expect(TestBed.inject(CurrentProject).shownBranch()).toBeNull();
     expect(text(root.querySelector('#gate-heading'))).toBe('Quality gate Qualor way');
     expect(text(root.querySelector('.gate-word'))).toBe('Failed');
+    // The emblem: the whole ring with the status in its dot.
+    expect(emblemDot(root)).toBe('ring-dot failed');
     const gate = root.querySelector('[aria-labelledby="gate-heading"]');
     expect([...(gate?.querySelectorAll('tbody td') ?? [])].map(text)).toEqual([
       'Issues on new code is greater than 0',
@@ -385,6 +389,8 @@ describe('BranchOverviewPage', () => {
     expect(store.shownBranch()?.mrTitle).toBe('Refund <b>limits</b>');
     expect(root.querySelector('.branch-context')).toBeNull();
     expect(root.textContent).toContain('This branch has no analysis yet.');
+    // No gate yet: a hollow dot.
+    expect(emblemDot(root)).toBe('ring-dot none');
     expect(root.querySelector('[role="alert"]')).toBeNull();
     expect(server.requests.filter((r) => r.path.startsWith('/api/v0/analyses'))).toHaveLength(0);
     expect(root.querySelector('q-line-chart svg')?.getAttribute('aria-label')).toBe(
@@ -440,6 +446,7 @@ describe('BranchOverviewPage', () => {
     expect(text(root.querySelector('.gate-explanation'))).toBe(
       'No quality gate applies to this project, so nothing was checked.',
     );
+    expect(emblemDot(root)).toBe('ring-dot none');
 
     server.on('GET', `/api/v0/projects/${PROJECT}`, {
       body: projectWithMain({ gateStatus: 'error' }),
@@ -451,6 +458,7 @@ describe('BranchOverviewPage', () => {
     expect(text(root.querySelector('.gate-explanation'))).toBe(
       'The gate could not be evaluated, so it does not pass. The warnings below say why.',
     );
+    expect(emblemDot(root)).toBe('ring-dot error');
     expect(text(root.querySelector('#gate-warnings + ul li'))).toContain('GIT_DEPTH: 0');
   });
 

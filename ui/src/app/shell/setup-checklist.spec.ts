@@ -344,6 +344,12 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       const { fixture, root } = await render();
       expect(panel(root)?.hidden).toBe(false);
       expect(region(root)?.classList).toContain('all-set');
+      // The whole ring, its dot the passed green, in the panel and on the launcher.
+      const dots = [...root.querySelectorAll('q-ring .ring-dot')];
+      expect(dots.map((d) => d.getAttribute('class'))).toEqual([
+        'ring-dot passed',
+        'ring-dot passed',
+      ]);
       expect(text(root.querySelector('.setup-count'))).toBe('All set');
       expect(text(root.querySelector('.setup-note'))).toBe(
         'Every step is done. Add more repositories from Projects at any time.',
@@ -404,20 +410,23 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       const added = row(root, 'Add repositories');
       expect(added.classList).toContain('just-done');
       expect(row(root, 'Connect GitHub').classList).not.toContain('just-done');
-      expect(root.querySelectorAll('.setup-head .lens-dots .new').length).toBeGreaterThan(0);
+      // The ring lights the step's share: three new dots of fifteen in the panel, and the
+      // launcher's solid ring grows.
+      expect(root.querySelectorAll('.setup-head q-ring .new')).toHaveLength(3);
+      expect(root.querySelectorAll('.setup-launcher q-ring .grow')).toHaveLength(1);
       expect(text(root.querySelector('[aria-live="polite"]'))).toBe('Add repositories: done');
       expect(saved(ORG_ID)).toMatchObject({ seen: ['connect', 'repositories'] });
 
       await new Promise((resolve) => setTimeout(resolve, REVEAL_MS + 50));
       await settle(fixture);
       expect(added.classList).not.toContain('just-done');
-      expect(root.querySelectorAll('.lens-dots .new')).toHaveLength(0);
+      expect(root.querySelectorAll('q-ring .new, q-ring .grow')).toHaveLength(0);
       fixture.destroy();
 
       // Seen: the next page shows it done without the reveal.
       const next = await render();
       expect(row(next.root, 'Add repositories').classList).not.toContain('just-done');
-      expect(next.root.querySelectorAll('.lens-dots .new')).toHaveLength(0);
+      expect(next.root.querySelectorAll('q-ring .new, q-ring .grow')).toHaveLength(0);
     });
 
     it('does not play the first time this browser sees the checklist', async () => {
@@ -445,7 +454,7 @@ describe('SetupChecklist (onboarding, "The checklist (UI)")', () => {
       localStorage.setItem(setupChecklistKey(ORG_ID), JSON.stringify({ seen: ['connect'] }));
       const { root } = await render();
       expect(root.querySelectorAll('li.just-done')).toHaveLength(0);
-      expect(root.querySelectorAll('.lens-dots .new')).toHaveLength(0);
+      expect(root.querySelectorAll('q-ring .new, q-ring .grow')).toHaveLength(0);
       expect(row(root, 'Add repositories').classList).toContain('done');
       expect(text(root.querySelector('[aria-live="polite"]'))).toBe('Add repositories: done');
     });

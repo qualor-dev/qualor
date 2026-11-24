@@ -54,7 +54,7 @@
       <div class="kpi" data-kpi="coverage">
         <span class="kpi-label" i18n="@@projects.summary.coverage">Average coverage</span>
         <div class="kpi-main">
-          <q-lens [value]="summary().coverage" [size]="64" />
+          <q-ring [value]="summary().coverage" [size]="64" />
           <span class="kpi-value">{{ summary().coverage | measure: 'coverage' }}</span>
         </div>
       </div>

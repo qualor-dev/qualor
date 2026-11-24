@@ -1,0 +1,69 @@
+<svg
+  [attr.width]="size()"
+  [attr.height]="size()"
+  [attr.viewBox]="viewBox()"
+  aria-hidden="true"
+  focusable="false"
+>
+  @if (tone() === 'running') {
+    <defs>
+      <radialGradient [attr.id]="ids.glow">
+        <stop class="glow-stop" offset="0.556" stop-opacity="0.3" />
+        <stop class="glow-stop" offset="1" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <circle
+      class="ring-glow"
+      [attr.cx]="g().dot.x"
+      [attr.cy]="g().dot.y"
+      [attr.r]="g().glowR"
+      [attr.fill]="ids.glowFill"
+    />
+  }
+  @if (g().style === 'dotted') {
+    <g class="ring-track">
+      @for (dot of unlit(); track $index) {
+        <circle [attr.cx]="dot.x" [attr.cy]="dot.y" [attr.r]="g().unlitR" />
+      }
+    </g>
+    <g class="ring-fill">
+      @for (dot of lit(); track $index) {
+        <circle
+          [attr.cx]="dot.x"
+          [attr.cy]="dot.y"
+          [attr.r]="g().litR"
+          [class.new]="dot.delay !== null"
+          [style.animation-delay.ms]="dot.delay"
+        />
+      }
+    </g>
+  } @else {
+    <path [class.ring-track]="!full()" [class.ring-fill]="full()" [attr.d]="g().ring" />
+    @if (grow(); as arc) {
+      <clipPath [attr.id]="ids.clip">
+        <path [attr.d]="g().ring" />
+      </clipPath>
+      <path
+        class="grow"
+        pathLength="1"
+        [attr.d]="arc.d"
+        [attr.stroke-width]="arc.width"
+        [style.--start]="arc.start"
+        [attr.clip-path]="ids.clipUrl"
+      />
+    } @else if (g().part; as part) {
+      <path class="ring-fill" [attr.d]="part" />
+    }
+  }
+  @if (tone() === 'running') {
+    <circle class="ring-aura" [attr.cx]="g().dot.x" [attr.cy]="g().dot.y" [attr.r]="g().auraR" />
+  }
+  <circle
+    class="ring-dot"
+    [class]="tone()"
+    [attr.cx]="g().dot.x"
+    [attr.cy]="g().dot.y"
+    [attr.r]="hollow() ? g().hollowR : g().dot.r"
+    [attr.stroke-width]="hollow() ? g().hollow : null"
+  />
+</svg>

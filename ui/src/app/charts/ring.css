@@ -1,0 +1,112 @@
+/*
+ * The ring's inks: the light surfaces' by default, the dark scheme's below. A host on another
+ * surface sets its own (the setup checklist, on ink, takes the dark ones in both schemes). The
+ * running dot's glow shows on dark surfaces only.
+ */
+:host {
+  --ring-fill: var(--ink);
+  --ring-track: #9cb4d8;
+  --ring-brand: var(--cobalt);
+  --ring-ok: var(--ok);
+  --ring-bad: var(--bad);
+  --ring-warn: var(--warn);
+  --ring-glow: 0;
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :host {
+    --ring-fill: #dce8fa;
+    --ring-track: #35598e;
+    --ring-brand: var(--cobalt-bright);
+    --ring-glow: 1;
+  }
+}
+/* The running dot's pulse grows past the box. */
+svg {
+  overflow: visible;
+}
+.ring-track {
+  fill: var(--ring-track);
+}
+.ring-fill {
+  fill: var(--ring-fill);
+}
+.ring-dot {
+  fill: var(--ring-brand);
+}
+.ring-dot.passed {
+  fill: var(--ring-ok);
+}
+.ring-dot.failed {
+  fill: var(--ring-bad);
+}
+.ring-dot.error {
+  fill: var(--ring-warn);
+}
+/* Hollow: no gate, in the ring's ink; no data, in the brand blue. */
+.ring-dot.none,
+.ring-dot.empty {
+  fill: none;
+  stroke: var(--ring-fill);
+}
+.ring-dot.empty {
+  stroke: var(--ring-brand);
+}
+.glow-stop {
+  stop-color: var(--ring-brand);
+}
+.ring-glow {
+  opacity: var(--ring-glow);
+}
+/* Running: a ring around the dot grows and fades, again and again. */
+@keyframes pulse {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.ring-aura {
+  fill: none;
+  stroke: var(--ring-brand);
+  stroke-width: 1.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse 1.8s ease-out infinite;
+}
+/* The reveal: the new dots light in order, clockwise; the solid fill grows on from its old end. */
+@keyframes light {
+  from {
+    fill: var(--ring-track);
+    transform: scale(0.85);
+  }
+}
+@keyframes grow {
+  from {
+    stroke-dashoffset: var(--start);
+  }
+}
+.new {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: light 200ms ease-out both;
+}
+.grow {
+  fill: none;
+  stroke: var(--ring-fill);
+  stroke-dasharray: 1;
+  animation: grow 480ms cubic-bezier(0.3, 0.7, 0.2, 1) both;
+}
+/* Reduced motion: the pulse stands still at full strength, and a reveal shows its end at once. */
+@media (prefers-reduced-motion: reduce) {
+  .ring-aura,
+  .new,
+  .grow {
+    animation: none;
+  }
+}
