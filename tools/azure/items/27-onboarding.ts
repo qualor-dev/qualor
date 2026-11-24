@@ -785,8 +785,8 @@ async function deleteRef(
   repoId: string,
   name: string,
   client: AzureClient = ctx.bot,
-): Promise<void> {
-  await deleteRefWith(
+): Promise<boolean> {
+  return deleteRefWith(
     {
       head: () => headOf(ctx, repoId, name),
       remove: (oldObjectId) =>
@@ -813,7 +813,7 @@ async function deleteSetupBranch(
   ctx: ProbeContext,
   repoId: string,
   notes: string[],
-): Promise<void> {
+): Promise<boolean> {
   const words: string[] = [];
   for (const [who, client] of [
     ['the probe', ctx.bot],
@@ -821,9 +821,9 @@ async function deleteSetupBranch(
   ] as const) {
     if (!client) continue;
     try {
-      await deleteRef(ctx, repoId, SETUP_REF, client);
+      const deleted = await deleteRef(ctx, repoId, SETUP_REF, client);
       if (words.length > 0) notes.push(`${SETUP_BRANCH} deleted by ${who} (${words.join('; ')})`);
-      return;
+      return deleted;
     } catch (err) {
       const word = refusal(err);
       if (word === null) throw err;
@@ -833,6 +833,7 @@ async function deleteSetupBranch(
   notes.push(
     `${SETUP_BRANCH} of an earlier run could not be deleted (${words.join('; ')}); the run goes on and the setup reuses the branch`,
   );
+  return false;
 }
 
 /**
@@ -916,12 +917,17 @@ async function clearEarlierRun(ctx: ProbeContext, repoId: string, notes: string[
     ...(await listRefs('heads/')),
     ...(await listRefs(TMP_PREFIX.slice('refs/'.length))),
   ]);
+  // Only the refs this run deleted count: a setup branch that stays, or a ref already gone, does not.
+  let deleted = 0;
   for (const r of stale) {
-    if (r.name === SETUP_REF) await deleteSetupBranch(ctx, repoId, notes);
-    else await deleteRef(ctx, repoId, r.name);
+    const gone =
+      r.name === SETUP_REF
+        ? await deleteSetupBranch(ctx, repoId, notes)
+        : await deleteRef(ctx, repoId, r.name);
+    if (gone) deleted++;
   }
   notes.push(
-    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retired.length ? ` (${retired.join(', ')})` : ''}, ${stale.length} ref(s) deleted`,
+    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retired.length ? ` (${retired.join(', ')})` : ''}, ${deleted} ref(s) deleted`,
   );
   if (defs.others.length > 0) {
     notes.push(

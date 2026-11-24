@@ -673,15 +673,15 @@ describe('deleteRefWith', () => {
     };
   };
 
-  it('a ref already gone is done: no delete is sent', async () => {
+  it('a ref already gone is done: no delete is sent, and it says nothing was deleted', async () => {
     const t = opsOf([undefined], []);
-    await deleteRefWith(t.ops, NAME);
+    expect(await deleteRefWith(t.ops, NAME)).toBe(false);
     expect(t.sent).toEqual([]);
   });
 
-  it('deletes by the head read right before', async () => {
+  it('deletes by the head read right before, and says it deleted', async () => {
     const t = opsOf(['aaa'], [update(true, 'succeeded')]);
-    await deleteRefWith(t.ops, NAME);
+    expect(await deleteRefWith(t.ops, NAME)).toBe(true);
     expect(t.sent).toEqual(['aaa']);
   });
 
@@ -693,7 +693,7 @@ describe('deleteRefWith', () => {
 
   it('a ref gone between the stale answer and the second read is done', async () => {
     const t = opsOf(['aaa', undefined], [update(false, 'staleOldObjectId')]);
-    await deleteRefWith(t.ops, NAME);
+    expect(await deleteRefWith(t.ops, NAME)).toBe(false);
     expect(t.sent).toEqual(['aaa']);
   });
 
@@ -721,7 +721,7 @@ describe('deleteRefWith', () => {
     expect(t.reads()).toBe(1);
   });
 
-  it('an answer that is not 2xx is a CallError, an unreadable one says so', async () => {
+  it('an answer that is not 2xx is a CallError, an unreadable one says unknown', async () => {
     const refused = await deleteRefWith(
       opsOf(['aaa'], [answer(403, { message: 'no' })]).ops,
       NAME,
@@ -731,7 +731,7 @@ describe('deleteRefWith', () => {
     const odd = await deleteRefWith(opsOf(['aaa'], [answer(200, { nope: 1 })]).ops, NAME).catch(
       (e: unknown) => e,
     );
-    expect((odd as Error).message).toBe(`delete ${NAME}: unreadable`);
+    expect((odd as Error).message).toBe(`delete ${NAME}: unknown`);
   });
 
   it('reads the first update of a refs answer', () => {
@@ -741,9 +741,20 @@ describe('deleteRefWith', () => {
     });
     expect(refUpdateOf({ value: [{ success: false }] })).toEqual({
       success: false,
-      updateStatus: 'unreadable',
+      updateStatus: 'unknown',
     });
-    expect(refUpdateOf({ value: [] })).toEqual({ success: false, updateStatus: 'unreadable' });
-    expect(refUpdateOf(null)).toEqual({ success: false, updateStatus: 'unreadable' });
+    expect(refUpdateOf({ value: [] })).toEqual({ success: false, updateStatus: 'unknown' });
+    expect(refUpdateOf(null)).toEqual({ success: false, updateStatus: 'unknown' });
+  });
+
+  it('passes on a word only: anything else, or a word over 40 letters, is unknown', () => {
+    const of = (updateStatus: string) =>
+      refUpdateOf({ value: [{ success: false, updateStatus }] }).updateStatus;
+    expect(of('forcePushRequired')).toBe('forcePushRequired');
+    expect(of('a'.repeat(40))).toBe('a'.repeat(40));
+    expect(of('a'.repeat(41))).toBe('unknown');
+    expect(of('rejected: see https://example.invalid')).toBe('unknown');
+    expect(of('two words')).toBe('unknown');
+    expect(of('')).toBe('unknown');
   });
 });

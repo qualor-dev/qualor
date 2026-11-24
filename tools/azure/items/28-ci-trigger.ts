@@ -7,6 +7,7 @@ import {
   answerOf,
   createdNumber,
   deleteBranch,
+  type Cleanup,
   ok,
   pushFiles,
   repoInfo,
@@ -94,6 +95,22 @@ export function describeFire(
   return fired
     ? `${scenario}: fired yes, reason ${fired.reason ?? 'unknown'}, first seen ${fired.seconds} s after the push`
     : `${scenario}: fired no (nothing in ${waitedSeconds} s after the push)`;
+}
+
+/** The probe branches of a run, one per pushing scenario (S5 pushes S1's again). */
+export const probeBranchRefs = (stamp: string): string[] =>
+  ['s1', 's2', 's3', 's4'].map((s) => `refs/heads/probe/28-${s}-${stamp}`);
+
+/**
+ * One clean-up step per branch: a delete that fails (it throws on a refusal) leaves the other
+ * branches to their own steps, and every failure is reported.
+ */
+export function addBranchCleanups(
+  cleanup: Cleanup,
+  refs: readonly string[],
+  remove: (ref: string) => Promise<void>,
+): void {
+  for (const ref of refs) cleanup.add(`delete branch ${ref}`, () => remove(ref));
 }
 
 type Outcome = { scenario: string; fired: boolean; text: string; defId: number };
@@ -293,11 +310,9 @@ export const item = {
       const out = await watch('S5 second push at 15 minutes', first.value.defId, p.at, []);
       facts.push(out.text);
     }
-    // The probe branches go at clean-up; make sure a failed push did not leave one.
-    ctx.cleanup.add('delete the probe branches', async () => {
-      for (const s of ['s1', 's2', 's3', 's4'])
-        await deleteBranch(rctx, `refs/heads/probe/28-${s}-${stamp}`);
-    });
+    // The probe branches go at clean-up, one step each (a refused delete leaves the others to
+    // theirs); make sure a failed push did not leave one.
+    addBranchCleanups(ctx.cleanup, probeBranchRefs(stamp), (ref) => deleteBranch(rctx, ref));
     const all = outs.every((o) => o !== undefined);
     return result(ctx, all ? 'yes' : 'partly', facts.join('\n'));
   },

@@ -813,11 +813,21 @@ const RefUpdateAnswerSchema = z.object({
   value: z.array(z.object({ success: z.boolean(), updateStatus: z.string().optional() }).loose()),
 });
 
-/** The first update of a `POST refs` answer: whether it succeeded, and Azure DevOps's word for it. */
+/** An `updateStatus` as Azure DevOps words it (`forcePushRequired`): letters only, bounded. */
+const UPDATE_WORD = /^[A-Za-z]{1,40}$/;
+
+/**
+ * The first update of a `POST refs` answer: whether it succeeded, and Azure DevOps's word for it.
+ * Only a word passes into messages; anything else, or none, is `unknown`.
+ */
 export function refUpdateOf(json: unknown): { success: boolean; updateStatus: string } {
   const parsed = RefUpdateAnswerSchema.safeParse(json);
   const first = parsed.success ? parsed.data.value[0] : undefined;
-  return { success: first?.success === true, updateStatus: first?.updateStatus ?? 'unreadable' };
+  const word = first?.updateStatus;
+  return {
+    success: first?.success === true,
+    updateStatus: word !== undefined && UPDATE_WORD.test(word) ? word : 'unknown',
+  };
 }
 
 /** A ref update Azure DevOps answered 2xx but refused; `updateStatus` is its word for why. */
@@ -842,13 +852,14 @@ export type RefDeleteOps = {
  * Deletes a ref by its head read right before the delete; a ref already gone is done. A stale old
  * id (the ref moved in between) is read again and tried once more. Any other refusal throws a
  * {@link RefUpdateError} with Azure DevOps's `updateStatus` word and nothing else of the answer.
+ * True when this call deleted it, false when it was already gone.
  */
-export async function deleteRefWith(ops: RefDeleteOps, name: string): Promise<void> {
+export async function deleteRefWith(ops: RefDeleteOps, name: string): Promise<boolean> {
   for (let attempt = 1; ; attempt++) {
     const head = await ops.head();
-    if (!head) return;
+    if (!head) return false;
     const update = refUpdateOf(ok(await ops.remove(head), `delete ${name}`).json);
-    if (update.success) return;
+    if (update.success) return true;
     if (update.updateStatus !== 'staleOldObjectId' || attempt >= 2) {
       throw new RefUpdateError(`delete ${name}: ${update.updateStatus}`, update.updateStatus);
     }
