@@ -57,12 +57,22 @@ const MAX_PIN_TARGETS = 5;
  * Ruling T10d: the whole body, at most, in UTF-8 bytes, cut at whole lines with its last sentence
  * kept. GitHub takes 65 536 characters in a pull request's body; GitLab takes more. Azure DevOps
  * takes 4 000 characters in a pull request's description (probe item 22f), and 4 000 bytes are
- * never more characters than that (Azure sub-plan 6, ruling 6).
+ * never more characters than that (Azure sub-plan 6, ruling 6), with each line break counted
+ * twice ({@link LINE_BREAK_BYTES}).
  */
 export const MAX_BODY_BYTES: Readonly<Record<ScmProvider, number>> = Object.freeze({
   gitlab: 60_000,
   github: 60_000,
   azure: 4_000,
+});
+/**
+ * What one `\n` of a body counts towards {@link MAX_BODY_BYTES}: two on Azure DevOps, so the
+ * description stays within its limit even where a line break is stored as CRLF (ledger ruling).
+ */
+const LINE_BREAK_BYTES: Readonly<Record<ScmProvider, 1 | 2>> = Object.freeze({
+  gitlab: 1,
+  github: 1,
+  azure: 2,
 });
 /** A version as a title or a body shows it, at most. */
 const VERSION_CHARS = 64;
@@ -311,15 +321,21 @@ function qualorLines(url: string | null): string[] {
 }
 
 /**
- * Ruling T10d: the parts, separated by blank lines, within `maxBytes` with `last` after them: cut
- * at whole lines (no code span or table row is cut open), and a hard break left last by the cut
- * taken off, as no line follows it.
+ * Ruling T10d: the parts, separated by blank lines, within `maxBytes` with `last` after them, each
+ * line break counted as `lineBreak`: cut at whole lines (no code span or table row is cut open),
+ * and a hard break left last by the cut taken off, as no line follows it. `last` holds no line
+ * break; the blank line before it is two.
  */
-function bounded(parts: readonly string[][], last: string, maxBytes: number): string {
+function bounded(
+  parts: readonly string[][],
+  last: string,
+  bound: { maxBytes: number; lineBreak: 1 | 2 },
+): string {
   const lines = parts
     .filter((part) => part.length > 0)
     .flatMap((part, i) => (i === 0 ? part : ['', ...part]));
-  const head = linesWithinBytes(lines, maxBytes - Buffer.byteLength(last) - 2).trimEnd();
+  const room = bound.maxBytes - Buffer.byteLength(last) - 2 * bound.lineBreak;
+  const head = linesWithinBytes(lines, room, bound.lineBreak).trimEnd();
   const kept = head.endsWith('\\') ? head.slice(0, -1) : head;
   return kept === '' ? last : `${kept}\n\n${last}`;
 }
@@ -330,7 +346,7 @@ function bounded(parts: readonly string[][], last: string, maxBytes: number): st
  * per target, each lockfile direct or transitive, the lockfiles' new entries, a major version
  * warning, the link to the project's Vulnerabilities tab, and the sentence that says how Qualor
  * keeps the MR ("PR" on GitHub and Azure DevOps), which always stays. At most the provider's
- * {@link MAX_BODY_BYTES} in all.
+ * {@link MAX_BODY_BYTES} in all, its line breaks counted as {@link LINE_BREAK_BYTES} says.
  */
 export function fixBody(input: FixBodyInput): string {
   const targets = uniqueTargets(input.targets);
@@ -345,6 +361,6 @@ export function fixBody(input: FixBodyInput): string {
       qualorLines(input.vulnerabilitiesUrl),
     ],
     `Qualor keeps this ${changeWord(input.provider)} current and closes it when the vulnerability is gone. Push to this branch to take it over.`,
-    MAX_BODY_BYTES[input.provider],
+    { maxBytes: MAX_BODY_BYTES[input.provider], lineBreak: LINE_BREAK_BYTES[input.provider] },
   );
 }

@@ -42,6 +42,8 @@ const REFUSED_REF_UPDATE = {
   status: 200,
   body: { value: [{ success: false, updateStatus: 'rejectedByPolicy' }], count: 1 },
 };
+/** A description's size where Azure DevOps stores its line breaks as CRLF. */
+const crlfBytes = (text: string) => Buffer.byteLength(text.replaceAll('\n', '\r\n'));
 
 /** A repository of the fake, mapped to a Qualor project with fix pull requests on and qf-a vulnerable. */
 interface Repo {
@@ -446,8 +448,9 @@ describe('the fix commit and close jobs on Azure DevOps (Azure sub-plan 6; 0.16 
 
     const [pr] = fake.pullRequests(repo.id);
     const description = pr!.description;
-    expect(Buffer.byteLength(description)).toBeLessThanOrEqual(4_000);
-    expect(Buffer.byteLength(description)).toBeGreaterThan(3_000);
+    // Within 4 000 even with CRLF line breaks: UTF-8 bytes plus one per line break.
+    expect(crlfBytes(description)).toBeLessThanOrEqual(4_000);
+    expect(crlfBytes(description)).toBeGreaterThan(3_000);
     expect(description.endsWith(`\n\n${LAST}`)).toBe(true);
     const table = description.split('\n').filter((line) => line.startsWith('|'));
     expect(table.length).toBeGreaterThan(2);
@@ -461,7 +464,7 @@ describe('the fix commit and close jobs on Azure DevOps (Azure sub-plan 6; 0.16 
     fake.clearRequests();
     await runFixJobs();
     const [patch] = bodiesOf<{ description: string }>('PATCH', `pullrequests/${pr!.id}`);
-    expect(Buffer.byteLength(patch!.description)).toBeLessThanOrEqual(4_000);
+    expect(crlfBytes(patch!.description)).toBeLessThanOrEqual(4_000);
     expect(patch!.description.endsWith(`\n\n${LAST}`)).toBe(true);
     expect(await row(fixId)).toMatchObject({ state: 'open', failure: null });
   });
@@ -535,21 +538,72 @@ describe('the fix commit and close jobs on Azure DevOps (Azure sub-plan 6; 0.16 
   });
 
   it('cancel when Azure refuses the delete keeps the branch (FW4)', async () => {
-    const repo = await freshRepo();
-    const fixId = await openFix(repo);
-    const { mrNumber, headSha } = await row(fixId);
-    await cancel(fixId);
-    fake.inject('POST', /\/refs$/, REFUSED_REF_UPDATE);
-    const { lines, logger } = capture();
-    deps = azureFixDeps(h, logger);
-    await runFixJobs();
+    // A refusal in a 200 answer (`success: false`, a branch policy) and an HTTP 403 (a missing
+    // permission): both are for good, so the branch is kept and the fix stays cancelled.
+    const forbidden = { status: 403, body: { message: 'TF401027: You need the permission.' } };
+    for (const refusal of [REFUSED_REF_UPDATE, forbidden]) {
+      const repo = await freshRepo();
+      const fixId = await openFix(repo);
+      const { mrNumber, headSha } = await row(fixId);
+      await cancel(fixId);
+      fake.inject('POST', /\/refs$/, refusal);
+      const { lines, logger } = capture();
+      deps = azureFixDeps(h, logger);
+      await runFixJobs();
 
-    expect(fake.pullRequest(repo.id, mrNumber!).status).toBe('abandoned');
-    expect(headOf(repo)).toBe(headSha);
-    expect(await row(fixId)).toMatchObject({ state: 'cancelled', failure: null });
-    const kept = lines.filter(
-      ([level, , message]) => level === 'warn' && /branch is kept/.test(String(message)),
-    );
-    expect(kept).toHaveLength(1);
+      expect(fake.pullRequest(repo.id, mrNumber!).status, String(refusal.status)).toBe('abandoned');
+      expect(headOf(repo)).toBe(headSha);
+      expect(await row(fixId)).toMatchObject({ state: 'cancelled', failure: null });
+      expect(await queuedJob(fixId)).toEqual([]);
+      const kept = lines.filter(
+        ([level, , message]) => level === 'warn' && /branch is kept/.test(String(message)),
+      );
+      expect(kept).toHaveLength(1);
+      expect(JSON.stringify(lines)).not.toContain('TF401027');
+    }
+  });
+
+  it('a create whose answer was lost: the retry adopts the pull request by its branch head (ledger ruling)', async () => {
+    const repo = await freshRepo();
+    const fixId = await accepted(repo);
+    // Azure DevOps makes the pull request, but its answer never arrives (a 503 instead). The pull
+    // request has no `lastMergeSourceCommit` yet: Azure has not merged it.
+    fake.inject('POST', /\/pullrequests$/, {
+      status: 503,
+      before: async () => {
+        const sent = JSON.parse(fake.requests.at(-1)!.body) as {
+          sourceRefName: string;
+          targetRefName: string;
+          title: string;
+          description: string;
+        };
+        fake.addPullRequest(repo.id, { ...sent, headSha: null, mergeStatus: null });
+      },
+    });
+    await runFixJobs();
+    const [made, ...none] = fake.pullRequests(repo.id);
+    expect(none).toEqual([]);
+    expect(made!.headSha).toBeNull();
+    expect(await row(fixId)).toMatchObject({
+      state: 'committing',
+      mrNumber: null,
+      headSha: headOf(repo),
+    });
+
+    // The retry finds it by its branch: its head is the branch's, Qualor's commit, so it is adopted
+    // and updated, never opened twice (Azure DevOps would refuse a second, TF401179).
+    fake.clearRequests();
+    await runFixJobs();
+    expect(fake.pullRequests(repo.id)).toHaveLength(1);
+    expect(writes()).not.toContain('POST pullrequests');
+    expect(writes()).toContain(`PATCH pullrequests/${made!.id}`);
+    expect(fake.pullRequest(repo.id, made!.id).headSha).toBeNull();
+    expect(await row(fixId)).toMatchObject({
+      state: 'open',
+      mrNumber: made!.id,
+      mrUrl: `${fake.url}/Payments/_git/${repo.name}/pullrequest/${made!.id}`,
+      headSha: headOf(repo),
+      failure: null,
+    });
   });
 });

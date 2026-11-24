@@ -511,7 +511,7 @@ describe('fixBody: a bounded body (ruling T10d)', () => {
     expect(body).not.toContain('\\\n\n');
   });
 
-  it('keeps an Azure DevOps description within 4 000 bytes, cut at whole lines, its sentence last (ruling 6)', () => {
+  it('keeps an Azure DevOps description within 4 000 bytes, each line break counted twice, cut at whole lines, its sentence last (ruling 6)', () => {
     const vulnerabilities = Array.from({ length: 50 }, (_, i) => ({
       id: `CVE-2026-${10_000 + i}`,
       severity: 'high' as const,
@@ -519,10 +519,13 @@ describe('fixBody: a bounded body (ruling T10d)', () => {
       url: `https://advisories.example/${i}`,
     }));
     const azure = fixBody({ ...base, provider: 'azure', vulnerabilities });
+    /** Azure's measure: UTF-8 bytes plus one per `\n` (the bytes with CRLF line breaks). */
+    const measure = (body: string) => Buffer.byteLength(body) + (body.match(/\n/g)?.length ?? 0);
+    expect(measure(azure)).toBe(Buffer.byteLength(azure.replaceAll('\n', '\r\n')));
+    expect(measure(azure)).toBeLessThanOrEqual(MAX_BODY_BYTES.azure);
+    expect(measure(azure)).toBeGreaterThan(MAX_BODY_BYTES.azure - 300);
     // Bytes, not characters: the titles' two-byte letters count twice, so the description has
     // fewer characters than Azure DevOps takes (4 000).
-    expect(Buffer.byteLength(azure)).toBeLessThanOrEqual(MAX_BODY_BYTES.azure);
-    expect(Buffer.byteLength(azure)).toBeGreaterThan(MAX_BODY_BYTES.azure - 300);
     expect(azure.length).toBeLessThan(Buffer.byteLength(azure) - 1_000);
     expect(azure.endsWith(`\n\n${LAST.replace('this MR', 'this PR')}`)).toBe(true);
     expectInert(azure);
@@ -536,5 +539,27 @@ describe('fixBody: a bounded body (ruling T10d)', () => {
       expect(rowsOf(fixBody({ ...base, provider, vulnerabilities }))).toHaveLength(50);
     }
     expect(MAX_BODY_BYTES).toEqual({ gitlab: 60_000, github: 60_000, azure: 4_000 });
+
+    // Many short lines: their line breaks take more room than one line's slack, so counting each
+    // once would pass 4 000 by Azure's measure.
+    const short = fixBody({
+      ...base,
+      provider: 'azure',
+      vulnerabilities: Array.from({ length: 50 }, (_, i) => ({
+        id: `CVE-2026-${10_000 + i}`,
+        severity: 'low' as const,
+        title: null,
+        url: null,
+      })),
+      targets: Array.from({ length: 40 }, (_, i) => ({
+        installed: `1.0.${i}`,
+        target: `1.1.${i}`,
+        lockfile: `p${i}/package-lock.json`,
+      })),
+    });
+    expect(short.split('\n').length).toBeGreaterThan(80);
+    expect(measure(short)).toBeLessThanOrEqual(MAX_BODY_BYTES.azure);
+    expect(measure(short)).toBeGreaterThan(MAX_BODY_BYTES.azure - 100);
+    expect(short.endsWith(`\n\n${LAST.replace('this MR', 'this PR')}`)).toBe(true);
   });
 });

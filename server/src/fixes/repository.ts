@@ -371,7 +371,11 @@ function azureWrites(
       const found = (await client.pullRequestsFrom(repositoryId, branch, mainBranch)).find(
         (pull) => !pull.fork,
       );
-      return found === undefined ? null : azureChange(found);
+      if (found === undefined) return null;
+      // Ledger ruling: `lastMergeSourceCommit` lags, and is null until Azure DevOps has merged
+      // once, so a pull request whose create answer was lost would never be adopted (and a second
+      // create is refused, TF401179). Its source branch is this branch: its head is the PR's head.
+      return { ...azureChange(found), headSha: await branchHead(branch) };
     },
     readChange: async (number) => azureChange(await client.pullRequest(repositoryId, number)),
     openChange: async ({ branch, title, body }) => {

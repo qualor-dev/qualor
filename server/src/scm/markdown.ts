@@ -412,13 +412,18 @@ export function plainProse(text: string, bounds: ProseBounds): string {
 
 /**
  * The longest run of whole lines, from the first, that fits in `maxBytes` of UTF-8 when joined
- * with `\n`. A line is never cut, so a code span is never left open.
+ * with `\n`, each `\n` counted as `lineBreakBytes` (2: a provider that may store it as CRLF). A
+ * line is never cut, so a code span is never left open.
  */
-export function linesWithinBytes(lines: readonly string[], maxBytes: number): string {
+export function linesWithinBytes(
+  lines: readonly string[],
+  maxBytes: number,
+  lineBreakBytes: 1 | 2 = 1,
+): string {
   const kept: string[] = [];
   let bytes = 0;
   for (const line of lines) {
-    const size = Buffer.byteLength(line, 'utf8') + (kept.length > 0 ? 1 : 0);
+    const size = Buffer.byteLength(line, 'utf8') + (kept.length > 0 ? lineBreakBytes : 0);
     if (bytes + size > maxBytes) break;
     kept.push(line);
     bytes += size;
