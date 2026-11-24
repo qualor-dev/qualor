@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { AZURE_PIPELINES_ENV } from '../../../../../../cli/src/config/ci';
 import { EXIT } from '../../../../../../cli/src/errors';
 import {
+  parseCommand,
   planRun,
+  PROBLEM_COMMAND,
   PROBLEM_PLATFORM,
   PROBLEM_SERVER,
   STEP_LABEL,
@@ -453,5 +455,24 @@ describe('planRun: qualor fix', () => {
     expect(stepFailure('fix', 'spawn docker ENOENT')).toBe(
       'Qualor fix failed: spawn docker ENOENT',
     );
+  });
+});
+
+describe('parseCommand', () => {
+  it('reads scan and fix, and scan when the input is unset or empty', () => {
+    expect(parseCommand('scan')).toBe('scan');
+    expect(parseCommand('fix')).toBe('fix');
+    expect(parseCommand(' fix ')).toBe('fix');
+    expect(parseCommand(undefined)).toBe('scan');
+    expect(parseCommand('')).toBe('scan');
+  });
+
+  it('refuses any other value with a fixed text, and never scans', () => {
+    for (const value of ['Fix', 'SCAN', 'fixes', 'scan fix', '${{ parameters.cmd }}']) {
+      expect(parseCommand(value), value).toEqual({
+        problem: 'The command input must be scan or fix.',
+      });
+    }
+    expect(PROBLEM_COMMAND).toBe('The command input must be scan or fix.');
   });
 });

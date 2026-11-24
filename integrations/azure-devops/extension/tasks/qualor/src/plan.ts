@@ -65,7 +65,18 @@ export const PROBLEM_PLATFORM = 'Qualor@0 runs on Linux agents with Docker.';
 export const PROBLEM_SERVER = 'Set the pipeline variables QUALOR_URL and QUALOR_TOKEN (a secret).';
 export const PROBLEM_FIX_DOTNET =
   'The fix command does not use the .NET scanner: switch dotnet off.';
+export const PROBLEM_COMMAND = 'The command input must be scan or fix.';
 export const PROBLEM_BUILD = 'Set dotnetBuild, the command that builds the solution.';
+
+/**
+ * The `command` input: unset or empty is `scan`. YAML pipelines do not enforce the pick list, so
+ * any other value than `scan` or `fix` (case-sensitive, after trimming) is a problem, not a scan.
+ */
+export function parseCommand(raw: string | undefined): 'scan' | 'fix' | { problem: string } {
+  const value = (raw ?? '').trim();
+  if (value === '' || value === 'scan') return 'scan';
+  return value === 'fix' ? 'fix' : { problem: PROBLEM_COMMAND };
+}
 
 /** In the container: the sources, the scanner's HOME and the vulnerability database cache. */
 const SOURCES = '/src';

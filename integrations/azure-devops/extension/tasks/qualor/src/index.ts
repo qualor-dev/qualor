@@ -8,6 +8,7 @@ import * as tl from 'azure-pipelines-task-lib/task';
 import { splitArguments } from './args';
 import { headCheckout } from './head';
 import {
+  parseCommand,
   planRun,
   STEP_LABEL,
   stepFailure,
@@ -95,9 +96,11 @@ async function run(): Promise<string | null> {
   const qualorToken = secretVariable('QUALOR_TOKEN');
   const sourcesDir = tl.getVariable('Build.SourcesDirectory') || process.cwd();
   const tempDir = tl.getVariable('Agent.TempDirectory') || os.tmpdir();
+  const command = parseCommand(tl.getInput('command', false));
+  if (typeof command === 'object') return command.problem;
   const plan = planRun(
     {
-      command: tl.getInput('command', false) === 'fix' ? 'fix' : 'scan',
+      command,
       dotnet: tl.getBoolInput('dotnet', false),
       dotnetBuild: tl.getInput('dotnetBuild', false) ?? '',
       imageTag: tl.getInput('imageTag', false) ?? '',
@@ -123,7 +126,7 @@ async function run(): Promise<string | null> {
   mkdirSync(path.join(tempDir, 'qualor-home'), { recursive: true });
 
   // A fix run is on the main branch: there is no pull request head to check out.
-  if (plan.steps[0]?.name !== 'fix') {
+  if (command === 'scan') {
     const head = await headCheckout(git(sourcesDir), process.env);
     if ('problem' in head) return head.problem;
     if (head.checkedOut !== null)
