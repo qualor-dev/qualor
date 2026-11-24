@@ -37261,7 +37261,7 @@
     },
     "/api/v0/ai-requests/{id}/post": {
       "post": {
-        "summary": "Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change): 202 with the post queued",
+        "summary": "Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change, an Azure DevOps suggestion): 202 with the post queued",
         "tags": [
           "ai"
         ],

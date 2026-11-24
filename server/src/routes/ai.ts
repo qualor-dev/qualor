@@ -130,7 +130,7 @@ export const aiRoutes: FastifyPluginAsyncZod<{
       schema: {
         tags: ['ai'],
         summary:
-          'Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change): 202 with the post queued',
+          'Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change, an Azure DevOps suggestion): 202 with the post queued',
         params: idParams,
         body: z.strictObject({}),
         response: { 202: aiRequestSchema },

@@ -15829,7 +15829,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change): 202 with the post queued */
+        /** Post a fix suggestion to its merge request (a GitLab suggestion, a GitHub suggested change, an Azure DevOps suggestion): 202 with the post queued */
         post: {
             parameters: {
                 query?: never;

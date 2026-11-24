@@ -29,6 +29,18 @@ import { gitlabClientFor } from '../scm/connections';
 import { readScmContext } from '../scm/context';
 import { BUSY_DEFER_SECONDS, type DecorationDeps } from '../scm/decorate';
 import { issueUrl, linkOn, loadDecoration, type Loaded } from '../scm/decoration-data';
+import { MAX_AZURE_CHANGE_PAGES } from '../scm/azure/threads';
+import { changeOf, azureAddedLines } from '../scm/azure/added-lines';
+import {
+  AZURE_PR_ID,
+  AzureError,
+  machineMadeComment,
+  sameAzureIdentity,
+  type AzureDevOpsClient,
+} from '../scm/azure/client';
+import { azureClientFor } from '../scm/azure/connections';
+import { iterationOf } from '../scm/azure/decorate';
+import { azureWebBase } from '../scm/azure/url';
 import { GITHUB_PR_NUMBER, type GitHubClient } from '../scm/github/client';
 import { githubClientFor } from '../scm/github/connections';
 import { MAX_FILE_PAGES } from '../scm/github/decorate';
@@ -55,7 +67,7 @@ import {
 const CHANGE_NUMBER: Record<ScmProvider, RegExp> = {
   gitlab: GITLAB_MR_IID,
   github: GITHUB_PR_NUMBER,
-  azure: /[^\s\S]/, // azure-pending(6): an Azure DevOps pull request's number (this matches nothing)
+  azure: AZURE_PR_ID,
 };
 
 /** llm.md §8.2: posting a fix suggestion is a job of its own, run by the `scm` worker. */
@@ -182,9 +194,8 @@ async function postRefusal(
   switch (connection.provider) {
     case 'gitlab':
     case 'github':
+    case 'azure':
       break;
-    case 'azure': // azure-pending(6): fix suggestions posted on Azure DevOps (refused as unmapped)
-      return { refusal: 'not_mapped' };
     default:
       return assertNever(connection.provider, 'provider');
   }
@@ -205,6 +216,10 @@ async function postRefusal(
     case 'github':
       // The suggestion lands on the pull request's head, so the analysis must have checked it out.
       if (stored.context.github?.checkout !== 'head') return { refusal: 'no_scm_context' };
+      break;
+    case 'azure':
+      // As on GitHub: the thread lands on the pull request's head.
+      if (stored.context.azure?.checkout !== 'head') return { refusal: 'no_scm_context' };
       break;
     case 'gitlab':
       break;
@@ -310,11 +325,10 @@ interface Target {
 const failed = (reason: PostFailureReason): Outcome => ({ kind: 'failed', reason });
 
 /**
- * llm.md §8.3: every line `startLine..endLine` is an added line of the file's diff, and its text
+ * llm.md §8.3: every line `startLine..endLine` is an added line of the file (`added`: line number to text), and its text
  * there is the line the model was shown, character for character.
  */
-function placement(diff: string, fix: FixedResult): Outcome | null {
-  const added = addedLineTexts(diff);
+function placement(added: ReadonlyMap<number, string>, fix: FixedResult): Outcome | null {
   for (let line = fix.startLine; line <= fix.endLine; line++) {
     if (!added.has(line)) return failed('not_on_diff');
   }
@@ -442,7 +456,7 @@ async function postToGitLab(client: GitLabClient, t: Target): Promise<Outcome> {
   const diffs = await client.mergeRequestDiffs(ref, iid, MAX_DIFF_PAGES);
   const diff = diffs.items.find((d) => d.new_path === t.path && !d.deleted_file);
   if (!diff) return failed('not_on_diff');
-  const misplaced = placement(diff.diff, t.fix);
+  const misplaced = placement(addedLineTexts(diff.diff), t.fix);
   if (misplaced) return misplaced;
   const created = await client.createDiscussion(ref, iid, t.body, {
     baseSha: refs.base_sha,
@@ -493,7 +507,7 @@ async function postToGitHub(
   const files = await client.pullRequestFiles(number, MAX_FILE_PAGES);
   const file = files.items.find((f) => f.filename === t.path && f.status !== 'removed');
   if (file?.patch === undefined) return failed('not_on_diff');
-  const misplaced = placement(file.patch, t.fix);
+  const misplaced = placement(addedLineTexts(file.patch), t.fix);
   if (misplaced) return misplaced;
   const created = await client.createReviewComment(number, {
     body: t.body,
@@ -504,6 +518,78 @@ async function postToGitHub(
   });
   if (created === 'position_rejected') return failed('position_rejected');
   return { kind: 'posted', url: commentUrl(created.html_url) };
+}
+
+/**
+ * As on GitLab and GitHub, on Azure DevOps: the thread found by its marker (posted already: a
+ * retry, or an outcome that was lost) whatever else changed, else the pull request active at the
+ * analysed head, the lines among the analysed iteration's added ones and unchanged, then one thread
+ * selecting the whole lines `startLine..endLine` (a suggestion there replaces them exactly; an
+ * empty one deletes them, probe item 23).
+ */
+async function postToAzure(client: AzureDevOpsClient, t: Target): Promise<Outcome> {
+  const { connection, project, branch, revision, analysis } = t.loaded;
+  const repositoryId = project.scmProjectRef ?? '';
+  const stored = readScmContext(analysis.scmContext);
+  const azure = stored.kind === 'ok' ? stored.context.azure : undefined;
+  // Fail closed: the pipeline's repository must be the mapped one; only a checkout of the head has
+  // the pull request's lines.
+  if (azure?.repositoryId?.toLowerCase() !== repositoryId.toLowerCase()) return failed('refused');
+  if (azure.checkout !== 'head') return failed('not_possible');
+  const prId = Number(branch.name);
+  const me = await client.connectionData();
+  const pull = await client.pullRequest(repositoryId, prId);
+  const threadUrl = (id: number) =>
+    linkOn(`${pull.webUrl}?discussionId=${id}`, azureWebBase(connection.baseUrl));
+  for (const thread of await client.threads(repositoryId, prId)) {
+    const first = thread.comments[0];
+    if (
+      first !== undefined &&
+      !first.isDeleted &&
+      !machineMadeComment(first.commentType) &&
+      sameAzureIdentity(first.authorId, me.id) &&
+      firstLineOf(first.content) === t.marker
+    ) {
+      return { kind: 'posted', url: threadUrl(thread.id) };
+    }
+  }
+  if (pull.status !== 'active') return failed('closed');
+  if (pull.headSha?.toLowerCase() !== revision.toLowerCase()) return failed('not_head');
+  const iteration = iterationOf(await client.iterations(repositoryId, prId), revision);
+  if (iteration === null) return failed('not_head');
+  const listed = await client.iterationChanges(
+    repositoryId,
+    prId,
+    iteration.id,
+    MAX_AZURE_CHANGE_PAGES,
+  );
+  if (!listed.complete) return failed('not_possible');
+  if (changeOf(listed.changes, t.path) === null) return failed('not_on_diff');
+  const added = (
+    await azureAddedLines(client, repositoryId, iteration, listed.changes, [t.path])
+  ).get(t.path);
+  if (added === undefined) return failed('not_possible');
+  const misplaced = placement(added, t.fix);
+  if (misplaced) return misplaced;
+  try {
+    const created = await client.createThread(repositoryId, prId, {
+      content: t.body,
+      status: 'active',
+      anchor: {
+        filePath: t.path,
+        startLine: t.fix.startLine,
+        endLine: t.fix.endLine,
+        endLineLength: (added.get(t.fix.endLine) ?? '').length,
+      },
+    });
+    return { kind: 'posted', url: threadUrl(created.id) };
+  } catch (err) {
+    // A position Azure DevOps will not place is a 400 on the thread, never a failure of the SCM.
+    if (err instanceof AzureError && err.kind === 'refused' && err.status === 400) {
+      return failed('position_rejected');
+    }
+    throw err;
+  }
 }
 
 /**
@@ -524,8 +610,11 @@ function posterFor(deps: DecorationDeps, t: Target): (() => Promise<Outcome>) | 
       if ('problem' in found) return null;
       return () => postToGitLab(found.client, t);
     }
-    case 'azure': // azure-pending(6): the post to an Azure DevOps pull request
-      return null;
+    case 'azure': {
+      const found = azureClientFor(connection, deps.scm, deps.runtime);
+      if ('problem' in found) return null;
+      return () => postToAzure(found.client, t);
+    }
     default:
       return assertNever(connection.provider, 'provider');
   }

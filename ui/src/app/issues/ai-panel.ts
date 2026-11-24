@@ -47,10 +47,10 @@ export interface AiIssue {
   status: string;
 }
 
-/** The merge request (GitLab) or pull request (GitHub) a fix would be posted to. */
+/** The merge request (GitLab) or pull request (GitHub, Azure DevOps) a fix would be posted to. */
 export interface PostTarget {
   kind: 'merge_request' | 'pull_request';
-  /** `!42` on GitLab, `#42` on GitHub. */
+  /** `!42` on GitLab and Azure DevOps, `#42` on GitHub. */
   reference: string;
   title: string | null;
 }
@@ -72,12 +72,11 @@ export function postTarget(branch: Branch, provider: ScmProvider | null = null):
 function target(provider: ScmProvider, branch: Branch): PostTarget | null {
   switch (provider) {
     case 'github':
-    case 'gitlab': {
+    case 'gitlab':
+    case 'azure': {
       const { kind, prefix } = POST_TARGETS[provider];
       return { kind, reference: `${prefix}${branch.name}`, title: branch.mrTitle };
     }
-    case 'azure': // azure-pending(6): posting a fix to an Azure DevOps pull request
-      return null;
     default:
       return assertNever(provider, 'provider');
   }
@@ -99,7 +98,7 @@ const POST_TARGETS: Record<
     prefix: '!',
   },
   azure: {
-    pattern: /[^\s\S]/, // azure-pending(6): an Azure DevOps pull request's address (this matches nothing)
+    pattern: /^https?:\/\/[^/]+\/.+\/_git\/[^/]+\/pullrequest\/\d+\/?$/,
     kind: 'pull_request',
     prefix: '!',
   },

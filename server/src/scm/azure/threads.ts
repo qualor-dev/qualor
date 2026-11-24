@@ -21,20 +21,21 @@ import {
   postsAiThread,
   type InlineReconciled,
 } from '../inline';
-import { addedLines } from '../line-diff';
 import { isFullSha, markerOf, notedFixes } from '../markdown';
 import { ScmError } from '../provider';
 import { AI_THREAD_SEVERITIES } from '../../review/rules';
 import { fixedNote, inlineBody, reopenedNote, resolvedNote } from '../render';
+import { azureAddedLines } from './added-lines';
 import {
   azureThreadOpen,
   machineMadeComment as machineMade,
   sameAzureIdentity as sameId,
-  type AzureChange,
   type AzureDevOpsClient,
   type AzureIteration,
   type AzureThread,
 } from './client';
+
+export { MAX_AZURE_DIFF_FILES } from './added-lines';
 
 /**
  * Ruling P2: at most this many threads are resolved, reopened or given a lost reopened comment by
@@ -42,8 +43,6 @@ import {
  * one comment: two requests.
  */
 export const MAX_AZURE_THREAD_UPDATES = 100;
-/** Files whose two versions one job reads to find the added lines: the rest are unplaced. */
-export const MAX_AZURE_DIFF_FILES = 40;
 /** Pages of the analysed iteration's changes one job reads (100 files each). */
 export const MAX_AZURE_CHANGE_PAGES = 10;
 /**
@@ -313,46 +312,6 @@ async function applyFixedNotes(
   }
 }
 
-/** The change that holds `path`, unless the file was deleted. */
-const changeOf = (changes: readonly AzureChange[], path: string): AzureChange | null => {
-  const change = changes.find((c) => c.path === path);
-  return change === undefined || change.changeType.toLowerCase().includes('delete') ? null : change;
-};
-
-/**
- * The added lines (line number to text) of each of `paths` that the pull request changed, at most
- * {@link MAX_AZURE_DIFF_FILES} files: the file at the head against the file at the common commit
- * (the original path of a renamed one; none for an added file). A path missing from the result has
- * no place for a comment: deleted, binary, too large or missing, not in the changes, too different
- * to diff, or beyond the bound.
- */
-async function placesOf(
-  ctx: AzureThreadsContext,
-  paths: readonly string[],
-  changes: readonly AzureChange[],
-): Promise<Map<string, ReadonlyMap<number, string>>> {
-  const places = new Map<string, ReadonlyMap<number, string>>();
-  for (const path of paths.slice(0, MAX_AZURE_DIFF_FILES)) {
-    const change = changeOf(changes, path);
-    if (change === null) continue;
-    const head = await ctx.client.fileText(ctx.repositoryId, path, ctx.analysed.sourceRefCommit);
-    if ('skipped' in head) continue;
-    let base: string | null = null;
-    if (!change.changeType.toLowerCase().includes('add')) {
-      const original = await ctx.client.fileText(
-        ctx.repositoryId,
-        change.originalPath ?? path,
-        ctx.analysed.commonRefCommit,
-      );
-      if ('skipped' in original) continue;
-      base = original.text;
-    }
-    const added = addedLines(base, head.text);
-    if (added !== null) places.set(path, added);
-  }
-  return places;
-}
-
 /** What the creations of one job made. */
 interface Creations {
   created: number;
@@ -417,7 +376,7 @@ async function createThreads(
         ...aiCreate.map((issue) => issue.path),
       ]),
     ];
-    places = await placesOf(ctx, paths, listed.changes);
+    places = await azureAddedLines(client, repositoryId, analysed, listed.changes, paths);
   } catch (err) {
     failures.add(err);
     return unlisted;

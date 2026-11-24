@@ -48,7 +48,7 @@ const NO_INLINE: Inline = { commented: 0, unplaced: 0, skipped: null };
 const NOT_UPDATED: Inline = { commented: 0, unplaced: 0, skipped: 'failed' };
 
 /** The newest iteration (the highest id) whose source commit is `revision`, or null. */
-function iterationOf(
+export function iterationOf(
   iterations: readonly AzureIteration[],
   revision: string,
 ): AzureIteration | null {

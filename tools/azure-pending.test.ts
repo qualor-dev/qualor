@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
  * the count always says what is left. Sub-plan 9 ends with `{}`.
  */
 export const PENDING: Record<string, number> = {
-  '6': 6,
   '7': 12,
   '9': 1,
 };

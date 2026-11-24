@@ -1,12 +1,13 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { addMember, bearer, createUser, login, type Session } from '../../test/app';
+import { azureCommitId, seedAzurePullRequest } from '../../test/azure';
 import {
-  azureConnection,
-  mapToAzure,
-  recordingListener,
-  type RecordingListener,
-} from '../../test/azure-pending';
+  createFakeAzureDevOps,
+  type FakeAzureChange,
+  type FakeAzureDevOps,
+  type FakeAzurePullRequest,
+} from '../../test/fake-azure-devops';
 import { createFakeGitHub, type FakeGitHub } from '../../test/fake-github';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createFakeLlm, type FakeLlm } from '../../test/fake-llm';
@@ -22,8 +23,9 @@ import {
   runDecorations,
 } from '../../test/scm';
 import { analyses, issues, jobs, llmRequests, projects } from '../db/schema';
+import { communityLimits } from '../limits';
 import { defaultReview } from '../review/settings';
-import { markerOf } from '../scm/markdown';
+import { codeSpan, markerOf } from '../scm/markdown';
 import { parseInternalHosts } from '../scm/url';
 import { AI_FIX_QUEUE, queueFixPost } from './post';
 import { DEFAULT_AUTO_FIX, DEFAULT_BUDGETS } from './settings';
@@ -39,8 +41,9 @@ describe('posting a fix suggestion (llm.md §8)', () => {
   let llm: FakeLlm;
   let gitlab: FakeGitLab;
   let github: FakeGitHub;
-  /** Where the Azure DevOps connection points: nothing may reach it (Azure sub-plan 2, Task 2). */
-  let azure: RecordingListener;
+  let azure: FakeAzureDevOps;
+  let azureConnectionId: string;
+  let nextAzure = 1;
   let h: IngestHarness;
   let nextGitLab = 500;
   let nextRepo = 9_000;
@@ -130,16 +133,91 @@ describe('posting a fix suggestion (llm.md §8)', () => {
     return { project, gitlabId };
   }
 
+  /**
+   * An Azure DevOps pull request 7 on a repository of its own: the head holds LINES, the common
+   * commit only line 1 (so lines 2 and 3 are added), analysed at the head with an eqeqeq issue on
+   * line 2.
+   */
+  async function azureCase(
+    key: string,
+    options: {
+      files?: Record<string, string | Buffer>;
+      base?: string;
+      changes?: FakeAzureChange[];
+      checkout?: 'head' | 'other';
+      message?: string;
+    } = {},
+  ) {
+    const repository = azure.addRepository({ name: `fix${nextAzure++}`, projectName: 'Payments' });
+    const sourceCommit = azureCommitId(`${key}-head`);
+    const seeded = seedAzurePullRequest(azure, repository.id, {
+      pullRequest: { id: 7, statusPolicy: true },
+      sourceCommit,
+      files: options.files ?? { 'src/a.ts': `${LINES.join('\n')}\n` },
+      ...(options.changes ? { changes: options.changes } : {}),
+    });
+    azure.addFile(repository.id, seeded.baseCommit, 'src/a.ts', options.base ?? 'const a = 1;\n');
+    const project = await h.project(key);
+    await h.ctx.db
+      .update(projects)
+      .set({ scmConnectionId: azureConnectionId, scmProjectRef: repository.id })
+      .where(eq(projects.id, project.id));
+    const report = reportWith({
+      projectKey: project.key,
+      branch: 'feature/x',
+      mergeRequest: { id: '7', targetBranch: 'main', sourceBranch: 'feature/x' },
+      revision: sourceCommit,
+      baseline: { revision: BASE, kind: 'merge_base', status: 'ok' },
+      analysisDate: new Date(Date.UTC(2026, 10, 1, 10) + 86_400_000 * day++).toISOString(),
+      engines: [engine('eslint')],
+      files: [file('src/a.ts', { lines: 3, newLines: [[2, 3]] })],
+      findings: [
+        finding({
+          ruleId: 'eqeqeq',
+          path: 'src/a.ts',
+          line: 2,
+          snippet: SNIPPET,
+          ...(options.message === undefined ? {} : { message: options.message }),
+        }),
+      ],
+    });
+    await project.ingestOk({
+      ...report,
+      scm: {
+        ...report.scm,
+        provider: 'azure',
+        azure: { repositoryId: repository.id, checkout: options.checkout ?? 'head' },
+      },
+    });
+    const pr = () => azure.pullRequest(repository.id, 7);
+    return { project, repository, sourceCommit, pr };
+  }
+  const azureFixThreads = (pr: () => FakeAzurePullRequest) =>
+    pr().threads.filter((t) => aiFix(t.comments[0]?.content ?? ''));
+  /** Changes what the analysis stored of the pipeline's Azure Repos side. */
+  async function storedAzure(projectId: string, patch: Record<string, string>): Promise<void> {
+    const [issue] = await h.ctx.db.select().from(issues).where(eq(issues.projectId, projectId));
+    const [row] = await h.ctx.db
+      .select({ scmContext: analyses.scmContext })
+      .from(analyses)
+      .where(eq(analyses.id, issue!.lastSeenAnalysisId!));
+    const context = row!.scmContext as { azure: Record<string, string> };
+    await h.ctx.db
+      .update(analyses)
+      .set({ scmContext: { ...context, azure: { ...context.azure, ...patch } } })
+      .where(eq(analyses.id, issue!.lastSeenAnalysisId!));
+  }
+
   beforeAll(async () => {
     llm = await createFakeLlm();
     gitlab = await createFakeGitLab();
     github = await createFakeGitHub();
-    azure = await recordingListener();
+    azure = await createFakeAzureDevOps({ deployment: 'server' });
     h = await createIngestHarness({
       config: {
         publicUrl: PUBLIC_URL,
         scmInternalHosts: parseInternalHosts(
-          `${new URL(gitlab.url).host},${new URL(github.url).host},${azure.host}`,
+          `${new URL(gitlab.url).host},${new URL(github.url).host},${new URL(azure.url).host}`,
         ),
         llmInternalHosts: parseInternalHosts(llm.host),
       },
@@ -147,6 +225,20 @@ describe('posting a fix suggestion (llm.md §8)', () => {
     await configureLlm(h.ctx.db, h.ctx.config.secretKey, llm, h.organizationId, {
       budgets: { ...DEFAULT_BUDGETS, perUserPerHour: 1_000 },
     });
+    const created = await h.ctx.app.inject({
+      method: 'POST',
+      url: '/api/v0/scm-connections',
+      headers: h.orgAdmin.headers,
+      payload: {
+        organizationId: h.organizationId,
+        provider: 'azure',
+        baseUrl: azure.url,
+        azureAuth: 'pat',
+        token: azure.pat,
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    azureConnectionId = (created.json() as { id: string }).id;
   });
   afterAll(async () => {
     await h.close();
@@ -414,32 +506,325 @@ describe('posting a fix suggestion (llm.md §8)', () => {
     expect(missing.statusCode).toBe(404);
   });
 
-  it('refuses a post on a project mapped to Azure DevOps as not mapped, and sends nothing (Azure sub-plan 2, Task 2)', async () => {
-    const { project } = await gitlabCase('fix-azure');
-    const { requestId } = await suggestFix(project);
-    const deps = decorationDeps(h);
-    await runDecorations(h, deps);
-    // A post queued while the project was mapped to GitLab ...
-    expect((await post(requestId)).statusCode).toBe(202);
-    const connection = await azureConnection(h.ctx.db, {
-      organizationId: h.organizationId,
-      baseUrl: `${azure.url}/DefaultCollection`,
-      secretKey: h.ctx.config.secretKey,
+  describe('on Azure DevOps (Azure sub-plan 6)', () => {
+    const postedUrl = async (requestId: string) =>
+      ((await request(requestId)).post as { url?: string }).url;
+    const twoLines = JSON.stringify({
+      status: 'fixed',
+      startLine: 2,
+      endLine: 3,
+      replacement: ['if (a === 1) {', '}', 'export {};'],
+      explanation: 'Use strict equality.',
     });
-    await mapToAzure(h.ctx.db, project.id, connection.id);
-    // ... ends without a comment once it is mapped to Azure DevOps ...
-    await runDecorations(h, deps);
-    expect((await request(requestId)).post).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
+
+    it('posts an Azure suggestion thread only after Post, once, on the analysed head', async () => {
+      const { project, pr } = await azureCase('fix-az');
+      const { issueId, requestId } = await suggestFix(project);
+      const deps = decorationDeps(h);
+      await runDecorations(h, deps);
+      expect(azureFixThreads(pr)).toHaveLength(0);
+      const res = await post(requestId);
+      expect(res.statusCode, res.body).toBe(202);
+      await runDecorations(h, deps);
+      const [thread] = azureFixThreads(pr);
+      expect(azureFixThreads(pr)).toHaveLength(1);
+      const body = thread!.comments[0]!.content;
+      expect(thread).toMatchObject({ status: 'active', filePath: 'src/a.ts', line: 2 });
+      expect(body.split('\n')[0]).toBe(`<!-- qualor:ai-fix ${issueId} ${requestId} -->`);
+      expect(body).toContain('**AI-generated fix suggestion**');
+      expect(body).toContain('```suggestion\nif (a === 1) {}\n```');
+      expect(body).toContain(
+        `[View the issue in Qualor](${PUBLIC_URL}/projects/${project.id}/issues/${issueId})`,
+      );
+      expect(thread!.threadContext).toEqual({
+        filePath: '/src/a.ts',
+        rightFileStart: { line: 2, offset: 1 },
+        rightFileEnd: { line: 2, offset: 'if (a == 1) {}'.length + 1 },
+      });
+      // The link keeps to the connection's host: the pull request's address and the thread.
+      const url = await postedUrl(requestId);
+      expect(url).toMatch(/\/pullrequest\/7\?discussionId=\d+$/);
+      expect(url).toBe(`${(url ?? '').split('?')[0]}?discussionId=${thread!.id}`);
+      expect(url!.startsWith(azure.url)).toBe(true);
+      expect((await request(requestId)).post).toMatchObject({ status: 'posted' });
+      const again = await post(requestId);
+      expect([again.statusCode, again.json()]).toMatchObject([
+        409,
+        { code: 'AI_POST_NOT_POSSIBLE', detail: 'already_posted' },
+      ]);
+      // A lost outcome (the row reset to failed) posts nothing twice: the marker is found.
+      await h.ctx.db
+        .update(llmRequests)
+        .set({ post: { status: 'failed', reason: 'unreachable', at: new Date().toISOString() } })
+        .where(eq(llmRequests.id, requestId));
+      expect((await post(requestId)).statusCode).toBe(202);
+      await runDecorations(h, deps);
+      expect(azureFixThreads(pr)).toHaveLength(1);
+      expect((await request(requestId)).post).toMatchObject({ status: 'posted', url });
+      // Also when the pull request has meanwhile closed: the lost post is found first.
+      await h.ctx.db
+        .update(llmRequests)
+        .set({ post: { status: 'failed', reason: 'unreachable', at: new Date().toISOString() } })
+        .where(eq(llmRequests.id, requestId));
+      expect((await post(requestId)).statusCode).toBe(202);
+      pr().status = 'abandoned';
+      await runDecorations(h, deps);
+      expect(azureFixThreads(pr)).toHaveLength(1);
+      expect((await request(requestId)).post).toMatchObject({ status: 'posted', url });
+      const logs = h.ctx.logs.join('\n');
+      expect(logs).toContain('AI fix suggestion posted');
+      expect(logs).not.toContain(azure.pat);
+      expect(logs).not.toContain('if (a === 1)');
     });
-    // ... and is refused as for a project that is not mapped.
-    const again = await post(requestId);
-    expect([again.statusCode, again.json()]).toMatchObject([
-      409,
-      { code: 'AI_POST_NOT_POSSIBLE', detail: 'not_mapped' },
-    ]);
-    expect(azure.requests).toEqual([]);
+
+    it('selects whole lines: rightFileStart {2, 1}, rightFileEnd {3, length of line 3 + 1}', async () => {
+      const { project, pr } = await azureCase('fix-az-range');
+      llm.say(twoLines);
+      const { requestId } = await suggestFix(project);
+      await post(requestId);
+      await runDecorations(h, decorationDeps(h));
+      const [thread] = azureFixThreads(pr);
+      expect(thread!.comments[0]!.content).toContain(
+        '```suggestion\nif (a === 1) {\n}\nexport {};\n```',
+      );
+      expect(thread!.threadContext).toEqual({
+        filePath: '/src/a.ts',
+        rightFileStart: { line: 2, offset: 1 },
+        rightFileEnd: { line: 3, offset: 'export {};'.length + 1 },
+      });
+      // A deletion is an empty fence over the whole lines.
+      const gone = await azureCase('fix-az-delete');
+      llm.say(
+        JSON.stringify({
+          status: 'fixed',
+          startLine: 2,
+          endLine: 2,
+          replacement: [],
+          explanation: 'The line is not needed.',
+        }),
+      );
+      const deletion = await suggestFix(gone.project);
+      await post(deletion.requestId);
+      await runDecorations(h, decorationDeps(h));
+      const [removal] = azureFixThreads(gone.pr);
+      expect(removal!.comments[0]!.content).toContain('```suggestion\n```');
+      expect(removal!.threadContext).toMatchObject({
+        rightFileStart: { line: 2, offset: 1 },
+        rightFileEnd: { line: 2, offset: 'if (a == 1) {}'.length + 1 },
+      });
+    });
+
+    it('does not post to an abandoned or completed PR, a moved head, lines that are not added, or changed text', async () => {
+      const outcomes: [string, string][] = [];
+      const run = async (
+        name: string,
+        reason: string,
+        options: Parameters<typeof azureCase>[1] = {},
+        change: (c: Awaited<ReturnType<typeof azureCase>>) => void = () => undefined,
+      ) => {
+        const c = await azureCase(`fix-az-${name}`, options);
+        const { requestId } = await suggestFix(c.project);
+        await runDecorations(h, decorationDeps(h));
+        change(c);
+        expect((await post(requestId)).statusCode).toBe(202);
+        await runDecorations(h, decorationDeps(h));
+        expect((await request(requestId)).post, name).toMatchObject({ status: 'failed', reason });
+        expect(azureFixThreads(c.pr), name).toHaveLength(0);
+        outcomes.push([name, reason]);
+        return c;
+      };
+      await run('abandoned', 'closed', {}, (c) => (c.pr().status = 'abandoned'));
+      await run('completed', 'closed', {}, (c) => azure.completePullRequest(c.repository.id, 7));
+      await run('moved', 'not_head', {}, (c) => (c.pr().headSha = 'c'.repeat(40)));
+      await run('no-iteration', 'not_head', {}, (c) => c.pr().iterations.splice(0));
+      await run('context', 'not_on_diff', { base: 'const a = 1;\nif (a == 1) {}\n' });
+      await run('not-changed', 'not_on_diff', { changes: [{ path: 'src/b.ts' }] });
+      await run('text', 'changed', {
+        files: { 'src/a.ts': 'const a = 1;\nif (a == 2) {}\nexport {};\n' },
+      });
+      await run('binary', 'not_possible', {
+        files: { 'src/a.ts': Buffer.from([0x63, 0x00, 0x01]) },
+      });
+      // The changes cannot all be listed: nothing is placed.
+      const c = await azureCase('fix-az-pages');
+      const { requestId } = await suggestFix(c.project);
+      await runDecorations(h, decorationDeps(h));
+      azure.inject(
+        'GET',
+        /\/iterations\/1\/changes$/,
+        ...Array.from({ length: 10 }, (_, i) => ({
+          status: 200,
+          body: { changeEntries: [], nextSkip: (i + 1) * 100 },
+        })),
+      );
+      await post(requestId);
+      await runDecorations(h, decorationDeps(h));
+      expect((await request(requestId)).post).toMatchObject({
+        status: 'failed',
+        reason: 'not_possible',
+      });
+      expect(azureFixThreads(c.pr)).toHaveLength(0);
+      expect(outcomes).toHaveLength(8);
+    });
+
+    it('does not post to a PR analysed at checkout other: no_scm_context at Post, not_possible in the job', async () => {
+      const other = await azureCase('fix-az-other', { checkout: 'other' });
+      const refused = await suggestFix(other.project);
+      expect((await post(refused.requestId)).json().detail).toBe('no_scm_context');
+      const { project, pr } = await azureCase('fix-az-late');
+      const { requestId } = await suggestFix(project);
+      await runDecorations(h, decorationDeps(h));
+      expect((await post(requestId)).statusCode).toBe(202);
+      await storedAzure(project.id, { checkout: 'other' });
+      await runDecorations(h, decorationDeps(h));
+      expect((await request(requestId)).post).toMatchObject({
+        status: 'failed',
+        reason: 'not_possible',
+      });
+      expect(azureFixThreads(pr)).toHaveLength(0);
+    });
+
+    it('refuses a post when the stored repository id differs', async () => {
+      const { project, pr } = await azureCase('fix-az-repo');
+      const { requestId } = await suggestFix(project);
+      await runDecorations(h, decorationDeps(h));
+      await storedAzure(project.id, { repositoryId: '0f6c1a5e-3b0d-4c39-9a51-fa6e00000001' });
+      expect((await post(requestId)).statusCode).toBe(202);
+      await runDecorations(h, decorationDeps(h));
+      expect((await request(requestId)).post).toMatchObject({
+        status: 'failed',
+        reason: 'refused',
+      });
+      expect(azureFixThreads(pr)).toHaveLength(0);
+    });
+
+    it('retries an unreachable Azure as a decoration does, and never posts twice', async () => {
+      const { project, pr } = await azureCase('fix-az-retry');
+      const { requestId } = await suggestFix(project);
+      await runDecorations(h, decorationDeps(h));
+      azure.inject('POST', /\/pullrequests\/7\/threads$/, {
+        status: 503,
+        body: { message: 'down' },
+      });
+      expect((await post(requestId)).statusCode).toBe(202);
+      await runDecorations(h, decorationDeps(h));
+      // The retry waits its backoff; the post stays queued meanwhile.
+      expect((await request(requestId)).post).toMatchObject({ status: 'queued' });
+      expect((await post(requestId)).json().detail).toBe('already_posted');
+      const [retry] = (
+        await h.ctx.db.select().from(jobs).where(eq(jobs.queue, AI_FIX_QUEUE))
+      ).filter(
+        (j) =>
+          j.status === 'queued' && (j.payload as { requestId: string }).requestId === requestId,
+      );
+      expect(retry?.payload).toEqual({ requestId, attempt: 1 });
+      await runDecorations(h, decorationDeps(h));
+      expect((await request(requestId)).post).toMatchObject({ status: 'posted' });
+      expect(azureFixThreads(pr)).toHaveLength(1);
+
+      // Every attempt failing: 6 in all, then failed `unreachable`.
+      const other = await azureCase('fix-az-down');
+      const down = await suggestFix(other.project);
+      await runDecorations(h, decorationDeps(h));
+      azure.inject(
+        'GET',
+        new RegExp(`/repositories/${other.repository.id}/pullrequests/7$`),
+        ...Array.from({ length: 6 }, () => ({ status: 502 })),
+      );
+      await post(down.requestId);
+      for (let i = 0; i < 6; i++) await runDecorations(h, decorationDeps(h));
+      expect((await request(down.requestId)).post).toMatchObject({
+        status: 'failed',
+        reason: 'unreachable',
+      });
+      expect(azureFixThreads(other.pr)).toHaveLength(0);
+    });
+
+    it('posts an automatic fix on Azure with the automatic notice', async () => {
+      const { project, pr } = await azureCase('fix-az-auto');
+      const { requestId } = await suggestFix(project);
+      const limits = communityLimits();
+      limits.llm.automaticFixSuggestions = true;
+      const on = {
+        enabled: true,
+        features: { explain: true, triage: true, fix: true },
+        excludedProjectIds: [] as string[],
+        autoFix: { ...DEFAULT_AUTO_FIX, enabled: true },
+        autoFixDisabledProjectIds: [] as string[],
+        review: defaultReview(),
+      };
+      const settingsWith = (org: typeof on) =>
+        configureLlm(h.ctx.db, h.ctx.config.secretKey, llm, h.organizationId, {
+          budgets: { ...DEFAULT_BUDGETS, perUserPerHour: 1_000 },
+          organizations: { [h.organizationId]: org },
+        });
+      try {
+        await settingsWith(on);
+        const queued = await queueFixPost(
+          h.ctx.db,
+          await request(requestId),
+          undefined,
+          undefined,
+          {
+            auto: true,
+          },
+        );
+        expect(queued.ok).toBe(true);
+        await runDecorations(h, decorationDeps(h, { limits: () => limits }));
+        const [thread] = azureFixThreads(pr);
+        expect(thread!.comments[0]!.content.split('\n')[2]).toBe(
+          "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.",
+        );
+        expect((await request(requestId)).post).toMatchObject({ status: 'posted' });
+      } finally {
+        await settingsWith({ ...on, autoFix: { ...DEFAULT_AUTO_FIX } });
+      }
+    });
+
+    it('hostile model text stays inert in the Azure thread', async () => {
+      const hostile = 'See #12, !34, @<7a1b0c3e-0000-4000-8000-000000000001>, $x$ and <!-- x -->';
+      const { project, pr } = await azureCase('fix-az-hostile', { message: hostile });
+      llm.say(
+        JSON.stringify({
+          status: 'fixed',
+          startLine: 2,
+          endLine: 2,
+          replacement: ['if (a === 1) {}'],
+          explanation: hostile,
+        }),
+      );
+      const { requestId } = await suggestFix(project);
+      await post(requestId);
+      await runDecorations(h, decorationDeps(h));
+      const lines = azureFixThreads(pr)[0]!.comments[0]!.content.split('\n');
+      const issue = lines.find((l) => l.startsWith('Issue: '))!;
+      const why = lines.find((l) => l.startsWith('Why: '))!;
+      expect(issue).toContain(codeSpan(hostile, 300));
+      expect(why).toBe(`Why: ${codeSpan(hostile, 600)}`);
+      // Outside the code spans nothing is left that Azure DevOps would turn into a link or a mention.
+      for (const line of [issue, why]) {
+        const outside = line.replace(/(`+) .*? \1/g, '');
+        expect(outside).not.toMatch(/[#!@$<]/);
+      }
+      expect(lines.slice(1).some((l) => l.startsWith('<!--'))).toBe(false);
+    });
+
+    it('does not post where Azure DevOps rejects the position (position_rejected)', async () => {
+      const { project, pr } = await azureCase('fix-az-gone');
+      const { requestId } = await suggestFix(project);
+      await runDecorations(h, decorationDeps(h));
+      azure.inject('POST', /\/pullrequests\/7\/threads$/, {
+        status: 400,
+        body: { message: 'The comment position is not valid' },
+      });
+      await post(requestId);
+      await runDecorations(h, decorationDeps(h));
+      expect((await request(requestId)).post).toMatchObject({
+        status: 'failed',
+        reason: 'position_rejected',
+      });
+      expect(azureFixThreads(pr)).toHaveLength(0);
+    });
   });
 
   it('retries an unreachable GitLab as a decoration does, and never posts twice', async () => {

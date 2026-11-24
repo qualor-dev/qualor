@@ -444,7 +444,9 @@ describe('AiPanel (llm.md §18)', () => {
     expect(
       postTarget(branch('https://gitlab.example/acme/payments/-/merge_requests/42'))?.kind,
     ).toBe('merge_request');
-    expect(postTarget(branch('https://dev.azure.com/acme/p/_git/r/pullrequest/42'))).toBeNull();
+    expect(postTarget(branch('https://dev.azure.com/acme/p/_git/r/pullrequest/42'))?.kind).toBe(
+      'pull_request',
+    );
     expect(postTarget(branch(null))).toBeNull();
     expect(postTarget(branch(null), 'gitlab')).toMatchObject({
       kind: 'merge_request',
@@ -455,14 +457,36 @@ describe('AiPanel (llm.md §18)', () => {
       reference: '#42',
     });
     expect(postTarget(branch('https://dev.azure.com/a/pullrequest/42'), 'gitlab')).toBeNull();
-    // Azure sub-plan 2, Task 2: no fix is posted to an Azure DevOps pull request yet.
-    expect(postTarget(branch(null), 'azure')).toBeNull();
+    expect(postTarget(branch(null), 'azure')).toMatchObject({
+      kind: 'pull_request',
+      reference: '!42',
+    });
+  });
+
+  it('an Azure PR branch offers to post on pull request !12', async () => {
+    const server = setup();
+    server.on('GET', '/api/v0/issues/i1/ai', { body: { explain: null, triage: null, fix: FIX } });
+    server.on('GET', '/api/v0/projects/p1/branches', {
+      body: page([
+        {
+          ...MERGE_REQUEST,
+          name: '12',
+          mrTitle: null,
+          mrUrl: 'https://dev.azure.com/acme/Payments/_git/api/pullrequest/12',
+        },
+      ]),
+    });
+    const { fixture, root } = await render();
+    button(root, 'Post to merge request').click();
+    await settle(fixture);
+    expect(root.textContent).toContain('pull request !12?');
   });
 
   it('offers Post for a merge request with no recorded URL, by the connection’s provider', async () => {
     for (const [provider, text] of [
       ['gitlab', 'merge request !42?'],
       ['github', 'pull request #42?'],
+      ['azure', 'pull request !42?'],
     ] as const) {
       TestBed.resetTestingModule();
       const server = setup();
