@@ -192,7 +192,7 @@ A project is one analysed codebase, usually one repository. A monorepo can hold 
 each with its own key and its own `sources.include`.
 
 - **Create one** in **Projects → New project**, with a key and a name. To create many at once from
-  a GitHub or GitLab connection, use **Add repositories**
+  a GitHub, GitLab or Azure DevOps connection, use **Add repositories**
   ([Quick start](./quick-start.md#fastest-path-add-repositories)). An upload never creates a
   project: the project must exist before the first scan.
 - **The key** is what the scanner reports. It defaults to the CI project path (`CI_PROJECT_PATH`,

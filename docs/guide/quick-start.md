@@ -4,8 +4,8 @@ This page takes you from nothing to a first analysis in about 15 minutes. You ne
 WSL, with Docker, Compose v2 and `openssl`. Everything runs from the `qualor/server` and
 `qualor/scanner` images on Docker Hub.
 
-The fastest path is [Add repositories](#fastest-path-add-repositories): connect GitHub or GitLab,
-tick your repositories, and merge one merge request in each. The manual path follows it, for any
+The fastest path is [Add repositories](#fastest-path-add-repositories): connect GitHub, GitLab or Azure DevOps,
+tick your repositories, and merge one merge or pull request in each. The manual path follows it, for any
 other CI system or when you want to see each step.
 
 ## 1. Start the server
@@ -43,9 +43,10 @@ The server listens on `127.0.0.1` only. To reach it from other machines, put TLS
 
 An organization admin does this in the UI. Qualor creates the projects and sets up CI for them.
 
-1. Connect GitHub ([GitHub](./github.md#3-the-github-app)) or GitLab
-   ([GitLab](./gitlab.md#3-merge-request-comments-and-commit-status)). For CI setup, also set
-   `QUALOR_PUBLIC_URL` on the server, turn on **Allow Qualor to set up CI** on a GitLab connection,
+1. Connect GitHub ([GitHub](./github.md#3-the-github-app)), GitLab
+   ([GitLab](./gitlab.md#3-merge-request-comments-and-commit-status)) or Azure DevOps
+   ([Azure DevOps](./azure-devops.md#connect)). For CI setup, also set
+   `QUALOR_PUBLIC_URL` on the server, turn on **Allow Qualor to set up CI** on a GitLab or Azure DevOps connection,
    or give a GitHub App **Contents**, **Workflows** and **Secrets** (each Read and write).
 2. Open **Projects → Add repositories**, pick the connection and tick up to 50 repositories.
    Repositories that already have a project are marked. An archived repository cannot be picked.
@@ -59,13 +60,14 @@ An organization admin does this in the UI. Qualor creates the projects and sets 
 Qualor opens a merge request only when it can edit the CI files safely. Otherwise, and when you turn
 CI setup off, it shows the snippet to add and the project token, once. Copy the token then: it is
 not shown again. What the merge requests contain, and how to undo them, is in
-[GitHub](./github.md#set-up-ci-with-a-pull-request) and
-[GitLab](./gitlab.md#set-up-ci-with-a-merge-request).
+[GitHub](./github.md#set-up-ci-with-a-pull-request),
+[GitLab](./gitlab.md#set-up-ci-with-a-merge-request) and
+[Azure DevOps](./azure-devops.md#add-repositories-and-set-up-ci).
 
 ### The setup checklist
 
-Organization admins see **Set up Qualor** in a corner of the screen. Its steps are Connect GitHub or
-GitLab, Add repositories, Get the first analysis, Turn on AI review and Invite your team. Each step
+Organization admins see **Set up Qualor** in a corner of the screen. Its steps are Connect GitHub,
+GitLab or Azure DevOps, Add repositories, Get the first analysis, Turn on AI review and Invite your team. Each step
 ticks by itself from the server's state and links to the page where you do it. Collapse the list, or
 choose **Don't show again** to hide it for good. When only a server admin can set up an AI provider,
 the AI step says so and does not count.
