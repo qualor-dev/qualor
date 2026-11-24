@@ -329,6 +329,66 @@ export function judgeClosed(
   ];
 }
 
+/** What the clean-up knows of a fix: its row as last read. */
+export type KnownFix = { id: string; state: string; branch: string; mrNumber: number | null };
+
+/** The calls the clean-up makes: the bench Qualor's (reread, cancel), then Azure DevOps's. */
+export type ClearOps = {
+  reread: () => Promise<KnownFix | undefined>;
+  cancel: (id: string) => Promise<void>;
+  /** The ids of the active pull requests from `branch` into main. */
+  activePrs: (branch: string) => Promise<number[]>;
+  isActive: (prId: number) => Promise<boolean>;
+  abandon: (prId: number) => Promise<void>;
+  deleteBranch: (branch: string) => Promise<void>;
+};
+
+const why = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Whatever a fix left. Qualor first: the fix read again and cancelled when it is in flight, so
+ * Qualor's own close path runs when it can. Then Azure DevOps, whatever Qualor answered: every
+ * active pull request from the fix's branch abandoned (and its known pull request, when it is
+ * still active), and the branch deleted, by the row last read or, when the read fails, `fix`.
+ * Each step runs even when one before it failed; the failures are thrown together at the end.
+ */
+export async function clearFixWith(ops: ClearOps, fix: KnownFix): Promise<void> {
+  const failures: string[] = [];
+  let known = fix;
+  try {
+    known = (await ops.reread()) ?? fix;
+    if (ACTIVE_STATES.includes(known.state)) await ops.cancel(known.id);
+  } catch (err) {
+    failures.push(`the bench Qualor: ${why(err)}`);
+  }
+  const ids = new Set<number>();
+  try {
+    for (const id of await ops.activePrs(known.branch)) ids.add(id);
+  } catch (err) {
+    failures.push(`the pull requests of ${known.branch}: ${why(err)}`);
+  }
+  if (known.mrNumber !== null && !ids.has(known.mrNumber)) {
+    try {
+      if (await ops.isActive(known.mrNumber)) ids.add(known.mrNumber);
+    } catch (err) {
+      failures.push(`pull request ${known.mrNumber}: ${why(err)}`);
+    }
+  }
+  for (const id of ids) {
+    try {
+      await ops.abandon(id);
+    } catch (err) {
+      failures.push(`abandon pull request ${id}: ${why(err)}`);
+    }
+  }
+  try {
+    await ops.deleteBranch(known.branch);
+  } catch (err) {
+    failures.push(`delete ${known.branch}: ${why(err)}`);
+  }
+  if (failures.length > 0) throw new Error(failures.join('; '));
+}
+
 // ---------------------------------------------------------------------------------------------
 // The fix repository (Azure DevOps)
 
@@ -529,23 +589,29 @@ async function cancelFix(api: QualorApi, id: string): Promise<void> {
   throw new Error('cancel the fix: still FIX_BUSY after a minute');
 }
 
-/**
- * Whatever a fix left: cancelled in Qualor when it is in flight, then on Azure DevOps its active
- * pull requests abandoned and its branch deleted (the close job may have done both already).
- */
-async function clearFix(
+/** {@link clearFixWith} on the bench Qualor and the fix repository. */
+function clearFix(
   api: QualorApi,
   projectId: string,
   fixCtx: ProbeContext,
   repo: Repo,
   fix: Fix,
 ): Promise<void> {
-  const now = (await fixById(api, projectId, fix.id)) ?? fix;
-  if (ACTIVE_STATES.includes(now.state)) await cancelFix(api, now.id);
-  for (const pr of await activePrsFrom(fixCtx, repo, now.branch)) {
-    await abandonPr(fixCtx, pr.pullRequestId);
-  }
-  await deleteBranch(fixCtx, `refs/heads/${now.branch}`);
+  return clearFixWith(
+    {
+      reread: () => fixById(api, projectId, fix.id),
+      cancel: (id) => cancelFix(api, id),
+      activePrs: async (branch) =>
+        (await activePrsFrom(fixCtx, repo, branch)).map((pr) => pr.pullRequestId),
+      isActive: async (id) => {
+        const res = await fixCtx.bot.request('GET', gitPath(fixCtx, repo, `/pullrequests/${id}`));
+        return res.status === 200 && (res.json as { status?: unknown } | null)?.status === 'active';
+      },
+      abandon: (id) => abandonPr(fixCtx, id),
+      deleteBranch: (branch) => deleteBranch(fixCtx, `refs/heads/${branch}`),
+    },
+    fix,
+  );
 }
 
 /** The main branch of the Qualor project; undefined before its first analysis. */
@@ -786,8 +852,10 @@ export const item: ProbeItem = {
       return finish();
     }
     const fix = shape(FixItem, requested.json, 'requested fix');
+    // The clean-up uses the row last read: once the fix is open it knows the pull request's id too.
+    let latest: Fix = fix;
     ctx.cleanup.add(`cancel the ${PACKAGE} fix, abandon its pull request, delete its branch`, () =>
-      clearFix(api, project.id, fixCtx, repo, fix),
+      clearFix(api, project.id, fixCtx, repo, latest),
     );
 
     // ---- 3. The fix pipeline, then the commit job: the fix becomes open.
@@ -806,6 +874,7 @@ export const item: ProbeItem = {
       { timeoutMs: COMMIT_WAIT_MS, intervalMs: 10_000 },
     );
     const opened = settled ?? (await fixById(api, project.id, fix.id));
+    if (opened) latest = opened;
     checks.push(
       check(
         'the fix is open (the fix pipeline uploaded, the commit job opened the pull request)',

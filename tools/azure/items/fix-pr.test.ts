@@ -6,6 +6,7 @@ import { cancelComment, fixBody, fixTitle } from '../../../server/src/fixes/body
 import type { Thr } from './19-decoration.js';
 import {
   benchFixYaml,
+  clearFixWith,
   CANCEL_TEXT,
   CLOSING_SENTENCE,
   closedThread,
@@ -24,7 +25,9 @@ import {
   seedChanges,
   seedFiles,
   versionCore,
+  type ClearOps,
   type FixPr,
+  type KnownFix,
 } from './24-fix-pr.js';
 
 const example = (file: string): string =>
@@ -268,5 +271,114 @@ describe('item 24 judges', () => {
     expect(judgeClosed(closed, [thread({ status: 4 })], undefined, SP)[1]?.pass).toBe(true);
     expect(judgeClosed(closed, [], undefined, SP)[1]?.pass).toBe(false);
     expect(judgeClosed(closed, [thread()], 'a'.repeat(40), SP)[2]?.pass).toBe(false);
+  });
+});
+
+describe('item 24 clean-up (clearFixWith)', () => {
+  const OPEN: KnownFix = { id: 'f1', state: 'open', branch: BRANCH, mrNumber: 7 };
+
+  /** Stubbed calls that log their order; a call named in `fail` throws. */
+  function stubs(
+    over: { reread?: () => KnownFix | undefined; active?: number[]; stillActive?: number[] } = {},
+    fail: string[] = [],
+  ) {
+    const calls: string[] = [];
+    const step = (name: string): void => {
+      calls.push(name);
+      if (fail.includes(name)) throw new Error(`${name} failed`);
+    };
+    const ops: ClearOps = {
+      reread: () => {
+        step('reread');
+        return Promise.resolve(over.reread ? over.reread() : OPEN);
+      },
+      cancel: (id) => Promise.resolve().then(() => step(`cancel ${id}`)),
+      activePrs: (branch) =>
+        Promise.resolve().then(() => {
+          step(`activePrs ${branch}`);
+          return over.active ?? [];
+        }),
+      isActive: (id) =>
+        Promise.resolve().then(() => {
+          step(`isActive ${id}`);
+          return (over.stillActive ?? []).includes(id);
+        }),
+      abandon: (id) => Promise.resolve().then(() => step(`abandon ${id}`)),
+      deleteBranch: (branch) => Promise.resolve().then(() => step(`deleteBranch ${branch}`)),
+    };
+    return { ops, calls };
+  }
+
+  it('cancels in Qualor first, then abandons the pull requests and deletes the branch', async () => {
+    const { ops, calls } = stubs({ active: [7] });
+    await clearFixWith(ops, OPEN);
+    expect(calls).toEqual([
+      'reread',
+      'cancel f1',
+      `activePrs ${BRANCH}`,
+      'abandon 7',
+      `deleteBranch ${BRANCH}`,
+    ]);
+  });
+
+  it('cancels nothing that has ended, and still clears Azure DevOps', async () => {
+    const { ops, calls } = stubs({ reread: () => ({ ...OPEN, state: 'cancelled' }) });
+    await clearFixWith(ops, OPEN);
+    expect(calls).toEqual([
+      'reread',
+      `activePrs ${BRANCH}`,
+      'isActive 7',
+      `deleteBranch ${BRANCH}`,
+    ]);
+  });
+
+  it('clears Azure DevOps when the cancel fails, and then throws', async () => {
+    const { ops, calls } = stubs({ active: [7, 9] }, ['cancel f1']);
+    await expect(clearFixWith(ops, OPEN)).rejects.toThrow('the bench Qualor: cancel f1 failed');
+    expect(calls).toEqual([
+      'reread',
+      'cancel f1',
+      `activePrs ${BRANCH}`,
+      'abandon 7',
+      'abandon 9',
+      `deleteBranch ${BRANCH}`,
+    ]);
+  });
+
+  it("falls back to the fix's last known branch and pull request when the re-read fails", async () => {
+    const other = 'qualor/fix/js/lodash-2';
+    const { ops, calls } = stubs({ stillActive: [11] }, ['reread']);
+    await expect(
+      clearFixWith(ops, { id: 'f2', state: 'open', branch: other, mrNumber: 11 }),
+    ).rejects.toThrow('the bench Qualor: reread failed');
+    expect(calls).toEqual([
+      'reread',
+      `activePrs ${other}`,
+      'isActive 11',
+      'abandon 11',
+      `deleteBranch ${other}`,
+    ]);
+  });
+
+  it('keeps going past a failed listing or abandon, deletes the branch, and names every failure', async () => {
+    const listing = stubs({ stillActive: [7] }, [`activePrs ${BRANCH}`]);
+    await expect(clearFixWith(listing.ops, OPEN)).rejects.toThrow(
+      `the pull requests of ${BRANCH}: activePrs ${BRANCH} failed`,
+    );
+    // The listing failed: the known pull request is still abandoned when it is active.
+    expect(listing.calls).toEqual([
+      'reread',
+      'cancel f1',
+      `activePrs ${BRANCH}`,
+      'isActive 7',
+      'abandon 7',
+      `deleteBranch ${BRANCH}`,
+    ]);
+
+    const abandon = stubs({ active: [7, 9] }, ['cancel f1', 'abandon 7']);
+    await expect(clearFixWith(abandon.ops, OPEN)).rejects.toThrow(
+      'the bench Qualor: cancel f1 failed; abandon pull request 7: abandon 7 failed',
+    );
+    expect(abandon.calls.slice(-2)).toEqual(['abandon 9', `deleteBranch ${BRANCH}`]);
   });
 });
