@@ -135,8 +135,8 @@ For Java, build first (`mvn -DskipTests package`): SpotBugs reads compiled class
 - Anything else: [Other CI systems and local scans](./other-ci.md)
 
 From then on, every merge request or pull request gets a verdict on the code it changes, and the
-pipeline fails when the gate fails. Once the GitLab, GitHub or Azure DevOps connection is set up, reviewers also
-see a summary comment and comments on the changed lines.
+pipeline fails when the gate fails. Once the GitLab, GitHub or Azure DevOps connection is set up,
+reviewers also see a summary comment and comments on the changed lines.
 
 ## What next
 

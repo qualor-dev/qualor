@@ -121,8 +121,8 @@ saving is refused and the box shows the new warning.
   Other CI systems, such as Jenkins, Bitbucket, TeamCity or a laptop, send no snapshot, even with
   `--mr` and `--mr-target`: the scanner reads the merge request, last commit, title and description
   only from these (table below).
-- **The full history**: `GIT_DEPTH: 0` on GitLab, `fetch-depth: 0` on GitHub, `fetchDepth: 0` on Azure
-  Pipelines. A shallow clone that cannot be deepened sends no snapshot.
+- **The full history**: `GIT_DEPTH: 0` on GitLab, `fetch-depth: 0` on GitHub, `fetchDepth: 0` on
+  Azure Pipelines. A shallow clone that cannot be deepened sends no snapshot.
 - **The last commit in the clone.** GitHub's default checkout is a merge commit, so the scanner
   fetches the last commit from `origin` with the checkout's credentials. On a private repository
   with `persist-credentials: false` that fails: check out the pull request's head, as the
@@ -371,11 +371,11 @@ character, no GitLab quick action. Otherwise the thread says in words how to fix
 
 ### The text
 
-The model's prose reaches GitLab, GitHub and Azure DevOps as plain text. Anything that could become a link, a
-mention, a reference or markup goes in code formatting: addresses, `@name`, `#1`, `!1`, commit
-hashes, issue keys such as `ABC-123`, file paths and HTML. Hidden and direction-reversing characters
-are removed. So the model cannot mention a person, run a GitLab quick action or add a link. Qualor's
-own labels and links are fixed text.
+The model's prose reaches GitLab, GitHub and Azure DevOps as plain text. Anything that could become
+a link, a mention, a reference or markup goes in code formatting: addresses, `@name`, `#1`, `!1`,
+commit hashes, issue keys such as `ABC-123`, file paths and HTML. Hidden and direction-reversing
+characters are removed. So the model cannot mention a person, run a GitLab quick action or add a
+link. Qualor's own labels and links are fixed text.
 
 One exception: plain words that match an issue tracker you set up can still become links to that
 tracker. Examples are `bug 12` (GitLab's EWM integration), `CU-abc` (ClickUp), `TICKET-abc` (a
@@ -401,8 +401,8 @@ custom autolink of a GitHub repository) and whatever a GitLab project's `jira_is
 
 When an issue is fixed or marked in Qualor, Qualor resolves its thread, unless a person replied in
 it. Then, for a fix, Qualor writes one note instead: "Fixed in `<sha>`". Resolving a thread on
-GitLab, GitHub or Azure DevOps only hides it. To dismiss the finding, mark the issue in Qualor or say so in a
-reply.
+GitLab, GitHub or Azure DevOps only hides it. To dismiss the finding, mark the issue in Qualor or
+say so in a reply.
 
 ## Replies and commands
 
@@ -533,11 +533,11 @@ gets the answer above.
 
 ### At once, or at the next analysis
 
-- **With a webhook**, GitLab, GitHub or Azure DevOps tells Qualor that someone commented. Qualor reads the
-  comments through the API, never trusting the webhook's text, and answers as soon as the model has
-  decided. Set it up on [GitLab](./gitlab.md#answers-to-replies-and-commands-webhook) (Comments
-  events) or [GitHub](./github.md#turn-on-the-webhook-recommended) (Issue comment and Pull request
-  review comment events, and the Issues permission).
+- **With a webhook**, GitLab, GitHub or Azure DevOps tells Qualor that someone commented. Qualor
+  reads the comments through the API, never trusting the webhook's text, and answers as soon as the
+  model has decided. Set it up on [GitLab](./gitlab.md#answers-to-replies-and-commands-webhook)
+  (Comments events) or [GitHub](./github.md#turn-on-the-webhook-recommended) (Issue comment and Pull
+  request review comment events, and the Issues permission).
 - **On Azure DevOps**, set up [service hooks](./azure-devops.md#service-hooks). Without them,
   Qualor reads the comments every 15 minutes
   ([which pull requests](./azure-devops.md#service-hooks)).

@@ -5,8 +5,9 @@ Organisations hold projects, people get roles in them, and CI uploads analyses w
 ## Organisations
 
 An organisation is a tenant: it owns its projects, quality profiles, quality gates, webhooks and
-GitLab, GitHub and Azure DevOps connections. The first start creates the organisation `default`, and most companies
-need no other. Organisations, users, projects and lines of code are unlimited in every edition.
+GitLab, GitHub and Azure DevOps connections. The first start creates the organisation `default`, and
+most companies need no other. Organisations, users, projects and lines of code are unlimited in
+every edition.
 
 An instance admin creates more in **Settings → Organizations** with **New organization**
 (`POST /api/v0/organizations`). The key, 2 to 64 lowercase letters, digits and hyphens, is what the
@@ -297,5 +298,6 @@ tokens**.
 | Scripts and automation (onboarding, reports) | a personal token with **Read**, **Write** or **Admin**, as needed |
 | `qualor import sonarqube` | a personal token with **Admin**, of an org admin |
 
-Keep `QUALOR_TOKEN` in the CI's secret store: a masked GitLab variable, a GitHub Actions secret or an Azure Pipelines secret variable.
-Never put it in `qualor.yml`: the CLI refuses a config file that has a `token` key.
+Keep `QUALOR_TOKEN` in the CI's secret store: a masked GitLab variable, a GitHub Actions secret or
+an Azure Pipelines secret variable. Never put it in `qualor.yml`: the CLI refuses a config file that
+has a `token` key.

@@ -2,8 +2,8 @@
 
 **The self-hosted SonarQube alternative: every merge request checked, with no per-line licence.**
 Quality gates, coverage and security rules on GitLab, GitHub and Azure DevOps, plus an AI reviewer
-on your own model. Open source and free for commercial use. Leaving SonarQube? Your gates, profiles and triage
-decisions come with you: see [Migrating from SonarQube](#migrating-from-sonarqube).
+on your own model. Open source and free for commercial use. Leaving SonarQube? Your gates, profiles
+and triage decisions come with you: see [Migrating from SonarQube](#migrating-from-sonarqube).
 
 [Documentation](https://qualor.dev/docs) · [Live demo](https://review.qualor.dev) ·
 [Docker Hub](https://hub.docker.com/u/qualor) ·

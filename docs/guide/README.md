@@ -1,8 +1,8 @@
 # Qualor documentation
 
 Qualor is one self-hosted server for code quality, AI code review and dependency vulnerability
-tracking. It runs in your CI and comments on GitLab merge requests, GitHub pull requests and Azure DevOps pull requests. There
-is no lines-of-code licence.
+tracking. It runs in your CI and comments on GitLab merge requests, GitHub pull requests and Azure
+DevOps pull requests. There is no lines-of-code licence.
 
 | Part | What it does | Read |
 |---|---|---|
