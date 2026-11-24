@@ -179,3 +179,86 @@ describe('the onboarding tables (migration 0019_onboarding)', () => {
     ).toBe('23503');
   });
 });
+
+describe('the Azure DevOps CI setup columns (migration 0036_azure_ci_setup)', () => {
+  let t: TestDatabase;
+  let organizationId: string;
+  let runId: string;
+
+  beforeAll(async () => {
+    t = await createTestDatabase();
+    organizationId = first(
+      await t.db.insert(organizations).values({ key: 'azci', name: 'Azure CI' }).returning(),
+    ).id;
+    runId = first(await t.db.insert(repositorySetupRuns).values({ organizationId }).returning()).id;
+  });
+  afterAll(async () => {
+    await t.close();
+  });
+
+  const item = (position: number, over: Partial<ItemInsert> = {}): ItemInsert => ({
+    runId,
+    position,
+    repositoryRef: `acme/api-${position}`,
+    repositoryName: `api-${position}`,
+    ...over,
+  });
+
+  it('defaults the Azure columns of an item and of a run to null', async () => {
+    const row = first(await t.db.insert(repositorySetupItems).values(item(0)).returning());
+    expect(row).toMatchObject({
+      azurePipelineId: null,
+      azureQueue: null,
+      azurePolicy: null,
+      azurePolicyError: null,
+    });
+    expect(first(await t.db.select().from(repositorySetupRuns)).azurePool).toBeNull();
+  });
+
+  it('stores the pipeline id, the pool name, the queue state and the policy error', async () => {
+    const row = first(
+      await t.db
+        .insert(repositorySetupItems)
+        .values(item(1, { azurePipelineId: 28, azurePolicyError: 'fixed text' }))
+        .returning(),
+    );
+    expect(row).toMatchObject({ azurePipelineId: 28, azurePolicyError: 'fixed text' });
+    const run = first(
+      await t.db
+        .insert(repositorySetupRuns)
+        .values({ organizationId, azurePool: 'Default' })
+        .returning(),
+    );
+    expect(run.azurePool).toBe('Default');
+  });
+
+  it('refuses an unknown azure_queue and accepts null and each value', async () => {
+    expect(
+      await refusal(
+        t.db.insert(repositorySetupItems).values(item(10, bad<ItemInsert>('azureQueue', 'x'))),
+      ),
+    ).toEqual(checkViolation('repository_setup_items_azure_queue_check'));
+    let position = 10;
+    for (const azureQueue of [null, 'authorized', 'open', 'manual'] as const) {
+      position += 1;
+      expect(
+        await refusal(t.db.insert(repositorySetupItems).values(item(position, { azureQueue }))),
+      ).toBeNull();
+    }
+  });
+
+  it('refuses an unknown azure_policy and accepts null and each value', async () => {
+    expect(
+      await refusal(
+        t.db.insert(repositorySetupItems).values(item(30, bad<ItemInsert>('azurePolicy', 'x'))),
+      ),
+    ).toEqual(checkViolation('repository_setup_items_azure_policy_check'));
+    let position = 30;
+    for (const azurePolicy of [null, 'pending', 'on', 'manual', 'failed'] as const) {
+      position += 1;
+      expect(
+        await refusal(t.db.insert(repositorySetupItems).values(item(position, { azurePolicy }))),
+      ).toBeNull();
+    }
+  });
+});

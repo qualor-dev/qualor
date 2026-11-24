@@ -142,6 +142,24 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     `22-pr-get`, with `mergeStatus` (`setMergeStatus`, default `succeeded`), `description` (over
  *     4000 characters is `22-pr-description-4001`) and `forkSource` for a fork. `completePullRequest`
  *     completes one (a merge the fake does not make).
+ * - The CI setup (sub-plan 7), under `/<project id>/_apis/`, from the 8-*, 17-* and 26-* recordings
+ *   of a Services organisation with the fake's own values laid over them. Each project has the queues
+ *   `Default` (pool `Default`, own agents) and, on Services, the hosted `Azure Pipelines` (open to
+ *   every pipeline); `addQueue` adds more. A path with an unknown project id is a 404.
+ *   - `distributedtask/queues` (GET, `queueName`; api-version 7.0-preview.1): `{ count, value }` of
+ *     `26-queues` entries.
+ *   - `pipelines/pipelinePermissions/queue/{id}` (GET, PATCH; 7.0-preview.1): `26-hosted-queue-permissions`
+ *     (`allPipelines` only for a queue open to all) and `8-queue-authorize-1`; a PATCH
+ *     `{ pipelines: [{ id, authorized }] }` of a definition of the project authorises or withdraws it.
+ *   - `build/definitions` (GET with `repositoryId` and `repositoryType`, POST), `build/definitions/{id}`
+ *     (GET, PUT): `26-definition-create` with the definition's values. A secret variable reads back
+ *     `{ value: null, isSecret: true }`, survives a PUT that leaves its value out and is replaced by
+ *     one that sends it (`definitions[n].secrets`); a PUT keeps the body's unknown fields. A name
+ *     the project already has is 409 (`DefinitionExistsException`, constructed).
+ *   - `policy/configurations` (GET with `repositoryId`, `refName`, `policyType`; POST): `26-policy-create`
+ *     / `26-policies-search`; only the Build policy type is known, the matchKind reads back `Exact`.
+ *   - `items?scopePath=/&recursionLevel=OneLevel&versionDescriptor.…` (GET) of a repository: the root
+ *     `/` and the commit's top-level files and folders (`26-root-items`).
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
  *   AADSTS code) for a refusal: 400, or 401 `invalid_client` for a wrong secret or assertion. It
@@ -390,6 +408,37 @@ export interface FakeAzureThreadInput {
   comments?: FakeAzureCommentInput[];
 }
 
+export interface FakeAzureQueue {
+  id: number;
+  projectId: string;
+  name: string;
+  poolId: number;
+  poolName: string;
+  hosted: boolean;
+  /** Open to every pipeline (`allPipelines.authorized`). */
+  open: boolean;
+  /** The definitions authorised one by one. */
+  pipelineIds: number[];
+}
+
+export interface FakeAzureDefinition {
+  id: number;
+  projectId: string;
+  /** The definition as GET answers it (the secrets read `null`). */
+  body: Record<string, unknown>;
+  /** The secret variables' values, which no answer shows. */
+  secrets: Record<string, string>;
+}
+
+export interface FakeAzurePolicy {
+  id: number;
+  projectId: string;
+  type: string;
+  isEnabled: boolean;
+  isBlocking: boolean;
+  settings: Record<string, unknown>;
+}
+
 export interface RecordedRequest {
   method: string;
   /** The path under the organisation or collection (`/_apis/…`), still percent-encoded. */
@@ -497,6 +546,16 @@ export interface FakeAzureDevOps {
   readonly subscriptions: readonly FakeAzureSubscription[];
   /** What Azure DevOps does to a subscription that fails (`onProbation`, `disabledBySystem`, ...). */
   setSubscriptionStatus(id: string, status: string): void;
+  /** The queues of a project (agent pools as the project uses them), created on first use. */
+  queues(projectId: string): FakeAzureQueue[];
+  addQueue(
+    projectId: string,
+    input: { name: string; poolName?: string; hosted?: boolean; open?: boolean },
+  ): FakeAzureQueue;
+  /** The build definitions of every project, in creation order. */
+  readonly definitions: readonly FakeAzureDefinition[];
+  /** The policy configurations of every project (the Build policy type). */
+  readonly policies: readonly FakeAzurePolicy[];
   /** The commit statuses posted, in order. */
   readonly commitStatuses: { repositoryId: string; sha: string; status: FakeAzureStatus }[];
   readonly requests: RecordedRequest[];
@@ -1328,6 +1387,18 @@ export async function createFakeAzureDevOps(options: {
       });
     }
 
+    if (rest === 'items' && req.method === 'GET' && query.get('scopePath') !== null) {
+      if (query.get('scopePath') !== '/' || query.get('recursionLevel') !== 'OneLevel') {
+        return bad('only the root with recursionLevel=OneLevel is listed');
+      }
+      const listed = rootItemsAnswer(
+        repository,
+        query.get('versionDescriptor.version') ?? '',
+        query.get('versionDescriptor.versionType') ?? 'commit',
+      );
+      return answerJson(listed.status, listed.body);
+    }
+
     if (rest === 'items' && req.method === 'GET') {
       const path = query.get('path') ?? '';
       const version = (query.get('versionDescriptor.version') ?? '').toLowerCase();
@@ -1783,6 +1854,391 @@ export async function createFakeAzureDevOps(options: {
     return false;
   };
 
+  // ─── The CI setup (sub-plan 7): queues, build definitions and build policies ───
+  type Json = Record<string, unknown>;
+  const BUILD_POLICY_TYPE = '0609b952-1397-4640-95ec-e00a01b2c241';
+  const JSON_PREVIEW = 'application/json; charset=utf-8; api-version=7.0-preview.1';
+  const recordedQueueList = azureShape<{ body: { value: Json[] } }>('services', '26-queues').body
+    .value;
+  const recordedQueueOf = (hosted: boolean) =>
+    recordedQueueList.find((q) => (q.pool as Json).isHosted === hosted && q.name !== 'Hosted')!;
+  const recordedQueuePermissions = azureShape<{ body: Json }>(
+    'services',
+    '26-hosted-queue-permissions',
+  ).body;
+  const recordedAuthorizedPipeline = azureShape<{ body: { pipelines: Json[] } }>(
+    'services',
+    '8-queue-authorize-1',
+  ).body.pipelines[0]!;
+  const recordedDefinition = azureShape<{ body: Json }>('services', '26-definition-create').body;
+  const recordedDefinitionList = azureShape<{ body: Json }>(
+    'services',
+    '26-definitions-search',
+  ).body;
+  const recordedPolicy = azureShape<{ body: Json }>('services', '26-policy-create').body;
+  const recordedPolicyList = azureShape<{ body: Json }>('services', '26-policies-search').body;
+  const recordedRootItems = azureShape<{ body: { value: Json[] } }>('services', '26-root-items')
+    .body.value;
+  const queueRows: FakeAzureQueue[] = [];
+  const definitionRows: FakeAzureDefinition[] = [];
+  const policyRows: FakeAzurePolicy[] = [];
+  let queueCounter = 10;
+  let poolCounter = 0;
+  let definitionCounter = 0;
+  let policyCounter = 0;
+
+  const addQueueTo = (
+    projectId: string,
+    input: { name: string; poolName?: string; hosted?: boolean; open?: boolean },
+  ): FakeAzureQueue => {
+    queueCounter += 1;
+    poolCounter += 1;
+    const hosted = input.hosted ?? false;
+    const queue: FakeAzureQueue = {
+      id: queueCounter,
+      projectId,
+      name: input.name,
+      poolId: poolCounter,
+      poolName: input.poolName ?? input.name,
+      hosted,
+      open: input.open ?? hosted,
+      pipelineIds: [],
+    };
+    queueRows.push(queue);
+    return queue;
+  };
+  const queuesOf = (projectId: string): FakeAzureQueue[] => {
+    if (!queueRows.some((q) => q.projectId === projectId)) {
+      addQueueTo(projectId, { name: 'Default' });
+      if (deployment === 'services') {
+        addQueueTo(projectId, { name: 'Azure Pipelines', hosted: true, open: true });
+      }
+    }
+    return queueRows.filter((q) => q.projectId === projectId);
+  };
+  const queueJson = (q: FakeAzureQueue): Json => {
+    const recordedQueue = recordedQueueOf(q.hosted);
+    return {
+      ...recordedQueue,
+      id: q.id,
+      projectId: q.projectId,
+      name: q.name,
+      pool: { ...(recordedQueue.pool as Json), id: q.poolId, name: q.poolName, isHosted: q.hosted },
+    };
+  };
+  const queuePermissionsJson = (q: FakeAzureQueue): Json => ({
+    resource: { type: 'queue', id: String(q.id), name: q.name },
+    ...(q.open
+      ? {
+          allPipelines: {
+            ...(recordedQueuePermissions.allPipelines as Json),
+            authorized: true,
+          },
+        }
+      : {}),
+    pipelines: q.pipelineIds.map((id) => ({
+      ...recordedAuthorizedPipeline,
+      id,
+      authorized: true,
+      authorizedOn: clock(),
+    })),
+  });
+  const projectNameOf = (projectId: string) =>
+    repositories.find((r) => r.projectId === projectId)?.projectName ?? projectId;
+
+  type Variables = Record<string, { value?: string | null; isSecret?: boolean } & Json>;
+  /** Variables as the answer shows them, and the secret values as they now stand. */
+  const variablesOf = (
+    sent: unknown,
+    secrets: Record<string, string>,
+  ): { shown: Variables; kept: Record<string, string> } => {
+    const shown: Variables = {};
+    const kept: Record<string, string> = {};
+    for (const [name, variable] of Object.entries((sent ?? {}) as Variables)) {
+      if (variable.isSecret === true) {
+        const value = typeof variable.value === 'string' ? variable.value : secrets[name];
+        if (value !== undefined) kept[name] = value;
+        shown[name] = { ...variable, value: null, isSecret: true };
+      } else {
+        shown[name] = variable;
+      }
+    }
+    return { shown, kept };
+  };
+
+  const buildRoute = (req: RecordedRequest, res: ServerResponse, version: string): boolean => {
+    const route =
+      /^\/([^/]+)\/_apis\/(distributedtask\/queues|pipelines\/pipelinePermissions\/queue\/(\d+)|build\/definitions(?:\/(\d+))?|policy\/configurations)$/.exec(
+        req.path,
+      );
+    if (!route) return false;
+    const projectId = decodeURIComponent(route[1]!).toLowerCase();
+    const kind = route[2]!.split('/')[0]!;
+    const preview = kind === 'distributedtask' || kind === 'pipelines';
+    const wanted = preview ? '7.0-preview.1' : '7.0';
+    const answerJson = (status: number, body: unknown) => {
+      send(res, status, body, { 'content-type': preview ? JSON_PREVIEW : JSON_7_0 });
+      return true;
+    };
+    const missing = (text: string, typeKey: string) => {
+      wrapped(res, 404, text, typeKey);
+      return true;
+    };
+    const bad = (text: string, typeKey = 'ArgumentException') => {
+      wrapped(res, 400, `fake Azure DevOps: ${text}`, typeKey);
+      return true;
+    };
+    if (version !== wanted) {
+      const text = `fake Azure DevOps: this route is not asked at api-version ${version}`;
+      wrapped(res, 400, text, 'VssInvalidPreviewVersionException');
+      return true;
+    }
+    if (![...projectIds.values()].includes(projectId)) {
+      return missing(
+        `TF200016: The following project does not exist: ${projectId}.`,
+        'ProjectDoesNotExistException',
+      );
+    }
+    const query = new URLSearchParams(req.query);
+    const queues = queuesOf(projectId);
+    const web = `${url}/${projectId}/_build/definition?definitionId=`;
+    const self = (id: number, revision: number) =>
+      `${url}/${projectId}/_apis/build/Definitions/${id}?revision=${revision}`;
+
+    if (kind === 'distributedtask' && req.method === 'GET') {
+      const name = query.get('queueName');
+      const value = queues.filter((q) => name === null || q.name === name).map(queueJson);
+      return answerJson(200, { count: value.length, value });
+    }
+
+    if (kind === 'pipelines') {
+      const queue = queues.find((q) => q.id === Number(route[3]));
+      if (!queue) return missing('fake Azure DevOps: no such queue', 'NotFound');
+      if (req.method === 'GET') return answerJson(200, queuePermissionsJson(queue));
+      if (req.method === 'PATCH') {
+        const changes = jsonBodyOf(req)?.pipelines;
+        if (!Array.isArray(changes) || changes.length === 0) {
+          return bad('a permission change is { pipelines: [{ id, authorized }] }');
+        }
+        for (const change of changes as Json[]) {
+          const id = Number(change.id);
+          if (!definitionRows.some((d) => d.projectId === projectId && d.id === id)) {
+            return bad(`the pipeline ${String(change.id)} does not exist`);
+          }
+          queue.pipelineIds = queue.pipelineIds.filter((p) => p !== id);
+          if (change.authorized === true) queue.pipelineIds.push(id);
+        }
+        return answerJson(200, queuePermissionsJson(queue));
+      }
+      return false;
+    }
+
+    if (kind === 'build') {
+      const id = route[4] === undefined ? null : Number(route[4]);
+      const own = definitionRows.filter((d) => d.projectId === projectId);
+      if (id === null && req.method === 'GET') {
+        const repositoryId = query.get('repositoryId')?.toLowerCase();
+        const repositoryType = query.get('repositoryType');
+        const value = own
+          .filter(
+            (d) =>
+              (repositoryId === undefined || (d.body.repository as Json).id === repositoryId) &&
+              (repositoryType === null || (d.body.repository as Json).type === repositoryType),
+          )
+          .map((d) => d.body);
+        return answerJson(200, { ...recordedDefinitionList, count: value.length, value });
+      }
+      const current = id === null ? undefined : own.find((d) => d.id === id);
+      if (id !== null && !current) {
+        return missing(`The definition ${id} does not exist.`, 'DefinitionNotFoundException');
+      }
+      if (current && req.method === 'GET') return answerJson(200, current.body);
+
+      if (req.method === 'POST' || req.method === 'PUT') {
+        const body = jsonBodyOf(req);
+        const name = body?.name;
+        const yaml = (body?.process as Json | undefined)?.yamlFilename;
+        const repoSent = body?.repository as Json | undefined;
+        const queueSent = body?.queue as Json | undefined;
+        if (!body || typeof name !== 'string' || typeof yaml !== 'string') {
+          return bad('a definition needs a name and a process with a yamlFilename');
+        }
+        const repository = repositories.find(
+          (r) => r.projectId === projectId && r.id === String(repoSent?.id).toLowerCase(),
+        );
+        if (!repository) return bad('the definition names no repository of the project');
+        const queue = queues.find((q) => q.id === Number(queueSent?.id));
+        if (!queue) return bad('the definition names no queue of the project');
+        if (own.some((d) => d.body.name === name && d.id !== id)) {
+          wrapped(
+            res,
+            409,
+            `Build definition ${name} already exists.`,
+            'DefinitionExistsException',
+          );
+          return true;
+        }
+        const { shown, kept } = variablesOf(body.variables, current?.secrets ?? {});
+        const next = id ?? (definitionCounter += 1);
+        const revision = Number(current?.body.revision ?? 0) + 1;
+        const branch =
+          typeof repoSent?.defaultBranch === 'string'
+            ? repoSent.defaultBranch
+            : (current?.body.repository as Json | undefined)?.defaultBranch;
+        const stored: Json = {
+          ...recordedDefinition,
+          ...(current?.body ?? {}),
+          ...body,
+          variables: shown,
+          process: { ...(recordedDefinition.process as Json), yamlFilename: yaml },
+          repository: {
+            ...(recordedDefinition.repository as Json),
+            id: repository.id,
+            type: 'TfsGit',
+            name: repository.name,
+            defaultBranch: branch,
+          },
+          queue: {
+            ...(recordedDefinition.queue as Json),
+            id: queue.id,
+            name: queue.name,
+            pool: { id: queue.poolId, name: queue.poolName, isHosted: queue.hosted },
+          },
+          id: next,
+          revision,
+          url: self(next, revision),
+          uri: `vstfs:///Build/Definition/${next}`,
+          _links: {
+            ...(recordedDefinition._links as Json),
+            self: { href: self(next, revision) },
+            web: { href: `${web}${next}` },
+          },
+          project: {
+            ...(recordedDefinition.project as Json),
+            id: projectId,
+            name: projectNameOf(projectId),
+          },
+          createdDate: current?.body.createdDate ?? clock(),
+        };
+        if (current) {
+          current.body = stored;
+          current.secrets = kept;
+          return answerJson(200, current.body);
+        }
+        const row: FakeAzureDefinition = { id: next, projectId, body: stored, secrets: kept };
+        definitionRows.push(row);
+        return answerJson(200, row.body);
+      }
+      return false;
+    }
+
+    // policy/configurations
+    const policyJson = (p: FakeAzurePolicy): Json => ({
+      ...recordedPolicy,
+      id: p.id,
+      isEnabled: p.isEnabled,
+      isBlocking: p.isBlocking,
+      settings: p.settings,
+      revision: 1,
+      url: `${url}/${projectId}/_apis/policy/configurations/${p.id}`,
+      type: { ...(recordedPolicy.type as Json), id: p.type },
+    });
+    if (req.method === 'GET') {
+      const repositoryId = query.get('repositoryId')?.toLowerCase();
+      const refName = query.get('refName');
+      const policyType = query.get('policyType')?.toLowerCase();
+      const value = policyRows
+        .filter((p) => p.projectId === projectId)
+        .filter((p) => policyType === undefined || p.type === policyType)
+        .filter((p) =>
+          (p.settings.scope as Json[]).some(
+            (scope) =>
+              (repositoryId === undefined || scope.repositoryId === repositoryId) &&
+              (refName === null || scope.refName === refName),
+          ),
+        )
+        .map(policyJson);
+      return answerJson(200, { ...recordedPolicyList, count: value.length, value });
+    }
+    if (req.method === 'POST') {
+      const body = jsonBodyOf(req);
+      const settings = body?.settings as Json | undefined;
+      const scope = settings?.scope;
+      const type = String((body?.type as Json | undefined)?.id ?? '').toLowerCase();
+      if (!body || !settings || !Array.isArray(scope) || scope.length === 0) {
+        return bad('a policy needs a type and settings with a scope');
+      }
+      if (type !== BUILD_POLICY_TYPE) return bad(`the policy type ${type} is not known`);
+      if (
+        !definitionRows.some(
+          (d) => d.projectId === projectId && d.id === Number(settings.buildDefinitionId),
+        )
+      ) {
+        return bad('the policy names no build definition of the project');
+      }
+      if (typeof body.isEnabled !== 'boolean' || typeof body.isBlocking !== 'boolean') {
+        return bad('a policy is enabled or not, blocking or not');
+      }
+      const policy: FakeAzurePolicy = {
+        id: (policyCounter += 1),
+        projectId,
+        type,
+        isEnabled: body.isEnabled,
+        isBlocking: body.isBlocking,
+        settings: {
+          ...settings,
+          scope: (scope as Json[]).map((s) => ({
+            ...s,
+            repositoryId: String(s.repositoryId).toLowerCase(),
+            matchKind: 'Exact',
+          })),
+        },
+      };
+      policyRows.push(policy);
+      return answerJson(200, policyJson(policy));
+    }
+    return false;
+  };
+
+  const rootItemsAnswer = (
+    repository: FakeAzureRepository,
+    version: string,
+    versionType: string,
+  ): { status: number; body: unknown } => {
+    const commit = resolveCommit(repository.id, version, versionType);
+    const files = commit ? commitOf(repository.id, commit)?.files : undefined;
+    if (!commit || !files) {
+      return {
+        status: 404,
+        body: {
+          ...notFound,
+          message: `TF401175: The commit ${version} does not exist.`,
+          typeKey: 'GitCommitDoesNotExistException',
+        },
+      };
+    }
+    const root = recordedRootItems.find((e) => e.path === '/')!;
+    const folder = recordedRootItems.find((e) => e.isFolder === true && e.path !== '/')!;
+    const blob = recordedRootItems.find((e) => e.gitObjectType === 'blob')!;
+    const entry = (template: Json, itemPath: string): Json => ({
+      ...template,
+      objectId: createHash('sha1').update(`${commit}:${itemPath}`).digest('hex'),
+      commitId: commit,
+      path: itemPath,
+      url: `${url}/${repository.projectId}/_apis/git/repositories/${repository.id}/items?path=${encodeURIComponent(itemPath)}&versionType=Commit&version=${commit}`,
+    });
+    const top = new Map<string, boolean>();
+    for (const filePath of [...files.keys()].sort()) {
+      const [first, ...more] = filePath.split('/');
+      top.set(first!, more.length > 0 || top.get(first!) === true);
+    }
+    const value = [
+      entry(root, '/'),
+      ...[...top].map(([name, isFolder]) => entry(isFolder ? folder : blob, `/${name}`)),
+    ];
+    return { status: 200, body: { count: value.length, value } };
+  };
+
   const answer = (req: RecordedRequest, res: ServerResponse, inside: boolean): void => {
     if (!inside) {
       return wrapped(res, 404, 'fake Azure DevOps: no such collection', 'NotFound');
@@ -1795,6 +2251,7 @@ export async function createFakeAzureDevOps(options: {
     const version = new URLSearchParams(req.query).get('api-version') ?? '';
     const other = otherRoute(req, res, who, version);
     if (other) return;
+    if (buildRoute(req, res, version)) return;
     const one = /^\/_apis\/git\/repositories\/([^/]+)$/.exec(req.path);
     const route =
       req.method !== 'GET'
@@ -2093,6 +2550,13 @@ export async function createFakeAzureDevOps(options: {
       if (!subscription) throw new Error(`fake Azure DevOps: no subscription ${id}`);
       subscription.status = status;
     },
+    queues: queuesOf,
+    addQueue(projectId, input) {
+      queuesOf(projectId);
+      return addQueueTo(projectId, input);
+    },
+    definitions: definitionRows,
+    policies: policyRows,
     commitStatuses,
     requests,
     tokenRequests,

@@ -311,6 +311,10 @@ export const SETUP_CI_OUTCOMES = [
   'failed',
 ] as const;
 export type SetupCiOutcome = (typeof SETUP_CI_OUTCOMES)[number];
+export const SETUP_AZURE_QUEUES = ['authorized', 'open', 'manual'] as const;
+export type SetupAzureQueue = (typeof SETUP_AZURE_QUEUES)[number];
+export const SETUP_AZURE_POLICIES = ['pending', 'on', 'manual', 'failed'] as const;
+export type SetupAzurePolicy = (typeof SETUP_AZURE_POLICIES)[number];
 
 /** One bulk "create projects from a connection's repositories" run, worked in the background. */
 export const repositorySetupRuns = pgTable(
@@ -327,6 +331,8 @@ export const repositorySetupRuns = pgTable(
     /** Whether the run also opens a CI-setup merge request per repository. */
     ciSetup: boolean('ci_setup').notNull().default(false),
     status: text('status').notNull().default('queued').$type<SetupRunStatus>(),
+    /** Azure DevOps: the agent pool name the run's pipelines use (migration 0036). */
+    azurePool: text('azure_pool'),
     createdAt: createdAt(),
     finishedAt: at('finished_at'),
   },
@@ -365,6 +371,14 @@ export const repositorySetupItems = pgTable(
     tokenEnc: jsonb('token_enc').$type<EncryptedValue>(),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
+    /** Azure DevOps (migration 0036): the Build pipeline the CI setup created or found. */
+    azurePipelineId: integer('azure_pipeline_id'),
+    /** Whether the pipeline may use the agent pool's queue. */
+    azureQueue: text('azure_queue').$type<SetupAzureQueue>(),
+    /** The non-blocking Build validation policy: added by a later job once the file is merged. */
+    azurePolicy: text('azure_policy').$type<SetupAzurePolicy>(),
+    /** A fixed text, never Azure DevOps' words. */
+    azurePolicyError: text('azure_policy_error'),
   },
   (t) => [
     primaryKey({ columns: [t.runId, t.position] }),
@@ -378,6 +392,14 @@ export const repositorySetupItems = pgTable(
     check(
       'repository_setup_items_ci_outcome_check',
       sql`ci_outcome IN ('pending','merge_request','snippet','already','skipped','failed')`,
+    ),
+    check(
+      'repository_setup_items_azure_queue_check',
+      sql`azure_queue IS NULL OR azure_queue IN ('authorized','open','manual')`,
+    ),
+    check(
+      'repository_setup_items_azure_policy_check',
+      sql`azure_policy IS NULL OR azure_policy IN ('pending','on','manual','failed')`,
     ),
   ],
 );

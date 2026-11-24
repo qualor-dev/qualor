@@ -253,6 +253,13 @@
       "when": 1795424052388,
       "tag": "0035_scm_connection_problem",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1795541287143,
+      "tag": "0036_azure_ci_setup",
+      "breakpoints": true
     }
   ]
 }

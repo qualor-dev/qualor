@@ -23,6 +23,8 @@ export const MAX_AZURE_RESPONSE_BYTES = 8 * 1024 * 1024;
 export const MAX_AZURE_REQUESTS = 400;
 /** Design §7.9 and the probe (item 19): `7.0` everywhere, named preview versions where needed. */
 export const AZURE_API_VERSION = '7.0';
+/** The agent queues and their pipeline permissions are preview routes (probe item 26). */
+export const AZURE_PREVIEW_API_VERSION = '7.0-preview.1';
 /** connectionData is a preview route (Server answers 7.0 with VssInvalidPreviewVersionException). */
 export const CONNECTION_DATA_API_VERSION = '7.0-preview';
 /** A success that asks the next request to wait (`Retry-After`, `X-RateLimit-Delay`): at most 30 s. */
@@ -40,6 +42,7 @@ export const AZURE_TEXT = {
   badAnswer: "Azure DevOps's answer was not understood",
   repositoryId: 'The repository id is not an Azure DevOps repository id (a GUID)',
   guid: 'The id is not an Azure DevOps id (a GUID)',
+  commitId: 'The commit id is not a commit id',
   notPublic:
     'The Azure DevOps host resolves to a private, loopback or otherwise non-public address; list it in QUALOR_SCM_INTERNAL_HOSTS',
   refusedAddress:
@@ -258,8 +261,69 @@ export interface AzurePushInput {
   oldObjectId: string | null;
   parent: string;
   message: string;
-  /** Edits of existing files; `path` without the leading `/`. */
-  files: readonly { path: string; content: string }[];
+  /** Files to add or edit; `path` without the leading `/`. `change` is `edit` unless said. */
+  files: readonly { path: string; content: string; change?: 'add' | 'edit' }[];
+}
+
+/** A queue of a project: an agent pool as the project uses it. */
+export interface AzureQueue {
+  id: number;
+  name: string;
+  poolName: string;
+}
+
+/** What may run on a queue: every pipeline (`open`) or the ones named. */
+export interface AzureQueuePermissions {
+  open: boolean;
+  pipelineIds: number[];
+}
+
+/** The variable the pipeline's secret lives in. */
+export const AZURE_SECRET_VARIABLE = 'QUALOR_TOKEN';
+/** The Build policy type (the same id on Services and Server; probe items 7 and 26). */
+export const AZURE_BUILD_POLICY_TYPE = '0609b952-1397-4640-95ec-e00a01b2c241';
+
+export interface AzureDefinitionVariable {
+  value: string;
+  /** A secret's value is cut from every error text and never read back. */
+  isSecret?: boolean;
+}
+
+export interface NewAzureDefinition {
+  name: string;
+  /** The YAML file in the repository, without the leading `/`. */
+  yamlPath: string;
+  repositoryId: string;
+  repositoryName: string;
+  /** The branch the definition reads the file from (`refs/heads/<name>`). */
+  defaultBranch: string;
+  queueId: number;
+  variables: Readonly<Record<string, AzureDefinitionVariable>>;
+}
+
+/** A Build definition (a pipeline) as Qualor reads it; `secretSet`: the secret variable exists. */
+export interface AzureDefinition {
+  id: number;
+  name: string;
+  yamlPath: string | null;
+  repositoryId: string;
+  queueId: number | null;
+  webUrl: string | null;
+  secretSet: boolean;
+}
+
+export interface AzureBuildPolicy {
+  id: number;
+  definitionId: number;
+  isBlocking: boolean;
+  isEnabled: boolean;
+}
+
+export interface NewAzureBuildPolicy {
+  definitionId: number;
+  repositoryId: string;
+  /** A full ref name: `refs/heads/<branch>`. */
+  refName: string;
 }
 
 export type AzureStatus = {
@@ -352,6 +416,43 @@ const commitsDiff = z.looseObject({ commonCommit: z.string().regex(COMMIT_ID).nu
 const pushAnswer = z.looseObject({ commits: z.array(commitRef).min(1) });
 const refUpdates = z.looseObject({
   value: z.array(z.looseObject({ success: z.boolean(), updateStatus: z.string() })).min(1),
+});
+const queueList = z.looseObject({
+  value: z.array(
+    z.looseObject({
+      id: z.number().int(),
+      name: z.string().min(1),
+      pool: z.looseObject({ name: z.string().min(1) }),
+    }),
+  ),
+});
+const queuePermissions = z.looseObject({
+  allPipelines: z.looseObject({ authorized: z.boolean().nullish() }).nullish(),
+  pipelines: z
+    .array(z.looseObject({ id: z.number().int(), authorized: z.boolean().nullish() }))
+    .nullish(),
+});
+const definitionAnswer = z.looseObject({
+  id: z.number().int(),
+  name: z.string().min(1),
+  process: z.looseObject({ yamlFilename: z.string().nullish() }).nullish(),
+  repository: z.looseObject({ id: z.string().regex(AZURE_REPOSITORY_ID) }),
+  queue: z.looseObject({ id: z.number().int() }).nullish(),
+  variables: z
+    .record(z.string(), z.looseObject({ isSecret: z.boolean().nullish() }).nullable())
+    .nullish(),
+  _links: z.looseObject({ web: z.looseObject({ href: z.string().min(1) }).nullish() }).nullish(),
+});
+const definitionList = z.looseObject({ value: z.array(definitionAnswer) });
+const policyAnswer = z.looseObject({
+  id: z.number().int(),
+  isBlocking: z.boolean(),
+  isEnabled: z.boolean(),
+  settings: z.looseObject({ buildDefinitionId: z.number().int().nullish() }),
+});
+const policyList = z.looseObject({ value: z.array(policyAnswer) });
+const itemList = z.looseObject({
+  value: z.array(z.looseObject({ path: z.string().min(1), isFolder: z.boolean().nullish() })),
 });
 const rawBytes = z.instanceof(Buffer);
 const iterationList = z.looseObject({
@@ -474,7 +575,45 @@ export const AZURE_SHAPES = {
   commitsDiff,
   pushAnswer,
   refUpdates,
+  queueList,
+  queuePermissions,
+  definitionAnswer,
+  definitionList,
+  policyAnswer,
+  policyList,
+  itemList,
 } as const;
+
+function definitionOf(d: z.infer<typeof definitionAnswer>): AzureDefinition {
+  return {
+    id: d.id,
+    name: d.name,
+    yamlPath: d.process?.yamlFilename ?? null,
+    repositoryId: d.repository.id.toLowerCase(),
+    queueId: d.queue?.id ?? null,
+    webUrl: d._links?.web?.href ?? null,
+    secretSet: d.variables?.[AZURE_SECRET_VARIABLE]?.isSecret === true,
+  };
+}
+
+/** Variables as a definition body takes them: a secret is flagged, none may be overridden by a run. */
+function variablesBody(
+  variables: Readonly<Record<string, AzureDefinitionVariable>>,
+): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(
+    Object.entries(variables).map(([name, v]) => [
+      name,
+      { value: v.value, ...(v.isSecret ? { isSecret: true } : {}), allowOverride: false },
+    ]),
+  );
+}
+
+/** The secret values of `variables`: cut from an error text that echoes them. */
+function secretValues(variables: Readonly<Record<string, AzureDefinitionVariable>>): string[] {
+  return Object.values(variables)
+    .filter((v) => v.isSecret)
+    .map((v) => v.value);
+}
 
 function threadOf(t: z.infer<typeof threadAnswer>): AzureThread {
   return {
@@ -806,7 +945,7 @@ export class AzureDevOpsClient {
   }
 
   /**
-   * One commit on `ref` that edits `files` (sent as base64) on top of `parent`; its id. A 400 is the
+   * One commit on `ref` that adds or edits `files` (sent as base64) on top of `parent`; its id. A 400 is the
    * usual `refused` error: a stale head and a parent that is not the head look alike (item 22e).
    */
   async push(repositoryId: string, input: AzurePushInput): Promise<string> {
@@ -821,7 +960,7 @@ export class AzureDevOpsClient {
             comment: input.message,
             parents: [input.parent],
             changes: input.files.map((f) => ({
-              changeType: 'edit',
+              changeType: f.change ?? 'edit',
               item: { path: `/${f.path}` },
               newContent: {
                 content: Buffer.from(f.content, 'utf8').toString('base64'),
@@ -835,6 +974,216 @@ export class AzureDevOpsClient {
     const commit = answer.commits.at(-1);
     if (!commit) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer);
     return commit.commitId.toLowerCase();
+  }
+
+  /**
+   * The entries of the repository root at a commit (one level): names without the leading `/`,
+   * the root itself left out (Azure DevOps lists it as `/`; probe item 26).
+   */
+  async rootItems(
+    repositoryId: string,
+    commit: string,
+  ): Promise<{ path: string; isFolder: boolean }[]> {
+    if (!COMMIT_ID.test(commit)) {
+      throw new AzureError('refused', AZURE_TEXT.commitId, { reason: 'invalid_input' });
+    }
+    const query = new URLSearchParams({
+      scopePath: '/',
+      recursionLevel: 'OneLevel',
+      'versionDescriptor.version': commit.toLowerCase(),
+      'versionDescriptor.versionType': 'commit',
+    });
+    const answer = await this.#get(
+      `${this.#repositoryPath(repositoryId)}/items?${query}`,
+      itemList,
+    );
+    return answer.value
+      .filter((e) => e.path !== '/')
+      .map((e) => ({ path: e.path.replace(/^\//, ''), isFolder: e.isFolder === true }));
+  }
+
+  /** `/{projectId}/_apis`: the id checked and lower-cased, so no path can be injected. */
+  #projectPath(projectId: string): string {
+    if (!AZURE_REPOSITORY_ID.test(projectId)) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    return `/${projectId.toLowerCase()}/_apis`;
+  }
+
+  /** The agent queues of a project, all or the one named `name` (a preview route). */
+  async queues(projectId: string, name?: string): Promise<AzureQueue[]> {
+    const query = name === undefined ? '' : `?${new URLSearchParams({ queueName: name })}`;
+    const answer = await this.#get(
+      `${this.#projectPath(projectId)}/distributedtask/queues${query}`,
+      queueList,
+      AZURE_PREVIEW_API_VERSION,
+    );
+    return answer.value.map((q) => ({ id: q.id, name: q.name, poolName: q.pool.name }));
+  }
+
+  /** Whether every pipeline may use the queue, and which pipelines are authorised one by one. */
+  async queuePermissions(projectId: string, queueId: number): Promise<AzureQueuePermissions> {
+    const answer = await this.#get(
+      this.#queuePermissionsPath(projectId, queueId),
+      queuePermissions,
+      AZURE_PREVIEW_API_VERSION,
+    );
+    return {
+      open: answer.allPipelines?.authorized === true,
+      pipelineIds: (answer.pipelines ?? []).filter((p) => p.authorized !== false).map((p) => p.id),
+    };
+  }
+
+  /** Authorises one pipeline on a queue; the other permissions are left as they are. */
+  async authorizeOnQueue(projectId: string, queueId: number, definitionId: number): Promise<void> {
+    await this.#call(
+      'PATCH',
+      this.#queuePermissionsPath(projectId, queueId),
+      z.unknown(),
+      { pipelines: [{ id: definitionId, authorized: true }] },
+      AZURE_PREVIEW_API_VERSION,
+    );
+  }
+
+  #queuePermissionsPath(projectId: string, queueId: number): string {
+    if (!Number.isInteger(queueId) || queueId < 0) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    return `${this.#projectPath(projectId)}/pipelines/pipelinePermissions/queue/${queueId}`;
+  }
+
+  /** The Build definitions of a repository (YAML path, queue, variables read; secrets read as null). */
+  async definitions(projectId: string, repositoryId: string): Promise<AzureDefinition[]> {
+    this.#repositoryPath(repositoryId); // validates the id
+    const query = new URLSearchParams({
+      repositoryId: repositoryId.toLowerCase(),
+      repositoryType: 'TfsGit',
+      includeAllProperties: 'true',
+    });
+    const answer = await this.#get(
+      `${this.#projectPath(projectId)}/build/definitions?${query}`,
+      definitionList,
+    );
+    return answer.value.map(definitionOf);
+  }
+
+  async createDefinition(projectId: string, input: NewAzureDefinition): Promise<AzureDefinition> {
+    this.#repositoryPath(input.repositoryId); // validates the id
+    const answer = await this.#call(
+      'POST',
+      `${this.#projectPath(projectId)}/build/definitions`,
+      definitionAnswer,
+      {
+        name: input.name,
+        path: '\\',
+        type: 'build',
+        queue: { id: input.queueId },
+        process: { type: 2, yamlFilename: input.yamlPath },
+        repository: {
+          id: input.repositoryId.toLowerCase(),
+          name: input.repositoryName,
+          type: 'TfsGit',
+          defaultBranch: input.defaultBranch,
+        },
+        variables: variablesBody(input.variables),
+      },
+      AZURE_API_VERSION,
+      'base',
+      secretValues(input.variables),
+    );
+    return definitionOf(answer);
+  }
+
+  async definition(projectId: string, id: number): Promise<AzureDefinition> {
+    return definitionOf(await this.#definitionBody(projectId, id));
+  }
+
+  async #definitionBody(projectId: string, id: number) {
+    return this.#get(this.#definitionPath(projectId, id), definitionAnswer);
+  }
+
+  #definitionPath(projectId: string, id: number): string {
+    if (!Number.isInteger(id) || id < 0) {
+      throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
+    }
+    return `${this.#projectPath(projectId)}/build/definitions/${id}`;
+  }
+
+  /**
+   * GET then PUT: the definition as Azure DevOps has it (unknown fields kept; a secret reads back
+   * `null` and survives the PUT) with `variables` laid over its own.
+   */
+  async replaceDefinition(
+    projectId: string,
+    definition: Pick<AzureDefinition, 'id'>,
+    variables: Readonly<Record<string, AzureDefinitionVariable>>,
+  ): Promise<AzureDefinition> {
+    const path = this.#definitionPath(projectId, definition.id);
+    const current = await this.#get(path, definitionAnswer);
+    const answer = await this.#call(
+      'PUT',
+      path,
+      definitionAnswer,
+      { ...current, variables: { ...current.variables, ...variablesBody(variables) } },
+      AZURE_API_VERSION,
+      'base',
+      secretValues(variables),
+    );
+    return definitionOf(answer);
+  }
+
+  /** The Build policies on a branch of a repository (every policy of the Build type there). */
+  async buildPolicies(
+    projectId: string,
+    repositoryId: string,
+    refName: string,
+  ): Promise<AzureBuildPolicy[]> {
+    this.#repositoryPath(repositoryId); // validates the id
+    const query = new URLSearchParams({
+      repositoryId: repositoryId.toLowerCase(),
+      refName,
+      policyType: AZURE_BUILD_POLICY_TYPE,
+    });
+    const answer = await this.#get(
+      `${this.#projectPath(projectId)}/policy/configurations?${query}`,
+      policyList,
+    );
+    return answer.value.map((p) => ({
+      id: p.id,
+      definitionId: p.settings.buildDefinitionId ?? 0,
+      isBlocking: p.isBlocking,
+      isEnabled: p.isEnabled,
+    }));
+  }
+
+  /** A Build validation policy that does not block, on the branch exactly. */
+  async createBuildPolicy(projectId: string, input: NewAzureBuildPolicy): Promise<{ id: number }> {
+    this.#repositoryPath(input.repositoryId); // validates the id
+    const answer = await this.#call(
+      'POST',
+      `${this.#projectPath(projectId)}/policy/configurations`,
+      policyAnswer,
+      {
+        isEnabled: true,
+        isBlocking: false,
+        type: { id: AZURE_BUILD_POLICY_TYPE },
+        settings: {
+          buildDefinitionId: input.definitionId,
+          queueOnSourceUpdateOnly: false,
+          manualQueueOnly: false,
+          displayName: 'Qualor',
+          validDuration: 0,
+          scope: [
+            {
+              repositoryId: input.repositoryId.toLowerCase(),
+              refName: input.refName,
+              matchKind: 'exact',
+            },
+          ],
+        },
+      },
+    );
+    return { id: answer.id };
   }
 
   /** Moves `name` (a full ref name) to `newObjectId`; a non-fast-forward move is allowed (item 22d). */

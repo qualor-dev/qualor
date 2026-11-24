@@ -74,8 +74,9 @@ describe('runMigrations / pendingMigrations', () => {
     // 2026-11-16), 0032_jira (0.16, Jira connections, mappings and links, approved 2026-11-17),
     // 0033_fix_mrs (0.16, fix merge requests, approved 2026-11-18), 0034_azure_devops (Azure
     // DevOps connections, approved 2026-11-21 with the Azure DevOps design), 0035_scm_connection_problem (the
-    // background problem of an SCM connection, approved 2026-11-23).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(36);
+    // background problem of an SCM connection, approved 2026-11-23), 0036_azure_ci_setup (the Azure
+    // DevOps CI setup columns of the onboarding items and runs, approved 2026-11-24).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(37);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);

@@ -2042,3 +2042,378 @@ describe('fix writes: branches, pushes, refs, raw reads and pull requests (sub-p
     });
   });
 });
+
+describe('the CI setup calls (sub-plan 7, task 3)', () => {
+  let fake: FakeAzureDevOps;
+  let repoId: string;
+  let projectId: string;
+  const lastRequest = () => fake.requests.at(-1)!;
+  const bodyOf = (r: { body: string }) => JSON.parse(r.body) as Record<string, unknown>;
+  const SECRET = 'qualor-token-secret-5b2e-not-for-logs';
+  const BUILD_POLICY = '0609b952-1397-4640-95ec-e00a01b2c241';
+
+  beforeAll(async () => {
+    fake = await createFakeAzureDevOps({
+      deployment: 'services',
+      repositories: [{ name: 'ci', projectName: 'Payments' }],
+    });
+    repoId = fake.repositories[0]!.id;
+    projectId = fake.repositories[0]!.projectId;
+  });
+  afterAll(async () => {
+    await fake.close();
+  });
+  beforeEach(() => {
+    fake.clearRequests();
+  });
+
+  const newDefinition = (name = 'Qualor api', queueId = fake.queues(projectId)[0]!.id) => ({
+    name,
+    yamlPath: '.azure-pipelines/qualor.yml',
+    repositoryId: repoId,
+    repositoryName: 'ci',
+    defaultBranch: 'refs/heads/main',
+    queueId,
+    variables: {
+      QUALOR_TOKEN: { value: SECRET, isSecret: true },
+      QUALOR_PROJECT_KEY: { value: 'payments/ci' },
+    },
+  });
+
+  describe('rootItems', () => {
+    it('asks one level of the root at the commit and drops the root entry', async () => {
+      const head = fake.addCommit(repoId, {
+        files: { 'README.md': 'r', 'src/a.ts': 'a', '.x/y': 'y' },
+      });
+      const items = await clientOf(fake).rootItems(repoId, head);
+      const request = lastRequest();
+      expect(request.path).toBe(`/_apis/git/repositories/${repoId}/items`);
+      const query = new URLSearchParams(request.query);
+      expect(query.get('scopePath')).toBe('/');
+      expect(query.get('recursionLevel')).toBe('OneLevel');
+      expect(query.get('versionDescriptor.version')).toBe(head);
+      expect(query.get('versionDescriptor.versionType')).toBe('commit');
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(items).toEqual([
+        { path: '.x', isFolder: true },
+        { path: 'README.md', isFolder: false },
+        { path: 'src', isFolder: true },
+      ]);
+    });
+
+    it('a commit the repository does not have is not_found', async () => {
+      const err = await failure(clientOf(fake).rootItems(repoId, 'a'.repeat(40)));
+      expect(err).toMatchObject({ kind: 'not_found', status: 404 });
+    });
+  });
+
+  describe('push with add', () => {
+    it('sends changeType add for a new file and edit by default, byte-exact', async () => {
+      const head = fake.addCommit(repoId, { files: { 'a.txt': 'a' } });
+      const text = 'trigger: none\r\nname: é\r\n';
+      const commit = await clientOf(fake).push(repoId, {
+        ref: 'refs/heads/qualor/ci-add',
+        oldObjectId: null,
+        parent: head,
+        message: 'ci',
+        files: [
+          { path: '.azure-pipelines/qualor.yml', content: text, change: 'add' },
+          { path: 'a.txt', content: 'b' },
+        ],
+      });
+      const changes = (
+        bodyOf(lastRequest()).commits as {
+          changes: { changeType: string; item: { path: string } }[];
+        }[]
+      )[0]!.changes;
+      expect(changes.map((c) => [c.changeType, c.item.path])).toEqual([
+        ['add', '/.azure-pipelines/qualor.yml'],
+        ['edit', '/a.txt'],
+      ]);
+      expect(fake.fileAt(repoId, commit, '.azure-pipelines/qualor.yml')).toBe(text);
+    });
+  });
+
+  describe('queues and their permissions', () => {
+    it('lists the project queues at 7.0-preview.1 with their pools', async () => {
+      const list = await clientOf(fake).queues(projectId);
+      const request = lastRequest();
+      expect(request.path).toBe(`/${projectId}/_apis/distributedtask/queues`);
+      expect(apiVersion(request.query)).toBe('7.0-preview.1');
+      expect(new URLSearchParams(request.query).has('queueName')).toBe(false);
+      expect(list).toEqual(
+        expect.arrayContaining([
+          { id: expect.any(Number), name: 'Default', poolName: 'Default' },
+          { id: expect.any(Number), name: 'Azure Pipelines', poolName: 'Azure Pipelines' },
+        ]),
+      );
+    });
+
+    it('filters by queueName', async () => {
+      const list = await clientOf(fake).queues(projectId, 'Azure Pipelines');
+      expect(new URLSearchParams(lastRequest().query).get('queueName')).toBe('Azure Pipelines');
+      expect(list.map((q) => q.name)).toEqual(['Azure Pipelines']);
+    });
+
+    it('reads open and the authorised pipelines, and authorises one pipeline', async () => {
+      const client = clientOf(fake);
+      const own = fake.queues(projectId).find((q) => q.name === 'Default')!;
+      const hosted = fake.queues(projectId).find((q) => q.hosted)!;
+      expect(await client.queuePermissions(projectId, hosted.id)).toEqual({
+        open: true,
+        pipelineIds: [],
+      });
+      expect(await client.queuePermissions(projectId, own.id)).toEqual({
+        open: false,
+        pipelineIds: [],
+      });
+      expect(lastRequest().path).toBe(
+        `/${projectId}/_apis/pipelines/pipelinePermissions/queue/${own.id}`,
+      );
+      expect(apiVersion(lastRequest().query)).toBe('7.0-preview.1');
+
+      const definition = await client.createDefinition(
+        projectId,
+        newDefinition('Authorise me', own.id),
+      );
+      await client.authorizeOnQueue(projectId, own.id, definition.id);
+      expect(lastRequest().method).toBe('PATCH');
+      expect(lastRequest().path).toBe(
+        `/${projectId}/_apis/pipelines/pipelinePermissions/queue/${own.id}`,
+      );
+      expect(apiVersion(lastRequest().query)).toBe('7.0-preview.1');
+      expect(bodyOf(lastRequest())).toEqual({
+        pipelines: [{ id: definition.id, authorized: true }],
+      });
+      expect(await client.queuePermissions(projectId, own.id)).toEqual({
+        open: false,
+        pipelineIds: [definition.id],
+      });
+    });
+
+    it('a project id that is not a GUID is refused before a request', async () => {
+      fake.clearRequests();
+      const err = await failure(clientOf(fake).queues('../x'));
+      expect(err).toMatchObject({ kind: 'refused' });
+      expect(fake.requests).toEqual([]);
+    });
+  });
+
+  describe('build definitions', () => {
+    it('creates one with a YAML process, the queue, the repository and the variables', async () => {
+      const input = newDefinition('Qualor create');
+      const made = await clientOf(fake).createDefinition(projectId, input);
+      const request = lastRequest();
+      expect(request.method).toBe('POST');
+      expect(request.path).toBe(`/${projectId}/_apis/build/definitions`);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(bodyOf(request)).toEqual({
+        name: 'Qualor create',
+        path: '\\',
+        type: 'build',
+        queue: { id: input.queueId },
+        process: { type: 2, yamlFilename: '.azure-pipelines/qualor.yml' },
+        repository: {
+          id: repoId,
+          name: 'ci',
+          type: 'TfsGit',
+          defaultBranch: 'refs/heads/main',
+        },
+        variables: {
+          QUALOR_TOKEN: { value: SECRET, isSecret: true, allowOverride: false },
+          QUALOR_PROJECT_KEY: { value: 'payments/ci', allowOverride: false },
+        },
+      });
+      expect(made).toEqual({
+        id: expect.any(Number),
+        name: 'Qualor create',
+        yamlPath: '.azure-pipelines/qualor.yml',
+        repositoryId: repoId,
+        queueId: input.queueId,
+        webUrl: `${fake.url}/${projectId}/_build/definition?definitionId=${made.id}`,
+        secretSet: true,
+      });
+      expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
+        QUALOR_TOKEN: SECRET,
+      });
+    });
+
+    it('lists the definitions of a repository and reads one', async () => {
+      const client = clientOf(fake);
+      const made = await client.createDefinition(projectId, newDefinition('Qualor list'));
+      const listed = await client.definitions(projectId, repoId);
+      const request = lastRequest();
+      expect(request.path).toBe(`/${projectId}/_apis/build/definitions`);
+      const query = new URLSearchParams(request.query);
+      expect(query.get('repositoryId')).toBe(repoId);
+      expect(query.get('repositoryType')).toBe('TfsGit');
+      expect(query.get('includeAllProperties')).toBe('true');
+      expect(listed).toContainEqual(made);
+      expect(await client.definition(projectId, made.id)).toEqual(made);
+      expect(lastRequest().path).toBe(`/${projectId}/_apis/build/definitions/${made.id}`);
+    });
+
+    it('a definition without the secret variable has secretSet false', async () => {
+      const made = await clientOf(fake).createDefinition(projectId, {
+        ...newDefinition('Qualor no secret'),
+        variables: { QUALOR_PROJECT_KEY: { value: 'payments/ci' } },
+      });
+      expect(made.secretSet).toBe(false);
+    });
+
+    it('replaceDefinition GETs, keeps unknown fields and the secret, and PUTs the variables', async () => {
+      const client = clientOf(fake);
+      const made = await client.createDefinition(projectId, newDefinition('Qualor replace'));
+      const row = fake.definitions.find((d) => d.id === made.id)!;
+      row.body = { ...row.body, somethingNew: { kept: true } };
+      fake.clearRequests();
+      const replaced = await client.replaceDefinition(projectId, made, {
+        QUALOR_URL: { value: 'https://qualor.example.com' },
+      });
+      expect(fake.requests.map((r) => r.method)).toEqual(['GET', 'PUT']);
+      const put = lastRequest();
+      expect(put.path).toBe(`/${projectId}/_apis/build/definitions/${made.id}`);
+      expect(apiVersion(put.query)).toBe('7.0');
+      const sent = bodyOf(put);
+      expect(sent.somethingNew).toEqual({ kept: true });
+      expect(sent.variables).toMatchObject({
+        QUALOR_TOKEN: { value: null, isSecret: true },
+        QUALOR_PROJECT_KEY: { value: 'payments/ci' },
+        QUALOR_URL: { value: 'https://qualor.example.com' },
+      });
+      expect(replaced.secretSet).toBe(true);
+      expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
+        QUALOR_TOKEN: SECRET,
+      });
+    });
+
+    it('replaceDefinition may send a new secret value', async () => {
+      const client = clientOf(fake);
+      const made = await client.createDefinition(projectId, newDefinition('Qualor rotate'));
+      await client.replaceDefinition(projectId, made, {
+        QUALOR_TOKEN: { value: 'rotated-secret-1', isSecret: true },
+      });
+      expect(fake.definitions.find((d) => d.id === made.id)?.secrets).toEqual({
+        QUALOR_TOKEN: 'rotated-secret-1',
+      });
+    });
+
+    it('a refusal that echoes the secret is cut, and a taken name is a 409', async () => {
+      const client = clientOf(fake);
+      await client.createDefinition(projectId, newDefinition('Qualor twice'));
+      fake.inject('POST', /build\/definitions$/, {
+        status: 400,
+        body: { message: `Bad variables: QUALOR_TOKEN=${SECRET}` },
+      });
+      const err = await failure(client.createDefinition(projectId, newDefinition('Qualor twice')));
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+      expect(written(err)).not.toContain(SECRET);
+      expect((err as AzureError).azureMessage).toContain('[credential]');
+      const dup = await failure(client.createDefinition(projectId, newDefinition('Qualor twice')));
+      expect(dup).toMatchObject({ kind: 'refused', status: 409 });
+      expect(written(dup)).not.toContain(SECRET);
+    });
+
+    it('replaceDefinition cuts the new secret from an error too', async () => {
+      const client = clientOf(fake);
+      const made = await client.createDefinition(projectId, newDefinition('Qualor cut'));
+      fake.inject('PUT', /build\/definitions\/\d+$/, {
+        status: 400,
+        body: { message: 'echo rotated-secret-2' },
+      });
+      const err = await failure(
+        client.replaceDefinition(projectId, made, {
+          QUALOR_TOKEN: { value: 'rotated-secret-2', isSecret: true },
+        }),
+      );
+      expect(written(err)).not.toContain('rotated-secret-2');
+    });
+
+    it('an unknown definition is not_found', async () => {
+      expect(await failure(clientOf(fake).definition(projectId, 99_999))).toMatchObject({
+        kind: 'not_found',
+      });
+    });
+  });
+
+  describe('build policies', () => {
+    it('creates a non-blocking exact-branch Build policy and finds it again', async () => {
+      const client = clientOf(fake);
+      const made = await client.createDefinition(projectId, newDefinition('Qualor policy'));
+      const created = await client.createBuildPolicy(projectId, {
+        definitionId: made.id,
+        repositoryId: repoId,
+        refName: 'refs/heads/main',
+      });
+      const request = lastRequest();
+      expect(request.method).toBe('POST');
+      expect(request.path).toBe(`/${projectId}/_apis/policy/configurations`);
+      expect(apiVersion(request.query)).toBe('7.0');
+      expect(bodyOf(request)).toEqual({
+        isEnabled: true,
+        isBlocking: false,
+        type: { id: BUILD_POLICY },
+        settings: {
+          buildDefinitionId: made.id,
+          queueOnSourceUpdateOnly: false,
+          manualQueueOnly: false,
+          displayName: 'Qualor',
+          validDuration: 0,
+          scope: [{ repositoryId: repoId, refName: 'refs/heads/main', matchKind: 'exact' }],
+        },
+      });
+      expect(created).toEqual({ id: expect.any(Number) });
+
+      expect(await client.buildPolicies(projectId, repoId, 'refs/heads/main')).toContainEqual({
+        id: created.id,
+        definitionId: made.id,
+        isBlocking: false,
+        isEnabled: true,
+      });
+      const query = new URLSearchParams(lastRequest().query);
+      expect(query.get('repositoryId')).toBe(repoId);
+      expect(query.get('refName')).toBe('refs/heads/main');
+      expect(query.get('policyType')).toBe(BUILD_POLICY);
+      expect(await client.buildPolicies(projectId, repoId, 'refs/heads/other')).toEqual([]);
+    });
+
+    it('a policy for a definition the project lacks is refused', async () => {
+      const err = await failure(
+        clientOf(fake).createBuildPolicy(projectId, {
+          definitionId: 99_999,
+          repositoryId: repoId,
+          refName: 'refs/heads/main',
+        }),
+      );
+      expect(err).toMatchObject({ kind: 'refused', status: 400 });
+    });
+  });
+
+  describe('the recorded answers parse with the client schemas', () => {
+    const body = (name: string) => azureShape<{ body: unknown }>('services', name).body;
+    it.each([
+      ['queueList', ['26-queues']],
+      [
+        'queuePermissions',
+        ['26-hosted-queue-permissions', '8-queue-permissions-before', '8-queue-authorize-1'],
+      ],
+      [
+        'definitionAnswer',
+        [
+          '26-definition-create',
+          '26-definition-get-after',
+          '26-definition-put',
+          '8-definition-get',
+        ],
+      ],
+      ['definitionList', ['26-definitions-search']],
+      ['policyList', ['26-policies-search']],
+      ['policyAnswer', ['26-policy-create', '17-policy-create']],
+      ['itemList', ['26-root-items']],
+    ] as const)('%s', (schema, names) => {
+      for (const name of names) {
+        expect(AZURE_SHAPES[schema].safeParse(body(name)).success, name).toBe(true);
+      }
+    });
+  });
+});
