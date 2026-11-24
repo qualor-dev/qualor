@@ -11,8 +11,8 @@ import {
   CLOSING_SENTENCE,
   closedThread,
   endsWithClosing,
-  EXPECTED_TARGET,
   FIX_DOCKER_PATH,
+  fixedFor,
   fixPackageJson,
   fixPackageLock,
   fixTitleOf,
@@ -170,14 +170,46 @@ describe('item 24 judges', () => {
     });
   });
 
-  it('takes 4.17.21 or a later 4.17.x as the target, and says why a later one', () => {
-    expect(judgeTarget(EXPECTED_TARGET)).toMatchObject({ pass: true, got: '4.17.21' });
-    const later = judgeTarget('4.17.23');
-    expect(later.pass).toBe(true);
-    expect(later.got).toContain('not 4.17.21');
-    expect(judgeTarget('4.17.20').pass).toBe(false);
-    expect(judgeTarget('5.0.0').pass).toBe(false);
-    expect(judgeTarget(null).pass).toBe(false);
+  /** The advisories the bench listed for lodash 4.17.20 on 2026-11-24 (live run 1). */
+  const BENCH_ADVISORIES = [
+    { vulnerabilityId: 'CVE-2021-23337', fixedVersion: '4.17.21' },
+    { vulnerabilityId: 'CVE-2026-4800', fixedVersion: '4.18.0' },
+    { vulnerabilityId: 'CVE-2020-28500', fixedVersion: '4.17.21' },
+    { vulnerabilityId: 'CVE-2025-13465', fixedVersion: '4.17.23' },
+  ];
+
+  it('wants at least the highest fixed version among the listed advisories', () => {
+    const ok = judgeTarget('4.18.0', BENCH_ADVISORIES);
+    expect(ok.pass).toBe(true);
+    expect(ok.got).toBe(
+      'target 4.18.0; highest fixed version 4.18.0 (CVE-2026-4800) among CVE-2021-23337 4.17.21, CVE-2026-4800 4.18.0, CVE-2020-28500 4.17.21, CVE-2025-13465 4.17.23',
+    );
+    expect(judgeTarget('4.17.23', BENCH_ADVISORIES).pass).toBe(false);
+    expect(judgeTarget('4.17.21', BENCH_ADVISORIES).pass).toBe(false);
+    expect(judgeTarget('4.18.1', BENCH_ADVISORIES).pass).toBe(true);
+    // Numeric, not textual: 4.17.100 is above 4.17.23.
+    expect(judgeTarget('4.17.100', [{ vulnerabilityId: 'A', fixedVersion: '4.17.23' }]).pass).toBe(
+      true,
+    );
+  });
+
+  it('fails without a target, a version, or an advisory with a fixed version', () => {
+    expect(judgeTarget(null, BENCH_ADVISORIES).pass).toBe(false);
+    expect(judgeTarget('latest', BENCH_ADVISORIES).pass).toBe(false);
+    const none = judgeTarget('4.18.0', [{ vulnerabilityId: 'A', fixedVersion: null }]);
+    expect(none).toMatchObject({
+      pass: false,
+      got: 'target 4.18.0; no listed advisory has a fixed version above 4.17.20',
+    });
+    expect(judgeTarget('4.18.0', []).pass).toBe(false);
+  });
+
+  it("takes an advisory's lowest fixed version above the installed one", () => {
+    expect(fixedFor({ vulnerabilityId: 'A', fixedVersion: '3.10.0, 4.17.22, 4.17.30' })).toBe(
+      '4.17.22',
+    );
+    expect(fixedFor({ vulnerabilityId: 'A', fixedVersion: '4.17.19' })).toBeNull();
+    expect(fixedFor({ vulnerabilityId: 'A', fixedVersion: null })).toBeNull();
   });
 
   it('titles the pull request as the server does on Azure DevOps', () => {

@@ -1,3 +1,4 @@
+import { compareSemver } from '@qualor/shared/fix';
 import { z } from 'zod';
 import type { AzureClient } from '../client.js';
 import {
@@ -53,9 +54,8 @@ export const FIX_REPOSITORY = 'qualor-probe-fix';
 const FIX_PROJECT_KEY = 'bench-fix';
 export const FIX_DOCKER_PATH = '.azure-pipelines/qualor-fix-docker.yml';
 const PACKAGE = 'lodash';
-/** lodash 4.17.20 has CVE-2021-23337, fixed in 4.17.21. */
+/** lodash 4.17.20: CVE-2021-23337 and the advisories published since (the fix's target is judged against them). */
 export const INSTALLED = '4.17.20';
-export const EXPECTED_TARGET = '4.17.21';
 const LODASH_RESOLVED = 'https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz';
 const LODASH_INTEGRITY =
   'sha512-PlhdFcillOINfeV7Ni6oF1TAEayyZBoZ8bcshTHqOYJYlrqzRK5hagpagky5o4HfCzzd1TRkXPMFq6cKk9rGmA==';
@@ -222,18 +222,45 @@ export function judgeFiles(found: ReturnType<typeof lodashIn>, target: string): 
   );
 }
 
+/** An advisory of lodash on main as the vulnerability list gives it. */
+export type Advisory = { vulnerabilityId: string; fixedVersion: string | null };
+
 /**
- * The fix's target: 4.17.21 (CVE-2021-23337), or a later 4.17.x when an advisory published since
- * needs one (Qualor takes the greatest fixed version the vulnerabilities of main need).
+ * The version an advisory is fixed in for the installed lodash: the lowest of its fixed versions
+ * (Trivy may list several, comma separated) above {@link INSTALLED}; null when it has none.
  */
-export function judgeTarget(target: string | null): Check {
-  const m = /^4\.17\.(\d+)$/.exec(target ?? '');
-  const pass = m !== null && Number(m[1]) >= 21;
-  const why =
-    target === EXPECTED_TARGET
-      ? target
-      : `${target ?? 'none'}${pass ? ` (not ${EXPECTED_TARGET}: an advisory of main needs a later lodash)` : ''}`;
-  return check(`the fix's target is ${EXPECTED_TARGET} or a later 4.17.x`, pass, why);
+export function fixedFor(advisory: Advisory): string | null {
+  const above = (advisory.fixedVersion ?? '')
+    .split(/[,\s]+/)
+    .filter((v) => v !== '' && (compareSemver(v, INSTALLED) ?? 0) > 0)
+    .toSorted((a, b) => compareSemver(a, b) ?? 0);
+  return above[0] ?? null;
+}
+
+/**
+ * The fix's target against the advisories listed for lodash 4.17.20: at least the highest version
+ * any of them is fixed in. Qualor takes the greatest fixed version the vulnerabilities of main need
+ * (on the 2026-11-24 bench, CVE-2026-4800's 4.18.0).
+ */
+export function judgeTarget(target: string | null, advisories: readonly Advisory[]): Check {
+  const fixed = advisories.flatMap((a) => {
+    const v = fixedFor(a);
+    return v === null ? [] : [{ id: a.vulnerabilityId, version: v }];
+  });
+  const highest = fixed.reduce<{ id: string; version: string } | null>(
+    (best, f) => (best === null || (compareSemver(f.version, best.version) ?? 0) > 0 ? f : best),
+    null,
+  );
+  const atLeast =
+    target !== null && highest !== null ? compareSemver(target, highest.version) : null;
+  const listed = fixed.map((f) => `${f.id} ${f.version}`).join(', ');
+  return check(
+    `the fix's target is at least the highest fixed version among the advisories listed for ${PACKAGE} ${INSTALLED}`,
+    atLeast !== null && atLeast >= 0,
+    highest === null
+      ? `target ${target ?? 'none'}; no listed advisory has a fixed version above ${INSTALLED}`
+      : `target ${target ?? 'none'}; highest fixed version ${highest.version} (${highest.id}) among ${listed}`,
+  );
 }
 
 export const fixTitleOf = (target: string): string =>
@@ -889,7 +916,7 @@ export const item: ProbeItem = {
 
     // ---- 4. Azure DevOps: the branch, both files, the pull request.
     const target = opened.targetVersion;
-    checks.push(judgeTarget(target));
+    checks.push(judgeTarget(target, vulnerable));
     const branchRef = `refs/heads/${opened.branch}`;
     const head = await refHead(fixCtx, branchRef);
     checks.push(
@@ -912,9 +939,7 @@ export const item: ProbeItem = {
     }
     const open = await readPr(fixCtx, repo, prId);
     await rec(ctx, 'pr-open', answerOf(open.res));
-    checks.push(
-      ...judgeOpenPr(open.pr, { branch: opened.branch, target: target ?? EXPECTED_TARGET, spId }),
-    );
+    checks.push(...judgeOpenPr(open.pr, { branch: opened.branch, target: target ?? 'none', spId }));
     notes.push(
       `installed version ${opened.installedVersion ?? '?'}; the fix's mrUrl ${opened.mrUrl === `${repo.webUrl}/pullrequest/${prId}` ? "is the pull request's web URL" : 'differs from the pull request web URL'}`,
     );
