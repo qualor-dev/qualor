@@ -23,6 +23,7 @@ import { item as fixWrites } from './22-fix-writes.js';
 import { item as suggestionRanges } from './23-suggestion-ranges.js';
 import { item as fixPr } from './24-fix-pr.js';
 import { item as aiFix } from './25-ai-fix.js';
+import { item as ciSetup } from './26-ci-setup.js';
 
 /** The probe items, by number (14, the Marketplace publisher verification, is done by hand). */
 export const ITEMS: readonly ProbeItem[] = [
@@ -50,4 +51,5 @@ export const ITEMS: readonly ProbeItem[] = [
   suggestionRanges,
   fixPr,
   aiFix,
+  ciSetup,
 ];
