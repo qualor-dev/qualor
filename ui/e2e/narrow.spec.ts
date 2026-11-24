@@ -158,7 +158,7 @@ test.describe('on a phone', () => {
     await page.goto('/projects');
     const switcher = page.getByRole('combobox', { name: 'Organization', exact: true });
     await expect(switcher).toBeVisible();
-    const brand = (await page.locator('.brand').boundingBox())!;
+    const brand = (await page.locator('.app-header .brand').boundingBox())!;
     const account = (await page.locator('.user-button').boundingBox())!;
     const organization = (await switcher.boundingBox())!;
     const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
