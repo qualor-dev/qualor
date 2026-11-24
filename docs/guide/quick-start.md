@@ -46,16 +46,16 @@ An organization admin does this in the UI. Qualor creates the projects and sets 
 1. Connect GitHub ([GitHub](./github.md#3-the-github-app)), GitLab
    ([GitLab](./gitlab.md#3-merge-request-comments-and-commit-status)) or Azure DevOps
    ([Azure DevOps](./azure-devops.md#connect)). For CI setup, also set `QUALOR_PUBLIC_URL` on the
-   server, turn on **Allow Qualor to set up CI** on a GitLab or Azure DevOps connection, or give a GitHub App **Contents**, **Workflows** and **Secrets** (each Read and write).
+   server. Then turn on **Allow Qualor to set up CI** on a GitLab or Azure DevOps connection, or
+   give a GitHub App **Contents**, **Workflows** and **Secrets** (each Read and write).
 2. Open **Projects → Add repositories**, pick the connection and tick up to 50 repositories.
    Repositories that already have a project are marked. An archived repository cannot be picked.
 3. Leave **Set up CI with a merge request** on (Azure DevOps opens a pull request and asks for an
-   **Agent pool**), and start. Qualor creates a project for each
-   repository, with the repository path as its key and the organization's default gate and profiles.
-   A project that already has that key and no repository is mapped to the repository and keeps its
-   history.
+   **Agent pool**), and start. Qualor creates a project for each repository, with the repository
+   path as its key and the organization's default gate and profiles. A project that already has
+   that key and no repository is mapped to the repository and keeps its history.
 4. Each merge request's own pipeline runs the first analysis. Merge it to analyse every push to
-   the default branch.
+   the default branch. On Azure DevOps the first analysis runs on the main branch after the merge.
 
 Qualor opens a merge request only when it can edit the CI files safely. Otherwise, and when you turn
 CI setup off, it shows the snippet to add and the project token, once. Copy the token then: it is
@@ -68,9 +68,9 @@ not shown again. What the merge requests contain, and how to undo them, is in
 
 Organization admins see **Set up Qualor** in a corner of the screen. Its steps are Connect GitHub,
 GitLab or Azure DevOps, Add repositories, Get the first analysis, Turn on AI review and Invite your
-team. Each step ticks by itself from the server's state and links to the page where you do it. Collapse the list, or
-choose **Don't show again** to hide it for good. When only a server admin can set up an AI provider,
-the AI step says so and does not count.
+team. Each step ticks by itself from the server's state and links to the page where you do it.
+Collapse the list, or choose **Don't show again** to hide it for good. When only a server admin can
+set up an AI provider, the AI step says so and does not count.
 
 ## Or by hand
 

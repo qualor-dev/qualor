@@ -110,7 +110,8 @@ A repository is stored by its id, so a rename in Azure DevOps keeps the mapping.
 **Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
 creates a project for each repository you tick and can set up CI for it. Qualor opens a pull
 request. Your pipelines on the main branch don't change until you merge it. The pipeline and its
-secret variable are created right away. The pull request's own build is the first analysis.
+secret variable are created right away. The first analysis runs on the main branch once the pull
+request is merged. Pull requests are analysed after that, through the Build validation policy.
 
 Each repository shows as `Project / Repository`. The project key is `<project>/<repository>`, with
 every character outside `A-Z a-z 0-9 . _ / : -` replaced by `-`. The project's name keeps the
@@ -139,9 +140,9 @@ the merge. To block on the gate, see [Block the merge on the gate](#block-the-me
 ### The agent pool
 
 Name the pool in the field **Agent pool** of **Add repositories**. On Azure DevOps Services you may
-leave it empty: the pipeline then runs on the Microsoft-hosted pool `ubuntu-latest`. On Azure
-DevOps Server the field is required, because it has no Microsoft-hosted agents. The pool's agents
-need Linux and Docker.
+leave it empty: the pipeline then runs on the Microsoft-hosted pool **Azure Pipelines**, with the
+image `ubuntu-latest`. On Azure DevOps Server the field is required, because it has no
+Microsoft-hosted agents. The pool's agents need Linux and Docker.
 
 A Microsoft-hosted pool is open to all pipelines, so step 3 needs nothing there. For a self-hosted
 pool Qualor authorises the pipeline. When its identity may not, the result names the approval you
@@ -155,14 +156,15 @@ The result of the setup shows the state of the policy.
 |---|---|
 | Waiting | The check starts after the first analysis of the main branch |
 | On | The policy `Qualor` exists |
-| Manual step | Add the Build validation policy to the main branch yourself. The identity lacks **Edit policies**, or a disabled policy for the pipeline exists |
+| Manual step | Qualor did not add the policy. Add or enable the Build validation policy on the main branch yourself. The identity lacks **Edit policies**, or a disabled policy for the pipeline exists |
 | Failed | Qualor could not add the policy. Add it yourself |
 
 ### What the identity needs
 
-Qualor names the missing right when Azure DevOps refuses a step. A Project Administrator can do
-every step. The minimal role set for a service principal is the **Basic** access level and
-**Contributors**, plus **Edit policies**. Whether Contributors alone are enough is not checked yet.
+When Azure DevOps refuses a step, the result names the rights that step needs. A Project
+Administrator can do every step. The minimal role set for a service principal is the **Basic**
+access level and **Contributors**, plus **Edit policies**. Whether Contributors alone are enough is
+not checked yet.
 
 | Step | Right |
 |---|---|
@@ -170,11 +172,11 @@ every step. The minimal role set for a service principal is the **Basic** access
 | Open the pull request | **Contribute to pull requests** on the repository |
 | Create the pipeline and its secret | **Edit build pipeline** in the project |
 | Find the agent pool | Read access to the project's agent pools |
-| Authorise the pipeline on a self-hosted pool | The right to approve it there. Otherwise a manual step |
+| Authorise the pipeline on a self-hosted pool | The **Administrator** role on the pool: **Project settings → Agent pools**, the pool, **Security**. Otherwise a manual step |
 | Add the policy | **Edit policies** on the repository. Otherwise a manual step |
 
-A personal access token also needs the matching scopes. The fix rights are in
-[the fix table](./fix-merge-requests.md#turning-it-on).
+A personal access token also needs the matching scopes. The PAT scopes are not verified yet. The
+fix rights are in [the fix table](./fix-merge-requests.md#turning-it-on).
 
 ### When Qualor writes nothing
 
@@ -186,7 +188,9 @@ own.
 
 ### Undo CI setup
 
-1. Close the pull request and delete the branch `qualor/setup`.
+1. Close the pull request and delete the branch `qualor/setup`. Only the identity that pushed it
+   may delete it without **Force push** on the repository. Contributors lack **Force push** by
+   default.
 2. Delete the pipeline `Qualor` (or `Qualor (<repository>)`).
 3. Delete the Build validation policy `Qualor` on the default branch, if it exists.
 4. In Qualor, revoke the project's **CI setup** token in the project's token settings.
