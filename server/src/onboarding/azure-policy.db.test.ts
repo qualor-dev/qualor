@@ -5,12 +5,14 @@ import {
   type FakeAzureDevOps,
   type FakeAzureRepository,
 } from '../../test/fake-azure-devops';
+import type { FakeAzurePolicy } from '../../test/fake-azure-devops';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { reportWith } from '../../test/reports';
 import { decorationDeps, silentLogger } from '../../test/scm';
 import { jobs, projects, repositorySetupItems, repositorySetupRuns } from '../db/schema';
 import { runUntilIdle } from '../queue/worker';
 import { parseInternalHosts } from '../scm/url';
+import { AZURE_FILE } from './ci-setup';
 import { AZURE_POLICY_QUEUE, AZURE_POLICY_TEXT, azurePolicyHandlers } from './azure-policy';
 
 describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () => {
@@ -47,11 +49,22 @@ describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () =
   beforeEach(() => fake.clearRequests());
 
   /** A project mapped to a repository with Qualor's pipeline and pending setup items. */
-  const setup = async (key: string, pipelines: (number | 'new')[] = ['new']) => {
+  const setup = async (
+    key: string,
+    pipelines: (number | 'new')[] = ['new'],
+    options: { file?: boolean } = {},
+  ) => {
     const repository: FakeAzureRepository = fake.addRepository({
       name: `r${repoNumber++}`,
       projectName: 'Payments',
     });
+    fake.setBranch(
+      repository.id,
+      'main',
+      fake.addCommit(repository.id, {
+        files: options.file === false ? { 'README.md': '# app' } : { [AZURE_FILE]: 'steps: []' },
+      }),
+    );
     const project = await h.project(key);
     await h.ctx.db
       .update(projects)
@@ -183,32 +196,60 @@ describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () =
         scope: [{ repositoryId: s.repository.id, refName: 'refs/heads/main', matchKind: 'Exact' }],
       },
     });
+    const post = fake.requests.find(
+      (r) => r.method === 'POST' && r.path.endsWith('/policy/configurations'),
+    );
+    expect(JSON.parse(post!.body).settings.scope).toEqual([
+      { repositoryId: s.repository.id, refName: 'refs/heads/main', matchKind: 'exact' },
+    ]);
     expect(await stateOf(s.items[0]!)).toEqual({ policy: 'on', error: null });
   });
 
-  it('adopts an equal existing policy and leaves a blocking one alone', async () => {
+  /** A policy as a person made it, for the setup's pipeline on main. */
+  const personsPolicy = (
+    s: Awaited<ReturnType<typeof setup>>,
+    flags: { isEnabled: boolean; isBlocking: boolean },
+  ): FakeAzurePolicy => {
+    const policy: FakeAzurePolicy = {
+      id: 9000 + fake.policies.length,
+      projectId: s.repository.projectId,
+      type: '0609b952-1397-4640-95ec-e00a01b2c241',
+      ...flags,
+      settings: {
+        buildDefinitionId: s.definitions[0],
+        displayName: 'Person',
+        scope: [{ repositoryId: s.repository.id, refName: 'refs/heads/main', matchKind: 'Exact' }],
+      },
+    };
+    (fake.policies as FakeAzurePolicy[]).push(policy);
+    return policy;
+  };
+
+  it('adopts an enabled blocking policy for the pipeline as it is, and creates nothing', async () => {
     const s = await setup('policy/adopt');
+    const mine = personsPolicy(s, { isEnabled: true, isBlocking: true });
+    const before = fake.policies.length;
     await ingest(s);
     await runJobs();
-    const before = fake.policies.length;
-
-    const again = await setup('policy/adopt-2');
-    // The same pipeline and branch already carry a policy (made by a person, blocking).
-    await h.ctx.db
-      .update(repositorySetupItems)
-      .set({ azurePipelineId: s.definitions[0]!, repositoryRef: s.repository.id })
-      .where(eq(repositorySetupItems.runId, again.items[0]!.runId));
-    await h.ctx.db
-      .update(projects)
-      .set({ scmProjectRef: s.repository.id })
-      .where(eq(projects.id, again.project.id));
-    await ingest({ ...again, repository: s.repository });
-    await runJobs();
     expect(fake.policies).toHaveLength(before);
-    expect(await stateOf(again.items[0]!)).toEqual({ policy: 'on', error: null });
+    expect(fake.policies.find((p) => p.id === mine.id)).toMatchObject({ isBlocking: true });
+    expect(await stateOf(s.items[0]!)).toEqual({ policy: 'on', error: null });
   });
 
-  it('settles every pending item of the repository with the newest one pipeline', async () => {
+  it('a disabled policy for the pipeline is a choice of a person: manual, nothing created', async () => {
+    const s = await setup('policy/disabled');
+    personsPolicy(s, { isEnabled: false, isBlocking: false });
+    const before = fake.policies.length;
+    await ingest(s);
+    await runJobs();
+    expect(fake.policies).toHaveLength(before);
+    expect(await stateOf(s.items[0]!)).toEqual({
+      policy: 'manual',
+      error: AZURE_POLICY_TEXT.disabled,
+    });
+  });
+
+  it('settles the items of the newest pipeline; an item of another pipeline stays pending', async () => {
     const s = await setup('policy/two', ['new', 'new']);
     await ingest(s);
     await runJobs();
@@ -218,7 +259,71 @@ describe('the deferred Build validation policy (Azure sub-plan 7, task 7)', () =
     expect(
       fake.policies.filter((p) => p.settings.buildDefinitionId === s.definitions[0]),
     ).toHaveLength(0);
-    for (const item of s.items) expect(await stateOf(item)).toEqual({ policy: 'on', error: null });
+    expect((await stateOf(s.items[1]!)).policy).toBe('on');
+    expect((await stateOf(s.items[0]!)).policy).toBe('pending');
+  });
+
+  it('an item of the same pipeline that turns pending while the job runs is settled too', async () => {
+    const s = await setup('policy/late');
+    await ingest(s);
+    let late: { runId: string; position: number } | undefined;
+    fake.inject('POST', /\/_apis\/policy\/configurations$/, {
+      status: 200,
+      passThrough: true,
+      before: async () => {
+        const [run] = await h.ctx.db
+          .insert(repositorySetupRuns)
+          .values({ organizationId: h.organizationId, connectionId, ciSetup: true })
+          .returning();
+        await h.ctx.db.insert(repositorySetupItems).values({
+          runId: run!.id,
+          position: 0,
+          repositoryRef: s.repository.id,
+          repositoryName: s.repository.name,
+          projectId: s.project.id,
+          azurePipelineId: s.definitions[0]!,
+          azurePolicy: 'pending',
+        });
+        late = { runId: run!.id, position: 0 };
+      },
+    });
+    await runJobs();
+    expect(late).toBeDefined();
+    expect((await stateOf(s.items[0]!)).policy).toBe('on');
+    expect((await stateOf(late!)).policy).toBe('on');
+  });
+
+  it('waits for the pipeline file on main: pending until it is there', async () => {
+    const s = await setup('policy/file', ['new'], { file: false });
+    await ingest(s);
+    await runJobs();
+    expect(await stateOf(s.items[0]!)).toEqual({ policy: 'pending', error: null });
+    expect(fake.requests.filter((r) => r.method !== 'GET')).toEqual([]);
+
+    fake.setBranch(
+      s.repository.id,
+      'main',
+      fake.addCommit(s.repository.id, {
+        parents: [fake.branches(s.repository.id)['main']!],
+        files: { [AZURE_FILE]: 'steps: []' },
+      }),
+    );
+    await ingest(s);
+    await runJobs();
+    expect(await stateOf(s.items[0]!)).toEqual({ policy: 'on', error: null });
+  });
+
+  it('queues nothing for a main analysis without Azure, or without a pending item', async () => {
+    const s = await setup('policy/none');
+    const report = reportWith({ projectKey: s.project.key, branch: 'main' });
+    await s.project.ingestOk(report); // provider none
+    expect(await queued(s.project.id)).toEqual([]);
+    await h.ctx.db
+      .update(repositorySetupItems)
+      .set({ azurePolicy: 'on' })
+      .where(eq(repositorySetupItems.runId, s.items[0]!.runId));
+    await ingest(s);
+    expect(await queued(s.project.id)).toEqual([]);
   });
 
   it('a 403 becomes manual with the fixed text, never Azure words', async () => {

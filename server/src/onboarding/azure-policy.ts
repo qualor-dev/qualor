@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { AZURE_FILE } from './ci-setup';
 import { z } from 'zod';
 import type { Executor } from '../db/client';
 import { projects, repositorySetupItems, repositorySetupRuns, scmConnections } from '../db/schema';
@@ -21,6 +22,8 @@ export const AZURE_POLICY_QUEUE = 'azure-policy';
 export const AZURE_POLICY_TEXT = {
   manual:
     'The Azure DevOps identity needs Edit policies on the repository: add the Build validation policy by hand',
+  disabled:
+    'A Build validation policy for the Qualor pipeline exists but is disabled: enable it in the branch policies',
   unreachable:
     'Azure DevOps could not be reached to add the Build validation policy: add it by hand',
   failed: 'The Build validation policy could not be added: add it by hand',
@@ -66,13 +69,31 @@ interface Settled {
 
 const itemKey = sql<string>`${repositorySetupItems.runId} || ':' || ${repositorySetupItems.position}`;
 
-/** Settles the still pending items among `keys` with the outcome, in one transaction. */
-async function settle(deps: DecorationDeps, keys: readonly string[], outcome: Settled) {
+/**
+ * Settles the project's pending items of the repository whose pipeline is `pipelineId` with the
+ * outcome, in one transaction. The items are read again here, locked: one that turned pending
+ * while the job talked to Azure DevOps is settled too. An item of another pipeline stays pending:
+ * it gets its own policy at a later main-branch analysis.
+ */
+async function settle(
+  deps: DecorationDeps,
+  target: { projectId: string; repositoryId: string; pipelineId: number | null },
+  outcome: Settled,
+) {
   await deps.db.transaction(async (tx) => {
     const locked = await tx
       .select({ key: itemKey })
       .from(repositorySetupItems)
-      .where(and(eq(repositorySetupItems.azurePolicy, 'pending'), inArray(itemKey, [...keys])))
+      .where(
+        and(
+          eq(repositorySetupItems.projectId, target.projectId),
+          eq(repositorySetupItems.azurePolicy, 'pending'),
+          eq(sql`lower(${repositorySetupItems.repositoryRef})`, target.repositoryId),
+          target.pipelineId === null
+            ? isNull(repositorySetupItems.azurePipelineId)
+            : eq(repositorySetupItems.azurePipelineId, target.pipelineId),
+        ),
+      )
       .for('update');
     if (locked.length === 0) return;
     await tx
@@ -117,9 +138,12 @@ async function run(deps: DecorationDeps, payload: Payload): Promise<void> {
     .orderBy(desc(repositorySetupRuns.createdAt), desc(repositorySetupItems.position));
   const newest = pending[0];
   if (!newest) return;
-  const keys = pending.map((p) => p.key);
   const done = (state: SetupAzurePolicy, error: string | null) =>
-    settle(deps, keys, { state, error });
+    settle(
+      deps,
+      { projectId: payload.projectId, repositoryId, pipelineId: newest.pipelineId },
+      { state, error },
+    );
   if (newest.pipelineId === null) {
     await done('failed', AZURE_POLICY_TEXT.failed);
     return;
@@ -133,9 +157,22 @@ async function run(deps: DecorationDeps, payload: Payload): Promise<void> {
   try {
     const { client } = found;
     const { projectId } = await client.repository(repositoryId);
-    const existing = await client.buildPolicies(projectId, repositoryId, refName);
-    // One for the pipeline is adopted, a blocking one (a person made it so) left as it is.
-    if (!existing.some((p) => p.definitionId === newest.pipelineId)) {
+    // The pipeline's file must be on main first: until the setup pull request is merged, a pull
+    // request would run a pipeline whose file is not on its target branch. Stays pending.
+    const head = await client.branchHead(repositoryId, project.main);
+    if (head === null) return;
+    const file = await client.fileText(repositoryId, AZURE_FILE, head);
+    if ('skipped' in file && file.skipped === 'missing') return;
+    const existing = (await client.buildPolicies(projectId, repositoryId, refName)).filter(
+      (p) => p.definitionId === newest.pipelineId,
+    );
+    // A disabled one is a person's choice. An enabled one is adopted, a blocking one (a person
+    // made it so) left as it is.
+    if (existing.length > 0 && !existing.some((p) => p.isEnabled)) {
+      await done('manual', AZURE_POLICY_TEXT.disabled);
+      return;
+    }
+    if (existing.length === 0) {
       await client.createBuildPolicy(projectId, {
         definitionId: newest.pipelineId,
         repositoryId,
