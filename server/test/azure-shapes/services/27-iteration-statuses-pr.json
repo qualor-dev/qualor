@@ -1,0 +1,75 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "iterationId": 1,
+        "id": 1,
+        "description": "Coverage status check queued for Qualor",
+        "context": {
+          "name": "codecoverage",
+          "genre": "qualor"
+        },
+        "creationDate": "2026-11-24T21:26:42.7628676Z",
+        "updatedDate": "2026-11-24T21:26:42.7628676Z",
+        "createdBy": {
+          "displayName": "Azure Pipelines Test Service",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000054-0000-8888-8000-000000000000",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+            }
+          },
+          "id": "00000054-0000-8888-8000-000000000000",
+          "uniqueName": "",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+          "descriptor": "s2s.<secret>"
+        },
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/f15b1cb4-ab13-4d52-8fad-fa6e00001c43/pullRequests/37/iterations/1/statuses/1"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/f15b1cb4-ab13-4d52-8fad-fa6e00001c43"
+          }
+        }
+      },
+      {
+        "iterationId": 1,
+        "id": 2,
+        "state": "succeeded",
+        "description": "Quality gate passed",
+        "context": {
+          "name": "probe-org/probe-org-setup",
+          "genre": "qualor"
+        },
+        "creationDate": "2026-11-24T21:28:34.7898947Z",
+        "updatedDate": "2026-11-24T21:28:34.7898947Z",
+        "createdBy": {
+          "displayName": "Probe User",
+          "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+          "_links": {
+            "avatar": {
+              "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            }
+          },
+          "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+          "uniqueName": "",
+          "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+          "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        },
+        "targetUrl": "https://ado.example.invalid/projects/7c20c87d-10dc-465a-8d7d-fa6e00008fe9/branches/8abd0f82-18be-44e3-837e-fa6e0000a37b",
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/f15b1cb4-ab13-4d52-8fad-fa6e00001c43/pullRequests/37/iterations/1/statuses/2"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/f15b1cb4-ab13-4d52-8fad-fa6e00001c43"
+          }
+        }
+      }
+    ],
+    "count": 2
+  }
+}

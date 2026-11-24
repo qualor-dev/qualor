@@ -1,0 +1,25 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": "f15b1cb4-ab13-4d52-8fad-fa6e00001c43",
+    "name": "probe-org-setup",
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/f15b1cb4-ab13-4d52-8fad-fa6e00001c43",
+    "project": {
+      "id": "a1532079-a512-4327-8d28-fa6e00004469",
+      "name": "probe-org",
+      "description": "Qualor probe bench (Agile)",
+      "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+      "state": "wellFormed",
+      "revision": 19,
+      "visibility": "private",
+      "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+    },
+    "size": 0,
+    "remoteUrl": "https://user@example.invalid/probe-org/probe-org/_git/probe-org-setup",
+    "sshUrl": "user@example.invalid:v3/probe-org/probe-org/probe-org-setup",
+    "webUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe-org-setup",
+    "isDisabled": false,
+    "isInMaintenance": false
+  }
+}

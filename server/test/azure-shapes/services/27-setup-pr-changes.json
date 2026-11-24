@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "changeEntries": [
+      {
+        "changeTrackingId": 1,
+        "changeId": 1,
+        "item": {
+          "objectId": "1A5C320E23BA7703EE96D94A7246C9F229B49793",
+          "path": "/.azure-pipelines/qualor.yml"
+        },
+        "changeType": "add"
+      }
+    ]
+  }
+}

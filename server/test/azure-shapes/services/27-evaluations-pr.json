@@ -1,0 +1,79 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "value": [
+      {
+        "configuration": {
+          "createdBy": {
+            "displayName": "Probe User",
+            "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+            "_links": {
+              "avatar": {
+                "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+              }
+            },
+            "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+            "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+            "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+            "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+          },
+          "createdDate": "2026-11-24T21:26:15.7927877Z",
+          "isEnabled": true,
+          "isBlocking": false,
+          "isDeleted": false,
+          "settings": {
+            "buildDefinitionId": 38,
+            "queueOnSourceUpdateOnly": false,
+            "manualQueueOnly": false,
+            "displayName": "Qualor",
+            "validDuration": 0,
+            "scope": [
+              {
+                "refName": "refs/heads/main",
+                "matchKind": "Exact",
+                "repositoryId": "f15b1cb4-ab13-4d52-8fad-fa6e00001c43"
+              }
+            ]
+          },
+          "isEnterpriseManaged": false,
+          "_links": {
+            "self": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/24"
+            },
+            "policyType": {
+              "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+            }
+          },
+          "revision": 1,
+          "id": 24,
+          "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/configurations/24",
+          "type": {
+            "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+            "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+            "displayName": "Build"
+          }
+        },
+        "artifactId": "vstfs:///CodeReview/CodeReviewId/a1532079-a512-4327-8d28-fa6e00004469%2f37",
+        "evaluationId": "37152af5-11cd-4cc6-8a7e-fa6e0000cd80",
+        "startedDate": "2026-11-24T21:26:38.1187453Z",
+        "status": "queued",
+        "context": {
+          "lastMergeCommitId": "122d68edd73979e56a5459b76cab567d93694a1b",
+          "lastMergeSourceCommitId": "995d23009a688e38376cd2964cecb52b683bcfd5",
+          "lastMergeTargetCommitId": "469e401121faf44fa15311d12aab56f75bf2448d",
+          "buildId": 53,
+          "buildDefinitionId": 38,
+          "buildDefinitionName": "Qualor",
+          "buildIsNotCurrent": false,
+          "buildStartedUtc": "2026-11-24T21:26:38.1129594Z",
+          "isExpired": false,
+          "buildAfterMerge": false,
+          "wasAutoRequeued": false,
+          "buildOutputPreview": null
+        }
+      }
+    ],
+    "count": 1
+  }
+}

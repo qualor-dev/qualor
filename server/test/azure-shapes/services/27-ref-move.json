@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "repositoryId": "f15b1cb4-ab13-4d52-8fad-fa6e00001c43",
+        "name": "refs/heads/main",
+        "oldObjectId": "454eb5920ad2ddf4ae5ff5473eeab051f3ff399c",
+        "newObjectId": "721706ec8d79a0f51f599a43bc429e8ce2e12ad9",
+        "isLocked": false,
+        "updateStatus": "succeeded",
+        "success": true
+      }
+    ],
+    "count": 1
+  }
+}
