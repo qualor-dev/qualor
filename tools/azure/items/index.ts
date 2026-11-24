@@ -26,6 +26,7 @@ import { item as aiFix } from './25-ai-fix.js';
 import { item as ciSetup } from './26-ci-setup.js';
 import { item as onboarding } from './27-onboarding.js';
 import { item as ciTrigger } from './28-ci-trigger.js';
+import { item as nameTaken } from './29-name-taken.js';
 
 /** The probe items, by number (14, the Marketplace publisher verification, is done by hand). */
 export const ITEMS: readonly ProbeItem[] = [
@@ -56,4 +57,5 @@ export const ITEMS: readonly ProbeItem[] = [
   ciSetup,
   onboarding,
   ciTrigger,
+  nameTaken,
 ];
