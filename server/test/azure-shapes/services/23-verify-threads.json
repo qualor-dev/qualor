@@ -1,0 +1,342 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 100,
+        "publishedDate": "2026-11-24T13:02:19.533Z",
+        "lastUpdatedDate": "2026-11-24T13:08:06.843Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "**Qualor probe item 23, thread A**: Apply change should replace lines 2-3.\n\n```suggestion\nbravo-charlie-1\nbravo-charlie-2\n```",
+            "publishedDate": "2026-11-24T13:02:19.533Z",
+            "lastUpdatedDate": "2026-11-24T13:02:19.533Z",
+            "lastContentUpdatedDate": "2026-11-24T13:02:19.533Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/100/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/100"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/29"
+              }
+            }
+          }
+        ],
+        "status": "fixed",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261124130214.txt",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 3,
+            "offset": 8
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "42be7afa0d1f46bc8122fa6e0000bd21"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/100"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 101,
+        "publishedDate": "2026-11-24T13:02:19.837Z",
+        "lastUpdatedDate": "2026-11-24T13:08:06.867Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "**Qualor probe item 23, thread B**: Apply change should replace lines 4-5.\n\n```suggestion\ndelta-echo-1\ndelta-echo-2\ndelta-echo-3\n```",
+            "publishedDate": "2026-11-24T13:02:19.837Z",
+            "lastUpdatedDate": "2026-11-24T13:02:19.837Z",
+            "lastContentUpdatedDate": "2026-11-24T13:02:19.837Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/101/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/101"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/29"
+              }
+            }
+          }
+        ],
+        "status": "fixed",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261124130214.txt",
+          "rightFileStart": {
+            "line": 4,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 5,
+            "offset": 5
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "e73b72d6c33e42fc81fafa6e00004f5c"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/101"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 102,
+        "publishedDate": "2026-11-24T13:02:19.95Z",
+        "lastUpdatedDate": "2026-11-24T13:08:06.837Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "**Qualor probe item 23, thread C**: Apply change should delete line 6.\n\n```suggestion\n```",
+            "publishedDate": "2026-11-24T13:02:19.95Z",
+            "lastUpdatedDate": "2026-11-24T13:02:19.95Z",
+            "lastContentUpdatedDate": "2026-11-24T13:02:19.95Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/102/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/102"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/29"
+              }
+            }
+          }
+        ],
+        "status": "fixed",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261124130214.txt",
+          "rightFileStart": {
+            "line": 6,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 6,
+            "offset": 8
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "66f1aa44ed2942598b0ffa6e00009e22"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/102"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 103,
+        "publishedDate": "2026-11-24T13:08:07.267Z",
+        "lastUpdatedDate": "2026-11-24T13:08:07.267Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Microsoft.VisualStudio.Services.TFS",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/00000002-0000-8888-8000-000000000000",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+                }
+              },
+              "id": "00000002-0000-8888-8000-000000000000",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+              "descriptor": "s2s.<secret>"
+            },
+            "content": "The reference refs/heads/probe/23-20261124130214 was updated.",
+            "publishedDate": "2026-11-24T13:08:07.267Z",
+            "lastUpdatedDate": "2026-11-24T13:08:07.267Z",
+            "lastContentUpdatedDate": "2026-11-24T13:08:07.267Z",
+            "commentType": "system",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/103/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/103"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/29"
+              }
+            }
+          }
+        ],
+        "threadContext": null,
+        "properties": {
+          "CodeReviewThreadType": {
+            "$type": "System.String",
+            "$value": "RefUpdate"
+          },
+          "CodeReviewRefName": {
+            "$type": "System.String",
+            "$value": "refs/heads/probe/23-20261124130214"
+          },
+          "CodeReviewRefNewCommits": {
+            "$type": "System.String",
+            "$value": "23039a4857f7e1ff1b6fb9f45bb525fd08a14f2d"
+          },
+          "CodeReviewRefNewCommitsCount": {
+            "$type": "System.Int32",
+            "$value": 1
+          },
+          "CodeReviewRefNewHeadCommit": {
+            "$type": "System.String",
+            "$value": "23039a4857f7e1ff1b6fb9f45bb525fd08a14f2d"
+          },
+          "CodeReviewRefUpdatedByIdentity": {
+            "$type": "System.String",
+            "$value": "1"
+          }
+        },
+        "identities": {
+          "1": {
+            "displayName": "Probe User",
+            "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "_links": {
+              "avatar": {
+                "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+              }
+            },
+            "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+            "uniqueName": "user@example.invalid",
+            "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+            "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/29/threads/103"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      }
+    ],
+    "count": 4
+  }
+}

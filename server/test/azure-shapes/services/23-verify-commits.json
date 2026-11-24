@@ -1,0 +1,70 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 3,
+    "value": [
+      {
+        "commitId": "23039a4857f7e1ff1b6fb9f45bb525fd08a14f2d",
+        "author": {
+          "name": "Probe User",
+          "email": "user@example.invalid",
+          "date": "2026-11-24T13:08:06Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "email": "user@example.invalid",
+          "date": "2026-11-24T13:08:06Z"
+        },
+        "comment": "Apply suggestions from code review",
+        "changeCounts": {
+          "Add": 0,
+          "Edit": 1,
+          "Delete": 0
+        },
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/23039a4857f7e1ff1b6fb9f45bb525fd08a14f2d",
+        "remoteUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe/commit/23039a4857f7e1ff1b6fb9f45bb525fd08a14f2d"
+      },
+      {
+        "commitId": "bdcb7ae2d5582effe93db8bd84303554acac1964",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-24T13:02:18Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-24T13:02:18Z"
+        },
+        "comment": "Qualor probe item 23",
+        "changeCounts": {
+          "Add": 1,
+          "Edit": 0,
+          "Delete": 0
+        },
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/bdcb7ae2d5582effe93db8bd84303554acac1964",
+        "remoteUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe/commit/bdcb7ae2d5582effe93db8bd84303554acac1964"
+      },
+      {
+        "commitId": "b86695d64dc5eef48d5f13437024a72d0f6c8e28",
+        "author": {
+          "name": "Probe User",
+          "email": "user@example.invalid",
+          "date": "2026-11-22T04:21:06Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "email": "user@example.invalid",
+          "date": "2026-11-22T04:21:06Z"
+        },
+        "comment": "Initial probe project",
+        "changeCounts": {
+          "Add": 5,
+          "Edit": 0,
+          "Delete": 0
+        },
+        "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/commits/b86695d64dc5eef48d5f13437024a72d0f6c8e28",
+        "remoteUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe/commit/b86695d64dc5eef48d5f13437024a72d0f6c8e28"
+      }
+    ]
+  }
+}
