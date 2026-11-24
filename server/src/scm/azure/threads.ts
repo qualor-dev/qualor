@@ -449,9 +449,7 @@ async function createThreads(
       client.createThread(repositoryId, prId, {
         content: body,
         status: 'active',
-        filePath: path,
-        line,
-        lineLength: text.length,
+        anchor: { filePath: path, startLine: line, endLine: line, endLineLength: text.length },
       }),
     );
     if (made) created += 1;
@@ -476,9 +474,12 @@ async function createThreads(
         await client.createThread(repositoryId, prId, {
           content: note.body,
           status: 'active',
-          filePath: issue.path,
-          line: issue.anchorLine,
-          lineLength: text.length,
+          anchor: {
+            filePath: issue.path,
+            startLine: issue.anchorLine,
+            endLine: issue.anchorLine,
+            endLineLength: text.length,
+          },
         });
         posted.add(issue);
       } catch (err) {

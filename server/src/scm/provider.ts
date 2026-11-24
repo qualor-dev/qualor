@@ -37,6 +37,7 @@ export type ScmErrorReason =
   | 'token_endpoint_error'
   | 'sign_in_required'
   | 'html_answer'
+  | 'stale'
   | 'other';
 
 const DEFAULT_REASON: Record<ScmErrorKind, ScmErrorReason> = {

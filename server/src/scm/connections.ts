@@ -177,6 +177,7 @@ function problemCode(err: GitLabError): TestProblemCode {
     // GitLab never raises not_installed (GitHub only) nor the Azure DevOps reasons; the switch
     // stays exhaustive.
     case 'http':
+    case 'stale':
     case 'other':
     case 'not_installed':
     case 'token_endpoint':

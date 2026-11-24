@@ -122,6 +122,26 @@ import { TEST_SERVER_CERT_PEM, TEST_SERVER_KEY_PEM } from './tls';
  *     A POST is `enabled`; a PUT without `status` enables it again (constructed); a test sets a
  *     status with `setSubscriptionStatus` (`onProbation` ...). Nothing is delivered: the fake calls no
  *     webhook (`deliverAzureEvent` in `test/azure.ts` posts a recorded event to Qualor's route).
+ * - Fix branches and pull requests (sub-plan 6), at api-version 7.0, from the 22-* recordings of a
+ *   Services organisation (`azure-shapes/services/`) with the fake's own values laid over them. A
+ *   repository holds commits (parents and files; `addCommit`, `addFile`) and refs (`setBranch`):
+ *   - `refs?filter=` (GET): `{ count, value }` of `22-refs-prefix` entries, a PREFIX match
+ *     (`heads/a` also lists `heads/a-2`). `refs` (POST, an array of updates): `22-ref-move`; a
+ *     stale old id is `staleOldObjectId` (`success: false`, constructed), a move need not be a
+ *     fast-forward, and a delete ignores a wrong old id: `succeededCorruptRef` (`22-ref-delete-stale`),
+ *     `succeeded` with the right one (`22-ref-delete-tmp`), `succeededNonExistentRef` for no ref.
+ *   - `pushes` (POST): one commit of edits (base64 or raw text) onto the parent's files, 201 as
+ *     `22-push-new-branch`, to any ref (`refs/heads/…`, `refs/qualor/…`). A parent that is not the
+ *     ref's head, or an old id that is not its head (zero for a new ref), is `22-push-force-move`: 400
+ *     `baseCommitId` (item 22e: a stale push looks the same).
+ *   - `diffs/commits` (GET, commit versions): `22-ancestry-diverged` with the `commonCommit` the
+ *     graph gives (the merge base; absent for commits with no history in common).
+ *   - `items?…&$format=octetStream` (GET): the file's bytes, `text/plain; api-version=7.0`, as stored.
+ *   - `pullrequests` (GET with `searchCriteria.sourceRefName` / `targetRefName` / `status`, default
+ *     active; POST), and `pullrequests/{id}` (PATCH title, description, status): the pull request of
+ *     `22-pr-get`, with `mergeStatus` (`setMergeStatus`, default `succeeded`), `description` (over
+ *     4000 characters is `22-pr-description-4001`) and `forkSource` for a fork. `completePullRequest`
+ *     completes one (a merge the fake does not make).
  * - The token endpoint (`POST /{tenant}/oauth2/v2.0/token`): Microsoft's documented client
  *   credentials answer, and its documented error body (`error`, `error_description` with an
  *   AADSTS code) for a refusal: 400, or 401 `invalid_client` for a wrong secret or assertion. It
@@ -336,6 +356,11 @@ export interface FakeAzurePullRequestInput {
   headSha?: string | null;
   /** A status policy that wants every status on an iteration (probe item 7). Default false. */
   statusPolicy?: boolean;
+  /** Default `succeeded`; null: none (Azure DevOps has not tried a merge). */
+  mergeStatus?: string | null;
+  description?: string;
+  /** The source branch is in a fork (`forkSource` in the answer). Default false. */
+  fork?: boolean;
 }
 
 export interface FakeAzurePullRequest {
@@ -347,6 +372,9 @@ export interface FakeAzurePullRequest {
   targetRefName: string;
   headSha: string | null;
   statusPolicy: boolean;
+  mergeStatus: string | null;
+  description: string;
+  fork: boolean;
   iterations: FakeAzureIteration[];
   threads: FakeAzureThread[];
   /** Statuses posted without an iteration (accepted only without a status policy). */
@@ -422,6 +450,28 @@ export interface FakeAzureDevOps {
   ): FakeAzureIteration;
   /** A file as a commit holds it (a Buffer with a NUL byte is binary); `path` has no leading `/`. */
   addFile(repositoryId: string, commit: string, path: string, content: string | Buffer): void;
+  /**
+   * A commit: the files of its first parent, with `files` laid over them. Default id: a new one.
+   * Returns the (lower-case) id.
+   */
+  addCommit(
+    repositoryId: string,
+    input?: { id?: string; parents?: string[]; files?: Record<string, string | Buffer> },
+  ): string;
+  /** Points branch `name` (without `refs/heads/`) at a commit, creating it. */
+  setBranch(repositoryId: string, name: string, commit: string): void;
+  /** The branches (heads) by name, without `refs/heads/`. */
+  branches(repositoryId: string): Record<string, string>;
+  /** Every ref by its full name. */
+  refs(repositoryId: string): Record<string, string>;
+  /** The text of a file at a ref, a branch name or a commit; null when there is none. */
+  fileAt(repositoryId: string, refOrSha: string, path: string): string | null;
+  /** The repository's pull requests. */
+  pullRequests(repositoryId: string): FakeAzurePullRequest[];
+  /** What Azure DevOps will say of a pull request's merge (`conflicts`, `queued` ...). */
+  setMergeStatus(repositoryId: string, prId: number, mergeStatus: string | null): void;
+  /** Completes a pull request (the merge itself is not made). */
+  completePullRequest(repositoryId: string, prId: number): void;
   /** A thread, as a person or another tool made it (the default author is the PAT's user). */
   addThread(repositoryId: string, prId: number, input?: FakeAzureThreadInput): FakeAzureThread;
   /** A system thread (`commentType: 'system'`, no status), as Azure DevOps writes for a push. */
@@ -611,7 +661,51 @@ export async function createFakeAzureDevOps(options: {
   const projectIds = new Map<string, string>();
   /** Pull requests by `<repository id>#<id>`; files by `<repository id>@<commit>:<path>`. */
   const pullRequests = new Map<string, FakeAzurePullRequest>();
-  const files = new Map<string, Buffer>();
+  /** Commits by `<repository id>@<sha>`; refs by repository id, then full ref name. */
+  const commits = new Map<string, { parents: string[]; files: Map<string, Buffer> }>();
+  const refsOf = new Map<string, Map<string, string>>();
+  const repoRefs = (repoId: string) => {
+    const known = refsOf.get(repoId);
+    if (known) return known;
+    const created = new Map<string, string>();
+    refsOf.set(repoId, created);
+    return created;
+  };
+  const commitOf = (repoId: string, sha: string) => commits.get(`${repoId}@${sha.toLowerCase()}`);
+  const ensureCommit = (repoId: string, sha: string) => {
+    const key = `${repoId}@${sha.toLowerCase()}`;
+    let commit = commits.get(key);
+    if (!commit) {
+      commit = { parents: [], files: new Map() };
+      commits.set(key, commit);
+    }
+    return commit;
+  };
+  /** A ref name, a branch name or a commit id as a commit id (null: nothing there). */
+  const resolveCommit = (repoId: string, version: string, type = 'commit'): string | null => {
+    const refs = repoRefs(repoId);
+    const named =
+      type === 'branch' || type === 'tag'
+        ? refs.get(`refs/${type === 'tag' ? 'tags' : 'heads'}/${version}`)
+        : undefined;
+    return named ?? (commitOf(repoId, version) ? version.toLowerCase() : null);
+  };
+  /** Every commit reachable from `sha` (itself included). */
+  const ancestorsOf = (repoId: string, sha: string): Set<string> => {
+    const seen = new Set<string>();
+    const todo = [sha.toLowerCase()];
+    for (let next = todo.pop(); next !== undefined; next = todo.pop()) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      todo.push(...(commitOf(repoId, next)?.parents ?? []));
+    }
+    return seen;
+  };
+  let commitCounter = 0;
+  const newCommitId = (seed: string) =>
+    createHash('sha1')
+      .update(`${seed}#${(commitCounter += 1)}#${randomUUID()}`)
+      .digest('hex');
   const commitStatuses: FakeAzureDevOps['commitStatuses'] = [];
   let threadCounter = 0;
   let statusCounter = 0;
@@ -876,8 +970,11 @@ export async function createFakeAzureDevOps(options: {
     status: p.status,
     isDraft: p.isDraft,
     title: p.title,
+    description: p.description,
     sourceRefName: p.sourceRefName,
     targetRefName: p.targetRefName,
+    mergeStatus: p.mergeStatus ?? undefined,
+    ...(p.fork ? { forkSource: { repository: repositoryJson(r), name: p.sourceRefName } } : {}),
     lastMergeSourceCommit:
       p.headSha === null
         ? undefined
@@ -937,6 +1034,258 @@ export async function createFakeAzureDevOps(options: {
     }
   };
 
+  const recordedPush = azureShape<{ body: Record<string, unknown> }>(
+    'services',
+    '22-push-new-branch',
+  ).body;
+  const recordedRefUpdate = azureShape<{ body: { value: Record<string, unknown>[] } }>(
+    'services',
+    '22-ref-move',
+  ).body.value[0] as Record<string, unknown>;
+  const recordedRef = azureShape<{ body: { value: Record<string, unknown>[] } }>(
+    'services',
+    '22-refs-prefix',
+  ).body.value[0] as Record<string, unknown>;
+  const recordedDiff = azureShape<{ body: Record<string, unknown> }>(
+    'services',
+    '22-ancestry-diverged',
+  ).body;
+  const recordedPushRefusal = recordedAnswer('services', '22-push-force-move');
+  const recordedDescriptionRefusal = recordedAnswer('services', '22-pr-description-4001');
+  const MAX_DESCRIPTION = 4000;
+  interface FakePushChange {
+    changeType?: string;
+    item?: { path?: string };
+    newContent?: { content?: string; contentType?: string };
+  }
+  const ZERO_ID = '0'.repeat(40);
+
+  /** The routes of fix branches and pull requests (sub-plan 6); true when the request is one of them. */
+  const fixRoute = (
+    req: RecordedRequest,
+    res: ServerResponse,
+    repository: FakeAzureRepository,
+    rest: string,
+    query: URLSearchParams,
+  ): boolean => {
+    const answerJson = (status: number, body: unknown) =>
+      send(res, status, body, { 'content-type': JSON_7_0 });
+    const badRequest = (text: string) =>
+      wrapped(res, 400, `fake Azure DevOps: ${text}`, 'ArgumentException');
+    const refs = repoRefs(repository.id);
+    const refJson = (name: string, objectId: string) => ({
+      ...recordedRef,
+      name,
+      objectId,
+      url: `${url}/_apis/git/repositories/${repository.id}/refs?filter=${encodeURIComponent(name.replace(/^refs\//, ''))}`,
+    });
+
+    if (rest === 'refs' && req.method === 'GET') {
+      const filter = query.get('filter') ?? '';
+      const value = [...refs]
+        .filter(([name]) => name.startsWith(`refs/${filter}`))
+        .map(([name, objectId]) => refJson(name, objectId));
+      answerJson(200, { value, count: value.length });
+      return true;
+    }
+
+    if (rest === 'refs' && req.method === 'POST') {
+      let updates: unknown;
+      try {
+        updates = JSON.parse(req.body);
+      } catch {
+        updates = null;
+      }
+      if (!Array.isArray(updates)) {
+        badRequest('ref updates are an array');
+        return true;
+      }
+      const value = (updates as Record<string, unknown>[]).map((u) => {
+        const name = String(u.name);
+        const old = String(u.oldObjectId ?? ZERO_ID).toLowerCase();
+        const next = String(u.newObjectId ?? ZERO_ID).toLowerCase();
+        const current = refs.get(name);
+        const done = (updateStatus: string, success = true) => ({
+          ...recordedRefUpdate,
+          repositoryId: repository.id,
+          name,
+          oldObjectId: old,
+          newObjectId: next,
+          updateStatus,
+          success,
+        });
+        if (next === ZERO_ID) {
+          if (current === undefined) return done('succeededNonExistentRef');
+          refs.delete(name);
+          return done(current === old ? 'succeeded' : 'succeededCorruptRef');
+        }
+        if ((current ?? ZERO_ID) !== old) return done('staleOldObjectId', false);
+        if (!commitOf(repository.id, next)) return done('invalidObjectId', false);
+        refs.set(name, next);
+        return done('succeeded');
+      });
+      answerJson(200, { value, count: value.length });
+      return true;
+    }
+
+    if (rest === 'pushes' && req.method === 'POST') {
+      const body = jsonBodyOf(req);
+      const update = (body?.refUpdates as Record<string, unknown>[] | undefined)?.[0];
+      const made = (body?.commits as Record<string, unknown>[] | undefined)?.[0];
+      const parent = (made?.parents as unknown[] | undefined)?.[0];
+      if (!update || !made || typeof update.name !== 'string' || typeof parent !== 'string') {
+        badRequest('a push is one ref update and one commit with a parent');
+        return true;
+      }
+      const name = update.name;
+      const old = String(update.oldObjectId ?? ZERO_ID).toLowerCase();
+      const current = refs.get(name);
+      const parentCommit = commitOf(repository.id, parent);
+      // Item 22d and 22e: a parent that is not the head and a stale old id are the same 400.
+      if (
+        !parentCommit ||
+        (current ?? ZERO_ID) !== old ||
+        (current !== undefined && current !== parent.toLowerCase())
+      ) {
+        send(
+          res,
+          recordedPushRefusal.status,
+          recordedPushRefusal.body,
+          recordedPushRefusal.headers,
+        );
+        return true;
+      }
+      const edited = new Map(parentCommit.files);
+      for (const change of (made.changes as FakePushChange[] | undefined) ?? []) {
+        const filePath = String(change.item?.path ?? '').replace(/^\//, '');
+        const content = change.newContent as { content?: string; contentType?: string } | undefined;
+        if (!filePath || typeof content?.content !== 'string') {
+          badRequest('a change needs a path and content');
+          return true;
+        }
+        if (change.changeType === 'edit' && !edited.has(filePath)) {
+          badRequest(`the file ${filePath} cannot be edited, it is not in the parent`);
+          return true;
+        }
+        edited.set(
+          filePath,
+          content.contentType === 'base64encoded'
+            ? Buffer.from(content.content, 'base64')
+            : Buffer.from(content.content),
+        );
+      }
+      const id = newCommitId(`${parent}${String(made.comment)}`);
+      commits.set(`${repository.id}@${id}`, { parents: [parent.toLowerCase()], files: edited });
+      refs.set(name, id);
+      const [recordedCommit] = recordedPush.commits as Record<string, unknown>[];
+      answerJson(201, {
+        ...recordedPush,
+        commits: [
+          {
+            ...recordedCommit,
+            commitId: id,
+            comment: made.comment,
+            parents: [parent.toLowerCase()],
+          },
+        ],
+        refUpdates: [{ repositoryId: repository.id, name, oldObjectId: old, newObjectId: id }],
+        repository: repositoryJson(repository),
+      });
+      return true;
+    }
+
+    if (rest === 'diffs/commits' && req.method === 'GET') {
+      const base = resolveCommit(repository.id, query.get('baseVersion') ?? '');
+      const target = resolveCommit(repository.id, query.get('targetVersion') ?? '');
+      if (!base || !target) {
+        wrapped(res, 404, 'TF401175: The commit does not exist.', 'GitCommitDoesNotExistException');
+        return true;
+      }
+      const fromBase = ancestorsOf(repository.id, base);
+      const fromTarget = ancestorsOf(repository.id, target);
+      const shared = [...fromBase].filter((c) => fromTarget.has(c));
+      // The merge base: a shared commit no other shared commit descends from.
+      const best = shared.find(
+        (c) => !shared.some((o) => o !== c && ancestorsOf(repository.id, o).has(c)),
+      );
+      answerJson(200, {
+        ...recordedDiff,
+        changes: [],
+        changeCounts: {},
+        ...(best === undefined ? { commonCommit: undefined } : { commonCommit: best }),
+        baseCommit: base,
+        targetCommit: target,
+        aheadCount: [...fromTarget].filter((c) => !fromBase.has(c)).length,
+        behindCount: [...fromBase].filter((c) => !fromTarget.has(c)).length,
+      });
+      return true;
+    }
+
+    if (rest === 'pullrequests' && req.method === 'GET') {
+      const status = query.get('searchCriteria.status') ?? 'active';
+      const source = query.get('searchCriteria.sourceRefName');
+      const target = query.get('searchCriteria.targetRefName');
+      const value = [...pullRequests]
+        .filter(([key]) => key.startsWith(`${repository.id}#`))
+        .map(([, p]) => p)
+        .filter(
+          (p) =>
+            (status === 'all' || p.status === status) &&
+            (source === null || p.sourceRefName === source) &&
+            (target === null || p.targetRefName === target),
+        )
+        .map((p) => {
+          // A listed pull request has a minimal repository (item 22g): no web URL.
+          const { id, name, url: repositoryUrl, project } = repositoryJson(repository);
+          return {
+            ...pullRequestJson(repository, p),
+            repository: { id, name, url: repositoryUrl, project },
+          };
+        });
+      answerJson(200, { value, count: value.length });
+      return true;
+    }
+
+    if (rest === 'pullrequests' && req.method === 'POST') {
+      const body = jsonBodyOf(req);
+      if (
+        !body ||
+        typeof body.sourceRefName !== 'string' ||
+        typeof body.targetRefName !== 'string' ||
+        typeof body.title !== 'string'
+      ) {
+        badRequest('a pull request needs source, target and a title');
+        return true;
+      }
+      const description = typeof body.description === 'string' ? body.description : '';
+      if (description.length > MAX_DESCRIPTION) {
+        send(
+          res,
+          recordedDescriptionRefusal.status,
+          recordedDescriptionRefusal.body,
+          recordedDescriptionRefusal.headers,
+        );
+        return true;
+      }
+      const sourceHead = refs.get(body.sourceRefName);
+      if (sourceHead === undefined || !refs.has(body.targetRefName)) {
+        badRequest('the source and the target branch must exist');
+        return true;
+      }
+      const pr = fake.addPullRequest(repository.id, {
+        title: body.title,
+        description,
+        sourceRefName: body.sourceRefName,
+        targetRefName: body.targetRefName,
+        headSha: sourceHead,
+      });
+      answerJson(201, pullRequestJson(repository, pr));
+      return true;
+    }
+
+    return false;
+  };
+
   const gitRoute = (
     req: RecordedRequest,
     res: ServerResponse,
@@ -981,8 +1330,19 @@ export async function createFakeAzureDevOps(options: {
 
     if (rest === 'items' && req.method === 'GET') {
       const path = query.get('path') ?? '';
-      const commit = (query.get('versionDescriptor.version') ?? '').toLowerCase();
-      const content = files.get(`${repository.id}@${commit}:${path.replace(/^\//, '')}`);
+      const version = (query.get('versionDescriptor.version') ?? '').toLowerCase();
+      const commit =
+        resolveCommit(
+          repository.id,
+          version,
+          query.get('versionDescriptor.versionType') ?? 'commit',
+        ) ?? version;
+      const content = commitOf(repository.id, commit)?.files.get(path.replace(/^\//, ''));
+      if (content && query.get('$format') === 'octetStream') {
+        res.writeHead(200, { 'content-type': 'text/plain; api-version=7.0' });
+        res.end(content);
+        return;
+      }
       if (!content) {
         return missing(
           `TF401174: The item could not be found at commit ${commit}.`,
@@ -1000,6 +1360,8 @@ export async function createFakeAzureDevOps(options: {
       });
     }
 
+    if (fixRoute(req, res, repository, rest, query)) return;
+
     const prRoute = /^pullrequests\/(\d+)(?:\/(.*))?$/.exec(rest);
     if (!prRoute) return missing('fake Azure DevOps: no such route', 'NotFound');
     const pr = pullRequests.get(`${repository.id}#${prRoute[1]}`);
@@ -1013,6 +1375,18 @@ export async function createFakeAzureDevOps(options: {
     const { method } = req;
 
     if (sub === '' && method === 'GET') return answerJson(200, pullRequestJson(repository, pr));
+
+    if (sub === '' && method === 'PATCH') {
+      const body = jsonBodyOf(req);
+      if (!body) return bad('a pull request update is a JSON object');
+      if (typeof body.description === 'string' && body.description.length > MAX_DESCRIPTION) {
+        return refuse(recordedDescriptionRefusal);
+      }
+      if (typeof body.title === 'string') pr.title = body.title;
+      if (typeof body.description === 'string') pr.description = body.description;
+      if (body.status === 'abandoned' || body.status === 'active') pr.status = body.status;
+      return answerJson(200, pullRequestJson(repository, pr));
+    }
 
     if (sub === 'iterations' && method === 'GET') {
       const value = pr.iterations.map((i) => ({
@@ -1593,6 +1967,9 @@ export async function createFakeAzureDevOps(options: {
             ? createHash('sha1').update(`head-${repoId}-${id}`).digest('hex')
             : input.headSha,
         statusPolicy: input.statusPolicy ?? false,
+        mergeStatus: input.mergeStatus === undefined ? 'succeeded' : input.mergeStatus,
+        description: input.description ?? '',
+        fork: input.fork ?? false,
         iterations: [],
         threads: [],
         statuses: [],
@@ -1619,8 +1996,53 @@ export async function createFakeAzureDevOps(options: {
       return iteration;
     },
     addFile(repositoryId, commit, filePath, content) {
-      const key = `${repositoryId.toLowerCase()}@${commit.toLowerCase()}:${filePath.replace(/^\//, '')}`;
-      files.set(key, Buffer.isBuffer(content) ? content : Buffer.from(content));
+      ensureCommit(repositoryId.toLowerCase(), commit).files.set(
+        filePath.replace(/^\//, ''),
+        Buffer.isBuffer(content) ? content : Buffer.from(content),
+      );
+    },
+    addCommit(repositoryId, input = {}) {
+      const repoId = repositoryId.toLowerCase();
+      const id = (input.id ?? newCommitId(repoId)).toLowerCase();
+      const parents = (input.parents ?? []).map((p) => p.toLowerCase());
+      const commit = ensureCommit(repoId, id);
+      commit.parents = parents;
+      commit.files = new Map(parents[0] ? commitOf(repoId, parents[0])?.files : undefined);
+      for (const [filePath, content] of Object.entries(input.files ?? {})) {
+        fake.addFile(repoId, id, filePath, content);
+      }
+      return id;
+    },
+    setBranch(repositoryId, name, commit) {
+      repoRefs(repositoryId.toLowerCase()).set(`refs/heads/${name}`, commit.toLowerCase());
+    },
+    branches(repositoryId) {
+      return Object.fromEntries(
+        [...repoRefs(repositoryId.toLowerCase())]
+          .filter(([name]) => name.startsWith('refs/heads/'))
+          .map(([name, sha]) => [name.slice('refs/heads/'.length), sha]),
+      );
+    },
+    refs(repositoryId) {
+      return Object.fromEntries(repoRefs(repositoryId.toLowerCase()));
+    },
+    fileAt(repositoryId, refOrSha, filePath) {
+      const repoId = repositoryId.toLowerCase();
+      const refs = repoRefs(repoId);
+      const sha =
+        refs.get(refOrSha) ?? refs.get(`refs/heads/${refOrSha}`) ?? refOrSha.toLowerCase();
+      const content = commitOf(repoId, sha)?.files.get(filePath.replace(/^\//, ''));
+      return content === undefined ? null : content.toString('utf8');
+    },
+    pullRequests(repositoryId) {
+      const repoId = repositoryId.toLowerCase();
+      return [...pullRequests].filter(([key]) => key.startsWith(`${repoId}#`)).map(([, p]) => p);
+    },
+    setMergeStatus(repositoryId, prId, mergeStatus) {
+      fake.pullRequest(repositoryId, prId).mergeStatus = mergeStatus;
+    },
+    completePullRequest(repositoryId, prId) {
+      fake.pullRequest(repositoryId, prId).status = 'completed';
     },
     addThread(repositoryId, prId, input = {}) {
       const pr = fake.pullRequest(repositoryId, prId);

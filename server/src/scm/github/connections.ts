@@ -73,6 +73,7 @@ function problemCode(err: ScmError): TestProblemCode {
       return 'bad_answer';
     // GitHub never raises the Azure DevOps reasons; the switch stays exhaustive.
     case 'http':
+    case 'stale':
     case 'other':
     case 'token_endpoint':
     case 'token_endpoint_unreachable':

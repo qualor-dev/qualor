@@ -592,6 +592,9 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       targetRefName: 'refs/heads/main',
       headSha: pullRequest.headSha,
       webUrl: `${services.url}/Payments/_git/api/pullrequest/${pullRequest.id}`,
+      mergeStatus: 'succeeded',
+      repositoryId: repo().id,
+      fork: false,
     });
     expect(rest(lastRequest())).toBe(`/pullrequests/${pullRequest.id}`);
     expect(apiVersion(lastRequest().query)).toBe('7.0');
@@ -806,9 +809,7 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       const created = await clientOf(services).createThread(repo().id, pullRequest.id, {
         content: 'Hello',
         status: 'closed',
-        filePath: 'src/a.ts',
-        line: 5,
-        lineLength: 9,
+        anchor: { filePath: 'src/a.ts', startLine: 5, endLine: 5, endLineLength: 9 },
       });
       expect(lastRequest().method).toBe('POST');
       expect(lastRequest().headers['content-type']).toBe('application/json');
@@ -1663,5 +1664,362 @@ describe('task 2 fix round 1', () => {
       kind: 'not_found',
     });
     expect(services.requests.at(-1)?.path).toBe('/_apis/identities');
+  });
+});
+
+describe('fix writes: branches, pushes, refs, raw reads and pull requests (sub-plan 6, task 2)', () => {
+  let fake: FakeAzureDevOps;
+  let repoId: string;
+  const lastRequest = () => fake.requests.at(-1)!;
+  const bodyOf = (r: { body: string }) => JSON.parse(r.body) as Record<string, unknown>;
+  const ZERO = '0'.repeat(40);
+
+  beforeAll(async () => {
+    fake = await createFakeAzureDevOps({
+      deployment: 'services',
+      repositories: [{ name: 'fixes', projectName: 'Payments' }],
+    });
+    repoId = fake.repositories[0]!.id;
+  });
+  afterAll(async () => {
+    await fake.close();
+  });
+  beforeEach(() => {
+    fake.clearRequests();
+  });
+
+  const seed = () => {
+    const head = fake.addCommit(repoId, { files: { 'src/a.ts': 'one\r\ntwo\r\n', 'b.txt': 'b' } });
+    fake.setBranch(repoId, 'main', head);
+    return head;
+  };
+
+  describe('branchHead', () => {
+    it('picks refs/heads/a out of a and a-2', async () => {
+      const a = fake.addCommit(repoId, { files: { x: '1' } });
+      const a2 = fake.addCommit(repoId, { files: { x: '2' } });
+      fake.setBranch(repoId, 'qualor/a', a);
+      fake.setBranch(repoId, 'qualor/a-2', a2);
+      const client = clientOf(fake);
+      expect(await client.branchHead(repoId, 'qualor/a')).toBe(a);
+      expect(await client.branchHead(repoId, 'qualor/a-2')).toBe(a2);
+      expect(await client.branchHead(repoId, 'qualor/a-3')).toBeNull();
+      expect(await client.branchHead(repoId, 'qualor')).toBeNull();
+      expect(Object.fromEntries(new URLSearchParams(lastRequest().query))).toEqual({
+        filter: 'heads/qualor',
+        'api-version': '7.0',
+      });
+    });
+  });
+
+  describe('commonCommit', () => {
+    it('is the ancestor for an ancestor and the fork point for a diverged commit', async () => {
+      const root = fake.addCommit(repoId, { files: { x: '0' } });
+      const left = fake.addCommit(repoId, { parents: [root], files: { x: 'l' } });
+      const right = fake.addCommit(repoId, { parents: [root], files: { x: 'r' } });
+      const tip = fake.addCommit(repoId, { parents: [left], files: { x: 'l2' } });
+      const client = clientOf(fake);
+      expect(await client.commonCommit(repoId, left, tip)).toBe(left);
+      expect(await client.commonCommit(repoId, right, tip)).toBe(root);
+      expect(Object.fromEntries(new URLSearchParams(lastRequest().query))).toMatchObject({
+        baseVersion: right,
+        baseVersionType: 'commit',
+        targetVersion: tip,
+        targetVersionType: 'commit',
+        $top: '1',
+      });
+      const stranger = fake.addCommit(repoId, { files: { x: 's' } });
+      expect(await client.commonCommit(repoId, stranger, tip)).toBeNull();
+    });
+  });
+
+  describe('push', () => {
+    it('sends base64 edits with parents [base] and the zero old id, and returns the commit', async () => {
+      const head = seed();
+      const text = 'café\r\ntwo\r\n';
+      const commit = await clientOf(fake).push(repoId, {
+        ref: 'refs/heads/qualor/fix-1',
+        oldObjectId: null,
+        parent: head,
+        message: 'fix: a',
+        files: [{ path: 'src/a.ts', content: text }],
+      });
+      expect(lastRequest().path).toBe(`/_apis/git/repositories/${repoId}/pushes`);
+      expect(lastRequest().method).toBe('POST');
+      expect(bodyOf(lastRequest())).toEqual({
+        refUpdates: [{ name: 'refs/heads/qualor/fix-1', oldObjectId: ZERO }],
+        commits: [
+          {
+            comment: 'fix: a',
+            parents: [head],
+            changes: [
+              {
+                changeType: 'edit',
+                item: { path: '/src/a.ts' },
+                newContent: {
+                  content: Buffer.from(text).toString('base64'),
+                  contentType: 'base64encoded',
+                },
+              },
+            ],
+          },
+        ],
+      });
+      expect(commit).toMatch(/^[0-9a-f]{40}$/);
+      expect(fake.branches(repoId)['qualor/fix-1']).toBe(commit);
+      expect(fake.fileAt(repoId, commit, 'src/a.ts')).toBe(text);
+      expect(fake.fileAt(repoId, commit, 'b.txt')).toBe('b');
+    });
+
+    it('pushes to a temporary ref outside refs/heads', async () => {
+      const head = seed();
+      const commit = await clientOf(fake).push(repoId, {
+        ref: 'refs/qualor/fix-tmp/20261124',
+        oldObjectId: null,
+        parent: head,
+        message: 'tmp',
+        files: [{ path: 'b.txt', content: 'tmp' }],
+      });
+      expect(fake.refs(repoId)['refs/qualor/fix-tmp/20261124']).toBe(commit);
+      expect(Object.keys(fake.branches(repoId))).not.toContain('qualor/fix-tmp/20261124');
+    });
+
+    it('a parent that is not the ref head, or a stale old id, is the recorded 400 and refused', async () => {
+      const head = seed();
+      const client = clientOf(fake);
+      const first = await client.push(repoId, {
+        ref: 'refs/heads/qualor/fix-2',
+        oldObjectId: null,
+        parent: head,
+        message: 'one',
+        files: [{ path: 'b.txt', content: '1' }],
+      });
+      const notHead = await failure(
+        client.push(repoId, {
+          ref: 'refs/heads/qualor/fix-2',
+          oldObjectId: first,
+          parent: head,
+          message: 'two',
+          files: [{ path: 'b.txt', content: '2' }],
+        }),
+      );
+      expect(notHead).toMatchObject({ kind: 'refused', status: 400 });
+      const stale = await failure(
+        client.push(repoId, {
+          ref: 'refs/heads/qualor/fix-2',
+          oldObjectId: head,
+          parent: first,
+          message: 'three',
+          files: [{ path: 'b.txt', content: '3' }],
+        }),
+      );
+      expect(stale).toMatchObject({ kind: 'refused', status: 400 });
+      expect(fake.fileAt(repoId, 'qualor/fix-2', 'b.txt')).toBe('1');
+    });
+  });
+
+  describe('refs', () => {
+    let NAME = '';
+    let counter = 0;
+    beforeEach(() => {
+      counter += 1;
+      NAME = `refs/heads/qualor/refs-${counter}`;
+    });
+    const pushed = async () => {
+      const head = seed();
+      const commit = await clientOf(fake).push(repoId, {
+        ref: NAME,
+        oldObjectId: null,
+        parent: head,
+        message: 'x',
+        files: [{ path: 'b.txt', content: 'x' }],
+      });
+      return { head, commit };
+    };
+
+    it('updateRef moves a ref, also to a commit that is not a fast-forward', async () => {
+      const { head, commit } = await pushed();
+      fake.clearRequests();
+      await clientOf(fake).updateRef(repoId, NAME, commit, head);
+      expect(bodyOf(lastRequest())).toEqual([
+        { name: NAME, oldObjectId: commit, newObjectId: head },
+      ]);
+      expect(fake.branches(repoId)[NAME.replace('refs/heads/', '')]).toBe(head);
+    });
+
+    it('a stale old id is reason stale (409); a policy refusal is 403 with the update status', async () => {
+      const { head } = await pushed();
+      const client = clientOf(fake);
+      const stale = await failure(client.updateRef(repoId, NAME, azureCommitId('old'), head));
+      expect(stale).toMatchObject({ kind: 'refused', status: 409, reason: 'stale' });
+      fake.inject('POST', /\/refs$/, {
+        status: 200,
+        body: { value: [{ success: false, updateStatus: 'rejectedByPolicy', name: NAME }] },
+      });
+      const refused = await failure(client.updateRef(repoId, NAME, head, head));
+      expect(refused).toMatchObject({ kind: 'refused', status: 403 });
+      expect((refused as AzureError).azureMessage).toBe('rejectedByPolicy');
+    });
+
+    it('deleteRef sends the zero new id; the old id is not enforced (succeededCorruptRef)', async () => {
+      await pushed();
+      const client = clientOf(fake);
+      const wrongOld = azureCommitId('stale');
+      await client.deleteRef(repoId, NAME, wrongOld);
+      expect(bodyOf(lastRequest())).toEqual([
+        { name: NAME, oldObjectId: wrongOld, newObjectId: ZERO },
+      ]);
+      expect(fake.branches(repoId)[NAME.replace('refs/heads/', '')]).toBeUndefined();
+      const again = await pushed();
+      await client.deleteRef(repoId, NAME, again.commit);
+      expect(fake.branches(repoId)[NAME.replace('refs/heads/', '')]).toBeUndefined();
+    });
+
+    it('the recorded succeededCorruptRef answer is a delete', async () => {
+      fake.inject('POST', /\/refs$/, recordedAnswer('services', '22-ref-delete-stale'));
+      await expect(
+        clientOf(fake).deleteRef(repoId, NAME, azureCommitId('x')),
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('fileBytes', () => {
+    it('reads a 2 MiB file in full, byte-exact (BOM, CRLF, non-ASCII)', async () => {
+      const commit = azureCommitId('raw');
+      const big = `${String.fromCharCode(0xfeff)}é\r\n${'a'.repeat(2 * 1024 * 1024)}`;
+      fake.addFile(repoId, commit, 'big.txt', big);
+      const answer = await clientOf(fake).fileBytes(repoId, 'big.txt', commit, 32 * 1024 * 1024);
+      expect(answer).toEqual({ text: big });
+      expect(Object.fromEntries(new URLSearchParams(lastRequest().query))).toEqual({
+        path: '/big.txt',
+        'versionDescriptor.version': commit,
+        'versionDescriptor.versionType': 'commit',
+        $format: 'octetStream',
+        'api-version': '7.0',
+      });
+    });
+
+    it('skips a file over maxBytes, a binary one (NUL, invalid UTF-8) and a missing one', async () => {
+      const commit = azureCommitId('raw-skip');
+      fake.addFile(repoId, commit, 'big.txt', 'a'.repeat(1001));
+      fake.addFile(repoId, commit, 'nul.bin', Buffer.from([0x61, 0, 0x62]));
+      fake.addFile(repoId, commit, 'latin1.txt', Buffer.from([0x63, 0xe9, 0x64]));
+      fake.addFile(repoId, commit, 'empty.txt', '');
+      const client = clientOf(fake);
+      const skipped = (path: string) => client.fileBytes(repoId, path, commit, 1000);
+      expect(await skipped('big.txt')).toEqual({ skipped: 'too_large' });
+      expect(await skipped('nul.bin')).toEqual({ skipped: 'binary' });
+      expect(await skipped('latin1.txt')).toEqual({ skipped: 'binary' });
+      expect(await skipped('gone.txt')).toEqual({ skipped: 'missing' });
+      expect(await skipped('empty.txt')).toEqual({ text: '' });
+    });
+
+    it('does not raise the client-wide limit: another call still refuses an answer over 8 MiB', async () => {
+      fake.inject('GET', /\/refs$/, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ value: [], pad: 'a'.repeat(MAX_AZURE_RESPONSE_BYTES) }),
+      });
+      expect(await failure(clientOf(fake).branchHead(repoId, 'x'))).toMatchObject({
+        kind: 'bad_answer',
+      });
+    });
+  });
+
+  describe('pull requests', () => {
+    it('creates, finds and patches one; reads mergeStatus, fork and the repository id', async () => {
+      const head = seed();
+      fake.setBranch(repoId, 'qualor/pr-1', head);
+      const client = clientOf(fake);
+      const created = await client.createPullRequest(repoId, {
+        sourceBranch: 'qualor/pr-1',
+        targetBranch: 'main',
+        title: 'Update x',
+        description: 'Because',
+      });
+      expect(bodyOf(lastRequest())).toEqual({
+        sourceRefName: 'refs/heads/qualor/pr-1',
+        targetRefName: 'refs/heads/main',
+        title: 'Update x',
+        description: 'Because',
+      });
+      expect(created).toMatchObject({
+        status: 'active',
+        title: 'Update x',
+        sourceRefName: 'refs/heads/qualor/pr-1',
+        targetRefName: 'refs/heads/main',
+        mergeStatus: 'succeeded',
+        repositoryId: repoId,
+        fork: false,
+      });
+      expect(await client.pullRequest(repoId, created.id)).toEqual(created);
+      expect(await client.pullRequestsFrom(repoId, 'qualor/pr-1', 'main')).toEqual([created]);
+      // The listed repository has no web URL: the client reads the repository once for it.
+      const listing = fake.requests.findLast((r) => r.path.endsWith('/pullrequests'))!;
+      expect(Object.fromEntries(new URLSearchParams(listing.query))).toEqual({
+        'searchCriteria.sourceRefName': 'refs/heads/qualor/pr-1',
+        'searchCriteria.targetRefName': 'refs/heads/main',
+        'searchCriteria.status': 'active',
+        'api-version': '7.0',
+      });
+      expect(await client.pullRequestsFrom(repoId, 'qualor/pr-1', 'other')).toEqual([]);
+
+      await client.updatePullRequest(repoId, created.id, { title: 'New', description: 'D' });
+      expect(lastRequest().method).toBe('PATCH');
+      expect(bodyOf(lastRequest())).toEqual({ title: 'New', description: 'D' });
+      fake.setMergeStatus(repoId, created.id, 'conflicts');
+      expect(await client.pullRequest(repoId, created.id)).toMatchObject({
+        title: 'New',
+        mergeStatus: 'conflicts',
+      });
+      await client.updatePullRequest(repoId, created.id, { status: 'abandoned' });
+      expect(bodyOf(lastRequest())).toEqual({ status: 'abandoned' });
+      expect(await client.pullRequestsFrom(repoId, 'qualor/pr-1', 'main')).toEqual([]);
+      expect(fake.pullRequests(repoId).find((p) => p.id === created.id)?.status).toBe('abandoned');
+    });
+
+    it('a pull request from a fork has fork true; a completed one is not listed', async () => {
+      const client = clientOf(fake);
+      const forked = fake.addPullRequest(repoId, {
+        sourceRefName: 'refs/heads/qualor/forked',
+        targetRefName: 'refs/heads/main',
+        fork: true,
+      });
+      expect(await client.pullRequest(repoId, forked.id)).toMatchObject({ fork: true });
+      fake.completePullRequest(repoId, forked.id);
+      expect(await client.pullRequestsFrom(repoId, 'qualor/forked', 'main')).toEqual([]);
+    });
+  });
+
+  describe('createThread with an anchor', () => {
+    it('lines 2-3 send rightFileStart {2, 1} and rightFileEnd {3, endLineLength + 1}', async () => {
+      const { pullRequest } = seedAzurePullRequest(fake, repoId);
+      await clientOf(fake).createThread(repoId, pullRequest.id, {
+        content: 'Suggestion',
+        status: 'active',
+        anchor: { filePath: 'src/a.ts', startLine: 2, endLine: 3, endLineLength: 7 },
+      });
+      expect(bodyOf(lastRequest()).threadContext).toEqual({
+        filePath: '/src/a.ts',
+        rightFileStart: { line: 2, offset: 1 },
+        rightFileEnd: { line: 3, offset: 8 },
+      });
+    });
+  });
+
+  describe('the recorded answers parse with the client schemas', () => {
+    const body = (name: string) => azureShape<{ body: unknown }>('services', name).body;
+    it.each([
+      ['pushAnswer', ['22-push-new-branch', '22-push-tmp-ref-first']],
+      ['refUpdates', ['22-ref-move', '22-ref-delete', '22-ref-delete-stale', '22-ref-delete-tmp']],
+      ['refList', ['22-refs-prefix']],
+      ['commitsDiff', ['22-ancestry-ancestor', '22-ancestry-diverged']],
+      ['pullRequestList', ['22-pr-find']],
+      ['pullRequestWithId', ['22-pr-get', '22-pr-update']],
+    ] as const)('%s', (schema, names) => {
+      for (const name of names) {
+        expect(AZURE_SHAPES[schema].safeParse(body(name)).success, name).toBe(true);
+      }
+    });
   });
 });

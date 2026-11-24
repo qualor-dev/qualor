@@ -45,6 +45,8 @@ export const AZURE_TEXT = {
     'The Azure DevOps host resolves to a link-local, cloud metadata or loopback address',
   unresolved: 'The Azure DevOps host could not be resolved',
   timeout: 'Azure DevOps did not answer in time',
+  refStale: 'The branch moved while Qualor was changing it',
+  refRefused: 'Azure DevOps refused to change the branch',
 } as const;
 
 /** A failed Azure DevOps request; see {@link ScmError}. */
@@ -129,6 +131,12 @@ export interface AzurePullRequest {
   /** `lastMergeSourceCommit`: the source branch's head; null before Azure DevOps has merged. */
   headSha: string | null;
   webUrl: string;
+  /** `succeeded`, `conflicts`, `queued` ...; null before Azure DevOps has tried a merge. */
+  mergeStatus: string | null;
+  /** Lower-case GUID of the repository the pull request is in. */
+  repositoryId: string;
+  /** The source branch is in a fork (`forkSource` is present). */
+  fork: boolean;
 }
 
 export interface AzureIteration {
@@ -217,14 +225,40 @@ export interface NewAzureSubscription {
   password: string;
 }
 
+/** Whole lines of the right side: from the start of `startLine` to the end of `endLine` (item 23). */
+export interface AzureThreadAnchor {
+  /** Without the leading `/`. */
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  /** The length of line `endLine`: the selection ends just after it. */
+  endLineLength: number;
+}
+
 export interface NewAzureThread {
   content: string;
   status: 'active' | 'closed';
-  /** Without the leading `/`; none: a thread on the pull request as a whole. */
-  filePath?: string;
-  line?: number;
-  /** The line's length: the thread selects the whole line (probe item 5). */
-  lineLength?: number;
+  /** None: a thread on the pull request as a whole. */
+  anchor?: AzureThreadAnchor;
+}
+
+export interface NewAzurePullRequest {
+  /** Branch names, without `refs/heads/`. */
+  sourceBranch: string;
+  targetBranch: string;
+  title: string;
+  description: string;
+}
+
+export interface AzurePushInput {
+  /** A full ref name: `refs/heads/<branch>` or a temporary `refs/qualor/fix-tmp/<id>`. */
+  ref: string;
+  /** The ref's head the push expects; null for a ref that does not exist yet. */
+  oldObjectId: string | null;
+  parent: string;
+  message: string;
+  /** Edits of existing files; `path` without the leading `/`. */
+  files: readonly { path: string; content: string }[];
 }
 
 export type AzureStatus = {
@@ -241,6 +275,15 @@ export type AzureStatus = {
 export type AzureFileSkipped = 'too_large' | 'binary' | 'missing';
 
 type AzureMethod = 'GET' | 'POST' | 'PUT' | 'PATCH';
+/** What one call may ask differently from the rest. */
+interface AzureCallOptions {
+  /** This call's answer limit; default {@link MAX_AZURE_RESPONSE_BYTES}. */
+  maxBytes?: number;
+  /** The answer is the file's bytes, not JSON: the schema reads a Buffer. */
+  raw?: true;
+}
+const ZERO_OBJECT_ID = '0'.repeat(40);
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 /** A pull request's changes come in pages of this many. */
 const CHANGES_PAGE = 100;
 /** The file size `fileText` reads by default. */
@@ -282,9 +325,34 @@ const pullRequestAnswer = z.looseObject({
   title: z.string(),
   sourceRefName: z.string(),
   targetRefName: z.string(),
+  mergeStatus: z.string().nullish(),
+  forkSource: z.unknown().optional(),
   lastMergeSourceCommit: commitRef.nullish(),
-  repository: z.looseObject({ webUrl: z.string().min(1) }),
+  repository: z.looseObject({
+    id: z.string().regex(AZURE_REPOSITORY_ID),
+    webUrl: z.string().min(1),
+  }),
 });
+const pullRequestWithId = pullRequestAnswer.extend({ pullRequestId: z.number().int() });
+/** A listed pull request's repository is minimal: no `webUrl` (item 22g). */
+const pullRequestListed = pullRequestAnswer.extend({
+  pullRequestId: z.number().int(),
+  repository: z.looseObject({
+    id: z.string().regex(AZURE_REPOSITORY_ID),
+    webUrl: z.string().min(1).optional(),
+  }),
+});
+const pullRequestList = z.looseObject({ value: z.array(pullRequestListed) });
+/** `refs?filter=`: a prefix match, so the caller picks the exact name. */
+const refList = z.looseObject({
+  value: z.array(z.looseObject({ name: z.string(), objectId: z.string().regex(COMMIT_ID) })),
+});
+const commitsDiff = z.looseObject({ commonCommit: z.string().regex(COMMIT_ID).nullish() });
+const pushAnswer = z.looseObject({ commits: z.array(commitRef).min(1) });
+const refUpdates = z.looseObject({
+  value: z.array(z.looseObject({ success: z.boolean(), updateStatus: z.string() })).min(1),
+});
+const rawBytes = z.instanceof(Buffer);
 const iterationList = z.looseObject({
   value: z.array(
     z.looseObject({
@@ -395,7 +463,17 @@ const statusList = z.looseObject({
 });
 
 /** For tests against the recorded shapes. */
-export const AZURE_SHAPES = { connectionData, repository, repositoryList } as const;
+export const AZURE_SHAPES = {
+  connectionData,
+  repository,
+  repositoryList,
+  pullRequestWithId,
+  pullRequestList,
+  refList,
+  commitsDiff,
+  pushAnswer,
+  refUpdates,
+} as const;
 
 function threadOf(t: z.infer<typeof threadAnswer>): AzureThread {
   return {
@@ -438,6 +516,48 @@ function repositoryOf(answer: z.infer<typeof repository>): AzureRepository {
     defaultBranch: answer.defaultBranch ? answer.defaultBranch.replace(/^refs\/heads\//, '') : null,
     isDisabled: answer.isDisabled ?? false,
   };
+}
+
+function pullRequestOf(
+  answer: Pick<
+    z.infer<typeof pullRequestAnswer>,
+    | 'status'
+    | 'isDraft'
+    | 'title'
+    | 'sourceRefName'
+    | 'targetRefName'
+    | 'mergeStatus'
+    | 'forkSource'
+    | 'lastMergeSourceCommit'
+  >,
+  id: number,
+  repository: { id: string; webUrl: string },
+): AzurePullRequest {
+  return {
+    id,
+    status: answer.status,
+    isDraft: answer.isDraft ?? false,
+    title: answer.title,
+    sourceRefName: answer.sourceRefName,
+    targetRefName: answer.targetRefName,
+    headSha: answer.lastMergeSourceCommit?.commitId ?? null,
+    webUrl: azurePullRequestWebUrl(repository.webUrl, id),
+    mergeStatus: answer.mergeStatus ?? null,
+    repositoryId: repository.id.toLowerCase(),
+    fork: answer.forkSource !== undefined && answer.forkSource !== null,
+  };
+}
+
+/** A ref update that did not succeed: a stale old id, or a refusal by policy. */
+function throwRefRefused(updateStatus: string | undefined): never {
+  if (updateStatus === 'staleOldObjectId') {
+    throw new AzureError('refused', AZURE_TEXT.refStale, { status: 409, reason: 'stale' });
+  }
+  // The update status is Azure DevOps' own word: kept for decisions (), never shown.
+  throw new AzureError('refused', AZURE_TEXT.refRefused, {
+    status: 403,
+    azureMessage: updateStatus ?? null,
+  });
 }
 
 /** A request as a fixed text for the logs: each GUID Qualor put in the path is `{id}`. */
@@ -583,16 +703,186 @@ export class AzureDevOpsClient {
 
   async pullRequest(repositoryId: string, id: number): Promise<AzurePullRequest> {
     const answer = await this.#get(this.#pullRequestPath(repositoryId, id), pullRequestAnswer);
-    return {
-      id,
-      status: answer.status,
-      isDraft: answer.isDraft ?? false,
-      title: answer.title,
-      sourceRefName: answer.sourceRefName,
-      targetRefName: answer.targetRefName,
-      headSha: answer.lastMergeSourceCommit?.commitId ?? null,
-      webUrl: azurePullRequestWebUrl(answer.repository.webUrl, id),
-    };
+    return pullRequestOf(answer, id, answer.repository);
+  }
+
+  /** The active pull requests from `sourceBranch` into `targetBranch` (names without `refs/heads/`). */
+  async pullRequestsFrom(
+    repositoryId: string,
+    sourceBranch: string,
+    targetBranch: string,
+  ): Promise<AzurePullRequest[]> {
+    const query = new URLSearchParams({
+      'searchCriteria.sourceRefName': `refs/heads/${sourceBranch}`,
+      'searchCriteria.targetRefName': `refs/heads/${targetBranch}`,
+      'searchCriteria.status': 'active',
+    });
+    const answer = await this.#get(
+      `${this.#repositoryPath(repositoryId)}/pullrequests?${query}`,
+      pullRequestList,
+    );
+    if (answer.value.length === 0) return [];
+    // The listed repository has no web URL: one read of the repository gives it.
+    const webUrl =
+      answer.value.find((p) => p.repository.webUrl)?.repository.webUrl ??
+      (await this.repository(repositoryId)).webUrl;
+    return answer.value.map((p) =>
+      pullRequestOf(p, p.pullRequestId, { id: p.repository.id, webUrl }),
+    );
+  }
+
+  async createPullRequest(
+    repositoryId: string,
+    input: NewAzurePullRequest,
+  ): Promise<AzurePullRequest> {
+    const answer = await this.#call(
+      'POST',
+      `${this.#repositoryPath(repositoryId)}/pullrequests`,
+      pullRequestWithId,
+      {
+        sourceRefName: `refs/heads/${input.sourceBranch}`,
+        targetRefName: `refs/heads/${input.targetBranch}`,
+        title: input.title,
+        description: input.description,
+      },
+    );
+    return pullRequestOf(answer, answer.pullRequestId, answer.repository);
+  }
+
+  async updatePullRequest(
+    repositoryId: string,
+    id: number,
+    patch: { title?: string; description?: string; status?: 'abandoned' },
+  ): Promise<void> {
+    await this.#call('PATCH', this.#pullRequestPath(repositoryId, id), z.unknown(), patch);
+  }
+
+  /** The head of branch `name` (without `refs/heads/`), lower-case; null when there is none. */
+  async branchHead(repositoryId: string, name: string): Promise<string | null> {
+    const filter = encodeURIComponent(`heads/${name}`);
+    const answer = await this.#get(
+      `${this.#repositoryPath(repositoryId)}/refs?filter=${filter}`,
+      refList,
+    );
+    // The filter is a prefix match: `a` also finds `a-2`.
+    const exact = answer.value.find((r) => r.name === `refs/heads/${name}`);
+    return exact ? exact.objectId.toLowerCase() : null;
+  }
+
+  /** The commit `base` and `target` (commit ids) have in common; null when Azure DevOps names none. */
+  async commonCommit(repositoryId: string, base: string, target: string): Promise<string | null> {
+    const query = new URLSearchParams({
+      baseVersion: base,
+      baseVersionType: 'commit',
+      targetVersion: target,
+      targetVersionType: 'commit',
+      $top: '1',
+    });
+    const answer = await this.#get(
+      `${this.#repositoryPath(repositoryId)}/diffs/commits?${query}`,
+      commitsDiff,
+    );
+    return answer.commonCommit?.toLowerCase() ?? null;
+  }
+
+  /**
+   * One commit on `ref` that edits `files` (sent as base64) on top of `parent`; its id. A 400 is the
+   * usual `refused` error: a stale head and a parent that is not the head look alike (item 22e).
+   */
+  async push(repositoryId: string, input: AzurePushInput): Promise<string> {
+    const answer = await this.#call(
+      'POST',
+      `${this.#repositoryPath(repositoryId)}/pushes`,
+      pushAnswer,
+      {
+        refUpdates: [{ name: input.ref, oldObjectId: input.oldObjectId ?? ZERO_OBJECT_ID }],
+        commits: [
+          {
+            comment: input.message,
+            parents: [input.parent],
+            changes: input.files.map((f) => ({
+              changeType: 'edit',
+              item: { path: `/${f.path}` },
+              newContent: {
+                content: Buffer.from(f.content, 'utf8').toString('base64'),
+                contentType: 'base64encoded',
+              },
+            })),
+          },
+        ],
+      },
+    );
+    const commit = answer.commits.at(-1);
+    if (!commit) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer);
+    return commit.commitId.toLowerCase();
+  }
+
+  /** Moves `name` (a full ref name) to `newObjectId`; a non-fast-forward move is allowed (item 22d). */
+  async updateRef(
+    repositoryId: string,
+    name: string,
+    oldObjectId: string,
+    newObjectId: string,
+  ): Promise<void> {
+    const answer = await this.#call(
+      'POST',
+      `${this.#repositoryPath(repositoryId)}/refs`,
+      refUpdates,
+      [{ name, oldObjectId, newObjectId }],
+    );
+    const [first] = answer.value;
+    if (first?.success !== true) throwRefRefused(first?.updateStatus);
+  }
+
+  /** Deletes `name`; `succeededCorruptRef` is a delete too: the old id is not enforced (item 22j). */
+  async deleteRef(repositoryId: string, name: string, oldObjectId: string): Promise<void> {
+    await this.updateRef(repositoryId, name, oldObjectId, ZERO_OBJECT_ID);
+  }
+
+  /**
+   * A file's bytes at a commit as UTF-8 text (`$format=octetStream`, byte-exact). One over `maxBytes`,
+   * a binary one (a NUL byte, or not valid UTF-8) and a missing one are `skipped`. Only this call's
+   * answer limit is `maxBytes`; every other call keeps 8 MiB.
+   */
+  async fileBytes(
+    repositoryId: string,
+    path: string,
+    commit: string,
+    maxBytes: number,
+  ): Promise<{ text: string } | { skipped: AzureFileSkipped }> {
+    const query = new URLSearchParams({
+      path: `/${path}`,
+      'versionDescriptor.version': commit,
+      'versionDescriptor.versionType': 'commit',
+      $format: 'octetStream',
+    });
+    let bytes: Buffer;
+    try {
+      bytes = await this.#call(
+        'GET',
+        `${this.#repositoryPath(repositoryId)}/items?${query}`,
+        rawBytes,
+        undefined,
+        AZURE_API_VERSION,
+        'base',
+        [],
+        { raw: true, maxBytes },
+      );
+    } catch (err) {
+      if (err instanceof AzureError && err.kind === 'not_found') return { skipped: 'missing' };
+      // Over the answer limit: the client's own bad_answer, without a status.
+      if (err instanceof AzureError && err.kind === 'bad_answer' && err.status === null) {
+        return { skipped: 'too_large' };
+      }
+      throw err;
+    }
+    if (bytes.length > maxBytes) return { skipped: 'too_large' };
+    if (bytes.includes(0)) return { skipped: 'binary' };
+    try {
+      return { text: UTF8_STRICT.decode(bytes) };
+    } catch {
+      return { skipped: 'binary' };
+    }
   }
 
   async iterations(repositoryId: string, prId: number): Promise<AzureIteration[]> {
@@ -695,23 +985,22 @@ export class AzureDevOpsClient {
   }
 
   /**
-   * A thread with one comment. With `filePath` and `line` it sits on the right side of that line,
-   * selecting all of it, and carries no `pullRequestThreadContext` (probe items 5 and 6).
+   * A thread with one comment. With an `anchor` it sits on the right side of those whole lines and
+   * carries no `pullRequestThreadContext` (probe items 5, 6 and 23).
    */
   async createThread(
     repositoryId: string,
     prId: number,
     thread: NewAzureThread,
   ): Promise<{ id: number; commentId: number }> {
-    const { filePath, line, lineLength } = thread;
-    const threadContext =
-      filePath !== undefined && line !== undefined
-        ? {
-            filePath: `/${filePath}`,
-            rightFileStart: { line, offset: 1 },
-            rightFileEnd: { line, offset: (lineLength ?? 0) + 1 },
-          }
-        : undefined;
+    const { anchor } = thread;
+    const threadContext = anchor
+      ? {
+          filePath: `/${anchor.filePath}`,
+          rightFileStart: { line: anchor.startLine, offset: 1 },
+          rightFileEnd: { line: anchor.endLine, offset: anchor.endLineLength + 1 },
+        }
+      : undefined;
     const answer = await this.#call(
       'POST',
       `${this.#pullRequestPath(repositoryId, prId)}/threads`,
@@ -1000,6 +1289,7 @@ export class AzureDevOpsClient {
     host: 'base' | 'identities' = 'base',
     /** Secrets of this request's body (a hook's password): cut from Azure DevOps' error text too. */
     bodySecrets: readonly string[] = [],
+    options: AzureCallOptions = {},
   ): Promise<T> {
     const max = this.#options.maxRequests ?? MAX_AZURE_REQUESTS;
     if (this.#requestCount >= max) {
@@ -1024,6 +1314,7 @@ export class AzureDevOpsClient {
         [...secrets, ...bodySecrets],
         now,
         host,
+        options,
       );
       const parsed = schema.safeParse(json);
       if (!parsed.success) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer, { status });
@@ -1067,6 +1358,7 @@ export class AzureDevOpsClient {
     secrets: string[],
     now: () => number,
     host: 'base' | 'identities',
+    options: AzureCallOptions = {},
   ): Promise<{ status: number; json: unknown }> {
     const { baseUrl, allowInternalHosts } = host === 'base' ? this.#connection : this.#identities();
     const separator = path.includes('?') ? '&' : '?';
@@ -1087,7 +1379,7 @@ export class AzureDevOpsClient {
         refuseAddress: scmRefusedAddress(new URL(baseUrl)),
         timeoutMs: this.#options.timeoutMs ?? AZURE_TIMEOUT_MS,
         ...(this.#options.resolve ? { resolve: this.#options.resolve } : {}),
-        maxResponseBytes: MAX_AZURE_RESPONSE_BYTES,
+        maxResponseBytes: options.maxBytes ?? MAX_AZURE_RESPONSE_BYTES,
         overflow: 'fail',
         names: { noun: 'Azure DevOps', target: 'Azure DevOps' },
         ...(this.#options.signal ? { signal: this.#options.signal } : {}),
@@ -1101,6 +1393,7 @@ export class AzureDevOpsClient {
     }
     if (status >= 200 && status < 300) {
       this.#notBefore = now() + paceOf(headers, now());
+      if (options.raw) return { status, json: answer };
       try {
         return {
           status,

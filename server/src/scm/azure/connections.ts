@@ -496,6 +496,7 @@ export function problemCode(err: ScmError): TestProblemCode {
       return 'bad_answer';
     // Azure DevOps never raises not_installed (GitHub only); the switch stays exhaustive.
     case 'http':
+    case 'stale':
     case 'other':
     case 'not_installed':
       return 'http_error';
