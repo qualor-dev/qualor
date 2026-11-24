@@ -197,6 +197,10 @@ describe('FixLinkView', () => {
       expect(link?.getAttribute('href')).toBe(
         'https://dev.azure.com/acme/shop/_git/payments/pullrequest/12',
       );
+      // The word is PR on Azure DevOps too: the cancel dialog names it.
+      button(azure.root, 'Cancel')?.click();
+      await settle(azure.fixture);
+      expect(text(azure.root.querySelector('dialog'))).toContain('closes the PR for lodash');
     });
 
     it('does not link an MR address that is not http(s)', async () => {
