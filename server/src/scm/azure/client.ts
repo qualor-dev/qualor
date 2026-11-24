@@ -573,19 +573,20 @@ const createdThread = z.looseObject({
   id: z.number().int(),
   comments: z.array(z.looseObject({ id: z.number().int() })).min(1),
 });
+/** A status of Qualor's genre: what the decoration reads of it. Others are not validated. */
+const qualorStatus = z.looseObject({
+  id: z.number().int(),
+  iterationId: z.number().int().nullish(),
+  // Absent while the state is the default, notSet: statuses of other tools come so (probe item 19).
+  state: z.string().nullish(),
+  description: z.string().nullish(),
+  targetUrl: z.string().nullish(),
+  context: z.looseObject({ genre: z.string().nullish(), name: z.string() }),
+  createdBy: z.looseObject({ id: z.string() }).nullish(),
+});
+/** The list is read leniently: a status of another tool may lack an id or a context name. */
 const statusList = z.looseObject({
-  value: z.array(
-    z.looseObject({
-      id: z.number().int(),
-      iterationId: z.number().int().nullish(),
-      // Absent while the state is the default, notSet: statuses of other tools come so (probe item 19).
-      state: z.string().nullish(),
-      description: z.string().nullish(),
-      targetUrl: z.string().nullish(),
-      context: z.looseObject({ genre: z.string().nullish(), name: z.string() }),
-      createdBy: z.looseObject({ id: z.string() }).nullish(),
-    }),
-  ),
+  value: z.array(z.looseObject({ context: z.looseObject({ genre: z.unknown() }).nullish() })),
 });
 
 /** For tests against the recorded shapes. */
@@ -1566,9 +1567,13 @@ export class AzureDevOpsClient {
       statusList,
     );
     const ours: (AzureStatus & { id: number; authorId: string | null })[] = [];
-    for (const s of answer.value) {
+    for (const entry of answer.value) {
+      if (entry.context?.genre !== 'qualor') continue;
+      const checked = qualorStatus.safeParse(entry);
+      if (!checked.success) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer);
+      const s = checked.data;
       const state = s.state ?? 'notSet';
-      if (s.context.genre !== 'qualor' || !STATUS_STATES.includes(state)) continue;
+      if (!STATUS_STATES.includes(state)) continue;
       ours.push({
         id: s.id,
         iterationId: s.iterationId ?? iterationId,

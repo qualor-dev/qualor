@@ -81,17 +81,20 @@ export class RunLedger {
       logger: this.deps.logger,
       signal: this.deps.shutdown,
     });
-    const result = await converseOverTools(call, {
-      reader,
-      policy,
-      send: (conversation) => this.counted(sender, pricing, conversation),
-      shouldStop,
-      signal: this.deps.shutdown,
-      now,
-      onToolRedactions: (count) => tally.add(count),
-      // One window for every tier (R46): no call sends more than it less the role's answer.
-      contextWindowTokens: storedProvider.contextWindowTokens,
-    });
+    const result = await converseOverTools(
+      { ...call, scm: running.scm },
+      {
+        reader,
+        policy,
+        send: (conversation) => this.counted(sender, pricing, conversation),
+        shouldStop,
+        signal: this.deps.shutdown,
+        now,
+        onToolRedactions: (count) => tally.add(count),
+        // One window for every tier (R46): no call sends more than it less the role's answer.
+        contextWindowTokens: storedProvider.contextWindowTokens,
+      },
+    );
     // Whichever way it ended, what it spent is the run's.
     this.inputTokens += result.inputTokens;
     this.outputTokens += result.outputTokens;

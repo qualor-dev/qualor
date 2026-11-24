@@ -22,6 +22,7 @@ import { encryptionKey } from '../../crypto/secrets';
 import { auditEvents, projects, scmConnections } from '../../db/schema';
 import { decryptWebhookSecret, encryptWebhookSecret } from '../github/credentials';
 import { WEBHOOK_SECRET_PATTERN } from '../github/app-auth';
+import { storeNewHookPassword } from './connections';
 import { azureWebhookUrl } from './url';
 
 /*
@@ -520,6 +521,25 @@ describe('Azure DevOps service hook subscriptions (sub-plan 5, task 7)', () => {
         await h.ctx.db.delete(scmConnections);
         (fake.subscriptions as unknown[]).length = 0;
       }
+    });
+
+    it('a first password write after an address move changes nothing (sub-plan 9 carry)', async () => {
+      const id = await connect();
+      const key = encryptionKey(h.ctx.config.secretKey);
+      // The row as the subscribe read it: no password yet.
+      const read = await rowOf(id);
+      expect(read.webhookSecretEnc).toBeNull();
+      // A move meanwhile: another address, the password still none (nothing to clear).
+      await h.ctx.db
+        .update(scmConnections)
+        .set({ baseUrl: 'https://dev.azure.com/moved-org' })
+        .where(eq(scmConnections.id, id));
+      expect(await storeNewHookPassword(h.ctx.db, key, read)).toBeNull();
+      expect((await rowOf(id)).webhookSecretEnc).toBeNull();
+      // The row as it is now takes the password.
+      const stored = await storeNewHookPassword(h.ctx.db, key, await rowOf(id));
+      expect(stored?.password).toMatch(WEBHOOK_SECRET_PATTERN);
+      expect(await storedPassword(id)).toBe(stored?.password);
     });
 
     it('F2: hooksCurrent and stale follow the rotation and the secret key', async () => {

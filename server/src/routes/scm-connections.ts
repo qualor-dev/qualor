@@ -1,5 +1,5 @@
 import { assertNever, SCM_PROVIDERS, type ScmProvider } from '@qualor/shared';
-import { and, asc, count, eq, gt, isNull, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, count, eq, gt, isNull, type AnyColumn } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
@@ -48,9 +48,10 @@ import {
   mappedAzureProjects,
   mappedRepositoryRefs,
   markHookPasswordHeld,
+  storeNewHookPassword as storeHookPasswordFor,
   testAzureConnection,
 } from '../scm/azure/connections';
-import { generateHookPassword, subscribeProjects, type SubscribeResult } from '../scm/azure/hooks';
+import { subscribeProjects, type SubscribeResult } from '../scm/azure/hooks';
 import { LOCKS } from '../db/locks';
 import { withSessionLock } from '../db/session-lock';
 import { AZURE_REPOSITORY_ID, azureBaseUrlProblem, azureWebhookUrl } from '../scm/azure/url';
@@ -604,21 +605,8 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     tx: Executor,
     row: ScmConnectionRow,
   ): Promise<{ password: string; written: ScmConnectionRow }> => {
-    const password = generateHookPassword();
-    const stored = row.webhookSecretEnc;
-    const [written] = await tx
-      .update(scmConnections)
-      .set({ webhookSecretEnc: encryptWebhookSecret(key, password) })
-      .where(
-        and(
-          eq(scmConnections.id, row.id),
-          stored === null
-            ? isNull(scmConnections.webhookSecretEnc)
-            : sql`${scmConnections.webhookSecretEnc} ->> 'ct' = ${stored.ct}`,
-        ),
-      )
-      .returning();
-    if (!written) {
+    const created = await storeHookPasswordFor(tx, key, row);
+    if (created === null) {
       throw new ProblemError(
         503,
         'CONCURRENCY_CONFLICT',
@@ -626,7 +614,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         { headers: { 'retry-after': '1' } },
       );
     }
-    return { password, written };
+    return created;
   };
   const checkedBaseUrl = (raw: string, provider: ScmProvider): string => {
     const problem = scmBaseUrlProblem(raw, deps.config.scmInternalHosts);

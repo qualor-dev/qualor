@@ -1,4 +1,4 @@
-import { parseModelJson } from '@qualor/shared';
+import { parseModelJson, type ScmProvider } from '@qualor/shared';
 import type { Config } from '../config';
 import type { Executor } from '../db/client';
 import { REPLY_VERDICTS, type ReplyVerdict } from '../db/schema';
@@ -125,6 +125,8 @@ export interface ReplyInput {
    * reply may call the finding wrong.
    */
   snapshotHead: string | null;
+  /** The provider of the merge request, whose own noun the prompt uses; absent: GitLab's. */
+  scm?: ScmProvider;
 }
 
 /** An open finding of the AI review: the one kind of thread a person's reply may change. */
@@ -412,6 +414,7 @@ async function decide(input: ReplyInput, io: ReplyConversationIo): Promise<Decid
     {
       role: 'reply',
       system,
+      ...(input.scm === undefined ? {} : { scm: input.scm }),
       user,
       nonce,
       tokenBudget: io.tokenBudget,

@@ -1,3 +1,4 @@
+import type { ScmProvider } from '@qualor/shared';
 import { REASONING_ALLOWANCE_TOKENS } from '../llm/providers';
 import {
   CONVERSATION_LIMITS,
@@ -9,7 +10,7 @@ import type { MaskedFiles } from './masked-files';
 import type { Masker } from './masker';
 import type { ConversationRole } from './model-tiers';
 import { REVIEW_OUTPUT_TOKENS } from './pipeline';
-import { SYSTEM_PROMPTS } from './prompts';
+import { inScmWords, SYSTEM_PROMPTS } from './prompts';
 import type { SnapshotReader } from './snapshot-reader';
 import {
   REVIEW_TOOLS,
@@ -37,6 +38,11 @@ export interface RoleCall {
    * reply names the verdicts its thread allows, which no fixed text can.
    */
   system?: string;
+  /**
+   * The provider of the merge request, whose own noun the system prompt uses (`inScmWords`);
+   * absent: GitLab's, the prompts' own words.
+   */
+  scm?: ScmProvider;
   /** The first message: the data under review, in its envelope. */
   user: string;
   /** The nonce of that envelope, which the tools' answers are put in too. */
@@ -143,7 +149,7 @@ export function converseOverTools(call: RoleCall, io: ConversationIo): Promise<C
     budget.greps = Math.max(budget.greps, TOOL_LIMITS.verifyGrepsFloor);
   }
   return runConversation({
-    system: call.system ?? SYSTEM_PROMPTS[call.role],
+    system: inScmWords(call.system ?? SYSTEM_PROMPTS[call.role], call.scm ?? 'gitlab'),
     user: call.user,
     nonce: call.nonce,
     tools: io.reader === null ? [] : REVIEW_TOOLS,

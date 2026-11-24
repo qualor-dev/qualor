@@ -47,19 +47,26 @@ describe('fix suggestion comments (llm.md §8.4)', () => {
   });
 
   it('says after the header that an automatic suggestion was posted automatically (4E-3a §3)', () => {
-    for (const provider of ['gitlab', 'github'] as const) {
+    for (const provider of ['gitlab', 'github', 'azure'] as const) {
       const lines = fixSuggestionBody({ ...base, provider, automatic: true }).split('\n');
       expect(lines[1]).toMatch(/^\*\*AI-generated fix suggestion\*\*/);
-      expect(lines[2]).toBe(
-        "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.",
-      );
-      expect(lines[2]).toBe(AUTO_FIX_NOTICE);
+      expect(lines[2]).toBe(AUTO_FIX_NOTICE[provider]);
       expect(lines[3]).toBe('');
     }
     // A person's suggestion has no such line.
     const person = fixSuggestionBody({ ...base, provider: 'gitlab' });
-    expect(person).not.toContain(AUTO_FIX_NOTICE);
+    expect(person).not.toContain(AUTO_FIX_NOTICE.gitlab);
     expect(person.split('\n')[2]).toBe('');
+  });
+
+  it("names the change in the provider's own noun (GitLab keeps merge request)", () => {
+    expect(AUTO_FIX_NOTICE.gitlab).toBe(
+      "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.",
+    );
+    expect(AUTO_FIX_NOTICE.github).toContain('findings of this pull request.');
+    expect(AUTO_FIX_NOTICE.azure).toContain('findings of this pull request.');
+    expect(AUTO_FIX_NOTICE.github).not.toContain('merge request');
+    expect(AUTO_FIX_NOTICE.azure).not.toContain('merge request');
   });
 
   it('builds a GitHub suggestion without the range suffix', () => {
