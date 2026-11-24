@@ -3,12 +3,14 @@
 Qualor is self-hosted code quality and security for your team. This extension adds the `Qualor@0`
 task: it scans your repository in a pipeline and sends the report to your Qualor server.
 
-## On every pull request
+## On pull requests
+
+With your Azure DevOps connection set up in Qualor, each pull request gets:
 
 - A status check that passes or fails with your quality gate.
 - A summary comment with the result.
-- Comments on the changed lines, one for each new issue.
-- AI review on your own model.
+- Comments on the changed lines, on each new issue.
+- AI review with your own model.
 
 ## Add it to your pipeline
 
@@ -19,6 +21,8 @@ steps:
     persistCredentials: false
   - task: Qualor@0
 ```
+
+Run the pipeline as a Build validation policy to analyse every pull request.
 
 Set two variables on the pipeline:
 
@@ -32,5 +36,5 @@ Set two variables on the pipeline:
 
 ## Learn more
 
-The [Azure DevOps guide](https://qualor.dev/docs/azure-devops) walks through setup, pull request
+The [Azure DevOps guide](https://qualor.dev/docs/azure-devops) walks through the connection, pull request
 builds and .NET projects.
