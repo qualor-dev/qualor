@@ -270,7 +270,7 @@ clears differently: see [the states](#the-states).
 repository mapping and a pipeline that uploads the scan.
 
 - AI threads are posted whatever the pipeline checked out.
-- A thread carries an **Apply** suggestion only when the fix replaces one line.
+- A thread carries an **Apply** suggestion when the fix replaces up to 15 added lines, or deletes them.
 - Qualor reads replies in its open threads: **Active** or **Pending**.
 - A command is the first comment of a new thread, and Qualor answers in that thread.
 

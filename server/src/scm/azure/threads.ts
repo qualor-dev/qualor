@@ -335,7 +335,7 @@ const listedAiFindings = (
  * the findings of the branch's newest finished review that have no thread (at most
  * `MAX_AI_THREADS`, the most severe first, only while the pull request is at the head that
  * review read) get one on their anchor, an added line. A suggestion is kept only when it still
- * applies to the diff and covers one line (a thread selects one line); a low finding is posted for
+ * applies to the diff, and its thread selects the lines it replaces whole; a low finding is posted for
  * its suggestion only. The findings with no thread this time are returned for the summary. Nothing
  * is created when the changes are cut by their page bound. A thread is created once: a failed
  * creation is not made again in this job.
@@ -420,8 +420,17 @@ async function createThreads(
       const text = place?.get(issue.anchorLine);
       if (place === undefined || text === undefined) continue;
       const found = await liveSuggestion(ctx.deps.db, ctx.loaded.branch.id, ai.head, issue, place);
-      // A thread selects one line: a suggestion over several is dropped before the note is written.
-      const suggestion = found !== null && found.endLine === found.startLine ? found : null;
+      // A kept suggestion's lines are all added lines (`liveSuggestion`): the thread selects them whole.
+      const endText = found === null ? undefined : place.get(found.endLine);
+      const suggestion = endText === undefined ? null : found;
+      const range =
+        suggestion !== null && endText !== undefined
+          ? {
+              startLine: suggestion.startLine,
+              endLine: suggestion.endLine,
+              endLineLength: endText.length,
+            }
+          : { startLine: issue.anchorLine, endLine: issue.anchorLine, endLineLength: text.length };
       const note = aiFindingNote(
         'azure',
         issue,
@@ -433,12 +442,7 @@ async function createThreads(
         await client.createThread(repositoryId, prId, {
           content: note.body,
           status: 'active',
-          anchor: {
-            filePath: issue.path,
-            startLine: issue.anchorLine,
-            endLine: issue.anchorLine,
-            endLineLength: text.length,
-          },
+          anchor: { filePath: issue.path, ...range },
         });
         posted.add(issue);
       } catch (err) {

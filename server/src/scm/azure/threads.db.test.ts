@@ -832,7 +832,6 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
   // The AI review's threads (sub-plan 5, task 5).
   type Suggestion = { startLine: number; endLine: number; lines: string[] };
   const THREE: Suggestion = { startLine: 3, endLine: 3, lines: ['THREE'] };
-  const THREE_TO_FIVE: Suggestion = { startLine: 3, endLine: 5, lines: ['3', '4', '5'] };
 
   /** A project with pull request #7 whose review of the source commit is done, its snapshot stored. */
   const reviewed = async (
@@ -945,13 +944,36 @@ describe('Azure DevOps inline threads (Azure sub-plan 4, task 6)', () => {
     expect(s.aiThread(id)?.comments[0]?.content).toContain('```suggestion\nTHREE\n```');
   });
 
-  it('drops a suggestion over several lines, and posts the finding without it', async () => {
+  it('writes a suggestion over two lines as a range thread', async () => {
     const s = await reviewed('ai/multi');
-    const id = await s.aiFinding({ line: 3, suggestion: THREE_TO_FIVE });
+    const id = await s.aiFinding({
+      line: 3,
+      suggestion: { startLine: 3, endLine: 4, lines: ['3', '4'] },
+    });
     await decorate();
     const thread = s.aiThread(id);
-    expect(thread).toMatchObject({ line: 3 });
-    expect(thread?.comments[0]?.content).not.toContain('```suggestion');
+    expect(thread?.threadContext).toEqual({
+      filePath: '/src/a.ts',
+      rightFileStart: { line: 3, offset: 1 },
+      rightFileEnd: { line: 4, offset: 'four'.length + 1 },
+    });
+    expect(thread?.comments[0]?.content).toContain('```suggestion\n3\n4\n```');
+  });
+
+  it('writes a deletion as an empty fence over its lines', async () => {
+    const s = await reviewed('ai/delete');
+    const id = await s.aiFinding({
+      line: 3,
+      suggestion: { startLine: 3, endLine: 5, lines: [] },
+    });
+    await decorate();
+    const thread = s.aiThread(id);
+    expect(thread?.threadContext).toEqual({
+      filePath: '/src/a.ts',
+      rightFileStart: { line: 3, offset: 1 },
+      rightFileEnd: { line: 5, offset: 'five'.length + 1 },
+    });
+    expect(thread?.comments[0]?.content).toContain('```suggestion\n```');
   });
 
   it('posts no AI thread once the pull request head moved, and the summary says it waits', async () => {

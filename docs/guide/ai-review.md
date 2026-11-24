@@ -362,9 +362,8 @@ If merging requires all threads to be resolved, open AI threads block it like th
 ### Suggested changes
 
 When the fix replaces up to 15 lines that the merge request added, the thread carries it as a
-GitLab suggestion or GitHub suggested change. On Azure DevOps only a one-line fix gets the **Apply**
-block. A person applies it with a click, which commits in
-that person's name. Qualor never commits, pushes or opens a branch.
+GitLab suggestion, GitHub suggested change or Azure DevOps **Apply** block. A person applies it with
+a click, which commits in that person's name. Qualor never commits, pushes or opens a branch.
 
 The suggestion is posted only if the lines it replaces are still exactly the added lines the review
 read, and it passes the checks of the AI assistant's fix suggestions: no secret, no control
