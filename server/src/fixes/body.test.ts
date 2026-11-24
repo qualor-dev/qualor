@@ -6,6 +6,7 @@ import {
   fixBody,
   fixTitle,
   goneComment,
+  MAX_BODY_BYTES,
   MAX_SHOWN_ADDITIONS,
   type FixBodyInput,
 } from './body';
@@ -362,6 +363,42 @@ describe('fixBody: every value is inert (spec §6.7, scm.md §6)', () => {
     }
   });
 
+  it('keeps Azure DevOps references, mentions, math and comments in names and titles inert (Azure sub-plan 6, RF5)', () => {
+    const AZURE = '#12 !3 @<0f6c1a5e-3b0d-4c39-9a51-fa6e00000001> $x$ <!-- x';
+    const body = fixBody({
+      ...base,
+      provider: 'azure',
+      lockfiles: [
+        {
+          path: 'package-lock.json',
+          relation: 'transitive',
+          mechanism: AZURE,
+          dependents: [AZURE],
+        },
+      ],
+      additions: [
+        { path: 'package-lock.json', entries: [{ slot: AZURE, name: AZURE, version: AZURE }] },
+      ],
+      vulnerabilities: [{ id: AZURE, severity: 'high', title: AZURE, url: null }],
+      unfixable: [{ id: AZURE, severity: 'low', title: null, url: null }],
+      targets: [{ installed: AZURE, target: AZURE, lockfile: 'package-lock.json' }],
+      majorJumps: [{ installed: AZURE, target: AZURE, lockfile: 'package-lock.json' }],
+    });
+    expectInert(body);
+    // Each value sits in a code span, where Azure DevOps links no work item (#12) or pull request
+    // (!3), notifies no one (@<id>), renders no math ($x$) and opens no comment (<!--).
+    for (const line of body.split('\n')) {
+      for (const hostile of ['#', '!', '@', '$', '<!--']) {
+        expect(outsideCodeSpans(line), line).not.toContain(hostile);
+      }
+    }
+    expect(body).toContain(`\` ${AZURE} \``);
+    expect(html(body)).not.toContain('<!--');
+    expect(body).toMatch(
+      /\nQualor keeps this PR current and closes it when the vulnerability is gone\. Push to this branch to take it over\.$/,
+    );
+  });
+
   it('caps the table and the unfixable list', () => {
     const many = Array.from({ length: 60 }, (_, i) => ({
       id: `CVE-2026-${1000 + i}`,
@@ -472,5 +509,32 @@ describe('fixBody: a bounded body (ruling T10d)', () => {
     expectInert(body);
     // Cut at whole lines: no line ends in a hard break before the blank line of the end.
     expect(body).not.toContain('\\\n\n');
+  });
+
+  it('keeps an Azure DevOps description within 4 000 bytes, cut at whole lines, its sentence last (ruling 6)', () => {
+    const vulnerabilities = Array.from({ length: 50 }, (_, i) => ({
+      id: `CVE-2026-${10_000 + i}`,
+      severity: 'high' as const,
+      title: `${'é'.repeat(80)} ${i}`,
+      url: `https://advisories.example/${i}`,
+    }));
+    const azure = fixBody({ ...base, provider: 'azure', vulnerabilities });
+    // Bytes, not characters: the titles' two-byte letters count twice, so the description has
+    // fewer characters than Azure DevOps takes (4 000).
+    expect(Buffer.byteLength(azure)).toBeLessThanOrEqual(MAX_BODY_BYTES.azure);
+    expect(Buffer.byteLength(azure)).toBeGreaterThan(MAX_BODY_BYTES.azure - 300);
+    expect(azure.length).toBeLessThan(Buffer.byteLength(azure) - 1_000);
+    expect(azure.endsWith(`\n\n${LAST.replace('this MR', 'this PR')}`)).toBe(true);
+    expectInert(azure);
+    // A row of the vulnerability table: its id linked to the advisory.
+    const rowsOf = (body: string) =>
+      body.split('\n').filter((line) => line.startsWith('| [` CVE-'));
+    expect(rowsOf(azure).length).toBeGreaterThan(5);
+    expect(rowsOf(azure).length).toBeLessThan(50);
+    // The same input on GitLab and GitHub keeps every row (60 000 bytes).
+    for (const provider of ['gitlab', 'github'] as const) {
+      expect(rowsOf(fixBody({ ...base, provider, vulnerabilities }))).toHaveLength(50);
+    }
+    expect(MAX_BODY_BYTES).toEqual({ gitlab: 60_000, github: 60_000, azure: 4_000 });
   });
 });

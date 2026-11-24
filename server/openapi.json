@@ -25345,8 +25345,7 @@
                         "description": "Not a field of an Azure DevOps connection: sending it is a 422"
                       },
                       "fixMrsAllowed": {
-                        "not": {},
-                        "description": "Not a field of an Azure DevOps connection: sending it is a 422"
+                        "type": "boolean"
                       }
                     },
                     "required": [

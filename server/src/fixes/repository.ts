@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { assertNever, type ScmProvider } from '@qualor/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { projects, scmConnections } from '../db/schema';
 import type { ProjectRow } from '../projects/access';
+import type { WorkerLogger } from '../queue/worker';
+import type { AzureDevOpsClient, AzurePullRequest } from '../scm/azure/client';
+import { azureClientFor } from '../scm/azure/connections';
 import { gitlabClientFor, type ScmConnectionRow, type ScmDeps } from '../scm/connections';
 import type { GitHubClient, GitHubPullState } from '../scm/github/client';
 import { githubClientFor } from '../scm/github/connections';
@@ -12,16 +16,33 @@ import { ScmError } from '../scm/provider';
 import type { ScmRuntime } from '../scm/runtime';
 
 /**
- * The repository of a project's fixes (0.16 fix MRs §6.7), the same for GitLab and GitHub: the
- * reads the result check needs, and the writes of the commit and close jobs (ruling F11). Every
- * forced branch write and every delete re-reads the branch head right before it and stops when the
- * head is not the one the caller expects (B10: neither provider takes an expected head).
+ * The repository of a project's fixes (0.16 fix MRs §6.7), the same for GitLab, GitHub and Azure
+ * DevOps: the reads the result check needs, and the writes of the commit and close jobs (ruling
+ * F11). Every forced branch write and every delete re-reads the branch head right before it and
+ * stops when the head is not the one the caller expects (B10: GitLab and GitHub take no expected
+ * head, and Azure DevOps holds to one on a push and a ref move, not on a delete).
  */
 
 /** R15: a base file is read raw up to this size (the clients' 8 MiB default stays elsewhere). */
 export const FIX_BASE_MAX_BYTES = 32 * 1024 * 1024;
 
-/** An MR (GitLab) or pull request (GitHub) of a fix branch. */
+/**
+ * Azure sub-plan 6, Review Focus 3: a base file the repository can tell it will not hand over whole,
+ * so the upload check refuses it by `rule` (never a partial file): over {@link FIX_BASE_MAX_BYTES}
+ * (`too_large`), or not UTF-8 text (`not_utf8`). Azure DevOps' raw read says so; the GitLab and
+ * GitHub clients throw an SCM error instead.
+ */
+export class FixFileUnreadable extends Error {
+  constructor(
+    readonly rule: 'too_large' | 'not_utf8',
+    readonly path: string,
+  ) {
+    super(`the base file ${path} cannot be read whole (${rule})`);
+    this.name = 'FixFileUnreadable';
+  }
+}
+
+/** An MR (GitLab) or pull request (GitHub, Azure DevOps) of a fix branch. */
 export interface ChangeRequest {
   number: number;
   url: string;
@@ -53,7 +74,10 @@ export interface FixRepository {
   branchHead(name: string): Promise<string | null>;
   /** Whether `ancestor` is `of` or one of its ancestors. */
   isAncestor(ancestor: string, of: string): Promise<boolean>;
-  /** A file's text at a commit, read raw up to {@link FIX_BASE_MAX_BYTES} (R15); null when absent. */
+  /**
+   * A file's text at a commit, read raw up to {@link FIX_BASE_MAX_BYTES} (R15); null when absent.
+   * {@link FixFileUnreadable} when the repository says it cannot hand the file over whole.
+   */
   fileAt(path: string, sha: string): Promise<string | null>;
   /**
    * The commit, written to `branch`: the branch is made there, or force-moved there when its head
@@ -65,7 +89,7 @@ export interface FixRepository {
    * Deletes the branch when its head is still `expectedHead` (re-read right before, B10):
    * `deleted`, `gone` when there is no such branch, `taken_over` (kept) when a person moved it,
    * `kept` when the provider refuses the delete for good (ruling FW4: a ruleset or a protected
-   * branch; GitHub 422, GitLab 403 or 422). Any other failure is thrown.
+   * branch; GitHub 422, GitLab 403 or 422, Azure DevOps 403). Any other failure is thrown.
    */
   deleteBranch(name: string, expectedHead: string): Promise<BranchDelete>;
   /**
@@ -94,14 +118,16 @@ export type BranchDelete = 'deleted' | 'gone' | 'taken_over' | 'kept';
  * Ruling FW4: the statuses with which a provider refuses a branch delete for good (a ruleset that
  * restricts deletions, a protected branch): GitHub 422 (a missing ref is no refusal: the client
  * answers it as gone). GitLab answers 400 when a pre-receive hook refuses, 403 when the user may
- * not delete, 405 for a protected branch or the HEAD branch, and 422 for a rule. A retry would be
- * refused again.
+ * not delete, 405 for a protected branch or the HEAD branch, and 422 for a rule. Azure DevOps
+ * answers a refused ref update in a 200 body (a policy, a missing permission), which its client
+ * throws as 403, as it does an HTTP 403 (Azure sub-plan 6, ruling 8). A retry would be refused
+ * again.
  */
 const REFUSED_DELETE: Readonly<Record<FixRepository['provider'], readonly number[]>> =
   Object.freeze({
     github: [422],
     gitlab: [400, 403, 405, 422],
-    azure: [], // azure-pending(6): the statuses with which Azure DevOps refuses a branch delete for good
+    azure: [403],
   });
 
 /**
@@ -146,6 +172,23 @@ function githubChange(pull: GitHubPullState): ChangeRequest {
     state,
     conflict: pull.conflict,
     headSha: pull.headSha,
+  };
+}
+
+/**
+ * An Azure DevOps pull request as a fix reads it: `completed` is merged, `abandoned` closed. A
+ * conflict is Azure DevOps' own `mergeStatus`; the head is null until it has merged once.
+ */
+function azureChange(pull: AzurePullRequest): ChangeRequest {
+  let state: ChangeRequest['state'] = 'open';
+  if (pull.status === 'completed') state = 'merged';
+  else if (pull.status === 'abandoned') state = 'closed';
+  return {
+    number: pull.id,
+    url: pull.webUrl,
+    state,
+    conflict: pull.mergeStatus === 'conflicts',
+    headSha: pull.headSha?.toLowerCase() ?? null,
   };
 }
 
@@ -241,10 +284,121 @@ function githubWrites(client: GitHubClient, mainBranch: string): FixWrites {
   };
 }
 
+/** Where a refresh's commit waits while the branch is moved to it: no branch, so no build. */
+const AZURE_TEMPORARY_REF = 'refs/qualor/fix-tmp/';
+
+type Logged = Pick<WorkerLogger, 'warn'> | undefined;
+
+/**
+ * Azure DevOps (sub-plan 6, probe item 22): a push takes an expected old head, but a commit whose
+ * parent is not that head is refused (22d), and a stale push looks the same (22e).
+ */
+function azureWrites(
+  client: AzureDevOpsClient,
+  repositoryId: string,
+  mainBranch: string,
+  logger: Logged,
+): FixWrites {
+  const branchHead = (name: string) => client.branchHead(repositoryId, name);
+  const pushTo = (ref: string, input: FixCommitInput) =>
+    client.push(repositoryId, {
+      ref,
+      oldObjectId: null,
+      parent: input.baseSha,
+      message: input.message,
+      files: input.files,
+    });
+
+  /**
+   * A new branch: one push of `edit` changes on `baseSha`, its old head the zero id. A branch made
+   * in between is refused like any push; the head read again says it is a person's.
+   */
+  const firstCommit = async (input: FixCommitInput) => {
+    try {
+      return { sha: await pushTo(`refs/heads/${input.branch}`, input) };
+    } catch (err) {
+      if (err instanceof ScmError && err.kind === 'refused') {
+        if ((await branchHead(input.branch)) !== null) return { takenOver: true as const };
+      }
+      throw err;
+    }
+  };
+
+  /** Best effort: a temporary ref left behind is no branch; the log says so, without Azure's words. */
+  const dropTemporary = async (ref: string, sha: string) => {
+    try {
+      await client.deleteRef(repositoryId, ref, sha);
+    } catch (err) {
+      logger?.warn(
+        err instanceof ScmError
+          ? { errorKind: err.kind, httpStatus: err.status, request: err.request }
+          : { errorKind: 'other' },
+        'fix commit: the temporary ref of a refresh could not be deleted',
+      );
+    }
+  };
+
+  /**
+   * B10 on Azure DevOps (ruling 2): the commit goes to a temporary ref, the head is read again,
+   * then the branch is moved from Qualor's last commit to it (a ref update need not be a
+   * fast-forward; a stale old id is a person's push), and the temporary ref is deleted.
+   */
+  const refresh = async (input: FixCommitInput, head: string) => {
+    const temporary = `${AZURE_TEMPORARY_REF}${randomUUID()}`;
+    const sha = await pushTo(temporary, input);
+    try {
+      if ((await branchHead(input.branch)) !== head) return { takenOver: true as const };
+      try {
+        await client.updateRef(repositoryId, `refs/heads/${input.branch}`, head, sha);
+      } catch (err) {
+        if (err instanceof ScmError && err.reason === 'stale') return { takenOver: true as const };
+        throw err;
+      }
+      return { sha };
+    } finally {
+      await dropTemporary(temporary, sha);
+    }
+  };
+
+  return {
+    commit: async (input) => {
+      const head = await branchHead(input.branch);
+      if (head !== input.expectedHead) return { takenOver: true };
+      return head === null ? firstCommit(input) : refresh(input, head);
+    },
+    findChange: async (branch) => {
+      // Ruling T10a: a fork's pull request from a branch of the same name is never the fix's.
+      const found = (await client.pullRequestsFrom(repositoryId, branch, mainBranch)).find(
+        (pull) => !pull.fork,
+      );
+      return found === undefined ? null : azureChange(found);
+    },
+    readChange: async (number) => azureChange(await client.pullRequest(repositoryId, number)),
+    openChange: async ({ branch, title, body }) => {
+      const created = await client.createPullRequest(repositoryId, {
+        sourceBranch: branch,
+        targetBranch: mainBranch,
+        title,
+        description: body,
+      });
+      return opened({ url: created.webUrl, number: created.id });
+    },
+    updateChange: (number, { title, body }) =>
+      client.updatePullRequest(repositoryId, number, { title, description: body }),
+    // Ruling 7: a thread on the whole pull request, closed (never an active comment), then abandoned.
+    closeChange: async (number, comment) => {
+      await client.createThread(repositoryId, number, { content: comment, status: 'closed' });
+      await client.updatePullRequest(repositoryId, number, { status: 'abandoned' });
+    },
+  };
+}
+
 export interface FixScmDeps {
   db: Db;
   scm: ScmDeps;
   runtime?: ScmRuntime;
+  /** Where a best-effort SCM step that failed is reported (Azure DevOps' temporary ref). */
+  logger?: Pick<WorkerLogger, 'warn'>;
 }
 
 /**
@@ -329,6 +483,54 @@ async function githubRepository(
   };
 }
 
+/**
+ * Azure DevOps (sub-plan 6): the repository by its id (`scmProjectRef`, a lower-case GUID). Ancestry
+ * is the commit two commits have in common (`diffs/commits`, item 22a); a base file is read raw up
+ * to {@link FIX_BASE_MAX_BYTES} (item 22b), and one over it or not UTF-8 text is
+ * {@link FixFileUnreadable}. A delete does not hold to the old id (item 22j): the head read right
+ * before it is the only guard, as on GitHub.
+ */
+export function azureRepository(
+  client: AzureDevOpsClient,
+  repositoryId: string,
+  mainBranch: string,
+  logger?: Pick<WorkerLogger, 'warn'>,
+): FixRepository {
+  const branchHead = (name: string) => client.branchHead(repositoryId, name);
+  return {
+    provider: 'azure',
+    mainBranch,
+    branchHead,
+    isAncestor: async (ancestor, of) => {
+      if (ancestor === of) return true;
+      try {
+        return (await client.commonCommit(repositoryId, ancestor, of)) === ancestor;
+      } catch (err) {
+        // A commit the repository does not have is no ancestor (as GitLab's 404 and GitHub's).
+        if (err instanceof ScmError && err.kind === 'not_found') return false;
+        throw err;
+      }
+    },
+    fileAt: async (path, sha) => {
+      const read = await client.fileBytes(repositoryId, path, sha, FIX_BASE_MAX_BYTES);
+      if ('text' in read) return read.text;
+      if (read.skipped === 'missing') return null;
+      throw new FixFileUnreadable(read.skipped === 'too_large' ? 'too_large' : 'not_utf8', path);
+    },
+    deleteBranch: (name, expectedHead) =>
+      deleteIfHead(
+        'azure',
+        () => branchHead(name),
+        expectedHead,
+        async () => {
+          await client.deleteRef(repositoryId, `refs/heads/${name}`, expectedHead);
+          return true;
+        },
+      ),
+    ...azureWrites(client, repositoryId, mainBranch, logger),
+  };
+}
+
 /** The SCM settings of the repository's client, bound to `signal` when one is given. */
 function boundTo(scm: ScmDeps, signal: AbortSignal | undefined): ScmDeps {
   if (signal === undefined) return scm;
@@ -336,6 +538,7 @@ function boundTo(scm: ScmDeps, signal: AbortSignal | undefined): ScmDeps {
     ...scm,
     clientOptions: { ...scm.clientOptions, signal },
     githubClientOptions: { ...scm.githubClientOptions, signal },
+    azureClientOptions: { ...scm.azureClientOptions, signal },
   };
 }
 
@@ -406,8 +609,11 @@ async function repositoryOf(
       return githubRepository(row.connection, bound, row.ref, row.mainBranch);
     case 'gitlab':
       return gitlabRepository(row.connection, bound, row.ref, row.mainBranch);
-    case 'azure': // azure-pending(6): fix pull requests on Azure DevOps (not allowed until then)
-      return { problem: 'fixes_disabled' };
+    case 'azure': {
+      const made = azureClientFor(row.connection, bound.scm, deps.runtime);
+      if ('problem' in made) return { problem: 'connection' };
+      return azureRepository(made.client, row.ref, row.mainBranch, deps.logger);
+    }
     default:
       return assertNever(row.connection.provider, 'provider');
   }

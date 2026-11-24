@@ -67,8 +67,9 @@ export const PROVIDER: Record<ScmProvider, ProviderDescriptor> = {
   },
   azure: {
     label: 'Azure DevOps',
-    // The webhook secret, CI setup and fix pull requests arrive with sub-plans 5 to 7.
-    foreignFields: ['appId', 'privateKey', 'webhookSecret', 'ciSetupAllowed', 'fixMrsAllowed'],
+    // Qualor makes the service hooks' password itself (sub-plan 5); CI setup arrives with
+    // sub-plan 7. Fix pull requests are allowed with `fixMrsAllowed` (sub-plan 6).
+    foreignFields: ['appId', 'privateKey', 'webhookSecret', 'ciSetupAllowed'],
     // Design §7.2: the repository's GUID, which survives renames; Azure DevOps writes it in lower
     // case.
     projectRefText: AZURE_REF_TEXT,

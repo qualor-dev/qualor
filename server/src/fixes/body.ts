@@ -54,10 +54,16 @@ export const MAX_SHOWN_LINES = 30;
 /** Ruling T10d: the versions a transitive pin's line names at most. */
 const MAX_PIN_TARGETS = 5;
 /**
- * Ruling T10d: the whole body, at most, cut at whole lines with its last sentence kept. GitHub
- * takes 65 536 characters in a pull request's body; GitLab takes more.
+ * Ruling T10d: the whole body, at most, in UTF-8 bytes, cut at whole lines with its last sentence
+ * kept. GitHub takes 65 536 characters in a pull request's body; GitLab takes more. Azure DevOps
+ * takes 4 000 characters in a pull request's description (probe item 22f), and 4 000 bytes are
+ * never more characters than that (Azure sub-plan 6, ruling 6).
  */
-export const MAX_BODY_CHARS = 60_000;
+export const MAX_BODY_BYTES: Readonly<Record<ScmProvider, number>> = Object.freeze({
+  gitlab: 60_000,
+  github: 60_000,
+  azure: 4_000,
+});
 /** A version as a title or a body shows it, at most. */
 const VERSION_CHARS = 64;
 
@@ -81,7 +87,10 @@ function titleSpan(value: string, max: number): string {
   return span;
 }
 
-/** How a title shows a value: GitLab in a code span, GitHub and the commit message (no provider) plain. */
+/**
+ * How a title shows a value: GitLab in a code span; GitHub, Azure DevOps (a pull request's title
+ * renders no Markdown) and the commit message (no provider) plain.
+ */
 function titleShower(provider: ScmProvider | undefined): (value: string, max: number) => string {
   const plain = (value: string, max: number): string => plainValue(value, max);
   if (provider === undefined) return plain;
@@ -89,8 +98,7 @@ function titleShower(provider: ScmProvider | undefined): (value: string, max: nu
     case 'gitlab':
       return titleSpan;
     case 'github':
-      return plain;
-    case 'azure': // azure-pending(6): how an Azure DevOps pull request's title shows a value
+    case 'azure':
       return plain;
     default:
       return assertNever(provider, 'provider');
@@ -113,7 +121,7 @@ export function fixTitle(
   return `Bump ${shown(packageName, MAX_VALUE_CHARS)} from ${shown(installed, VERSION_CHARS)} to ${shown(target, VERSION_CHARS)}`;
 }
 
-/** R29: the comment Qualor closes a cancelled fix's MR with ("PR" on GitHub). */
+/** R29: the comment Qualor closes a cancelled fix's MR with ("PR" on GitHub and Azure DevOps). */
 export function cancelComment(provider: ScmProvider): string {
   return `Qualor closed this ${changeWord(provider)}: a member cancelled the fix in Qualor.`;
 }
@@ -303,15 +311,15 @@ function qualorLines(url: string | null): string[] {
 }
 
 /**
- * Ruling T10d: the parts, separated by blank lines, within {@link MAX_BODY_CHARS} with `last`
- * after them: cut at whole lines (no code span or table row is cut open), and a hard break left
- * last by the cut taken off, as no line follows it.
+ * Ruling T10d: the parts, separated by blank lines, within `maxBytes` with `last` after them: cut
+ * at whole lines (no code span or table row is cut open), and a hard break left last by the cut
+ * taken off, as no line follows it.
  */
-function bounded(parts: readonly string[][], last: string): string {
+function bounded(parts: readonly string[][], last: string, maxBytes: number): string {
   const lines = parts
     .filter((part) => part.length > 0)
     .flatMap((part, i) => (i === 0 ? part : ['', ...part]));
-  const head = linesWithinBytes(lines, MAX_BODY_CHARS - last.length - 2).trimEnd();
+  const head = linesWithinBytes(lines, maxBytes - Buffer.byteLength(last) - 2).trimEnd();
   const kept = head.endsWith('\\') ? head.slice(0, -1) : head;
   return kept === '' ? last : `${kept}\n\n${last}`;
 }
@@ -321,7 +329,8 @@ function bounded(parts: readonly string[][], last: string): string {
  * empty ones left out: the vulnerabilities fixed (a table), the unfixable ones, one version line
  * per target, each lockfile direct or transitive, the lockfiles' new entries, a major version
  * warning, the link to the project's Vulnerabilities tab, and the sentence that says how Qualor
- * keeps the MR ("PR" on GitHub), which always stays. At most {@link MAX_BODY_CHARS} in all.
+ * keeps the MR ("PR" on GitHub and Azure DevOps), which always stays. At most the provider's
+ * {@link MAX_BODY_BYTES} in all.
  */
 export function fixBody(input: FixBodyInput): string {
   const targets = uniqueTargets(input.targets);
@@ -336,5 +345,6 @@ export function fixBody(input: FixBodyInput): string {
       qualorLines(input.vulnerabilitiesUrl),
     ],
     `Qualor keeps this ${changeWord(input.provider)} current and closes it when the vulnerability is gone. Push to this branch to take it over.`,
+    MAX_BODY_BYTES[input.provider],
   );
 }

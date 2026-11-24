@@ -41,6 +41,7 @@ import { mainVulnerabilities, type MainVulnerability } from './eligibility';
 import { enqueueFixJob } from './jobs';
 import {
   FIX_REPOSITORY_PROBLEM_TEXT,
+  FixFileUnreadable,
   openFixRepository,
   type FixRepository,
   type FixScmDeps,
@@ -451,9 +452,10 @@ async function repositoryOf(
  * Each file at `baseSha` and at main's head, read by the server (never taken from the request):
  * a file main does not have at `baseSha` is `new_file`; one main changed since is `base_outdated`
  * (ruling T3h: an older base cannot widen the hosts or sources a lockfile may use). The base files
- * may have `maxBaseBytes` together (fix round 1, I1): past it the reading stops, `too_large`. The
- * head's copy of a file is held only for its comparison. No read starts once `signal` has aborted
- * (ruling T9k).
+ * may have `maxBaseBytes` together (fix round 1, I1): past it the reading stops, `too_large`. A
+ * file the repository cannot hand over whole is refused by the rule it names, never read in part
+ * (Azure sub-plan 6, Review Focus 3). The head's copy of a file is held only for its comparison.
+ * No read starts once `signal` has aborted (ruling T9k).
  */
 async function readBases(
   repo: FixRepository,
@@ -464,17 +466,22 @@ async function readBases(
   const { baseSha, head } = upload;
   const changes: FixFileChange[] = [];
   let total = 0;
-  for (const file of files) {
-    limits.signal.throwIfAborted();
-    const base = await repo.fileAt(file.path, baseSha);
-    if (base === null) return { rule: 'new_file', path: file.path };
-    total += Buffer.byteLength(base);
-    if (total > limits.maxBaseBytes) return { rule: 'too_large', path: file.path };
-    limits.signal.throwIfAborted();
-    if (head !== baseSha && (await repo.fileAt(file.path, head)) !== base) {
-      return { rule: 'base_outdated', path: file.path };
+  try {
+    for (const file of files) {
+      limits.signal.throwIfAborted();
+      const base = await repo.fileAt(file.path, baseSha);
+      if (base === null) return { rule: 'new_file', path: file.path };
+      total += Buffer.byteLength(base);
+      if (total > limits.maxBaseBytes) return { rule: 'too_large', path: file.path };
+      limits.signal.throwIfAborted();
+      if (head !== baseSha && (await repo.fileAt(file.path, head)) !== base) {
+        return { rule: 'base_outdated', path: file.path };
+      }
+      changes.push({ path: file.path, base, next: file.text });
     }
-    changes.push({ path: file.path, base, next: file.text });
+  } catch (err) {
+    if (err instanceof FixFileUnreadable) return { rule: err.rule, path: err.path };
+    throw err;
   }
   return changes;
 }

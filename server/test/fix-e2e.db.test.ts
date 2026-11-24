@@ -19,6 +19,14 @@ import { type FixJobDeps } from '../src/fixes/run';
 import { runFixSyncPass } from '../src/fixes/sync';
 import { communityLimits } from '../src/limits';
 import { createScmRuntime } from '../src/scm/runtime';
+import {
+  azureFixDeps,
+  azurePatConnection,
+  azureRepositoryWith,
+  azureTestConfig,
+  mappedAzureProject,
+} from './azure';
+import { createFakeAzureDevOps, type FakeAzureDevOps } from './fake-azure-devops';
 import { createFakeGitLab, type FakeGitLab } from './fake-gitlab';
 import { enableFixes, runFixJobs, seedMainVulnerability } from './fixes';
 import { createIngestHarness, type IngestHarness, type IngestProject } from './ingest';
@@ -39,7 +47,8 @@ const cliCommand: [string, string[]] =
   qualorBin !== undefined && qualorBin !== ''
     ? [path.resolve(repoRoot, qualorBin), []]
     : [process.execPath, ['--import', tsxLoader, cliEntry]];
-const CI_VARIABLE = /^(CI|CI_.*|GITHUB_.*|GITLAB_.*|QUALOR_.*|NPM_.*)$/i;
+const CI_VARIABLE =
+  /^(CI|CI_.*|GITHUB_.*|GITLAB_.*|TF_BUILD|BUILD_.*|SYSTEM_.*|QUALOR_.*|NPM_.*)$/i;
 /** A CLI that runs longer than this is killed and the test fails: nothing here may hang. */
 const CLI_KILL_MS = 150_000;
 
@@ -57,6 +66,10 @@ const gitConfig = path.join(work, 'empty.gitconfig');
 writeFileSync(gitConfig, '');
 const npmHome = path.join(work, 'npm-home');
 mkdirSync(npmHome);
+// Both providers' runs share the work folder: it goes once the file is done.
+afterAll(() => {
+  rmSync(work, { recursive: true, force: true, maxRetries: 5 });
+});
 
 const baseEnv: Record<string, string> = {
   ...Object.fromEntries(
@@ -260,7 +273,6 @@ describe.runIf(toolInstalled('npm'))(
       await h?.close();
       await fake?.close();
       await registry?.close();
-      rmSync(work, { recursive: true, force: true, maxRetries: 5 });
     });
 
     it('requests the fix, runs qualor fix and commits the branch and the MR', async () => {
@@ -352,6 +364,149 @@ describe.runIf(toolInstalled('npm'))(
         expect(cliOut.stdout).not.toContain(secret);
         expect(JSON.stringify(fake.requests)).not.toContain(secret);
       }
+    });
+  },
+);
+
+describe.runIf(toolInstalled('npm'))(
+  'qualor fix end to end: the real CLI, npm, a real server and a fake Azure DevOps (Azure sub-plan 6)',
+  () => {
+    let h: IngestHarness;
+    let fake: FakeAzureDevOps;
+    let registry: FakeNpmRegistry;
+    let project: IngestProject & { connectionId: string };
+    let repositoryId: string;
+    let url: string;
+    let checkout: string;
+    let localHead: string;
+    let fixId: string;
+    let deps: FixJobDeps;
+    // Read by the registry on each request: a version pushed later is published from then on.
+    const packages: Record<string, FakeNpmVersion[]> = { 'qf-a': [{ version: '1.2.5' }] };
+
+    const db = () => h.ctx.db;
+    const fixRow = async () =>
+      (await db().select().from(dependencyFixes).where(eq(dependencyFixes.id, fixId)))[0];
+
+    beforeAll(async () => {
+      registry = await createFakeNpmRegistry(packages);
+      const env = npmEnv(registry.url);
+
+      // A clone of its own: the fixture's manifest and the lockfile npm makes while only 1.2.5 exists.
+      checkout = path.join(work, 'app-azure');
+      mkdirSync(checkout);
+      writeFileSync(
+        path.join(checkout, 'package.json'),
+        readFileSync(path.join(repoRoot, 'fixtures', 'fix-npm', 'package.json')),
+      );
+      await makeLockfile(checkout, env);
+      git(checkout, 'init', '-q', '-b', 'main');
+      git(checkout, 'add', 'package.json', 'package-lock.json');
+      git(checkout, 'commit', '-q', '-m', 'first');
+      localHead = git(checkout, 'rev-parse', 'HEAD');
+      packages['qf-a']!.push({ version: '1.2.6' });
+
+      fake = await createFakeAzureDevOps({ deployment: 'server' });
+      repositoryId = azureRepositoryWith(
+        fake,
+        'fix-e2e',
+        {
+          'package.json': readFileSync(path.join(checkout, 'package.json'), 'utf8'),
+          'package-lock.json': readFileSync(path.join(checkout, 'package-lock.json'), 'utf8'),
+        },
+        localHead,
+      ).id;
+
+      h = await createIngestHarness({
+        config: { ...azureTestConfig(fake), publicUrl: PUBLIC_URL },
+      });
+      await h.ctx.app.listen({ port: 0, host: '127.0.0.1' });
+      url = `http://127.0.0.1:${(h.ctx.app.server.address() as AddressInfo).port}`;
+      const connectionId = await azurePatConnection(h, fake, { fixMrsAllowed: true });
+      project = await mappedAzureProject(h, connectionId, 'acme/fix-e2e-azure', repositoryId);
+      await seedMainVulnerability(
+        db(),
+        { id: project.id, mainBranchId: await mainBranchId(db(), project.id) },
+        {
+          ecosystem: 'npm',
+          packageName: 'qf-a',
+          version: '1.2.5',
+          vulnerabilityId: CVE,
+          severity: 'high',
+          fixedVersion: '1.2.6',
+        },
+      );
+      deps = azureFixDeps(h);
+    }, 180_000);
+
+    afterAll(async () => {
+      await h?.close();
+      await fake?.close();
+      await registry?.close();
+    });
+
+    it('runs qualor fix in an Azure Pipelines branch build, then pushes the branch and opens the pull request', async () => {
+      await enableFixes(h, project.id);
+      const requested = await h.ctx.app.inject({
+        method: 'POST',
+        url: `/api/v0/projects/${project.id}/fixes`,
+        headers: h.orgAdmin.headers,
+        payload: { ecosystem: 'npm', packageName: 'qf-a' },
+      });
+      expect(requested.statusCode, requested.body).toBe(202);
+      fixId = (requested.json() as { id: string }).id;
+
+      const env = {
+        ...npmEnv(registry.url),
+        QUALOR_URL: url,
+        QUALOR_TOKEN: project.token,
+        TF_BUILD: 'True',
+        BUILD_REPOSITORY_PROVIDER: 'TfsGit',
+        BUILD_REASON: 'IndividualCI',
+        BUILD_SOURCEBRANCH: 'refs/heads/main',
+        BUILD_SOURCEVERSION: localHead,
+      };
+      const out = await runFixCli(checkout, ['--project-key', project.key], env);
+      expect(out.code, out.stderr).toBe(0);
+
+      await runFixJobs(db(), deps);
+      const head = fake.branches(repositoryId)[BRANCH];
+      expect(head).toMatch(/^[0-9a-f]{40}$/);
+      expect(head).not.toBe(localHead);
+      expect(fake.fileAt(repositoryId, head!, 'package.json')).toContain('"qf-a": "^1.2.6"');
+      const lock = JSON.parse(fake.fileAt(repositoryId, head!, 'package-lock.json') ?? '{}') as {
+        packages?: Record<string, { version?: string }>;
+      };
+      expect(lock.packages?.['node_modules/qf-a']?.version).toBe('1.2.6');
+      const pushes = fake.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/pushes'));
+      expect(pushes).toHaveLength(1);
+      const sent = JSON.parse(pushes[0]!.body) as {
+        commits: { parents: string[]; changes: { item: { path: string } }[] }[];
+      };
+      expect(sent.commits[0]!.parents).toEqual([localHead]);
+      expect(sent.commits[0]!.changes.map((c) => c.item.path).sort()).toEqual([
+        '/package-lock.json',
+        '/package.json',
+      ]);
+      const [pr, ...others] = fake.pullRequests(repositoryId);
+      expect(others).toEqual([]);
+      expect(pr).toMatchObject({
+        status: 'active',
+        title: 'Bump qf-a from 1.2.5 to 1.2.6',
+        sourceRefName: `refs/heads/${BRANCH}`,
+        targetRefName: 'refs/heads/main',
+      });
+      expect(await fixRow()).toMatchObject({ state: 'open', mrNumber: pr!.id, headSha: head });
+      // The project's token went to Qualor only.
+      expect(JSON.stringify(fake.requests)).not.toContain(project.token);
+    }, 240_000);
+
+    it('ends the fix merged once the pull request is completed', async () => {
+      const [pr] = fake.pullRequests(repositoryId);
+      fake.completePullRequest(repositoryId, pr!.id);
+      const outcome = await runFixSyncPass(deps, h.organizationId);
+      expect(outcome.merged).toBe(1);
+      expect(await fixRow()).toMatchObject({ state: 'merged' });
     });
   },
 );

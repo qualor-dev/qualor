@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../src/config';
+import type { FixJobDeps } from '../src/fixes/run';
+import { communityLimits } from '../src/limits';
+import type { WorkerLogger } from '../src/queue/worker';
 import type { AzureCredential } from '../src/scm/azure/client';
 import { parseAzureCertificate } from '../src/scm/azure/certificate';
 import { entraToken, type EntraCredential, type EntraOptions } from '../src/scm/azure/entra';
+import { createScmRuntime } from '../src/scm/runtime';
 import {
   azureShape,
   type FakeAzureChange,
@@ -13,7 +17,9 @@ import {
   type FakeAzurePullRequest,
   type FakeAzurePullRequestInput,
 } from './fake-azure-devops';
+import type { IngestHarness, IngestProject } from './ingest';
 import { TEST_IDP, type TestKeyPair } from './saml';
+import { PUBLIC_URL, silentLogger } from './scm';
 
 /**
  * The service principal the tests register with the fake Entra: a client secret and the PEM an
@@ -191,4 +197,84 @@ export async function deliverAzureEvent(
     headers: { 'content-type': 'application/json', ...basic },
     payload: JSON.stringify(overlaid(body, overrides)),
   });
+}
+
+// ─── Fix pull requests (Azure sub-plan 6) ───────────────────────────────────
+
+/**
+ * A PAT connection of the harness's organisation to `fake`, through the API (a Services fake
+ * needs `azureServerConfig`); `fixMrsAllowed` as given, else the API's default (off).
+ */
+export async function azurePatConnection(
+  h: IngestHarness,
+  fake: FakeAzureDevOps,
+  options: { fixMrsAllowed?: boolean } = {},
+): Promise<string> {
+  const created = await h.ctx.app.inject({
+    method: 'POST',
+    url: '/api/v0/scm-connections',
+    headers: h.orgAdmin.headers,
+    payload: {
+      organizationId: h.organizationId,
+      provider: 'azure',
+      baseUrl: fake.deployment === 'services' ? servicesUrlOf(fake) : fake.url,
+      azureAuth: 'pat',
+      token: fake.pat,
+      ...(options.fixMrsAllowed === undefined ? {} : { fixMrsAllowed: options.fixMrsAllowed }),
+    },
+  });
+  if (created.statusCode !== 201) throw new Error(`connection: ${created.body}`);
+  return (created.json() as { id: string }).id;
+}
+
+/** A Qualor project mapped to the repository `repositoryId` on the connection, through the API. */
+export async function mappedAzureProject(
+  h: IngestHarness,
+  connectionId: string,
+  key: string,
+  repositoryId: string,
+): Promise<IngestProject & { connectionId: string }> {
+  const project = await h.project(key);
+  const mapped = await h.ctx.app.inject({
+    method: 'PATCH',
+    url: `/api/v0/projects/${project.id}`,
+    headers: h.orgAdmin.headers,
+    payload: { scmConnectionId: connectionId, scmProjectRef: repositoryId },
+  });
+  if (mapped.statusCode !== 200) throw new Error(`mapping: ${mapped.body}`);
+  return { ...project, connectionId };
+}
+
+/**
+ * A repository of `fake` (project `Payments`) whose `main` is one commit holding `files`, with the
+ * id `commitId` when given (a local clone's head); the repository's id and that commit.
+ */
+export function azureRepositoryWith(
+  fake: FakeAzureDevOps,
+  name: string,
+  files: Record<string, string | Buffer>,
+  commitId?: string,
+): { id: string; main: string } {
+  const { id } = fake.addRepository({ name, projectName: 'Payments' });
+  const main = fake.addCommit(id, { ...(commitId === undefined ? {} : { id: commitId }), files });
+  fake.setBranch(id, 'main', main);
+  return { id, main };
+}
+
+/** The fix jobs' dependencies against an Azure DevOps fake: 2 s timeouts, community limits. */
+export function azureFixDeps(h: IngestHarness, logger: WorkerLogger = silentLogger): FixJobDeps {
+  return {
+    db: h.ctx.db,
+    scm: {
+      secretKey: h.ctx.config.secretKey,
+      internalHosts: h.ctx.config.scmInternalHosts,
+      azureTokenOrigin: h.ctx.config.azureTokenOrigin,
+      azureTestOrigin: h.ctx.config.azureTestOrigin,
+      azureClientOptions: { timeoutMs: 2_000 },
+    },
+    runtime: createScmRuntime(),
+    publicUrl: PUBLIC_URL,
+    limits: () => communityLimits(),
+    logger,
+  };
 }

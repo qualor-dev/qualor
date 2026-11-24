@@ -1874,15 +1874,8 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         privateKey: 'x',
         webhookSecret: 'w'.repeat(20),
         ciSetupAllowed: false,
-        fixMrsAllowed: false,
       },
-      [
-        'body.appId',
-        'body.ciSetupAllowed',
-        'body.fixMrsAllowed',
-        'body.privateKey',
-        'body.webhookSecret',
-      ],
+      ['body.appId', 'body.ciSetupAllowed', 'body.privateKey', 'body.webhookSecret'],
     ],
     [
       'dev.azure.com alone',
@@ -2202,17 +2195,10 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       privateKey: 'x',
       webhookSecret: null,
       ciSetupAllowed: true,
-      fixMrsAllowed: true,
     });
     expect([own.statusCode, errorPaths(own.body)]).toEqual([
       422,
-      [
-        'body.appId',
-        'body.ciSetupAllowed',
-        'body.fixMrsAllowed',
-        'body.privateKey',
-        'body.webhookSecret',
-      ],
+      ['body.appId', 'body.ciSetupAllowed', 'body.privateKey', 'body.webhookSecret'],
     ]);
     expect(own.json().errors[0].message).toBe('Not a field of an Azure DevOps connection');
     const tokenEnc = encryptSecret(encryptionKey(h.ctx.config.secretKey), 'x', SCM_TOKEN_AAD);
@@ -2254,6 +2240,31 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
       });
       expect(post.statusCode, other.provider).toBe(422);
     }
+  });
+
+  it('takes fixMrsAllowed on create (off unless asked) and on its own in a PATCH, the audit naming it (Azure sub-plan 6)', async () => {
+    const off = await post({ azureAuth: 'pat', token: services.pat });
+    expect([off.statusCode, off.json().fixMrsAllowed]).toEqual([201, false]);
+    const on = await post({ azureAuth: 'pat', token: services.pat, fixMrsAllowed: true });
+    expect([on.statusCode, on.json().fixMrsAllowed], on.body).toEqual([201, true]);
+    expect((await rowOf(on.json().id as string)).fixMrsAllowed).toBe(true);
+
+    const id = off.json().id as string;
+    const patched = await patch(id, { fixMrsAllowed: true });
+    expect([patched.statusCode, patched.json().fixMrsAllowed], patched.body).toEqual([200, true]);
+    expect(await rowOf(id)).toMatchObject({ fixMrsAllowed: true, azureAuth: 'pat' });
+    expect(await auditOf('scm_connection.updated', id)).toEqual([{ changed: ['fixMrsAllowed'] }]);
+    expect((await patch(id, { fixMrsAllowed: 'yes' })).statusCode).toBe(422);
+    expect(
+      (await post({ azureAuth: 'pat', token: services.pat, fixMrsAllowed: 'yes' })).statusCode,
+    ).toBe(422);
+    const back = await patch(id, { fixMrsAllowed: false });
+    expect([back.statusCode, back.json().fixMrsAllowed]).toEqual([200, false]);
+    expect(await auditOf('scm_connection.updated', id)).toEqual([
+      { changed: ['fixMrsAllowed'] },
+      { changed: ['fixMrsAllowed'] },
+    ]);
+    await expectNoCredential();
   });
 
   it('never pairs a credential with a kind, ids or address changed meanwhile, and says the connection changed', async () => {

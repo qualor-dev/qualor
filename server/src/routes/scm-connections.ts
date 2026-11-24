@@ -714,7 +714,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             privateKey: notAField('azure'),
             webhookSecret: notAField('azure'),
             ciSetupAllowed: notAField('azure'),
-            fixMrsAllowed: notAField('azure'),
+            fixMrsAllowed: z.boolean().optional(),
           }),
         ]),
         response: { 201: connectionSchema },
@@ -768,6 +768,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
             baseUrl: url,
             ...azure.columns,
             tokenEnc: encryptSecret(key, azure.credential, SCM_TOKEN_AAD),
+            fixMrsAllowed: body.fixMrsAllowed ?? false,
           };
           break;
         }

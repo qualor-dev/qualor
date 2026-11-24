@@ -11435,8 +11435,7 @@ export interface paths {
                         webhookSecret?: unknown;
                         /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
                         ciSetupAllowed?: unknown;
-                        /** @description Not a field of an Azure DevOps connection: sending it is a 422 */
-                        fixMrsAllowed?: unknown;
+                        fixMrsAllowed?: boolean;
                     };
                 };
             };
