@@ -3,6 +3,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client';
 import type { Limits } from '../limits';
 import { AI_FIX_QUEUE, postFixHandler } from '../llm/post';
+import { azurePolicyHandlers } from '../onboarding/azure-policy';
 import type { JobHandlers } from '../queue/worker';
 import { deleteBranchSnapshots, mergeRequestStateHandlers } from '../review/lifecycle';
 import { withMergeRequestHead, withUnplacedFindings } from '../review/render';
@@ -557,6 +558,7 @@ export function scmHandlers(deps: DecorationDeps): JobHandlers {
       }
     },
     [AI_FIX_QUEUE]: postFixHandler(deps),
+    ...azurePolicyHandlers(deps),
     ...mergeRequestStateHandlers(deps),
   };
 }

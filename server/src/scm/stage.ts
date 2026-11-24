@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { projects, scmConnections } from '../db/schema';
 import type { IngestionStage } from '../ingest/process';
 import { enqueueAutoFix } from '../llm/auto-fix';
+import { enqueueAzurePolicy, hasPendingAzurePolicy } from '../onboarding/azure-policy';
 import { enqueueDecoration } from './queue';
 
 /**
@@ -32,6 +33,15 @@ export const scmStage: IngestionStage = {
       github: provider === 'github' ? (ctx.report.scm.github ?? null) : null, // provider-guard: a report carries only its own provider's CI context
       azure: provider === 'azure' ? (ctx.report.scm.azure ?? null) : null, // provider-guard: a report carries only its own provider's CI context
     });
+    // A setup's Build validation policy waits for the first analysis of the main branch.
+    if (
+      provider === 'azure' &&
+      ctx.branch.kind === 'branch' &&
+      ctx.branch.name === ctx.project.mainBranchName &&
+      (await hasPendingAzurePolicy(ctx.tx, ctx.project.id))
+    ) {
+      await enqueueAzurePolicy(ctx.tx, ctx.project.id);
+    }
     await enqueueAutoFix(ctx.tx, ctx.limits, {
       analysisId: ctx.analysisId,
       branch: ctx.branch,

@@ -1,8 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { azureConnection, mapToAzure, recordingListener } from '../../test/azure-pending';
 import type { RecordingListener } from '../../test/azure-pending';
 import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
+import { reportWith } from '../../test/reports';
 import {
   mappedProject,
   mergeRequestReport,
@@ -10,6 +12,9 @@ import {
   PUBLIC_URL,
   scmTestConfig,
 } from '../../test/scm';
+
+import { jobs } from '../db/schema';
+import { AZURE_POLICY_QUEUE } from '../onboarding/azure-policy';
 
 const HEAD = 'a'.repeat(40);
 const AZURE = {
@@ -70,5 +75,19 @@ describe('the SCM ingestion stage enqueues the decoration with the report CI con
     expect(queued.map((j) => j.payload)).toEqual([
       { analysisId, attempt: 0, gitlab: { projectId: '801' } },
     ]);
+  });
+
+  it('a main-branch analysis without a pending Build validation policy queues no policy job', async () => {
+    const project = await h.project('stage/azure-main');
+    const connection = await azureConnection(h.ctx.db, {
+      organizationId: h.organizationId,
+      baseUrl: `${listener.url}/DefaultCollection`,
+      secretKey: h.ctx.config.secretKey,
+    });
+    await mapToAzure(h.ctx.db, project.id, connection.id);
+    const report = reportWith({ projectKey: project.key, branch: 'main' });
+    await project.ingestOk({ ...report, scm: { ...report.scm, provider: 'azure', azure: AZURE } });
+    const policyJobs = await h.ctx.db.select().from(jobs).where(eq(jobs.queue, AZURE_POLICY_QUEUE));
+    expect(policyJobs).toEqual([]);
   });
 });
