@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import {
   aiInProgress,
   aiSection,
@@ -139,6 +140,59 @@ describe('QualorApi.login', () => {
     expect(urls).toEqual([
       'https://qualor.example/api/v0/auth/login',
       'https://qualor.example/api/v0/auth/me',
+    ]);
+  });
+});
+
+describe('QualorApi.send, call and all', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('answers any status from send, and throws from call only on a non-2xx', async () => {
+    vi.stubGlobal(
+      'fetch',
+      async () => new Response(JSON.stringify({ code: 'FIX_BUSY' }), { status: 409 }),
+    );
+    const api = new QualorApi('https://qualor.example');
+    await expect(api.send('DELETE', '/api/v0/fixes/f1')).resolves.toMatchObject({
+      status: 409,
+      json: { code: 'FIX_BUSY' },
+    });
+    await expect(api.call('DELETE', '/api/v0/fixes/f1')).rejects.toThrow(
+      'DELETE /api/v0/fixes/f1 -> 409: {"code":"FIX_BUSY"}',
+    );
+  });
+
+  it('reads a body that is not JSON as null, with its text', async () => {
+    vi.stubGlobal('fetch', async () => new Response('<html>', { status: 502 }));
+    await expect(new QualorApi('https://qualor.example').send('GET', '/x')).resolves.toEqual({
+      status: 502,
+      json: null,
+      text: '<html>',
+    });
+  });
+
+  it('follows nextCursor through every page', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      const second = url.includes('cursor=c%2F1');
+      return new Response(
+        JSON.stringify(
+          second
+            ? { items: [{ id: 'b' }], nextCursor: null }
+            : { items: [{ id: 'a' }], nextCursor: 'c/1' },
+        ),
+        { status: 200 },
+      );
+    });
+    const all = await new QualorApi('https://qualor.example').all(
+      '/api/v0/projects/p/branches?kind=branch',
+      z.object({ id: z.string() }),
+    );
+    expect(all.map((b) => b.id)).toEqual(['a', 'b']);
+    expect(urls).toEqual([
+      'https://qualor.example/api/v0/projects/p/branches?kind=branch&limit=100',
+      'https://qualor.example/api/v0/projects/p/branches?kind=branch&limit=100&cursor=c%2F1',
     ]);
   });
 });

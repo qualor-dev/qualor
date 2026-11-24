@@ -233,16 +233,27 @@ export function withoutProvider(current: unknown): Record<string, unknown> {
 // ---------------------------------------------------------------------------------------------
 // The bench Qualor's API (admin session)
 
+/** A body read as JSON; null when it is empty or not JSON (a proxy's HTML page, say). */
+function jsonOrNull(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 export class QualorApi {
   #cookie = '';
   #csrf = '';
   constructor(private readonly base: string) {}
 
-  async call(
+  /** One call, whatever its status: the status, the body read as JSON (else null) and its text. */
+  async send(
     method: string,
     p: string,
     body?: unknown,
-  ): Promise<{ status: number; json: unknown }> {
+  ): Promise<{ status: number; json: unknown; text: string }> {
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (this.#cookie) headers['Cookie'] = this.#cookie;
     if (this.#csrf && method !== 'GET') headers['X-Qualor-CSRF'] = this.#csrf;
@@ -254,10 +265,19 @@ export class QualorApi {
       signal: AbortSignal.timeout(60_000),
     });
     const text = await res.text();
+    return { status: res.status, json: jsonOrNull(text), text };
+  }
+
+  async call(
+    method: string,
+    p: string,
+    body?: unknown,
+  ): Promise<{ status: number; json: unknown }> {
+    const res = await this.send(method, p, body);
     if (res.status < 200 || res.status >= 300) {
-      throw new Error(`${method} ${p} -> ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`${method} ${p} -> ${res.status}: ${res.text.slice(0, 300)}`);
     }
-    return { status: res.status, json: text ? (JSON.parse(text) as unknown) : null };
+    return { status: res.status, json: res.json };
   }
 
   async login(password: string): Promise<void> {
@@ -286,10 +306,27 @@ export class QualorApi {
     const res = await this.call('GET', `${p}${sep}limit=100`);
     return shape(z.object({ items: z.array(schema) }), res.json, p).items;
   }
+
+  /** Every item of a keyset-paged list (`nextCursor`), at most `maxPages` pages of 100. */
+  async all<T extends z.ZodType>(p: string, schema: T, maxPages = 20): Promise<z.infer<T>[]> {
+    const page = z.object({ items: z.array(schema), nextCursor: z.string().nullish() });
+    const out: z.infer<T>[] = [];
+    const sep = p.includes('?') ? '&' : '?';
+    let cursor: string | null = null;
+    for (let i = 0; i < maxPages; i++) {
+      const at: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+      const answer = await this.call('GET', `${p}${sep}limit=100${at}`);
+      const got = shape(page, answer.json, p);
+      out.push(...got.items);
+      cursor = got.nextCursor ?? null;
+      if (cursor === null) return out;
+    }
+    throw new Error(`${p}: more than ${maxPages} pages`);
+  }
 }
 
 /** Removes the provider (and so the stored key) from the bench Qualor's settings; throws when it is still there. */
-async function removeProvider(api: QualorApi): Promise<void> {
+export async function removeProvider(api: QualorApi): Promise<void> {
   const current = (await api.call('GET', '/api/v0/system/llm')).json;
   if ((current as { provider?: unknown } | null)?.provider === null) return;
   await api.call('PUT', '/api/v0/system/llm', withoutProvider(current));

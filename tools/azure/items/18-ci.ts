@@ -315,10 +315,10 @@ const TimelineSchema = z.object({
       .loose(),
   ),
 });
-type TimelineRecord = z.infer<typeof TimelineSchema>['records'][number];
+export type TimelineRecord = z.infer<typeof TimelineSchema>['records'][number];
 
 /** The records of a build's timeline; none when it cannot be read. */
-async function timeline(ctx: ProbeContext, buildId: number): Promise<TimelineRecord[]> {
+export async function timeline(ctx: ProbeContext, buildId: number): Promise<TimelineRecord[]> {
   const res = await ctx.bot.request(
     'GET',
     `/${ctx.project}/_apis/build/builds/${buildId}/timeline`,
@@ -334,7 +334,7 @@ const SCAN_STEP = 'Qualor scan';
  * The steps of a build that did not succeed, each with its first issue and the last lines of its
  * log: the detail only (redacted with the rest), never a recording.
  */
-function failedSteps(records: TimelineRecord[], logs: Map<number, string[]>): string {
+export function failedSteps(records: TimelineRecord[], logs: Map<number, string[]>): string {
   const bad = records.filter(
     (r) =>
       (r.type === 'Task' &&
