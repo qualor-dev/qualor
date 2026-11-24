@@ -1,0 +1,110 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "repository": {
+      "id": "b5fa5d2c-2f35-4dff-8db7-fa6e00004b80",
+      "name": "probe-org-fix",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80",
+      "project": {
+        "id": "a1532079-a512-4327-8d28-fa6e00004469",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://dev.azure.com/probe-org/_apis/projects/a1532079-a512-4327-8d28-fa6e00004469",
+        "state": "wellFormed",
+        "revision": 19,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-22T04:20:54.273Z"
+      },
+      "size": 3754,
+      "remoteUrl": "https://user@example.invalid/probe-org/probe-org/_git/probe-org-fix",
+      "sshUrl": "user@example.invalid:v3/probe-org/probe-org/probe-org-fix",
+      "webUrl": "https://dev.azure.com/probe-org/probe-org/_git/probe-org-fix",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pullRequestId": 31,
+    "codeReviewId": 31,
+    "status": "active",
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "_links": {
+        "avatar": {
+          "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+        }
+      },
+      "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+      "imageUrl": "https://dev.azure.com/probe-org/_api/_common/identityImage?id=7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+      "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+    },
+    "creationDate": "2026-11-24T15:45:28.6284271Z",
+    "title": "Bump lodash from 4.17.20 to 4.18.0",
+    "description": "| Vulnerability | Severity | Title |\n|---|---|---|\n| [` CVE-2020-28500 `](https://avd.aquasec.com/nvd/cve-2020-28500) | medium | ` nodejs-lodash: ReDoS via the toNumber, trim and trimEnd functions ` |\n| [` CVE-2021-23337 `](https://avd.aquasec.com/nvd/cve-2021-23337) | high | ` nodejs-lodash: command injection via template ` |\n| [` CVE-2025-13465 `](https://avd.aquasec.com/nvd/cve-2025-13465) | medium | ` lodash: prototype pollution in _.unset and _.omit functions ` |\n| [` CVE-2026-4800 `](https://avd.aquasec.com/nvd/cve-2026-4800) | high | ` lodash: lodash: Arbitrary code execution via untrusted input in template imports ` |\n\n**Versions:** ` 4.17.20 ` → ` 4.18.0 ` in ` package-lock.json `\n\n- ` package-lock.json `: direct\n\n**New in the lockfile:**\n- ` package-lock.json `: ` lodash@4.18.0 `\n\n[Vulnerabilities in Qualor](https://ado.example.invalid/projects/f7bf9ecb-6470-4282-8675-fa6e00004e02/vulnerabilities?view=vulnerability)\n\nQualor keeps this PR current and closes it when the vulnerability is gone. Push to this branch to take it over.",
+    "sourceRefName": "refs/heads/qualor/fix/js/lodash",
+    "targetRefName": "refs/heads/main",
+    "mergeStatus": "succeeded",
+    "isDraft": false,
+    "mergeId": "31d5627b-45c7-4a85-8083-fa6e0000694d",
+    "lastMergeSourceCommit": {
+      "commitId": "6f8ede97d2ecb2e44feab375944fd8c262064172",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/commits/6f8ede97d2ecb2e44feab375944fd8c262064172"
+    },
+    "lastMergeTargetCommit": {
+      "commitId": "1c56e1f8892de73f052f8fc4068696a0d40883fa",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/commits/1c56e1f8892de73f052f8fc4068696a0d40883fa"
+    },
+    "lastMergeCommit": {
+      "commitId": "7bb43103b45ea477cf9eae4770b65bd939da06d3",
+      "author": {
+        "name": "Probe User",
+        "email": "Probe User",
+        "date": "2026-11-24T15:45:28Z"
+      },
+      "committer": {
+        "name": "Probe User",
+        "email": "Probe User",
+        "date": "2026-11-24T15:45:28Z"
+      },
+      "comment": "Merge pull request 31 from qualor/fix/js/lodash into main",
+      "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/commits/7bb43103b45ea477cf9eae4770b65bd939da06d3"
+    },
+    "reviewers": [],
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/pullRequests/31",
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/pullRequests/31"
+      },
+      "repository": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80"
+      },
+      "workItems": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/pullRequests/31/workitems"
+      },
+      "sourceBranch": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/refs/heads/qualor/fix/js/lodash"
+      },
+      "targetBranch": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/refs/heads/main"
+      },
+      "statuses": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/pullRequests/31/statuses"
+      },
+      "sourceCommit": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/commits/6f8ede97d2ecb2e44feab375944fd8c262064172"
+      },
+      "targetCommit": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/commits/1c56e1f8892de73f052f8fc4068696a0d40883fa"
+      },
+      "createdBy": {
+        "href": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d"
+      },
+      "iterations": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/b5fa5d2c-2f35-4dff-8db7-fa6e00004b80/pullRequests/31/iterations"
+      }
+    },
+    "supportsIterations": true,
+    "artifactId": "vstfs:///Git/PullRequestId/a1532079-a512-4327-8d28-fa6e00004469%2fb5fa5d2c-2f35-4dff-8db7-fa6e00004b80%2f31"
+  }
+}

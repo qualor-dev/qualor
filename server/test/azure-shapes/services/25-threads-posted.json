@@ -1,0 +1,225 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 108,
+        "publishedDate": "2026-11-24T15:47:28.593Z",
+        "lastUpdatedDate": "2026-11-24T15:47:28.593Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:issue d0dc2721-865a-42ce-84c3-fa6e0000e357 -->\n**High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186)\n\nUnexpected empty function ` 'emptyHandler' `.\n\n[View in Qualor](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/d0dc2721-865a-42ce-84c3-fa6e0000e357)",
+            "publishedDate": "2026-11-24T15:47:28.593Z",
+            "lastUpdatedDate": "2026-11-24T15:47:28.593Z",
+            "lastContentUpdatedDate": "2026-11-24T15:47:28.593Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/108/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/108"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/32"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-25-20261124154332.js",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 2,
+            "offset": 33
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "4ec16e460a6245ab887cfa6e0000f8ad"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/108"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 109,
+        "publishedDate": "2026-11-24T15:47:29.073Z",
+        "lastUpdatedDate": "2026-11-24T15:47:50.32Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:summary 6d581179-0227-4214-891e-fa6e0000c552 -->\n### ❌ Qualor: quality gate failed\n\n**Qualor way** · analysis ` ccfcd97e5d30 ` · **1 new issue** in this pull request\n\n| | Condition | Value | Required |\n|---|---|---|---|\n| ❌ | New issues | 1 | ≤ 0 |\n| ➖ | Coverage on new code | — | skipped: fewer than 20 new lines |\n| ➖ | Duplication on new code | — | skipped: fewer than 20 new lines |\n\n**By severity:** 🔴 1 high\n\n#### Most severe new issues\n\n1. 🔴 **High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186) · [` probe/item-25-20261124154332.js:2 `](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/d0dc2721-865a-42ce-84c3-fa6e0000e357)\\\n   Unexpected empty function ` 'emptyHandler' `.\n\n1 new issue is commented inline. · **[Open in Qualor →](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/branches/c863b1ef-ac14-4e0a-8323-fa6e00006f09)**\n\n#### AI review\n\nOne minor finding: the pipeline comment promises a fixed scanner image tag, but the variable uses a mutable azure-dev tag. No critical or major issues found.\n\n**Findings:** 0 high · 0 medium · 1 low\n\n- Adds an Azure Pipelines YAML (` .azure-pipelines/qualor-docker.yml `) that runs the Qualor scanner image via docker run on pull requests and tags.\n- The first step checks out the pull request head, resolves the source commit and detaches HEAD to it, failing with clear messages when the commit is missing.\n- The second step runs the scanner container with the build variables passed through the environment, with the token supplied only via env.\n- The probe file ` probe/item-25-20261124154332.js ` adds an empty exported function; the analyzer already reports it, so no new finding is raised.\n\nReviewed commit: ` ccfcd97e5d30 `\n\n<details><summary>Prompt for an AI agent</summary>\n\n```text\nFix the problems below, which an AI review found in this pull request.\nThe review can be wrong: read the code first and skip a finding that does not hold.\nKeep each change small and run the tests afterwards.\n\n1. .azure-pipelines/qualor-docker.yml:22 Scanner image tag azure-dev is mutable, contradicting the comment that the tag is fixed\n   The header comment at line 14 says \"The image tag is fixed: nothing floats\", but QUALOR_SCANNER_IMAGE is set to qualor/scanner:azure-dev. A dev-channel tag is usually re-pushed when the image is rebuilt, so the same pipeline can run different scanner code over time and scan results can change without any repository edit. Pin the image to a release version or an immutable digest (repo@sha256:...), or correct the comment if a moving tag is intended.\n```\n\n</details>",
+            "publishedDate": "2026-11-24T15:47:29.073Z",
+            "lastUpdatedDate": "2026-11-24T15:47:50.32Z",
+            "lastContentUpdatedDate": "2026-11-24T15:47:50.32Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/109/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/109"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/32"
+              }
+            }
+          }
+        ],
+        "status": "closed",
+        "threadContext": null,
+        "properties": null,
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/109"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 110,
+        "publishedDate": "2026-11-24T15:47:47.09Z",
+        "lastUpdatedDate": "2026-11-24T15:47:47.09Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "_links": {
+                "avatar": {
+                  "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+                }
+              },
+              "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+              "uniqueName": "",
+              "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+              "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+            },
+            "content": "<!-- qualor:ai-fix d0dc2721-865a-42ce-84c3-fa6e0000e357 adfbef41-472b-4704-814f-fa6e00005cc2 -->\n**AI-generated fix suggestion** from Qualor (model ` claude-haiku-5-5 `). It may be wrong: review it before applying.\n\nIssue: ` sonarjs:S1186 ` · ` Unexpected empty function 'emptyHandler'. `\nWhy: ` The function body was empty, which triggers S1186. Adding a comment inside the body makes the intent explicit and satisfies the rule without changing behavior. `\n\n```suggestion\nexport function emptyHandler() {\n  // intentionally left empty\n}\n```\n\n[View the issue in Qualor](https://ado.example.invalid/projects/6d581179-0227-4214-891e-fa6e0000c552/issues/d0dc2721-865a-42ce-84c3-fa6e0000e357)",
+            "publishedDate": "2026-11-24T15:47:47.09Z",
+            "lastUpdatedDate": "2026-11-24T15:47:47.09Z",
+            "lastContentUpdatedDate": "2026-11-24T15:47:47.09Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/110/comments/1"
+              },
+              "repository": {
+                "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+              },
+              "threads": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/110"
+              },
+              "pullRequests": {
+                "href": "https://dev.azure.com/probe-org/_apis/git/pullRequests/32"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-25-20261124154332.js",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 3,
+            "offset": 2
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "c484f3d6732a46608de0fa6e0000615d"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://dev.azure.com/probe-org/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2/pullRequests/32/threads/110"
+          },
+          "repository": {
+            "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/git/repositories/4427c1df-aedf-4e1f-8447-fa6e0000ecd2"
+          }
+        }
+      }
+    ],
+    "count": 3
+  }
+}
