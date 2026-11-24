@@ -379,6 +379,33 @@ describe('the prompt cache across reviews (R49)', () => {
 });
 
 describe('converseOverTools', () => {
+  it("puts the provider's noun in the role's prompt for a pull request", async () => {
+    const reader = memorySnapshot();
+    const policy = newToolPolicy({
+      excludePaths: [],
+      masked: new MaskedFiles(reader, { masker }),
+      masker,
+    });
+    const systems: string[] = [];
+    for (const scm of [undefined, 'gitlab', 'github', 'azure'] as const) {
+      await converseOverTools(callOf('judge', scm === undefined ? {} : { scm }), {
+        reader,
+        policy,
+        send: (conversation) => {
+          systems.push(conversation.system);
+          return Promise.resolve(turn({ text: '{}' }));
+        },
+        shouldStop: () => Promise.resolve(false),
+      });
+    }
+    expect(systems[0]).toBe(SYSTEM_PROMPTS.judge);
+    expect(systems[1]).toBe(SYSTEM_PROMPTS.judge);
+    for (const system of systems.slice(2)) {
+      expect(system).toContain('runs on a pull request');
+      expect(system).not.toContain('merge request');
+    }
+  });
+
   it("sends the role's prompt and limit with the review tools, and returns the answer", async () => {
     const reader = memorySnapshot();
     const policy = newToolPolicy({

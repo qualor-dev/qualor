@@ -61,8 +61,12 @@ function jobsOfRequests<J extends { payload: unknown }>(
   return queued.filter((j) => ids.has((j.payload as { requestId: string }).requestId));
 }
 /** Verbatim (4E-3a §3 step 5). */
-const AUTO_LINE =
-  "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.";
+const AUTO_LINE = {
+  gitlab:
+    "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.",
+  github:
+    "Posted automatically for new findings of this pull request. A person can switch this off in Qualor's AI settings.",
+};
 /** Three high findings and a low one, on lines 2 to 5. */
 const MIXED: readonly [number, Severity][] = [
   [2, 'high'],
@@ -296,7 +300,7 @@ describe('automatic fix suggestions (4E-3a §3)', () => {
     for (const thread of threads) {
       const body = thread.notes[0]!.body.split('\n');
       expect(body[1]).toMatch(/^\*\*AI-generated fix suggestion\*\*/);
-      expect(body[2]).toBe(AUTO_LINE);
+      expect(body[2]).toBe(AUTO_LINE.gitlab);
     }
     expect(threads.map((t) => t.notes[0]!.position?.new_line).sort()).toEqual([2, 3, 5]);
     for (const row of await fixRows(project.id)) {
@@ -340,7 +344,7 @@ describe('automatic fix suggestions (4E-3a §3)', () => {
     );
     expect(comments).toHaveLength(1);
     expect(comments[0]).toMatchObject({ path: 'src/a.ts', line: 3, commitId: HEAD });
-    expect(comments[0]!.body.split('\n')[2]).toBe(AUTO_LINE);
+    expect(comments[0]!.body.split('\n')[2]).toBe(AUTO_LINE.github);
     expect(comments[0]!.body).toContain('```suggestion\nif (a === 2) {}\n```');
   });
 
@@ -723,7 +727,7 @@ describe('automatic fix suggestions (4E-3a §3)', () => {
       const [thread] = aiFixThreads(gitlabId);
       const body = thread!.notes[0]!.body.split('\n');
       expect(body[1]).toMatch(/^\*\*AI-generated fix suggestion\*\*/);
-      expect(body).not.toContain(AUTO_LINE);
+      expect(body).not.toContain(AUTO_LINE.gitlab);
     });
   });
 

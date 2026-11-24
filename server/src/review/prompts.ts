@@ -1,4 +1,4 @@
-import { cutAtGrapheme, SEVERITIES } from '@qualor/shared';
+import { cutAtGrapheme, SEVERITIES, type ScmProvider } from '@qualor/shared';
 import { AI_CATEGORIES, REPLY_VERDICTS, type ReplyVerdict } from '../db/schema';
 import type { IssueStatus } from '../tracking/plan';
 import {
@@ -108,6 +108,19 @@ const oneOf = (values: readonly string[]): string => {
   const quoted = values.map((value) => `"${value}"`);
   const last = quoted[quoted.length - 1] ?? '';
   return quoted.length < 2 ? last : `${quoted.slice(0, -1).join(', ')} or ${last}`;
+};
+
+/**
+ * A fixed prompt as the provider words it: GitLab's own noun is `merge request`, and GitHub and
+ * Azure DevOps say `pull request`. Only Qualor's own prompt is changed, never the data in a message.
+ */
+export function inScmWords(prompt: string, scm: ScmProvider): string {
+  return prompt.replaceAll('merge request', REQUEST_NOUN[scm]);
+}
+const REQUEST_NOUN: Record<ScmProvider, string> = {
+  gitlab: 'merge request',
+  github: 'pull request',
+  azure: 'pull request',
 };
 
 const reviewer = (area: string): string =>

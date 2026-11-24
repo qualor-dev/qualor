@@ -1,3 +1,4 @@
+import type { ScmProvider } from '@qualor/shared';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Executor } from '../db/client';
 import {
@@ -5,6 +6,7 @@ import {
   projects,
   reviewRuns,
   reviewSnapshots,
+  scmConnections,
   type ReviewRunRow,
   type ReviewRunStatus,
 } from '../db/schema';
@@ -22,6 +24,8 @@ export interface Running {
   mergeRequestId: string;
   settings: StoredLlmSettings;
   provider: ReviewProvider;
+  /** The SCM provider of the merge request: the nouns of the prompts; GitLab's without a connection. */
+  scm: ScmProvider;
   organizationId: string;
 }
 
@@ -87,6 +91,13 @@ export async function decideStart(
     .from(projects)
     .where(eq(projects.id, run.projectId));
   if (project === undefined) return { kind: 'none' };
+  const [connection] =
+    project.scmConnectionId === null
+      ? []
+      : await tx
+          .select({ provider: scmConnections.provider })
+          .from(scmConnections)
+          .where(eq(scmConnections.id, project.scmConnectionId));
   const active = reviewActive(settings, project);
   const provider = reviewProvider(settings);
   if (!active.active || provider === null) {
@@ -143,6 +154,7 @@ export async function decideStart(
       mergeRequestId: branch.name,
       settings,
       provider,
+      scm: connection?.provider ?? 'gitlab',
       organizationId: project.organizationId,
     },
   };

@@ -502,6 +502,7 @@ class ReplyJob extends JobSteps {
         mayChangeStatus: round.mayChangeStatus,
         snapshot,
         snapshotHead: snapshot?.meta.headSha ?? null,
+        scm: row.provider,
       },
       replyDeps,
     );

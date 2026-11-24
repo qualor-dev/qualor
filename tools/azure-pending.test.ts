@@ -10,9 +10,7 @@ import { describe, expect, it } from 'vitest';
  * the sources hold: a sub-plan that builds its part removes its markers and lowers its number, so
  * the count always says what is left. Sub-plan 9 ends with `{}`.
  */
-export const PENDING: Record<string, number> = {
-  '9': 1,
-};
+export const PENDING: Record<string, number> = {};
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIRS = ['server/src', 'cli/src', 'packages/shared/src', 'ui/src', 'enterprise/src'];

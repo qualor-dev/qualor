@@ -1,5 +1,5 @@
 import { assertNever } from '@qualor/shared';
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { decryptSecret, encryptionKey } from '../../crypto/secrets';
 import type { Executor } from '../../db/client';
 import { projects, scmConnections } from '../../db/schema';
@@ -13,12 +13,13 @@ import {
   type TestProblemCode,
 } from '../connections';
 import { InstallationTokenCache } from '../github/app-auth';
+import { encryptWebhookSecret } from '../github/credentials';
 import { ScmError, type ScmErrorReason } from '../provider';
 import { isInternalHostAllowed, scmBaseUrlProblem } from '../url';
 import type { AzureAuthKind } from './auth-kinds';
 import { AZURE_CERTIFICATE_PROBLEM_TEXT, parseAzureCertificate } from './certificate';
 import { AzureDevOpsClient, type AzureCredential } from './client';
-import { ownSubscriptions, projectHookState } from './hooks';
+import { generateHookPassword, ownSubscriptions, projectHookState } from './hooks';
 import { azureRightsReadable } from './rights';
 import {
   entraCacheKey,
@@ -599,6 +600,35 @@ export async function mappedRepositoryRefs(db: Executor, connectionId: string): 
     .from(projects)
     .where(and(eq(projects.scmConnectionId, connectionId), isNotNull(projects.scmProjectRef)));
   return rows.flatMap((p) => (p.ref === null ? [] : [p.ref]));
+}
+
+/**
+ * Stores a new hook password for the connection and returns it with the row written: the only time
+ * it is seen. The write is conditional on the stored password and the address still being those of
+ * `row`'s; null when they are not (a change or a move of the address meanwhile: a first password,
+ * written after a move, would be one for the address it was not made for).
+ */
+export async function storeNewHookPassword(
+  tx: Executor,
+  key: Buffer,
+  row: ScmConnectionRow,
+): Promise<{ password: string; written: ScmConnectionRow } | null> {
+  const password = generateHookPassword();
+  const stored = row.webhookSecretEnc;
+  const [written] = await tx
+    .update(scmConnections)
+    .set({ webhookSecretEnc: encryptWebhookSecret(key, password) })
+    .where(
+      and(
+        eq(scmConnections.id, row.id),
+        eq(scmConnections.baseUrl, row.baseUrl),
+        stored === null
+          ? isNull(scmConnections.webhookSecretEnc)
+          : sql`${scmConnections.webhookSecretEnc} ->> 'ct' = ${stored.ct}`,
+      ),
+    )
+    .returning();
+  return written ? { password, written } : null;
 }
 
 /**

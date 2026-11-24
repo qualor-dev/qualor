@@ -1,4 +1,13 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -11,6 +20,7 @@ import {
   compareVersions,
   CONSTANT_FILES,
   currentVersion,
+  ENTERPRISE_OPENAPI_FILE,
   EXTENSION_FILE,
   gitTag,
   imageTags,
@@ -23,12 +33,14 @@ import {
   TASK_FILE,
   versionArgument,
   versionProblems,
+  type Version,
 } from './version';
 
 const ALL_FILES = [
   ...PACKAGE_FILES,
   ...CONSTANT_FILES,
   OPENAPI_FILE,
+  ENTERPRISE_OPENAPI_FILE,
   CHART_FILE,
   EXTENSION_FILE,
   TASK_FILE,
@@ -249,6 +261,172 @@ describe('the Azure Pipelines examples pin the minor tag of VERSION', () => {
       /azure-devops[/]qualor[.]yml: no version found/,
     );
     expect(ALL_FILES.map((f) => text(f))).toEqual(before);
+  });
+
+  it('rewrites the fix pipelines too: the imageTag input and the image variable', () => {
+    const fix = 'integrations/azure-devops/qualor-fix.yml';
+    const fixDocker = 'integrations/azure-devops/qualor-fix-docker.yml';
+    expect(AZURE_EXAMPLES.map((e) => e.file)).toEqual(expect.arrayContaining([fix, fixDocker]));
+    copy();
+    // The next minor of the checkout, never a literal: this file must not name the version it is
+    // run at, nor the next one (the scan of every tracked file below).
+    const v = parseVersion(VERSION);
+    const next = parseVersion(`${v.major}.${v.minor + 1}.0`);
+    const changed = setVersion(dir, next);
+    expect(changed).toEqual(expect.arrayContaining([fix, fixDocker]));
+    const line = `${next.major}.${next.minor}`;
+    expect(text(fix)).toContain(`      imageTag: '${line}'\n`);
+    expect(text(fixDocker)).toContain(`  QUALOR_SCANNER_IMAGE: qualor/scanner:${line}\n`);
+    expect(versionProblems(readVersions(dir))).toEqual([]);
+  });
+
+  it('pins major.minor for a pre-release as well, every example alike (sub-plan 3 ruling 19)', () => {
+    copy();
+    setVersion(dir, parseVersion('1.5.0-rc.1'));
+    for (const { file } of AZURE_EXAMPLES) {
+      expect(text(file), file).toMatch(/(?:scanner(?:-dotnet)?:|imageTag: ')1[.]5(?:'|\n)/);
+      expect(text(file), file).not.toContain('rc.1');
+    }
+    expect(versionProblems(readVersions(dir))).toEqual([]);
+  });
+});
+
+describe('enterprise/openapi.json carries VERSION like server/openapi.json', () => {
+  let dir = '';
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const copy = (): void => {
+    dir = mkdtempSync(path.join(tmpdir(), 'qualor-version-'));
+    for (const f of ALL_FILES) {
+      mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+      cpSync(f, path.join(dir, f));
+    }
+  };
+  const doc = (root: string): { info: { version: string } } =>
+    JSON.parse(readFileSync(path.join(root, ENTERPRISE_OPENAPI_FILE), 'utf8')) as {
+      info: { version: string };
+    };
+
+  it('sets info.version and leaves the rest as the generator writes it', () => {
+    expect(ENTERPRISE_OPENAPI_FILE).toBe('enterprise/openapi.json');
+    copy();
+    expect(setVersion(dir, parseVersion('1.4.0'))).toContain(ENTERPRISE_OPENAPI_FILE);
+    // The enterprise generator takes info.version from the server's document (VERSION) and
+    // nothing else in it from the version: the committed document with the new info.version.
+    const committed = doc('.');
+    expect(committed.info.version).toBe(VERSION);
+    const bumped = { ...committed, info: { ...committed.info, version: '1.4.0' } };
+    expect(readFileSync(path.join(dir, ENTERPRISE_OPENAPI_FILE), 'utf8')).toBe(
+      serializeOpenApi(bumped),
+    );
+    setVersion(dir, parseVersion('1.5.0-rc.1'));
+    expect(doc(dir).info.version).toBe('1.5.0-rc.1');
+  });
+
+  it('reports an info.version that differs', () => {
+    copy();
+    const p = path.join(dir, ENTERPRISE_OPENAPI_FILE);
+    writeFileSync(p, readFileSync(p, 'utf8').replace(/"version": "[^"]*"/, '"version": "9.9.9"'));
+    expect(versionProblems(readVersions(dir))[0]).toContain(`${ENTERPRISE_OPENAPI_FILE} 9.9.9`);
+  });
+});
+
+/**
+ * Tracked files that hold Qualor's version but are not release:version's to write. The scan
+ * below fails on any other file that names the checkout's version, or the next patch or minor
+ * one (so the test still passes once release:version has raised the files). Lockfiles and
+ * licence lists are not scanned: their versions are other software's.
+ */
+const NOT_WRITTEN = [
+  // Docs: raised by hand from the release checklist.
+  'README.md',
+  'SECURITY.md',
+  'deploy/dockerhub/qualor.md',
+  'deploy/dockerhub/scanner-dotnet.md',
+  'deploy/dockerhub/scanner.md',
+  'deploy/dockerhub/server.md',
+  'docs/guide/ai-prompts.md',
+  'docs/guide/cli.md',
+  'docs/guide/fix-merge-requests.md',
+  'docs/guide/github.md',
+  'docs/guide/gitlab.md',
+  'docs/guide/install-server.md',
+  'docs/guide/languages-and-analyzers.md',
+  'docs/guide/migrate-from-dependency-track.md',
+  'docs/guide/other-ci.md',
+  'docs/guide/quick-start.md',
+  'docs/guide/releases.md',
+  'docs/guide/sbom-upload.md',
+  // The review job runs the released scanner: raised in a commit of its own once it is published.
+  '.github/workflows/ci.yml',
+  // Quotes: release history, test fixtures, recorded Azure DevOps answers, a comment.
+  'CHANGELOG.md',
+  'cli/test/gitlab-component.test.ts',
+  'integrations/azure-devops/extension/tasks/qualor/src/plan.test.ts',
+  'packages/shared/test/sbom-samples/README.md',
+  'server/src/onboarding/azure-pipeline.test.ts',
+  'server/src/onboarding/ci-setup.test.ts',
+  'server/src/vulnerabilities/export/round-trip.db.test.ts',
+  'server/test/azure-shapes/services/27-pr-complete.json',
+  'server/test/azure-shapes/services/27-setup-pr.json',
+  'tools/azure/items/27-onboarding.ts',
+  'tools/azure/items/onboarding.test.ts',
+  'tools/deploy/sources.test.ts',
+  'tools/release/publish.ts',
+  'ui/src/app/project/dependencies/dependencies.page.spec.ts',
+];
+const NOT_SCANNED =
+  /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|gradle\.lockfile|go\.sum)$|^deploy\/scanner\/licenses\//;
+
+const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** The version itself, or its minor line as an image tag, a task's imageTag or a component ref. */
+function holdsVersion(text: string, v: Version): boolean {
+  const line = escape(`${v.major}.${v.minor}`);
+  return (
+    new RegExp(`(?<![\\d.])${escape(v.text)}(?!\\d)`).test(text) ||
+    new RegExp(`(?:qualor/[\\w-]+:|imageTag: '|@v?)${line}(?![\\d.])`).test(text)
+  );
+}
+
+describe('every tracked file that holds the version (Azure sub-plan 9)', () => {
+  it('finds the version and the minor-line pins, and no other number', () => {
+    const v = parseVersion('3.4.5');
+    for (const yes of [
+      'image: qualor/scanner:3.4.5',
+      'QUALOR_SCANNER_IMAGE: qualor/scanner-dotnet:3.4',
+      "      imageTag: '3.4'",
+      'uses: qualor-dev/scan-action@v3.4',
+      'component: gitlab.com/qualor/qualor/qualor@3.4',
+      '"version": "3.4.5",',
+    ]) {
+      expect(holdsVersion(yes, v), yes).toBe(true);
+    }
+    for (const no of ['Ruff 3.4.9', '13.4.5', '3.4.50', '3.4em', '(3.4 fix MRs)', 'v3.4.51']) {
+      expect(holdsVersion(no, v), no).toBe(false);
+    }
+  });
+
+  it('is one release:version writes, or one listed as not written', () => {
+    const tracked = spawnSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
+      .stdout.split('\0')
+      .filter((f) => f !== '' && existsSync(f));
+    expect(tracked).toContain('tools/release/version.ts');
+    const v = parseVersion(VERSION);
+    const versions = [
+      v,
+      parseVersion(`${v.major}.${v.minor}.${v.patch + 1}`),
+      parseVersion(`${v.major}.${v.minor + 1}.0`),
+    ];
+    const known = new Set([...ALL_FILES, ...NOT_WRITTEN]);
+    const unknown: string[] = [];
+    for (const f of tracked.filter((t) => !NOT_SCANNED.test(t))) {
+      const data = readFileSync(f);
+      if (data.includes(0)) continue; // binary
+      const text = data.toString('utf8');
+      const held = versions.filter((x) => holdsVersion(text, x)).map((x) => x.text);
+      if (held.length > 0 && !known.has(f)) unknown.push(`${f} (${held.join(', ')})`);
+    }
+    expect(unknown).toEqual([]);
+    for (const f of NOT_WRITTEN) expect(tracked, f).toContain(f);
   });
 });
 

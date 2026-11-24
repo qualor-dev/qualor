@@ -5,8 +5,9 @@ Organisations hold projects, people get roles in them, and CI uploads analyses w
 ## Organisations
 
 An organisation is a tenant: it owns its projects, quality profiles, quality gates, webhooks and
-GitLab/GitHub connections. The first start creates the organisation `default`, and most companies
-need no other. Organisations, users, projects and lines of code are unlimited in every edition.
+GitLab, GitHub and Azure DevOps connections. The first start creates the organisation `default`, and
+most companies need no other. Organisations, users, projects and lines of code are unlimited in
+every edition.
 
 An instance admin creates more in **Settings → Organizations** with **New organization**
 (`POST /api/v0/organizations`). The key, 2 to 64 lowercase letters, digits and hyphens, is what the
@@ -34,7 +35,7 @@ Deleting cannot be undone. The request answers 202 and a job does the deleting, 
 |---|---|
 | its projects, with their analyses, issues, branches, merge requests, dependencies, SBOMs and tokens | the **audit log**, which records `organization.deleted` with the key, the name and the number of projects |
 | its quality gates, quality profiles, webhooks, members and project roles, compliance reports and AI usage history | issues already created **in Jira**: Qualor only forgets the links |
-| its GitLab and GitHub connections, Jira connection, licence policy and AI settings | **merge requests and branches on the provider**, with their comments |
+| its GitLab, GitHub and Azure DevOps connections, Jira connection, licence policy and AI settings | **merge requests and branches on the provider**, with their comments |
 | | users: they only lose their role in it |
 
 If the job fails, the organisation stays whole and Delete works again.
@@ -46,8 +47,8 @@ These roles exist in every edition, without a licence:
 | Role | Can |
 |---|---|
 | **Instance admin** | everything, including users and organisations |
-| **Organization admin** (`admin`) | manage the organisation: projects, project tokens, quality profiles, gates, webhooks, GitLab/GitHub connections and each project's mapping to a repository, members and roles on single projects; with the Enterprise plan, create and delete compliance reports of the organisation and of its projects (`org.compliance.manage`) |
-| **Project admin** (`project_admin`) | what a Maintainer can, and also change project settings (except the GitLab/GitHub mapping), manage project tokens, delete branches and merge requests, run the SonarQube status import, and, with the Enterprise plan, create compliance reports of the project (`project.compliance.create`) |
+| **Organization admin** (`admin`) | manage the organisation: projects, project tokens, quality profiles, gates, webhooks, SCM connections and each project's mapping to a repository, members and roles on single projects; with the Enterprise plan, create and delete compliance reports of the organisation and of its projects (`org.compliance.manage`) |
+| **Project admin** (`project_admin`) | what a Maintainer can, and also change project settings (except the repository mapping), manage project tokens, delete branches and merge requests, run the SonarQube status import, and, with the Enterprise plan, create compliance reports of the project (`project.compliance.create`) |
 | **Maintainer** (`member`) | read the projects, upload analyses, triage issues (change a status, override a severity) and use the AI assistant |
 | **Viewer** (`viewer`) | read the projects: code, issues, quality gate, quality profile and AI answers |
 
@@ -234,7 +235,7 @@ curl -fsS -X PATCH -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Ty
 | `mainBranchName` | the default branch |
 | `newCodeDefinition` | how new code is defined on the main branch; see [Quality gates](./quality-gates.md#new-code) |
 | `qualityGateId` | a gate for this project, or `null` for the organisation's default gate |
-| `scmConnectionId`, `scmProjectRef` | the GitLab/GitHub mapping. **Settings → Repositories** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
+| `scmConnectionId`, `scmProjectRef` | the repository mapping (GitLab, GitHub or Azure DevOps). **Settings → Repositories** also sets it. Only an org admin can change it (403 `FORBIDDEN` otherwise, even for a Project admin) |
 
 To assign a quality profile to one project, send `{"profileId": "..."}` to
 `PUT /api/v0/projects/<id>/quality-profiles/<language>`. Send `null` to return that language to the
@@ -297,5 +298,6 @@ tokens**.
 | Scripts and automation (onboarding, reports) | a personal token with **Read**, **Write** or **Admin**, as needed |
 | `qualor import sonarqube` | a personal token with **Admin**, of an org admin |
 
-Keep `QUALOR_TOKEN` in the CI's secret store: a masked GitLab variable, or a GitHub Actions secret.
-Never put it in `qualor.yml`: the CLI refuses a config file that has a `token` key.
+Keep `QUALOR_TOKEN` in the CI's secret store: a masked GitLab variable, a GitHub Actions secret or
+an Azure Pipelines secret variable. Never put it in `qualor.yml`: the CLI refuses a config file that
+has a `token` key.

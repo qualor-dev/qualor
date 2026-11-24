@@ -114,7 +114,7 @@ the agent works in a loop:
 
 1. It fixes the code and **pushes**.
 2. **CI runs `qualor scan`** ([GitLab](./gitlab.md), [GitHub](./github.md),
-   [other CI](./other-ci.md)).
+   [Azure DevOps](./azure-devops.md), [other CI](./other-ci.md)).
 3. It calls `qualor_gate_status` with the pushed commit SHA. While the state is `not_yet` or
    `in_progress`, CI has not delivered yet: it waits a minute or two and asks again.
 4. At `analyzed` it reads the gate and the failed conditions, and goes back to step 1 if the gate

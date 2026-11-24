@@ -1,14 +1,15 @@
 # Qualor
 
 **The self-hosted SonarQube alternative: every merge request checked, with no per-line licence.**
-Quality gates, coverage and security rules on GitLab and GitHub, plus an AI reviewer on your own
-model. Open source and free for commercial use. Leaving SonarQube? Your gates, profiles and triage
-decisions come with you: see [Migrating from SonarQube](#migrating-from-sonarqube).
+Quality gates, coverage and security rules on GitLab, GitHub and Azure DevOps, plus an AI reviewer
+on your own model. Open source and free for commercial use. Leaving SonarQube? Your gates, profiles
+and triage decisions come with you: see [Migrating from SonarQube](#migrating-from-sonarqube).
 
 [Documentation](https://qualor.dev/docs) · [Live demo](https://review.qualor.dev) ·
 [Docker Hub](https://hub.docker.com/u/qualor) ·
 [GitLab CI/CD component](https://gitlab.com/qualor/qualor) ·
-[GitHub Action](https://github.com/qualor-dev/scan-action)
+[GitHub Action](https://github.com/qualor-dev/scan-action) ·
+[Azure Pipelines](docs/guide/azure-devops.md)
 
 Star the repository to find it again.
 
@@ -121,6 +122,20 @@ Ultimate only. A self-managed GitLab needs its own copy of the component. See
 See [GitHub](docs/guide/github.md) for the whole workflow and the GitHub App that posts check runs
 and review comments.
 
+**Azure Pipelines**, with the `Qualor@0` task (or `docker run`, with no extension):
+
+```yaml
+- checkout: self
+  fetchDepth: 0
+  persistCredentials: false
+- task: Qualor@0
+  env:
+    QUALOR_TOKEN: $(QUALOR_TOKEN)
+```
+
+See [Azure DevOps](docs/guide/azure-devops.md) for the connection, the pull request policy and the
+full pipelines.
+
 **Other CI systems** run the scanner image with `qualor scan`: see
 [Other CI systems](docs/guide/other-ci.md).
 
@@ -134,8 +149,8 @@ it; see the [configuration reference](docs/guide/configuration.md).
 - **The analyzers you already know**, pinned in one scanner image (see [Languages](#languages)).
 - **Qualor's own security rules** for JavaScript, TypeScript, Python, Java, Go and C#. They follow
   request data into SQL, shell commands, file paths, templates, redirects and outgoing requests.
-- **Merge request comments** on GitLab and GitHub: a summary, a thread on each new issue, and a
-  commit status or check run.
+- **Merge request comments** on GitLab, GitHub and Azure DevOps: a summary, a thread on each new
+  issue, and a commit status, check run or pull request status.
 - **Jira.** One click, or a rule for new vulnerabilities, turns a code issue or a vulnerability into
   a Jira issue. It shows the Jira status and comments when the finding is fixed. See
   [Jira](docs/guide/jira.md).
@@ -168,7 +183,8 @@ classes for SpotBugs, downloaded Go modules. C# runs inside your own build with 
 
 ## AI review
 
-A model reviews GitLab merge requests and GitHub pull requests on the projects you choose. It reads
+A model reviews GitLab merge requests, GitHub pull requests and Azure DevOps pull requests on the
+projects you choose. It reads
 the change and any file of the repository it needs, and it is told what the analyzers already
 found.
 

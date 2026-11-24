@@ -24,7 +24,7 @@ UTF-8 JSON, except `logs.jsonl`, which holds one JSON log line per line.
 | `health.json` | the readiness checks, the database pool, the database size, and the estimated row counts of the 15 largest tables |
 | `jobs.json` | the number of jobs by queue and status, and the last 50 failed jobs with their error text (cut to 500 characters, no job data) |
 | `analyses.json` | the last 50 failed analyses: the project key, the branch, the time and the error |
-| `scm.json` | the GitLab and GitHub connections: host, status, the state of the circuit breaker and the last error. No token, private key or webhook secret. The command's bundle has no live connection state, and its manifest says so |
+| `scm.json` | the GitLab, GitHub and Azure DevOps connections: host, status, the state of the circuit breaker and the last error. No token, private key or webhook secret. The command's bundle has no live connection state, and its manifest says so |
 | `logs.jsonl` | the last server log lines of the replica that made the bundle, oldest first: at most 5 000 lines and 5 MiB. Only in a bundle downloaded from the web UI |
 
 **Never in it:** passwords, tokens and their hashes, `QUALOR_SECRET_KEY`, the database password,

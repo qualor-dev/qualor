@@ -46,12 +46,15 @@ import {
 import { buildToolbox, runTool, toWork } from './toolbox';
 import { cosignVerifier, resolveVerifyKey, verifyRelease } from './verify';
 import { currentVersion, imageTags, releasedVersions, type Version } from './version';
+import { EXTENSION_DIR, EXTENSION_OUT, readVsix } from './vsix';
 
 /**
  * `pnpm release:dry-run [--version <v>] [--skip-images] [--skip-cli-sources] [--targets a,b]`
  * (release.md §10). Everything lands in .tmp/release/<version>/; nothing leaves this machine: the
  * images go to a registry on 127.0.0.1 (removed afterwards), and the signatures are made with a
  * throwaway key (deleted afterwards). No git tag is created: the version is the checkout's.
+ * The Azure DevOps extension is packed beforehand by `pnpm extension:package` (release.yml runs
+ * it first); the dry run refuses to start without that VSIX of this version.
  */
 export interface DryRunOptions {
   version: Version;
@@ -292,8 +295,15 @@ function imageSbom(
   return sbom;
 }
 
-export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Promise<string> {
+export async function dryRun(
+  o: DryRunOptions,
+  root = DEFAULT_OUTPUT_ROOT,
+  extensionFrom = EXTENSION_OUT,
+): Promise<string> {
   const v = o.version;
+  // Before anything is built (Azure sub-plan 3 ruling 14): the VSIX of `pnpm extension:package`
+  // is this version's extension. Its bytes, as checked, are what goes into the release.
+  const vsix = readVsix(v, extensionFrom);
   const dir = releaseDir(v, root);
   const work = workDir(v, root);
   rmSync(dir, { recursive: true, force: true });
@@ -335,6 +345,11 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
     else {
       process.stderr.write('warning: --skip-cli-sources: this directory can never be published\n');
     }
+
+    // The Azure DevOps extension: an asset like the binaries, listed, checksummed and uploaded.
+    const extensionFile = `${EXTENSION_DIR}/${vsix.name}`;
+    mkdirSync(path.join(dir, EXTENSION_DIR), { recursive: true });
+    writeFileSync(path.join(dir, extensionFile), vsix.data);
 
     // 6. The CLI's SBOM, from a production install in the work directory (release.md §8).
     const sbomDir = path.join(dir, 'sbom');
@@ -408,6 +423,7 @@ export async function dryRun(o: DryRunOptions, root = DEFAULT_OUTPUT_ROOT): Prom
         cliSources: !o.skipCliSources,
         images,
         chart: { file: chartFile, digest: chartDigest },
+        extension: { file: extensionFile, version: vsix.version },
       },
       releaseFiles(dir),
     );

@@ -21,6 +21,8 @@ export interface ReleaseManifest {
   cliSources: boolean;
   images: ImageRecord[];
   chart: { file: string; digest: string | null };
+  /** The Azure DevOps extension's VSIX and the version its manifest holds (x.y.z, numbers only). */
+  extension: { file: string; version: string };
   files: string[];
 }
 

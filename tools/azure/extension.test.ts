@@ -2,38 +2,18 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { inflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { REPO_ROOT } from '../deploy/stack';
+import { parseVersion } from '../release/version';
+import { vsixProblems, zipEntries as readZip } from '../release/vsix';
 import { VERSION } from '../../server/src/index';
 
 /** The manifest holds numbers only: a pre-release VERSION packs as its x.y.z. */
 const PACKED = VERSION.split('-')[0] ?? VERSION;
 const EXTENSION = path.join(REPO_ROOT, 'integrations', 'azure-devops', 'extension');
 
-/** The entries of a zip, read through its central directory (no zip dependency in the repo). */
-function zipEntries(file: string): Map<string, Buffer> {
-  const zip = readFileSync(file);
-  const end = zip.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
-  if (end < 0) throw new Error('not a zip file');
-  const count = zip.readUInt16LE(end + 10);
-  let at = zip.readUInt32LE(end + 16);
-  const out = new Map<string, Buffer>();
-  for (let i = 0; i < count; i += 1) {
-    const method = zip.readUInt16LE(at + 10);
-    const size = zip.readUInt32LE(at + 20);
-    const nameLength = zip.readUInt16LE(at + 28);
-    const extra = zip.readUInt16LE(at + 30);
-    const comment = zip.readUInt16LE(at + 32);
-    const local = zip.readUInt32LE(at + 42);
-    const name = zip.toString('utf8', at + 46, at + 46 + nameLength);
-    const start = local + 30 + zip.readUInt16LE(local + 26) + zip.readUInt16LE(local + 28);
-    const data = zip.subarray(start, start + size);
-    out.set(name, method === 8 ? inflateRawSync(data) : Buffer.from(data));
-    at += 46 + nameLength + extra + comment;
-  }
-  return out;
-}
+/** The entries of a zip (the release's reader: no zip dependency in the repo). */
+const zipEntries = (file: string): Map<string, Buffer> => readZip(readFileSync(file));
 
 function text(entries: Map<string, Buffer>, name: string): string {
   const data = entries.get(name);
@@ -106,6 +86,13 @@ describe('the extension package (VSIX)', () => {
     expect(notices).toMatch(/minimatch \S+ \(ISC\)/);
     expect(notices).toMatch(/semver \S+ \(ISC\)/);
     expect(notices).toMatch(/Permission to use, copy, modify, and\/or distribute this software/);
+  });
+
+  it('passes the check of the release dry run, and the dev variant does not (Azure sub-plan 9)', () => {
+    expect(vsixProblems(readFileSync(vsix), parseVersion(VERSION))).toEqual([]);
+    expect(vsixProblems(readFileSync(dev), parseVersion(VERSION))).toEqual([
+      'it is the extension qualor.qualor-dev, not qualor.qualor: build it without --overrides-file',
+    ]);
   });
 
   it('builds a dev variant under another id for a bench install', () => {

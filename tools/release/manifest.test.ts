@@ -13,10 +13,20 @@ describe('release-manifest.json (release.md §3)', () => {
         cliSources: false,
         images: [],
         chart: { file: 'helm/qualor-1.0.0.tgz', digest: null },
+        extension: { file: 'azure-devops/qualor.qualor-1.0.0.vsix', version: '1.0.0' },
       },
-      ['sbom/cli.spdx.json', 'cli/qualor-1.0.0-linux-x64'],
+      ['sbom/cli.spdx.json', 'azure-devops/qualor.qualor-1.0.0.vsix', 'cli/qualor-1.0.0-linux-x64'],
     );
-    expect(m.files).toEqual(['cli/qualor-1.0.0-linux-x64', 'sbom/cli.spdx.json']);
+    expect(m.files).toEqual([
+      'azure-devops/qualor.qualor-1.0.0.vsix',
+      'cli/qualor-1.0.0-linux-x64',
+      'sbom/cli.spdx.json',
+    ]);
     expect(m.dryRun).toBe(true);
+    // The Azure DevOps extension's VSIX and the version its manifest holds (Azure sub-plan 9).
+    expect(m.extension).toEqual({
+      file: 'azure-devops/qualor.qualor-1.0.0.vsix',
+      version: '1.0.0',
+    });
   });
 });

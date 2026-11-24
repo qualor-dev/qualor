@@ -14,8 +14,8 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 |---|---|---|---|---|
 | Read the project: code, issues, quality gate, quality profile, AI answers | ✓ | ✓ | ✓ | ✓ |
 | Upload analyses, triage issues (change a status, override a severity), use the AI assistant | ✓ | ✓ | ✓ | |
-| Change project settings (except its GitLab/GitHub mapping), manage its analysis tokens, delete branches and merge requests, run the SonarQube status import | ✓ | ✓ | | |
-| Manage the organisation: members, project-level roles, projects, quality gates and profiles, webhooks, GitLab/GitHub connections and each project's mapping to a repository, the audit log (with `audit-log`) | ✓ | | | |
+| Change project settings (except its repository mapping), manage its analysis tokens, delete branches and merge requests, run the SonarQube status import | ✓ | ✓ | | |
+| Manage the organisation: members, project-level roles, projects, quality gates and profiles, webhooks, SCM connections (GitLab, GitHub, Azure DevOps) and each project's mapping to a repository, the audit log (with `audit-log`) | ✓ | | | |
 | Delete the project | ✓ | | | |
 | Read and download compliance reports (with `compliance-export`): the project's, and the organisation's for a role in the organisation | ✓ | ✓ | ✓ | ✓ |
 | Create a compliance report of the project (with `compliance-export`, permission `project.compliance.create`) | ✓ | ✓ | | |
@@ -28,7 +28,7 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 | Connect, test and remove the organisation's [Jira](./jira.md) connection (permission `org.jira.manage`) | ✓ | | | |
 | Map a project to Jira and set its automatic rule (part of changing project settings) | ✓ | ✓ | | |
 | Create, retry and unlink Jira issues (permission `issue.triage`) | ✓ | ✓ | ✓ | |
-| Allow [fix merge requests](./fix-merge-requests.md) on a GitLab or GitHub connection (part of managing connections) | ✓ | | | |
+| Allow [fix merge requests](./fix-merge-requests.md) on a GitLab, GitHub or Azure DevOps connection (part of managing connections) | ✓ | | | |
 | Turn fix merge requests on for a project and set their automatic mode (part of changing project settings) | ✓ | ✓ | | |
 | Request, retry and cancel a fix merge request (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 
@@ -45,7 +45,7 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
   read-only (its name, quality gates, quality profiles, rules and AI summary) and only those
   projects.
 - **Mapping a project to a repository needs an Organization admin**, because the mapping decides
-  which repository the organisation's GitLab or GitHub credentials act on. A Project admin can
+  which repository the organisation's SCM credentials act on. A Project admin can
   change the project's other settings, but a `PATCH /projects/<id>` that sets `scmConnectionId` or
   `scmProjectRef` answers 403 `FORBIDDEN` unless the caller is an Organization admin.
 - Roles do not depend on a licence: a licence that expires, is removed or is replaced changes no

@@ -966,6 +966,24 @@ describe('pull requests, threads and statuses (sub-plan 4)', () => {
       expect(listed.map((s) => [s.id, s.state])).toEqual([[4, 'notSet']]);
     });
 
+    it("does not fail on another tool's status without an id or a context name (sub-plan 9 carry)", async () => {
+      const { pullRequest } = seedAzurePullRequest(services, repo().id);
+      services.inject('GET', /\/iterations\/1\/statuses$/, {
+        status: 200,
+        body: {
+          count: 4,
+          value: [
+            { state: 'succeeded', context: { genre: 'other-tool' } },
+            { id: 8, state: 'succeeded' },
+            { id: 9, state: 'succeeded', context: { genre: null, name: null } },
+            { id: 3, state: 'failed', context: { genre: 'qualor', name: 'gate' } },
+          ],
+        },
+      });
+      const listed = await clientOf(services).iterationStatuses(repo().id, pullRequest.id, 1);
+      expect(listed.map((s) => [s.id, s.state])).toEqual([[3, 'failed']]);
+    });
+
     it('reads who posted a status, and null when the answer names nobody', async () => {
       const { pullRequest } = seedAzurePullRequest(services, repo().id);
       services.inject('GET', /\/iterations\/1\/statuses$/, {

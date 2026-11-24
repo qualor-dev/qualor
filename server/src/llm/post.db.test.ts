@@ -798,7 +798,7 @@ describe('posting a fix suggestion (llm.md §8)', () => {
         await runDecorations(h, decorationDeps(h, { limits: () => limits }));
         const [thread] = azureFixThreads(pr);
         expect(thread!.comments[0]!.content.split('\n')[2]).toBe(
-          "Posted automatically for new findings of this merge request. A person can switch this off in Qualor's AI settings.",
+          "Posted automatically for new findings of this pull request. A person can switch this off in Qualor's AI settings.",
         );
         expect((await request(requestId)).post).toMatchObject({ status: 'posted' });
       } finally {

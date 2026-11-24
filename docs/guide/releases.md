@@ -1,8 +1,9 @@
 # Releases and versions
 
 Qualor records each release of a project as a **version**: a label and the release's dependency
-list. A scan in a tag pipeline records it. The GitLab component and the GitHub workflow templates
-run that scan on every tag. An [uploaded SBOM](./sbom-upload.md) records a version too.
+list. A scan in a tag pipeline records it. The GitLab component, the GitHub workflow templates
+and the Azure Pipelines examples run that scan on every tag. An [uploaded SBOM](./sbom-upload.md)
+records a version too.
 
 A project's rules decide which of its versions are tracked. The settings panel, the
 **Dependencies** tab and the API show which ones are. The server checks the tracked ones for
@@ -32,6 +33,11 @@ on:
 ```
 
 The tag scan uses the job's token and settings. It needs nothing else.
+
+### Azure Pipelines
+
+The [pipelines of Azure DevOps](./azure-devops.md#pick-a-pipeline) run on tags: their `trigger`
+lists `tags: include: ['*']`. A pipeline of your own needs the same lines.
 
 ### Other CI systems
 

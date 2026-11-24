@@ -71,6 +71,7 @@ async function writeRelease(
     [`cli/qualor-${t}-linux-x64`]: 'bin',
     'cli-sources/SHA256SUMS': 'x',
     [`helm/qualor-${t}.tgz`]: 'chart',
+    [`azure-devops/qualor.qualor-${t}.vsix`]: 'vsix',
     'sbom/cli.spdx.json': '{}',
     'sbom/server.spdx.json': '{}',
     'sbom/scanner.spdx.json': '{}',
@@ -321,6 +322,16 @@ describe('release:publish (release.md §11)', () => {
     expect(calls).toEqual([]);
   });
 
+  it('refuses a folder no asset name exists for, before any command', async () => {
+    await writeRelease(v, [], () => {
+      mkdirSync(path.join(dir, 'unknown'), { recursive: true });
+      writeFileSync(path.join(dir, 'unknown', 'file.bin'), 'x');
+    });
+    const { exec, calls } = recorder();
+    await expect(run(exec)).rejects.toThrow(/unknown\/file\.bin: no release asset name/);
+    expect(calls).toEqual([]);
+  });
+
   it('refuses an untracked cosign.pub and a HEAD on no release branch; accepts release/<M>.<m>', async () => {
     repo = { ...repo, tracks: () => false };
     const a = recorder();
@@ -517,6 +528,7 @@ describe('the order of publishing (ruling R-ORDER)', () => {
       'qualor-0.1.0-linux-x64',
       'qualor-0.1.0.tgz',
       'qualor-0.1.0-server.spdx.json',
+      'qualor.qualor-0.1.0.vsix',
     ]) {
       expect(names, n).toContain(n);
     }

@@ -1,6 +1,7 @@
 import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { releaseFiles, sha256sums, SUMS, SUMS_BUNDLE } from './checksums';
+import { EXTENSION_DIR } from './vsix';
 
 /**
  * The release assets (release.md §3, final review I-2). A GitHub release holds flat file names,
@@ -14,16 +15,17 @@ export const imageSourcesTar = (version: string, image: (typeof IMAGE_SOURCES)[n
   `qualor-${version}-${image}-sources.tar`;
 
 /**
- * The asset name of one file of the release directory: a binary or the chart under its own name,
- * an SBOM as qualor-<version>-<name>.spdx.json, a top-level file as it is. `cli-sources/` goes
- * as one tar (cliSourcesTar), so its files have no name of their own.
+ * The asset name of one file of the release directory: a binary, the chart or the Azure DevOps
+ * extension's VSIX under its own name, an SBOM as qualor-<version>-<name>.spdx.json, a top-level
+ * file as it is. `cli-sources/` goes as one tar (cliSourcesTar), so its files have no name of
+ * their own.
  */
 export function assetName(file: string, version: string): string {
   const parts = file.split('/');
   if (parts.length === 1 && parts[0] !== undefined) return parts[0];
   const [top, name, ...rest] = parts;
   if (name !== undefined && rest.length === 0) {
-    if (top === 'cli' || top === 'helm') return name;
+    if (top === 'cli' || top === 'helm' || top === EXTENSION_DIR) return name;
     if (top === 'sbom') return `qualor-${version}-${name}`;
   }
   throw new Error(`${file}: no release asset name for this path (release.md §3)`);

@@ -20,6 +20,7 @@ function release(): { dir: string; sources: string; out: string } {
     'cli-sources/SHA256SUMS': 'x',
     'cli-sources/bun-1.3.13.tar.gz': 'bun',
     'helm/qualor-0.1.0.tgz': 'chart',
+    'azure-devops/qualor.qualor-0.1.0.vsix': 'vsix',
     'sbom/cli.spdx.json': '{}',
     'sbom/server.spdx.json': '{}',
     'images.json': '[]',
@@ -48,7 +49,11 @@ describe('release assets (release.md §3, final review I-2)', () => {
     expect(assetName('helm/qualor-0.1.0.tgz', '0.1.0')).toBe('qualor-0.1.0.tgz');
     expect(assetName('sbom/server.spdx.json', '0.1.0')).toBe('qualor-0.1.0-server.spdx.json');
     expect(assetName('release-notes.md', '0.1.0')).toBe('release-notes.md');
-    for (const bad of ['other/x', 'cli/a/b', 'sbom/a/b']) {
+    // The Azure DevOps extension under the name tfx gave it (Azure sub-plan 3 ruling 14).
+    expect(assetName('azure-devops/qualor.qualor-0.1.0.vsix', '0.1.0')).toBe(
+      'qualor.qualor-0.1.0.vsix',
+    );
+    for (const bad of ['other/x', 'cli/a/b', 'sbom/a/b', 'azure-devops/a/b']) {
       expect(() => assetName(bad, '0.1.0'), bad).toThrow(/no release asset name/);
     }
   });
@@ -87,6 +92,7 @@ describe('release assets (release.md §3, final review I-2)', () => {
       'qualor-0.1.0-server.spdx.json',
       'qualor-0.1.0-windows-x64.exe',
       'qualor-0.1.0.tgz',
+      'qualor.qualor-0.1.0.vsix',
       'release-manifest.json',
       'release-notes.md',
     ]);

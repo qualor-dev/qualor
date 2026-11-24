@@ -6,6 +6,30 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Azure DevOps, on Azure DevOps Services and on Azure DevOps Server 2022 or later. An organisation
+  admin connects it with a service principal or a personal access token, tests it and maps each
+  project to a repository ([Azure DevOps](docs/guide/azure-devops.md#connect)).
+- On a pull request, Qualor posts a `qualor/<project key>` status, a summary thread and a thread on
+  each new issue. A Status check policy on that status blocks the merge when the gate fails
+  ([Block the merge on the gate](docs/guide/azure-devops.md#block-the-merge-on-the-gate)).
+- AI review, replies and `qualor review`, `qualor fix` and `qualor stop` commands work on Azure
+  DevOps pull requests. Service hooks deliver the replies and commands at once
+  ([AI review](docs/guide/azure-devops.md#ai-review-replies-and-commands),
+  [Service hooks](docs/guide/azure-devops.md#service-hooks)).
+- Fix pull requests, and AI fix suggestions as threads with **Apply**
+  ([Fix pull requests](docs/guide/azure-devops.md#fix-pull-requests)).
+- **Add repositories** sets up CI on Azure DevOps: it opens a pull request with the pipeline file,
+  creates the pipeline and its secret variable, and adds a Build validation policy that does not
+  block the merge ([Add repositories and set up CI](docs/guide/azure-devops.md#add-repositories-and-set-up-ci)).
+- The `Qualor@0` task of the Qualor extension for Azure Pipelines, and pipeline files that run the
+  scanner with `docker run` and need no extension
+  ([Pick a pipeline](docs/guide/azure-devops.md#pick-a-pipeline)).
+- The scanner detects Azure Pipelines by itself: the project key is `<project>/<repository>`.
+- Telemetry counts Azure DevOps connections and analyses
+  ([Telemetry](docs/guide/telemetry.md)).
+
 ### Changed
 
 - A new Qualor icon: a ring that reads as Q, with a dot set into it. It replaces the magnifier in
@@ -16,6 +40,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - New illustrations in the same style on the sign-in, server-unavailable and not-found pages and in
   empty lists. A filter that matches nothing has its own picture. On wide screens a project's
   header shows the mark in its corner, in place of the halftone picture.
+
+### Upgrade notes
+
+- Migrations 0034 to 0036 run at the server's first start.
+- Move the server to 0.17 before you point an Azure Pipelines task at it.
 
 ## [0.16.0] - 2026-11-19
 

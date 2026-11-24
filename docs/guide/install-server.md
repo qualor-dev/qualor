@@ -15,7 +15,7 @@ PostgreSQL 18 on a volume. It needs no Elasticsearch, Redis or message broker. R
 | Disk | a few GiB for the data volume | reports are kept 7 days; analyses and measures are small. The [vulnerability database](./vulnerability-database.md) needs a cache volume of its own ([how big](./vulnerability-database.md)). PostgreSQL also holds up to two copies of the compressed file, about 131 MiB each |
 | Software | Docker with Compose v2 | or Kubernetes 1.29+ with Helm, or any container platform that runs the image with a volume |
 | Inbound network | HTTPS from CI runners and users | |
-| Outbound network | your GitLab or GitHub, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), the Jira site an organisation admin configured ([Jira](./jira.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror. Business and Enterprise (`vuln.priority`), with **Vulnerability monitoring** on: `www.cisa.gov` and `epss.empiricalsecurity.com`, or your mirror's URLs ([Telemetry](./telemetry.md#vulnerability-database)) |
+| Outbound network | your GitLab, GitHub or Azure DevOps, and your webhook receivers | if configured: the AI model provider ([AI assistant](./ai-assistant.md)), the SMTP server ([Email](./email.md)), the identity provider ([Single sign-on](./sso-and-scim.md)), the Jira site an organisation admin configured ([Jira](./jira.md)), Slack or Teams ([Slack and Microsoft Teams](./chat-notifications.md)). Unless turned off: `qualor.dev` ([Telemetry](./telemetry.md)) and `hub.docker.com` ([Update check](./telemetry.md#update-check)). While [Vulnerability monitoring](./vulnerability-database.md) is on, which it is by default: `ghcr.io` and `pkg-containers.githubusercontent.com`, or your mirror. Business and Enterprise (`vuln.priority`), with **Vulnerability monitoring** on: `www.cisa.gov` and `epss.empiricalsecurity.com`, or your mirror's URLs ([Telemetry](./telemetry.md#vulnerability-database)) |
 
 ## Images
 
@@ -135,7 +135,7 @@ QUALOR_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 16)
 QUALOR_PUBLIC_URL=https://qualor.example.com
 # A TLS reverse proxy on this host (see below):
 QUALOR_TRUST_PROXY=1
-# Self-managed GitLab / GitHub Enterprise on an internal network, if any:
+# Self-managed GitLab / GitHub Enterprise / Azure DevOps Server on an internal network, if any:
 # QUALOR_SCM_INTERNAL_HOSTS=gitlab.corp.example.com
 # A local model for the AI assistant (see ai-assistant.md), if any:
 # QUALOR_LLM_INTERNAL_HOSTS=ollama:11434
@@ -241,7 +241,7 @@ replicaCount: 2
 
 If a private CA signed the database's certificate, put the CA certificate in a Secret and name it
 in `caSecret`. The chart mounts it read-only and sets `NODE_EXTRA_CA_CERTS`, so the server trusts
-that CA, for GitLab, GitHub Enterprise and webhooks too:
+that CA, for GitLab, GitHub Enterprise, Azure DevOps Server and webhooks too:
 
 ```sh
 kubectl -n qualor create secret generic qualor-database-ca --from-file=ca.crt=./ca.crt

@@ -503,7 +503,7 @@ An organisation's use today and its budgets are at `GET /api/v0/organizations/{i
 | "Automatic fix suggestions need the Enterprise plan." in the **Automatic fix suggestions** section, or the API's 403 `FEATURE_NOT_LICENSED` | The licence does not list `llm.auto-fix`. On the page, it lapsed while the page was open. Apply a key that lists it, then open the page again |
 | "Switching them on needs AI set up on this server and allowed for this organization, with Suggest a fix. …" when saving automatic fix suggestions (the API's 409 `AI_DISABLED`) | An instance admin first connects a provider, allows the organisation and turns on **Suggest a fix**, in **Settings → AI provider** |
 | 409 `AUTO_FIX_OPT_OUT_LIMIT_REACHED` | An organisation lists at most 1 000 projects that opted out. Let a project back in first |
-| "The project is not mapped to GitLab or GitHub" | Map it in **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md)) |
+| "The project is not mapped to GitLab, GitHub or Azure DevOps" | Map it in **Settings → Repositories** ([GitLab](./gitlab.md), [GitHub](./github.md), [Azure DevOps](./azure-devops.md#map-a-repository)) |
 
 ### No automatic fix suggestions
 
@@ -513,7 +513,7 @@ Check, in order:
 2. **Post fix suggestions automatically** is on in **Settings → AI** for the organisation.
 3. The organisation may use AI, with **Suggest a fix** on, in **Settings → AI provider**.
 4. The project did not opt out and is not excluded from AI.
-5. The project is mapped to GitLab or GitHub.
+5. The project is mapped to GitLab, GitHub or Azure DevOps.
 6. The findings are new in this merge request, open and at the minimum severity.
 7. No suggestion was made for them before.
 8. The daily fix budget is not used up.

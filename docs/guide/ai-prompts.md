@@ -32,7 +32,8 @@ vulnerability tracking (a SonarQube alternative), in our company.
 Work in phases, and finish each before you start the next.
 Read the documentation before you act. It is Markdown at
 https://qualor.dev/docs/<page>.md: README, quick-start,
-install-server, users-projects-tokens, gitlab, github, other-ci,
+install-server, users-projects-tokens, gitlab, github,
+azure-devops, other-ci,
 languages-and-analyzers, configuration, quality-gates, cli,
 migrate-from-sonarqube, webhooks-and-api, releases,
 dependency-vulnerabilities, vulnerability-database, troubleshooting.
@@ -41,8 +42,10 @@ Qualor changes quickly.
 
 Company context (ask me for anything missing before phase 2):
 - SCM: <GitLab self-managed at https://gitlab.example.com |
-  GitLab.com | GitHub.com | GitHub Enterprise Server>
-- CI: <GitLab CI | GitHub Actions | Jenkins | other>
+  GitLab.com | GitHub.com | GitHub Enterprise Server |
+  Azure DevOps Services at https://dev.azure.com/acme |
+  Azure DevOps Server at https://ado.example.com/DefaultCollection>
+- CI: <GitLab CI | GitHub Actions | Azure Pipelines | Jenkins | other>
 - Host for the Qualor server: <a Linux VM with Docker, reachable by
   SSH as ...> or <Kubernetes cluster ...>
 - Public address for Qualor: <https://qualor.example.com>, and TLS:
@@ -88,8 +91,8 @@ the default branch. Create a project analysis token and store it as
 the masked, not protected, CI variable QUALOR_TOKEN, next to
 QUALOR_URL. Add the CI job from the docs: full git history,
 dependencies installed or the build run before the scan, the
-coverage report produced before the scan, and the GitLab component
-or GitHub workflow where it applies. Make the job run on tags too,
+coverage report produced before the scan, and the GitLab component,
+GitHub workflow or Azure Pipelines file where it applies. Make the job run on tags too,
 so each release records a version (releases.md). In the project's
 Settings → Vulnerability monitoring, check that Track
 vulnerabilities in this project is on and that the tracked branches
@@ -100,8 +103,10 @@ repository, and check that the pipeline is green and the analysis
 appears in Qualor.
 
 Phase 4, merge request feedback. Connect the SCM in Qualor as
-gitlab.md or github.md describes. GitLab: a project or group access
-token with the api scope and the Maintainer role. GitHub: a GitHub
+gitlab.md, github.md or azure-devops.md describes. GitLab: a project
+or group access token with the api scope and the Maintainer role.
+Azure DevOps: a service principal or a personal access token, and
+service hooks for replies. GitHub: a GitHub
 App with Checks, Contents and Pull requests write and Issues read
 (Qualor uses Contents only to resolve and reopen its own review
 conversations). Map each pilot project, run the connection test,
@@ -294,13 +299,67 @@ repository and the repository mapped to its Qualor project
 (github.md, "The GitHub App").
 ```
 
+## Add Qualor to an Azure DevOps repository
+
+```prompt
+Add Qualor to the Azure DevOps repository in the current directory.
+First read https://qualor.dev/docs/azure-devops.md,
+https://qualor.dev/docs/languages-and-analyzers.md and
+https://qualor.dev/docs/configuration.md.
+
+Inputs:
+- Qualor server: <https://qualor.example.com>
+- Azure DevOps: <Services: https://dev.azure.com/acme |
+  Server: https://ado.example.com/DefaultCollection>
+- scanner image: <qualor/scanner:0.16 (qualor/scanner-dotnet:0.16 for
+  C#) | a full version | our copy in a private registry>
+- extension: <the Qualor extension is installed: use the Qualor@0
+  task | it is not: use the docker run file>
+
+Do this:
+1. Inspect the repository: languages, build tool, test and coverage
+   commands and paths, the ESLint config, the default branch, and
+   the existing azure-pipelines.yml (stages, triggers, pool).
+2. Add the pipeline from azure-devops.md ("Pick a pipeline"):
+   qualor.yml (the Qualor@0 task) or qualor-docker.yml (docker run,
+   no extension), and for C# the qualor-dotnet files. It must:
+   - check out with fetchDepth: 0 and persistCredentials: false;
+   - run on every branch and on tags (a tag records a version,
+     releases.md);
+   - install the dependencies or build before the scan, so the
+     analyzers and the licence inventory see them;
+   - produce coverage before the scan;
+   - run on a Linux agent with Docker.
+3. Add qualor.yml only if needed. If the default branch is not main,
+   set scm.mainBranch in it.
+4. Tell me to set the pipeline variables QUALOR_URL and QUALOR_TOKEN
+   (a secret), and the exact Qualor project key: <project>/<repository>
+   (the Azure DevOps project name, a slash, the repository name). If
+   QUALOR_ADMIN_TOKEN is in the environment, create the Qualor
+   project and a project analysis token through the Qualor API
+   (users-projects-tokens.md), and set the pipeline's variables
+   through the Azure DevOps API with a token from
+   AZURE_DEVOPS_PAT. Never print any of them.
+5. Open a pull request titled "ci: add Qualor quality gate". Azure
+   Repos ignores `pr:` in the YAML: tell me to add the pipeline as a
+   Build validation policy on the default branch, and do not make it
+   required until the trial period ends.
+
+Finally, remind me that the pull request comments, the status and
+the AI review need an Azure DevOps connection in Qualor, with the
+repository mapped to its Qualor project (azure-devops.md,
+"Connect" and "Map a repository"), and that replies and commands
+need the service hooks.
+```
+
 ## Add Qualor to a C# / .NET repository
 
 ```prompt
 Add Qualor's C# analysis to the .NET repository in the current
 directory. Read https://qualor.dev/docs/languages-and-analyzers.md
-(the C# section), and https://qualor.dev/docs/gitlab.md or
-https://qualor.dev/docs/github.md for our CI.
+(the C# section), and https://qualor.dev/docs/gitlab.md,
+https://qualor.dev/docs/github.md or
+https://qualor.dev/docs/azure-devops.md for our CI.
 
 1. Find the solution or project to build, the SDK version
    (global.json), private NuGet feeds (and how the existing CI
@@ -329,14 +388,18 @@ Never print or commit feed credentials or tokens.
 
 ```prompt
 Write and run a script that puts all repositories of <GitLab group
-"platform" | GitHub organisation "acme"> under Qualor. First read
+"platform" | GitHub organisation "acme" | Azure DevOps project
+"platform"> under Qualor. First read
 https://qualor.dev/docs/users-projects-tokens.md,
 https://qualor.dev/docs/webhooks-and-api.md and
-https://qualor.dev/docs/gitlab.md (or github.md).
+https://qualor.dev/docs/gitlab.md (or github.md or azure-devops.md).
+In Qualor itself, Projects > Add repositories does this for GitHub,
+GitLab and Azure DevOps (quick-start.md): prefer it when it fits.
 
 In the environment (never print them): QUALOR_URL,
 QUALOR_ADMIN_TOKEN (a Qualor personal token with the Admin scope),
-and <GITLAB_TOKEN with the api scope | GH_TOKEN for gh>.
+and <GITLAB_TOKEN with the api scope | GH_TOKEN for gh |
+AZURE_DEVOPS_PAT>.
 
 The script (bash or Python, idempotent and safe to rerun) does this
 for each non-archived repository:
@@ -345,7 +408,8 @@ for each non-archived repository:
 2. Otherwise create the Qualor project, set mainBranchName to the
    repository's default branch, and create a project analysis token.
 3. Store QUALOR_TOKEN (masked, not protected, on GitLab; an Actions
-   secret on GitHub) and QUALOR_URL, unless they are already set at
+   secret on GitHub; a secret pipeline variable on Azure DevOps) and
+   QUALOR_URL, unless they are already set at
    the group or organisation level.
 4. Detect the language and build tool, and open a merge request /
    pull request that adds the Qualor job from the docs, with
@@ -537,7 +601,8 @@ Docker Hub / GitHub.
    the logs until /readyz is 200.
 4. Smoke test: sign in, open a project, and run one scan with
    qualor/scanner:<version> against a test project.
-5. Open merge/pull requests that move the scanner tag and the GitLab
+5. Open merge/pull requests that move the scanner tag (the imageTag
+   of the Qualor@0 task on Azure Pipelines) and the GitLab
    component version in the CI configuration (or in the shared
    variable) to the same release.
 6. If anything fails, roll back exactly as the docs describe: the
@@ -579,14 +644,16 @@ Do this:
    - supported: go on.
 2. From the same answer, show me the provider host and models, the
    warning text (notice), and which projects would be reviewed. A
-   project not linked to its GitLab or GitHub repository is not
-   reviewed until it is linked.
+   project not linked to its GitLab, GitHub or Azure DevOps repository
+   is not reviewed until it is linked.
 3. Check the CI of each project: the job runs in merge request
    pipelines (merge_request_event on GitLab, pull_request on
-   GitHub), with the full history (GIT_DEPTH: 0, or fetch-depth: 0
-   with the pull request's head checked out on GitHub), and the
+   GitHub, a Build validation policy on Azure DevOps), with the full
+   history (GIT_DEPTH: 0, fetch-depth: 0 with the pull request's head
+   checked out on GitHub, fetchDepth: 0 on Azure Pipelines), and the
    scanner image or component is of the server's release. Only
-   GitLab CI and GitHub Actions send the snapshot the review reads.
+   GitLab CI, GitHub Actions and Azure Pipelines send the snapshot
+   the review reads.
    Propose the CI changes as a merge request, and do not merge it.
 4. Stop and ask me before you switch on. Quote the warning text and
    the provider host, and say that the diff and the files the model

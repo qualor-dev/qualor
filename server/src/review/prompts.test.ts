@@ -11,6 +11,7 @@ import {
 import { CONVERSATION_TEXTS } from './conversation';
 import type { AnalyzerFinding, PriorFinding } from './findings-query';
 import {
+  inScmWords,
   judgeData,
   LIST_CAP_STEPS,
   listedDataChars,
@@ -1155,5 +1156,25 @@ describe('the reply data', () => {
     // Text at the limit is whole.
     const edge = replyData(shown({ notes: [{ author: 'a', body: 'x'.repeat(2_000) }] }));
     expect(edge.notes[0]?.body).toBe('x'.repeat(2_000));
+  });
+});
+
+describe('the provider noun in a prompt', () => {
+  const ALL = [
+    ...Object.values(SYSTEM_PROMPTS),
+    replySystemPrompt({ verdicts: ['keep'], tools: false }),
+  ];
+
+  it('says pull request on GitHub and Azure DevOps and keeps merge request on GitLab', () => {
+    for (const prompt of ALL) {
+      expect(inScmWords(prompt, 'gitlab')).toBe(prompt);
+      for (const scm of ['github', 'azure'] as const) {
+        const said = inScmWords(prompt, scm);
+        expect(said).not.toMatch(/merge request/i);
+        expect(said).toBe(prompt.replace(/merge request/g, 'pull request'));
+      }
+    }
+    expect(inScmWords(SYSTEM_PROMPTS.judge, 'azure')).toContain('runs on a pull request.');
+    expect(SYSTEM_PROMPTS.judge).toContain('runs on a merge request.');
   });
 });
