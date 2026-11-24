@@ -218,9 +218,9 @@
     <ul class="azure-lines">
       @if (pipelineLink(); as href) {
         <li>
-          <a [href]="href" target="_blank" rel="noopener noreferrer"
-            ><ng-container i18n="@@addRepos.azure.pipeline">The pipeline</ng-container>
-            <q-icon name="external"
+          <a class="external-link" [href]="href" target="_blank" rel="noopener noreferrer"
+            ><ng-container i18n="@@addRepos.azure.pipeline">The pipeline</ng-container
+            ><q-icon name="external"
           /></a>
         </li>
       }

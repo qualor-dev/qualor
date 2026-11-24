@@ -150,13 +150,17 @@ q-secret-once ::ng-deep input {
   }
 }
 
-/* What Qualor made on Azure DevOps outside the pull request: the pipeline, its pool, its policy. */
+/* What Qualor made on Azure DevOps outside the pull request: the pipeline, its pool, its policy,
+   in the hint's size and colour; the pipeline as the page's other links that leave Qualor. */
 .azure-lines {
   margin: 0;
   padding-left: 1.25rem;
   color: var(--text-muted);
+  font-size: 13px;
 }
-
 .azure-lines li + li {
-  margin-top: 0.25rem;
+  margin-top: 4px;
+}
+.azure-lines .external-link {
+  font-size: inherit;
 }

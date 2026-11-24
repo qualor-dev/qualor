@@ -251,6 +251,44 @@
         <div class="panel-head connection-head">
           <div class="connection-title">
             <code class="connection-url">{{ c.baseUrl }}</code>
+            @if (c.azure; as az) {
+              <dl class="app-facts">
+                <div>
+                  <dt class="visually-hidden" i18n="@@azure.factKind">Authentication</dt>
+                  <dd>
+                    {{ kindText(az.auth) }}
+                    @if (az.deployment === 'server') {
+                      <span class="muted" i18n="@@azure.deploymentServer"
+                        >· Azure DevOps Server</span
+                      >
+                    } @else {
+                      <span class="muted" i18n="@@azure.deploymentServices"
+                        >· Azure DevOps Services</span
+                      >
+                    }
+                  </dd>
+                </div>
+                @if (az.clientId; as clientId) {
+                  <div>
+                    <dt i18n="@@azure.factClient">Client id</dt>
+                    <dd>
+                      <code>{{ clientId }}</code>
+                    </dd>
+                  </div>
+                }
+                @if (az.certificate; as cert) {
+                  <div>
+                    <dt i18n="@@azure.factCertificate">Certificate</dt>
+                    <dd>
+                      <code>{{ cert.thumbprint }}</code
+                      >&ngsp;<span i18n="@@azure.expires"
+                        >expires {{ cert.notAfter | dateTime }}</span
+                      >
+                    </dd>
+                  </div>
+                }
+              </dl>
+            }
             <span class="muted" i18n="@@azure.addedAt">Added {{ c.createdAt | dateTime }}</span>
           </div>
           <div class="connection-side">
@@ -301,38 +339,6 @@
         </div>
         <div class="panel-body connection-body">
           @if (c.azure; as az) {
-            <dl class="app-facts">
-              <div>
-                <dt class="visually-hidden" i18n="@@azure.factKind">Authentication</dt>
-                <dd>
-                  {{ kindText(az.auth) }}
-                  @if (az.deployment === 'server') {
-                    <span class="muted" i18n="@@azure.deploymentServer">· Azure DevOps Server</span>
-                  } @else {
-                    <span class="muted" i18n="@@azure.deploymentServices"
-                      >· Azure DevOps Services</span
-                    >
-                  }
-                </dd>
-              </div>
-              @if (az.clientId; as clientId) {
-                <div>
-                  <dt class="muted" i18n="@@azure.factClient">Client id</dt>
-                  <dd>
-                    <code>{{ clientId }}</code>
-                  </dd>
-                </div>
-              }
-              @if (az.certificate; as cert) {
-                <div>
-                  <dt class="muted" i18n="@@azure.factCertificate">Certificate</dt>
-                  <dd>
-                    <code>{{ cert.thumbprint }}</code>
-                    <span i18n="@@azure.expires">expires {{ cert.notAfter | dateTime }}</span>
-                  </dd>
-                </div>
-              }
-            </dl>
             @if (!az.credentialReadable) {
               <p class="alert alert-error" i18n="@@azure.unreadable">
                 The stored credential can no longer be read: set it again.
@@ -361,8 +367,89 @@
                 </p>
               }
             }
+          }
+          <!-- The switches, as on GitLab's card: CI setup, then fix pull requests. Each help is one
+               sentence and a link to the guide, outside the label: the link is not part of the
+               switch's name, and following it does not flip the switch. -->
+          <div class="ci-setup">
+            <div class="switch-row">
+              <input
+                [id]="'ci-setup-' + c.id"
+                type="checkbox"
+                role="switch"
+                class="switch"
+                [attr.aria-describedby]="'ci-setup-help-' + c.id"
+                [checked]="c.azure?.ciSetupAllowed ?? false"
+                [disabled]="!canManage()"
+                (change)="setCiSetup(c, $event)"
+              />
+              <div class="sw-text">
+                <label [attr.for]="'ci-setup-' + c.id"
+                  ><span class="sw-name" i18n="@@azure.ciSetup"
+                    >Allow Qualor to set up CI (opens pull requests, creates pipelines and
+                    policies)</span
+                  ></label
+                >
+                <p [id]="'ci-setup-help-' + c.id" class="sw-help">
+                  <ng-container i18n="@@azure.ciSetupHelp"
+                    >When you add repositories, Qualor opens a pull request in each and creates its
+                    pipeline.</ng-container
+                  >&ngsp;<a
+                    routerLink="/docs/azure-devops"
+                    fragment="add-repositories-and-set-up-ci"
+                    i18n="@@azure.guideRights"
+                    >Details and the rights it needs</a
+                  >
+                </p>
+              </div>
+            </div>
+            @if (c.azure?.ciSetupAllowed && c.ciSetup.reason === 'no_public_url') {
+              <p class="req">
+                <q-icon name="alert" />
+                <span
+                  ><ng-container i18n="@@addRepos.why.noPublicUrl"
+                    >Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.</ng-container
+                  >&ngsp;<a
+                    routerLink="/docs/install-server"
+                    fragment="the-settings-file"
+                    i18n="@@addRepos.why.setIt"
+                    >How to set it</a
+                  ></span
+                >
+              </p>
+            }
+          </div>
+          <div class="switch-row fix-mrs">
+            <input
+              [id]="'fix-mrs-' + c.id"
+              type="checkbox"
+              role="switch"
+              class="switch"
+              [attr.aria-describedby]="'fix-mrs-help-' + c.id"
+              [checked]="c.fixMrsAllowed"
+              [disabled]="!canManage()"
+              (change)="setFixMrs(c, $event)"
+            />
+            <div class="sw-text">
+              <label [attr.for]="'fix-mrs-' + c.id"
+                ><span class="sw-name" i18n="@@azure.fixMrs">Allow fix pull requests</span></label
+              >
+              <p [id]="'fix-mrs-help-' + c.id" class="sw-help">
+                <ng-container i18n="@@azure.fixMrsHelp"
+                  >Projects that turn them on get pull requests that bump vulnerable
+                  dependencies.</ng-container
+                >&ngsp;<a
+                  routerLink="/docs/azure-devops"
+                  fragment="fix-pull-requests"
+                  i18n="@@azure.guideRights"
+                  >Details and the rights it needs</a
+                >
+              </p>
+            </div>
+          </div>
+          @if (c.azure; as az) {
             <div class="service-hooks">
-              <h4 class="subhead" i18n="@@azure.hooks.title">Service hooks</h4>
+              <h4 class="hooks-title" i18n="@@azure.hooks.title">Service hooks</h4>
               @if (hookErrors()[c.id]; as message) {
                 <p class="alert alert-error" role="alert">{{ message }}</p>
               }
@@ -380,7 +467,7 @@
                   >
                 </p>
               }
-              <div aria-live="polite">
+              <div class="hooks-state" aria-live="polite">
                 @if (hookOutcomes()[c.id]; as projects) {
                   @if (projects.length === 0) {
                     <p class="muted" i18n="@@azure.hooks.noProjects">
@@ -455,7 +542,7 @@
                 </div>
               }
               @if (canManage()) {
-                <div class="setting-actions">
+                <div class="hook-actions">
                   <button
                     type="button"
                     class="btn"
@@ -485,69 +572,6 @@
           }
           @if (results()[c.id]; as result) {
             <p class="prose-text connection-result">{{ result }}</p>
-          }
-          <div class="switch-row fix-mrs">
-            <input
-              [id]="'fix-mrs-' + c.id"
-              type="checkbox"
-              role="switch"
-              class="switch"
-              [attr.aria-describedby]="'fix-mrs-help-' + c.id"
-              [checked]="c.fixMrsAllowed"
-              [disabled]="!canManage()"
-              (change)="setFixMrs(c, $event)"
-            />
-            <label [attr.for]="'fix-mrs-' + c.id">
-              <span class="sw-name" i18n="@@azure.fixMrs">Allow fix pull requests</span>&ngsp;<span
-                [id]="'fix-mrs-help-' + c.id"
-                class="sw-help"
-                i18n="@@azure.fixMrsHelp"
-                >A project turns them on in its own settings. Qualor pushes a branch of its own and
-                opens a pull request that bumps vulnerable dependencies; nothing changes on your
-                main branch until you merge it. The identity needs Contribute, Create branch, Force
-                push and Contribute to pull requests.</span
-              >
-            </label>
-          </div>
-          <div class="switch-row ci-setup">
-            <input
-              [id]="'ci-setup-' + c.id"
-              type="checkbox"
-              role="switch"
-              class="switch"
-              [attr.aria-describedby]="'ci-setup-help-' + c.id"
-              [checked]="c.azure?.ciSetupAllowed ?? false"
-              [disabled]="!canManage()"
-              (change)="setCiSetup(c, $event)"
-            />
-            <label [attr.for]="'ci-setup-' + c.id">
-              <span class="sw-name" i18n="@@azure.ciSetup"
-                >Allow Qualor to set up CI (opens pull requests, creates pipelines and
-                policies)</span
-              >&ngsp;<span [id]="'ci-setup-help-' + c.id" class="sw-help" i18n="@@azure.ciSetupHelp"
-                >When you add repositories, Qualor opens a pull request in each and creates a
-                pipeline and its secret variables right away. Your pipelines on the main branch
-                don't change until you merge the pull request. After the first analysis of the main
-                branch Qualor adds a non-blocking Build validation policy. The identity needs
-                Contribute, Create branch and Contribute to pull requests on the repository, Edit
-                build pipeline in the project, and read access to its agent pools.</span
-              >
-            </label>
-          </div>
-          @if (c.azure?.ciSetupAllowed && c.ciSetup.reason === 'no_public_url') {
-            <p class="req">
-              <q-icon name="alert" />
-              <span
-                ><ng-container i18n="@@addRepos.why.noPublicUrl"
-                  >Qualor needs its public address (QUALOR_PUBLIC_URL) to set up CI.</ng-container
-                >&ngsp;<a
-                  routerLink="/docs/install-server"
-                  fragment="the-settings-file"
-                  i18n="@@addRepos.why.setIt"
-                  >How to set it</a
-                ></span
-              >
-            </p>
           }
           @if (canManage()) {
             <details class="connection-edit">

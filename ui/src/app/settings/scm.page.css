@@ -106,15 +106,69 @@
 .ci-setup .req {
   margin-top: 8px;
 }
+/* Azure DevOps: the credential's facts under the address, each a label and its value on a line. */
+dl.app-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 18px;
+}
+dl.app-facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+dl.app-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+dl.app-facts code {
+  font-size: 12.5px;
+}
+/* A switch whose help ends in a link to the guide: the help sits beside the label, not in it. */
+.sw-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sw-text > label {
+  cursor: pointer;
+}
+.sw-text > .sw-help {
+  margin: 0;
+}
+.sw-help a {
+  font-weight: 600;
+}
+/* Service hooks: a section of the card like the forms under it, its buttons in a row at the left. */
 .service-hooks {
   display: grid;
   gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
 }
-.service-hooks .subhead {
+.service-hooks > * {
   margin: 0;
 }
+.hooks-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.hooks-state > p,
 .hook-states,
 .hook-outcomes {
   margin: 0;
+  font-size: 13px;
+}
+.hook-states,
+.hook-outcomes {
   padding-left: 1.2rem;
+}
+.hook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }

@@ -50,10 +50,11 @@ An organization admin does this in the UI. Qualor creates the projects and sets 
    give a GitHub App **Contents**, **Workflows** and **Secrets** (each Read and write).
 2. Open **Projects → Add repositories**, pick the connection and tick up to 50 repositories.
    Repositories that already have a project are marked. An archived repository cannot be picked.
-3. Leave **Set up CI with a merge request** on (Azure DevOps opens a pull request and asks for an
-   **Agent pool**), and start. Qualor creates a project for each repository, with the repository
-   path as its key and the organization's default gate and profiles. A project that already has
-   that key and no repository is mapped to the repository and keeps its history.
+3. Leave **Set up CI with a merge request** (**with a pull request** on GitHub and Azure DevOps) on,
+   and start. Azure DevOps also asks for an **Agent pool**. Qualor creates a project for each
+   repository, with the repository path as its key and the organization's default gate and
+   profiles. A project that already has that key and no repository is mapped to the repository and
+   keeps its history.
 4. Each merge request's own pipeline runs the first analysis. Merge it to analyse every push to
    the default branch. On Azure DevOps the first analysis runs on the main branch after the merge.
 

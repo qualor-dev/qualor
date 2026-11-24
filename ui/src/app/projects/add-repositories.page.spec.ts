@@ -310,7 +310,7 @@ describe('AddRepositoriesPage', () => {
       expect(ci.checked).toBe(true);
       expect(ci.disabled).toBe(false);
       expect(text(root.querySelector('#ci-setup-help'))).toBe(
-        "Qualor opens a merge request that adds the Qualor job. Your pipelines don't change until you merge it. The project's token is stored as the Actions secret QUALOR_TOKEN right away.",
+        "Qualor opens a pull request that adds the Qualor job. Your pipelines don't change until you merge it. The project's token is stored as the Actions secret QUALOR_TOKEN right away.",
       );
       // GitLab, read only: the switch is off and disabled, and says what happens instead.
       radios(root)[1]!.click();
@@ -543,9 +543,25 @@ describe('AddRepositoriesPage', () => {
     it('says what CI setup does on Azure DevOps', async () => {
       server.on('GET', '/api/v0/scm-connections', { body: page([AZURE]) });
       const { root } = await render();
-      expect(text(root.querySelector('#ci-setup-help'))).toContain(
-        'opens a pull request that adds the Qualor pipeline',
+      expect(text(root.querySelector('#ci-setup-help'))).toBe(
+        'Qualor opens a pull request that adds the Qualor pipeline. It creates the pipeline and its secret variable QUALOR_TOKEN right away.',
       );
+    });
+
+    it("names the CI setup switch in the provider's word: merge request on GitLab only", async () => {
+      server.on('GET', '/api/v0/scm-connections', { body: page([GITHUB, GITLAB, AZURE]) });
+      const { root } = await render();
+      const ci = root.querySelector<HTMLInputElement>('#ci-setup')!;
+      const name = () => text(ci.labels?.[0]?.querySelector('.sw-name'));
+      expect(name()).toBe('Set up CI with a pull request');
+      radios(root)[1]!.click();
+      await flush();
+      expect(name()).toBe('Set up CI with a merge request');
+      radios(root)[2]!.click();
+      await flush();
+      expect(name()).toBe('Set up CI with a pull request');
+      // The help stays the switch's description.
+      expect(ci.getAttribute('aria-describedby')).toBe('ci-setup-help');
     });
 
     it('points a connection that does not allow CI setup to the Azure DevOps settings', async () => {

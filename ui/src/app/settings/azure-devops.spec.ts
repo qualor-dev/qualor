@@ -152,6 +152,17 @@ describe('AzureDevOpsPage', () => {
     expect(text).toContain('Jan 1, 2099');
     expect(rows[0]?.textContent).toContain('Personal access token');
     expect(root.querySelector('.alert-error')).toBeNull();
+    // The credential's facts sit under the address, as GitHub's App id does: a label and a value each.
+    const squash = (el: Element | null) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const facts = [...rows[1]!.querySelectorAll('.connection-title dl.app-facts > div')].map(
+      (pair) => [squash(pair.querySelector('dt')), squash(pair.querySelector('dd'))],
+    );
+    expect(facts.slice(0, 2)).toEqual([
+      ['Authentication', 'Service principal with a certificate · Azure DevOps Services'],
+      ['Client id', CLIENT],
+    ]);
+    expect(facts[2]?.[0]).toBe('Certificate');
+    expect(facts[2]?.[1]).toContain('AB12CD34 expires Jan 1, 2099');
   });
 
   it('says so when there is none', async () => {
@@ -705,6 +716,22 @@ describe('AzureDevOpsPage fix pull requests', () => {
     );
   });
 
+  it('describes the switch in one sentence and links the guide for the details and rights', async () => {
+    setup();
+    const { root } = await render();
+    const toggle = root.querySelector<HTMLInputElement>('#fix-mrs-a1')!;
+    const help = root.querySelector('#fix-mrs-help-a1')!;
+    expect(toggle.getAttribute('aria-describedby')).toBe('fix-mrs-help-a1');
+    expect((help.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe(
+      'Projects that turn them on get pull requests that bump vulnerable dependencies. Details and the rights it needs',
+    );
+    const link = help.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('/docs/azure-devops#fix-pull-requests');
+    // The link is no part of the switch's name: the label holds the name alone.
+    expect(toggle.labels?.[0]?.contains(link)).toBe(false);
+    expect((toggle.labels?.[0]?.textContent ?? '').trim()).toBe(LABEL);
+  });
+
   it('shows the saved state of a connection and puts the switch back when refused', async () => {
     const server = setup([{ ...PAT, fixMrsAllowed: true }]);
     server.on('PATCH', '/api/v0/scm-connections/a1', {
@@ -747,6 +774,21 @@ describe('AzureDevOpsPage CI setup', () => {
     expect(root.querySelector('[role="status"]')?.textContent).toContain(
       'CI setup is on for https://dev.azure.com/acme.',
     );
+  });
+
+  it('describes the switch in one sentence and links the guide for the details and rights', async () => {
+    setup();
+    const { root } = await render();
+    const toggle = root.querySelector<HTMLInputElement>('#ci-setup-a1')!;
+    const help = root.querySelector('#ci-setup-help-a1')!;
+    expect(toggle.getAttribute('aria-describedby')).toBe('ci-setup-help-a1');
+    expect((help.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe(
+      'When you add repositories, Qualor opens a pull request in each and creates its pipeline. Details and the rights it needs',
+    );
+    const link = help.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('/docs/azure-devops#add-repositories-and-set-up-ci');
+    expect(toggle.labels?.[0]?.contains(link)).toBe(false);
+    expect((toggle.labels?.[0]?.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe(LABEL);
   });
 
   it('shows the saved state and puts the switch back when refused', async () => {

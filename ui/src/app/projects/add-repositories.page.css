@@ -105,9 +105,12 @@
   display: block;
   margin-top: 2px;
 }
+/* The pool belongs to CI setup: it hangs under the switch's words, on the fact's text column (a
+   36 px switch or icon cell and a 12 px gap), 12 px below them. */
 .pool-row {
   display: grid;
   gap: 6px;
+  margin: -6px 0 0 48px;
 }
 .pool-row label {
   font-size: 14px;

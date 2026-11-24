@@ -200,6 +200,7 @@
                 ></span
               >
             </p>
+            @let provider = chosen()?.provider;
             <div class="switch-row">
               <input
                 id="ci-setup"
@@ -212,8 +213,33 @@
                 (change)="ciWanted.set(isChecked($event))"
               />
               <label for="ci-setup">
-                <span class="sw-name" i18n="@@addRepos.ciSetup">Set up CI with a merge request</span
-                >&ngsp;
+                <!-- In the provider's word: a merge request on GitLab, a pull request on GitHub and
+                     Azure DevOps. -->
+                <span class="sw-name">
+                  @switch (provider) {
+                    @case ('github') {
+                      <ng-container i18n="@@addRepos.ciSetup.pullRequest"
+                        >Set up CI with a pull request</ng-container
+                      >
+                    }
+                    @case ('azure') {
+                      <ng-container i18n="@@addRepos.ciSetup.pullRequest"
+                        >Set up CI with a pull request</ng-container
+                      >
+                    }
+                    @case ('gitlab') {
+                      <ng-container i18n="@@addRepos.ciSetup"
+                        >Set up CI with a merge request</ng-container
+                      >
+                    }
+                    @case (undefined) {
+                      <ng-container i18n="@@addRepos.ciSetup"
+                        >Set up CI with a merge request</ng-container
+                      >
+                    }
+                    @default never;
+                  }
+                </span>
                 <span id="ci-setup-help" class="sw-help" [class.off]="!ciAvailable()">
                   @if (!ciAvailable()) {
                     <ng-container i18n="@@addRepos.ciSetup.off"
@@ -221,7 +247,6 @@
                       each project.</ng-container
                     >
                   } @else {
-                    @let provider = chosen()?.provider;
                     @switch (provider) {
                       @case ('gitlab') {
                         <ng-container i18n="@@addRepos.ciSetup.gitlab"
@@ -232,7 +257,7 @@
                       }
                       @case ('github') {
                         <ng-container i18n="@@addRepos.ciSetup.github"
-                          >Qualor opens a merge request that adds the Qualor job. Your pipelines
+                          >Qualor opens a pull request that adds the Qualor job. Your pipelines
                           don't change until you merge it. The project's token is stored as the
                           Actions secret QUALOR_TOKEN right away.</ng-container
                         >
@@ -240,10 +265,8 @@
                       @case (undefined) {}
                       @case ('azure') {
                         <ng-container i18n="@@addRepos.ciSetup.azure"
-                          >Qualor opens a pull request that adds the Qualor pipeline. Your pipelines
-                          don't change until you merge it. Qualor creates the pipeline and stores
-                          the project's token as its secret variable QUALOR_TOKEN right
-                          away.</ng-container
+                          >Qualor opens a pull request that adds the Qualor pipeline. It creates the
+                          pipeline and its secret variable QUALOR_TOKEN right away.</ng-container
                         >
                       }
                       @default never;
