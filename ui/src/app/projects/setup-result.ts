@@ -23,6 +23,7 @@ import {
   mergeRequestNumber,
   pathParts,
   type Provider,
+  providerOfUrl,
   type RunItem,
 } from './repository-setup';
 import { SetupBadge } from './setup-badge';
@@ -44,6 +45,15 @@ export function providerOfSnippet(snippet: string): Provider | null {
   if (/^(include|qualor):/.test(snippet)) return 'gitlab';
   if (/^# Qualor in Azure Pipelines/.test(snippet)) return 'azure';
   return null;
+}
+
+/**
+ * The provider of a run's repository, told by what the run left on it: Azure DevOps's own lines, the
+ * request's address, or the snippet; null when none says.
+ */
+export function providerOfItem(item: RunItem): Provider | null {
+  if (item.azure !== null) return 'azure';
+  return (item.ciUrl ? providerOfUrl(item.ciUrl) : null) ?? providerOfSnippet(item.snippet ?? '');
 }
 
 /** The reason of a snippet whose provider is not known. */
@@ -147,14 +157,13 @@ export class SetupResult {
     return errorText(this.item(), connection);
   });
   /**
-   * The provider: the connection's, else told by the snippet (a GitHub workflow starts with its
-   * name; GitLab's is an include or a job); null when neither says.
+   * The provider: the connection's, else told by the repository's outcome (Azure DevOps's lines, the
+   * request's address, or the snippet: a GitHub workflow starts with its name, GitLab's is an
+   * include or a job); null when none says.
    */
-  protected readonly provider = computed<Provider | null>(() => {
-    const connection = this.connection();
-    if (connection) return connection.provider;
-    return providerOfSnippet(this.item().snippet ?? '');
-  });
+  protected readonly provider = computed<Provider | null>(
+    () => this.connection()?.provider ?? providerOfItem(this.item()),
+  );
   protected readonly file = computed(() => {
     const provider = this.provider();
     if (provider === null) return '';

@@ -698,7 +698,7 @@ describe('AddRepositoriesPage', () => {
       expect(reads()).toBe(1);
       expect(text(root.querySelector('h1'))).toBe('Adding 2 repositories');
       expect(text(root.querySelector('.page-meta'))).toBe(
-        'From GitHub, github.com CI setup with a merge request',
+        'From GitHub, github.com CI setup with a pull request',
       );
       expect(text(root.querySelector('.panel-sub'))).toBe(
         'The run goes on if you leave this page.',
@@ -719,7 +719,7 @@ describe('AddRepositoriesPage', () => {
       expect(meter.getAttribute('aria-valuetext')).toBe('1 of 2');
       expect(
         [...list.querySelectorAll('li')].map((li) => text(li.querySelector('.badge'))),
-      ).toEqual(['Merge request opened', 'Setting up CI']);
+      ).toEqual(['Pull request opened', 'Setting up CI']);
       // Retry-After: 5 asks for a longer wait than the 2 s poll.
       await advance(4999);
       expect(reads()).toBe(2);
@@ -805,7 +805,7 @@ describe('AddRepositoriesPage', () => {
       const { root } = await render({ runId: RUN_ID, connection: GITHUB_ID });
       expect(text(root.querySelector('h1'))).toBe('3 repositories added');
       expect(text(root.querySelector('.page-meta'))).toBe(
-        '1 merge request to merge 1 CI job to add 2 failed',
+        '1 pull request to merge 1 CI job to add 2 failed',
       );
       const cards = [...root.querySelectorAll('article.result')];
       expect(cards.map((c) => text(c.querySelector('h2')))).toEqual([
@@ -818,7 +818,7 @@ describe('AddRepositoriesPage', () => {
 
       // The merge request: its link, opening the provider in a new tab.
       const [mr, failed, snippet, gone] = cards as HTMLElement[];
-      expect(text(mr!.querySelector('.badge'))).toBe('Merge request opened');
+      expect(text(mr!.querySelector('.badge'))).toBe('Pull request opened');
       expect(text(mr!.querySelector('.result-sub'))).toBe('Project acme/billing created');
       expect(mr!.querySelector('.result-sub a')?.getAttribute('href')).toBe(
         '/projects/p-acme-billing',
@@ -1133,6 +1133,85 @@ describe('AddRepositoriesPage', () => {
       expect(text(root.querySelector('.result .note'))).toContain(
         'check the build command in the merge request before you merge it',
       );
+    });
+
+    describe("the requests in the provider's word", () => {
+      const opened = (ref: string, url: string) =>
+        done(ref, { ciOutcome: 'merge_request', ciUrl: url });
+      const csharpRun = async (items: RunItem[], connection?: string) => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([GITHUB, GITLAB, AZURE]) });
+        server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, { body: run('done', items) });
+        const navigated = TestBed.inject(Router).navigate(['/projects/add', RUN_ID], {
+          state: { csharp: items.map((i) => i.ref) },
+        });
+        await flush();
+        await navigated;
+        return render(connection ? { runId: RUN_ID, connection } : { runId: RUN_ID });
+      };
+      const words = (root: HTMLElement) => ({
+        meta: text(root.querySelector('.page-meta')),
+        badge: text(root.querySelector('article.result .badge')),
+        note: text(root.querySelector('.result .note')),
+      });
+
+      it.each([
+        ['GitHub', GITHUB_ID, 'https://github.com/acme/billing/pull/7', 'pull request', 'Pull'],
+        [
+          'Azure DevOps',
+          AZURE_ID,
+          'https://dev.azure.com/acme/web/_git/billing/pullrequest/12',
+          'pull request',
+          'Pull',
+        ],
+        [
+          'GitLab',
+          GITLAB_ID,
+          'https://gitlab.acme.example/acme/billing/-/merge_requests/3',
+          'merge request',
+          'Merge',
+        ],
+      ])(
+        "says %s's word in the summary, the badge and the C# note",
+        async (_, id, url, word, cap) => {
+          const { root } = await csharpRun([opened('acme/billing', url)], id);
+          expect(words(root)).toEqual({
+            meta: `1 ${word} to merge`,
+            badge: `${cap} ${word.split(' ')[1]} opened`,
+            note: `A C# repository: check the build command in the ${word} before you merge it.`,
+          });
+        },
+      );
+
+      it("tells the provider by the request's address when the page does not name the connection", async () => {
+        const { root } = await csharpRun([
+          opened('acme/billing', 'https://github.com/acme/billing/pull/7'),
+          opened('acme/website', 'https://github.com/acme/website/pull/8'),
+        ]);
+        expect(words(root).meta).toBe('2 pull requests to merge');
+        expect(words(root).badge).toBe('Pull request opened');
+      });
+
+      it('keeps the merge request while nothing tells the provider', async () => {
+        const { root } = await csharpRun([opened('acme/billing', 'https://example.com/x/1')]);
+        expect(words(root)).toEqual({
+          meta: '1 merge request to merge',
+          badge: 'Merge request opened',
+          note: 'A C# repository: check the build command in the merge request before you merge it.',
+        });
+      });
+
+      it.each([
+        [GITHUB_ID, 'From GitHub, github.com CI setup with a pull request'],
+        [AZURE_ID, 'From Azure DevOps, dev.azure.com CI setup with a pull request'],
+        [GITLAB_ID, 'From GitLab, gitlab.acme.example CI setup with a merge request'],
+      ])('words the running run of connection %s by its provider', async (id, meta) => {
+        server.on('GET', '/api/v0/scm-connections', { body: page([GITHUB, GITLAB, AZURE]) });
+        server.on('GET', `/api/v0/repository-setups/${RUN_ID}`, {
+          body: run('running', [item('acme/billing')]),
+        });
+        const { root } = await render({ runId: RUN_ID, connection: id });
+        expect(text(root.querySelector('.page-meta'))).toBe(meta);
+      });
     });
 
     describe('on Azure DevOps', () => {

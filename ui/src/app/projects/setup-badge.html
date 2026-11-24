@@ -1,10 +1,24 @@
 @switch (state()) {
   @case ('merge_request') {
+    @let requestProvider = provider();
     <span class="badge badge-passed"
-      ><q-icon name="merge-request" /><ng-container i18n="@@addRepos.state.mergeRequest"
-        >Merge request opened</ng-container
-      ></span
-    >
+      ><q-icon name="merge-request" />
+      @switch (requestProvider) {
+        @case ('github') {
+          <ng-container i18n="@@addRepos.state.pullRequest">Pull request opened</ng-container>
+        }
+        @case ('azure') {
+          <ng-container i18n="@@addRepos.state.pullRequest">Pull request opened</ng-container>
+        }
+        @case ('gitlab') {
+          <ng-container i18n="@@addRepos.state.mergeRequest">Merge request opened</ng-container>
+        }
+        @case (null) {
+          <ng-container i18n="@@addRepos.state.mergeRequest">Merge request opened</ng-container>
+        }
+        @default never;
+      }
+    </span>
   }
   @case ('snippet') {
     <span class="badge badge-accent"

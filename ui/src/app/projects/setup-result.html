@@ -26,7 +26,7 @@
         }
       </p>
     </div>
-    <q-setup-badge [state]="state()" />
+    <q-setup-badge [state]="state()" [provider]="provider()" />
   </div>
   <div class="result-body">
     @switch (state()) {
@@ -59,10 +59,36 @@
         @if (csharp()) {
           <p class="note">
             <q-icon name="info" />
-            <span i18n="@@addRepos.result.csharp"
-              >A C# repository: check the build command in the merge request before you merge
-              it.</span
-            >
+            <span>
+              @let requestProvider = provider();
+              @switch (requestProvider) {
+                @case ('github') {
+                  <ng-container i18n="@@addRepos.result.csharpPullRequest"
+                    >A C# repository: check the build command in the pull request before you merge
+                    it.</ng-container
+                  >
+                }
+                @case ('azure') {
+                  <ng-container i18n="@@addRepos.result.csharpPullRequest"
+                    >A C# repository: check the build command in the pull request before you merge
+                    it.</ng-container
+                  >
+                }
+                @case ('gitlab') {
+                  <ng-container i18n="@@addRepos.result.csharp"
+                    >A C# repository: check the build command in the merge request before you merge
+                    it.</ng-container
+                  >
+                }
+                @case (null) {
+                  <ng-container i18n="@@addRepos.result.csharp"
+                    >A C# repository: check the build command in the merge request before you merge
+                    it.</ng-container
+                  >
+                }
+                @default never;
+              }
+            </span>
           </p>
         }
         <ng-container *ngTemplateOutlet="azureBlock" />

@@ -32,13 +32,14 @@ import {
   type ItemState,
   MAX_REPOSITORIES,
   pathParts,
+  type Provider,
   providerName,
   type Repository,
   type RunItem,
   type SetupRun,
 } from './repository-setup';
 import { SetupBadge } from './setup-badge';
-import { SetupResult } from './setup-result';
+import { providerOfItem, SetupResult } from './setup-result';
 import { type RevealedToken, SetupTokens } from './setup-tokens';
 
 export type { SetupRun } from './repository-setup';
@@ -197,6 +198,17 @@ export class AddRepositoriesPage {
     const id = this.connection();
     return (id && this.connections()?.find((c) => c.id === id)) || null;
   });
+  /**
+   * The run's provider, for the requests' word (merge request on GitLab, pull request on GitHub and
+   * Azure DevOps): its connection's, else told by what the run left on its repositories; null when
+   * nothing says.
+   */
+  protected readonly runProvider = computed<Provider | null>(
+    () =>
+      this.runConnection()?.provider ??
+      (this.run()?.items ?? []).map(providerOfItem).find((p) => p !== null) ??
+      null,
+  );
   protected readonly counts = computed(() => {
     const items = this.run()?.items ?? [];
     const by = (pred: (i: RunItem) => boolean) => items.filter(pred).length;

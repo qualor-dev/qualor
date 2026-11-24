@@ -63,6 +63,11 @@ export function mergeRequestNumber(url: string): string | null {
   return null;
 }
 
+/** The provider whose pull or merge request address this is; null for any other address. */
+export function providerOfUrl(url: string): Provider | null {
+  return SCM_PROVIDERS.find((provider) => MERGE_REQUEST_URL[provider].pattern.test(url)) ?? null;
+}
+
 /** How each provider's merge request address ends, and how its number is written. */
 export const MERGE_REQUEST_URL: Record<ScmProvider, { pattern: RegExp; prefix: string }> = {
   github: { pattern: /\/pull\/(\d+)\/?$/, prefix: '#' },

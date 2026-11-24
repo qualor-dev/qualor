@@ -373,9 +373,9 @@ certificate comes from a private CA, give the Qualor server that CA with `NODE_E
 ## Set up CI with a pull request
 
 **Add repositories** (in **Projects**, [Quick start](./quick-start.md#fastest-path-add-repositories))
-can add the Qualor workflow to each repository for you. Qualor opens a pull request (its pages call
-it a merge request). Your workflows don't change until you merge it. The project's token is stored
-as an Actions secret right away. The pull request's own run is the first analysis.
+can add the Qualor workflow to each repository for you. Qualor opens a pull request. Your workflows
+don't change until you merge it. The project's token is stored as an Actions secret right away. The
+pull request's own run is the first analysis.
 
 The pull request is on the branch `qualor/setup`, titled **Add Qualor code analysis**. It adds one
 new file, `.github/workflows/qualor.yml`, and leaves your other workflows alone:
