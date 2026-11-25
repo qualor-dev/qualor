@@ -1528,9 +1528,14 @@ describe('the repository-setup run', () => {
       const denied = repository(fake, { name: 'denied', projectName: 'Eta' });
       const taken = repository(fake, { name: 'taken', projectName: 'Theta' });
       const connectionId = await connectAzure(fake);
+      // As Services refused a Project Contributor without the User role on the queue (2026-11-25).
       fake.inject('POST', new RegExp(`^/${denied.projectId}/_apis/build/definitions$`), {
         status: 403,
-        body: { message: 'TF400813: the identity may not create pipelines' },
+        body: {
+          message:
+            'Access denied. Qualor needs Use permissions for pool Default to perform the action.',
+          typeKey: 'AccessDeniedException',
+        },
       });
       // Qualor, then `Qualor (taken)`: both names are taken in the project, answered as Services
       // answered a taken name (probe item 29: a 400 with typeKey DefinitionExistsException).
@@ -1556,7 +1561,8 @@ describe('the repository-setup run', () => {
         token: null,
         error: {
           code: 'permission',
-          message: 'The Azure DevOps identity needs Edit build pipeline in the project',
+          message:
+            "The Azure DevOps identity needs Edit build pipeline in the project and the User role on the agent pool's queue",
           stage: 'change',
         },
         azure: null,
@@ -1572,7 +1578,9 @@ describe('the repository-setup run', () => {
         },
         azure: null,
       });
-      expect(JSON.stringify([one, two])).not.toMatch(/TF400813|DefinitionExists/);
+      expect(JSON.stringify([one, two])).not.toMatch(
+        /Access denied|Use permissions|DefinitionExists/,
+      );
       expect(
         fake.requests
           .filter(
@@ -1728,7 +1736,7 @@ describe('the repository-setup run', () => {
       expect((await tokensOf(project.id)).map((t) => t.revokedAt)).toEqual([null]);
     });
 
-    it('names Contribute and Create branch, or Edit build pipeline, when Azure refuses that step', async () => {
+    it('names Contribute and Create branch, or Edit build pipeline and the queue role, when Azure refuses that step', async () => {
       const fake = await azure();
       const branch = repository(fake, { name: 'branch', projectName: 'Lambda' });
       const pipeline = repository(fake, { name: 'pipeline', projectName: 'Mu' });
@@ -1785,7 +1793,8 @@ describe('the repository-setup run', () => {
           'failed',
           {
             code: 'permission',
-            message: 'The Azure DevOps identity needs Edit build pipeline in the project',
+            message:
+              "The Azure DevOps identity needs Edit build pipeline in the project and the User role on the agent pool's queue",
             stage: 'change',
           },
         ],

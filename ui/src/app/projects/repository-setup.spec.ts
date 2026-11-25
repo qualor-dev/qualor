@@ -37,6 +37,10 @@ describe('errorText', () => {
     expect(change(github)).toContain('The GitHub App needs');
     expect(change(gitlab)).toContain('The GitLab token needs');
     expect(change(azure)).toContain('The Azure DevOps identity needs');
+    // A Project Contributor has Edit build pipeline; the pipeline create also needs the queue's role.
+    expect(change(azure)).toContain(
+      "Edit build pipeline in the project, the User role on the agent pool's queue",
+    );
     expect(errorText(failed('permission', 'The GitHub App needs', 'read'), github)).toBe(
       'The connection was refused access to the repository.',
     );

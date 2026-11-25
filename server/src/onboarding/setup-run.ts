@@ -196,13 +196,16 @@ type CiStep = 'read' | 'pool' | 'branch' | 'files' | 'secret' | 'variables' | 'm
 
 /**
  * Azure DevOps rights are found per step (Ruling 2): a refusal names the right that step needs.
- * A refused read says what any read says ({@link PERMISSION_TEXT}`.read`).
+ * A refused read says what any read says ({@link PERMISSION_TEXT}`.read`). The pipeline write
+ * names two rights: a Project Contributor has Edit build pipeline, but Services refused its create
+ * for want of the User role (Use) on the agent queue (403 AccessDeniedException, 2026-11-25).
  */
 const AZURE_PERMISSION_TEXT: Record<Exclude<CiStep, 'read'>, string> = {
   pool: "The Azure DevOps identity needs to read the project's agent pools",
   branch: 'The Azure DevOps identity needs Contribute and Create branch on the repository',
   files: 'The Azure DevOps identity needs Contribute and Create branch on the repository',
-  secret: 'The Azure DevOps identity needs Edit build pipeline in the project',
+  secret:
+    "The Azure DevOps identity needs Edit build pipeline in the project and the User role on the agent pool's queue",
   variables: 'The Azure DevOps identity needs Edit build pipeline in the project',
   merge_request: 'The Azure DevOps identity needs Contribute to pull requests',
 };
