@@ -761,8 +761,10 @@ async function recordTransition(
  * One note: a plain `System.History` PATCH on the link's own Azure DevOps project, without `test
  * /rev` (a note never races a person's edit; a closed work item takes notes, Part B i). Returns
  * `{ failure: null }` when Azure DevOps took it (an unreadable answer counts: the PATCH was
- * answered, and a second one would add the note twice), the failure when it refused it (400,
- * 403, 404, 413), null when the call failed otherwise (not recorded: tried next pass).
+ * answered, and a second one would add the note twice), `note_refused` with its fixed text when it
+ * refused it (400, 403, 404, 413: the create's codes would name the mapping, which a note does not
+ * use; the log keeps the reason), null when the call failed otherwise (not recorded: tried next
+ * pass).
  */
 async function postNote(pass: Pass, d: DueNote): Promise<{ failure: BoardsFailure | null } | null> {
   const { client, deps } = pass.ctx;
@@ -777,7 +779,7 @@ async function postNote(pass: Pass, d: DueNote): Promise<{ failure: BoardsFailur
         { linkId: d.row.id, code: refused.code },
         'Azure DevOps refused a note; the transition is recorded without it',
       );
-      return { failure: refused };
+      return { failure: { code: 'note_refused', message: BOARDS_FAILURE_TEXT.note_refused } };
     }
     if (isBadAnswer(err)) return { failure: null };
     await failed(pass, err);

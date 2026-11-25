@@ -6597,7 +6597,7 @@ export interface paths {
                                     } | null;
                                     stateCheckedAt: string | null;
                                     failure: {
-                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                         code: string;
                                         message: string;
                                     } | null;
@@ -7924,7 +7924,7 @@ export interface paths {
                                     } | null;
                                     stateCheckedAt: string | null;
                                     failure: {
-                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                         code: string;
                                         message: string;
                                     } | null;
@@ -8122,7 +8122,7 @@ export interface paths {
                                 } | null;
                                 stateCheckedAt: string | null;
                                 failure: {
-                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                     code: string;
                                     message: string;
                                 } | null;
@@ -8359,7 +8359,7 @@ export interface paths {
                                 } | null;
                                 stateCheckedAt: string | null;
                                 failure: {
-                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                     code: string;
                                     message: string;
                                 } | null;
@@ -8634,7 +8634,7 @@ export interface paths {
                                 } | null;
                                 stateCheckedAt: string | null;
                                 failure: {
-                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                     code: string;
                                     message: string;
                                 } | null;
@@ -19644,7 +19644,7 @@ export interface paths {
                 };
             };
         };
-        /** Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The type's name and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off */
+        /** Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the Azure DevOps project is one the connection sees (422 VALIDATION_FAILED on `azureProject.id`); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The project's and the type's names and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off */
         put: {
             parameters: {
                 query?: never;
@@ -19664,6 +19664,7 @@ export interface paths {
                         connectionId: string;
                         azureProject: {
                             id: string;
+                            /** @description The name as the picker shows it; Qualor stores the name Azure DevOps lists for the id */
                             name: string;
                         };
                         workItemType: {
@@ -20215,7 +20216,7 @@ export interface paths {
                                     } | null;
                                     stateCheckedAt: string | null;
                                     failure: {
-                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                         code: string;
                                         message: string;
                                     } | null;
@@ -20242,7 +20243,7 @@ export interface paths {
                                     } | null;
                                     stateCheckedAt: string | null;
                                     failure: {
-                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                         code: string;
                                         message: string;
                                     } | null;
@@ -20359,7 +20360,7 @@ export interface paths {
                             } | null;
                             stateCheckedAt: string | null;
                             failure: {
-                                /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again) */
                                 code: string;
                                 message: string;
                             } | null;
@@ -20701,7 +20702,7 @@ export interface components {
             };
             /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill. BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the reference names of the always-required fields without a default of the work item type that Qualor cannot fill (System.Description when the type has neither Description nor Repro Steps), empty when the Azure DevOps project offers no such type */
             missingFields?: string[];
-            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_CONNECTION_BROKEN: the code of the Azure DevOps connection's stored credential problem (token_refused, sign_in_required, html_answer, token_endpoint, permission_missing, undecryptable, url_not_allowed); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_CONNECTION_BROKEN: the code of the Azure DevOps connection's stored credential problem, one of those that stop Azure Boards (token_refused, sign_in_required, html_answer, token_endpoint, undecryptable, url_not_allowed); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
             problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */

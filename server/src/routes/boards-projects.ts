@@ -26,7 +26,7 @@ import {
   scmConnections,
   type JiraAutoSeverity,
 } from '../db/schema';
-import { conflict, notFound, ProblemError } from '../http/problem';
+import { conflict, notFound, ProblemError, validationFailed } from '../http/problem';
 import { idParams, noContent, noNul, text } from '../http/schemas';
 import { cutText } from '../jira/markup';
 import { projectForUser, type ProjectRow } from '../projects/access';
@@ -96,7 +96,13 @@ const putBody = z.strictObject({
   connectionId: z
     .uuid()
     .meta({ description: "An Azure DevOps connection of the project's organisation" }),
-  azureProject: z.strictObject({ id: azureProjectId, name: text(255) }),
+  azureProject: z.strictObject({
+    id: azureProjectId,
+    name: text(255).meta({
+      description:
+        'The name as the picker shows it; Qualor stores the name Azure DevOps lists for the id',
+    }),
+  }),
   workItemType: z.strictObject({ referenceName: text(255) }),
   areaPath: classificationPath.meta({
     description:
@@ -187,6 +193,12 @@ const typeUnsupported = (missingFields: string[]) =>
       extensions: { missingFields },
     },
   );
+
+/** 422: the id names no Azure DevOps project the connection sees. */
+const projectUnknown = () =>
+  validationFailed([
+    { path: 'body.azureProject.id', message: 'Not an Azure DevOps project the connection sees' },
+  ]);
 
 const pathUnknown = (field: 'areaPath' | 'iterationPath') => {
   const what = field === 'areaPath' ? 'area' : 'iteration';
@@ -525,7 +537,7 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       schema: {
         tags: ['boards'],
         summary:
-          "Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The type's name and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off",
+          "Create or replace the project's Azure Boards mapping (project admins). Checked in order: the connection is an Azure DevOps connection of the organisation (409 BOARDS_NOT_CONNECTED); the project has no Jira mapping (409 TRACKER_IN_USE); the Azure DevOps project is one the connection sees (422 VALIDATION_FAILED on `azureProject.id`); the type is a visible type of the Azure DevOps project that Qualor can fill (422 BOARDS_WORK_ITEM_TYPE_UNSUPPORTED, with `missingFields`); a set area or iteration path is one the project lists (422 BOARDS_PATH_UNKNOWN); a `validateOnly` create with the mapping succeeds (422 BOARDS_CREATE_REFUSED, with Azure DevOps' words cut to 500 characters in `detail`); turning `exploited` on needs `vuln.priority` (403). The project's and the type's names and the paths are stored as Azure DevOps lists them. `autoCreate.since` is set whenever the rule changes and cleared when it goes off",
         params: idParams,
         body: putBody,
         response: { 200: answerSchema },
@@ -543,6 +555,10 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       if (await jiraMapped(deps.db, project.id)) throw trackerInUse('jira');
       const client = clientOf(row);
       const azureProject = body.azureProject.id.toLowerCase();
+      // The name Azure DevOps lists for the id, never the body's: the pass maps a work item's
+      // `System.TeamProject` to a mapped project by it (boards/sync.ts).
+      const listed = (await asked(() => client.projects())).find((p) => p.id === azureProject);
+      if (!listed) throw projectUnknown();
       const type = (await visibleTypes(client, azureProject)).find(
         (t) => t.referenceName === body.workItemType.referenceName,
       );
@@ -611,7 +627,7 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         const next = {
           connectionId: row.id,
           azureProjectId: azureProject,
-          azureProjectName: body.azureProject.name,
+          azureProjectName: listed.name,
           workItemTypeRef: type.referenceName,
           workItemTypeName: type.name,
           areaPath,

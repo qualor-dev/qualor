@@ -295,8 +295,17 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design Â§7.8,
       'BOARDS_CONNECTION_BROKEN',
       'token_refused',
     ]);
-    // A timeout or a service hook on probation is not the credential: it refuses nothing.
+    // A service hook on probation or a timeout is not the credential: it refuses nothing.
     await setProblem(connectionId, 'hook_probation');
+    const probation = await post({ issueIds: [issueId] });
+    expect(probation.statusCode, probation.body).toBe(202);
+    expect((probation.json() as { items: Item[] }).items[0]?.link?.state).toBe('pending');
+    const [held] = await db()
+      .select({ problem: scmConnections.problem })
+      .from(scmConnections)
+      .where(eq(scmConnections.id, connectionId));
+    expect(held?.problem).toMatchObject({ code: 'hook_probation' });
+    await db().delete(boardsLinks);
     await unmapBoards();
     const unmapped = await post({ issueIds: [issueId] });
     expect([unmapped.statusCode, unmapped.json().code]).toEqual([409, 'BOARDS_PROJECT_NOT_MAPPED']);

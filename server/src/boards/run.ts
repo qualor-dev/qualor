@@ -8,8 +8,8 @@ import type { AzureDevOpsClient } from '../scm/azure/client';
 import { azureClientFor, clientProblemCode } from '../scm/azure/connections';
 import type { ScmConnectionRow, ScmDeps } from '../scm/connections';
 import type { InstallationTokenCache } from '../scm/github/app-auth';
-import { isScmBackgroundProblem, recordScmProblem } from '../scm/problems';
-import { createPendingWorkItems } from './create';
+import { isScmBackgroundProblem } from '../scm/problems';
+import { createPendingWorkItems, recordUnmovedProblem } from './create';
 import {
   BOARDS_QUEUE,
   BOARDS_SYNC_INTERVAL_SECONDS,
@@ -56,7 +56,8 @@ const boardsJobPayload = z.object({
  * The Azure DevOps connection and a client for it, or null: without the connection (deleted since
  * the job was queued, or no longer an Azure DevOps one), or when no client can be made, which is
  * recorded as the connection's problem (`undecryptable`, `token_endpoint` for an expired
- * certificate, `url_not_allowed`).
+ * certificate, `url_not_allowed`) while the connection keeps the address read here, as every
+ * Boards write: a problem of the old address is not the moved connection's.
  */
 export async function openBoardsRun(
   deps: BoardsJobDeps,
@@ -70,7 +71,7 @@ export async function openBoardsRun(
   const found = azureClientFor(connection, deps.scm, { azureTokens: deps.azureTokens });
   if ('problem' in found) {
     const code = clientProblemCode(found.problem);
-    if (isScmBackgroundProblem(code)) await recordScmProblem(deps.db, connection.id, code);
+    if (isScmBackgroundProblem(code)) await recordUnmovedProblem(deps.db, connection, code);
     return null;
   }
   return { deps, connection, client: found.client };

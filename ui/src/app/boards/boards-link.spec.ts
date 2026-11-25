@@ -303,12 +303,22 @@ describe('BoardsLinkView', () => {
     expect(changed).toHaveBeenCalledOnce();
   });
 
-  it('shows Azure DevOps’ own words for a refused field, as text', async () => {
+  it('shows Azure DevOps’ own words for a refused field, as text after a fixed lead', async () => {
     setup(boardsProjectSettings());
     const words = 'TF401320: Rule Error for field <b>Value Area</b>.';
     const { root } = await render({ link: failed('field_refused', words) });
-    expect(text(root)).toContain(words);
+    expect(root.querySelector('.boards-failure')?.textContent?.trim()).toBe(
+      `Azure DevOps refused the work item. It said: ${words}`,
+    );
     expect(root.querySelector('.boards-failure b')).toBeNull();
+  });
+
+  it('says a refused field in its own words when Azure DevOps gave none', () => {
+    const plain =
+      'Azure DevOps refused a field of the work item. Check the mapping of the project.';
+    expect(boardsFailureText({ code: 'field_refused', message: '' })).toBe(plain);
+    // The server's stand-in for no words is not framed as Azure DevOps' own.
+    expect(boardsFailureText({ code: 'field_refused', message: plain })).toBe(plain);
   });
 
   it('has its own text for every failure code, never the server’s', () => {
@@ -320,6 +330,7 @@ describe('BoardsLinkView', () => {
       'finding_gone',
       'outcome_unknown',
       'type_unsupported',
+      'note_refused',
     ];
     const texts = codes.map((code) => boardsFailureText({ code, message: 'server words' }));
     expect(new Set(texts).size).toBe(codes.length);

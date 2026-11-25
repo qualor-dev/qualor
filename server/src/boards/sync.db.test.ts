@@ -486,7 +486,7 @@ describe('the Boards pass (design §7.8, plan Task 7)', () => {
     expect(await runPass()).toMatchObject({ notes: 0 });
   });
 
-  it('a refused note (403) is recorded on the link, not counted and not tried again', async () => {
+  it('a refused note (403) is recorded on the link as note_refused, not counted and not tried again', async () => {
     const [itemId] = await workItems(1);
     const [link] = await createdLinks([itemId!], 'closed');
     const { lines, logger } = capture();
@@ -502,10 +502,11 @@ describe('the Boards pass (design §7.8, plan Task 7)', () => {
     const stored = await row(link!.linkId);
     expect(stored).toMatchObject({
       state: 'created',
-      failure: { code: 'permission_missing', message: BOARDS_FAILURE_TEXT.permission_missing },
+      failure: { code: 'note_refused', message: BOARDS_FAILURE_TEXT.note_refused },
     });
     expect(stored.reportedFixedAt).not.toBeNull();
     expect(lines.filter((l) => l[0] === 'warn')).toHaveLength(1);
+    expect(JSON.stringify(lines)).toContain('permission_missing');
     expect((await connection()).problem).toBeNull();
     fake.clearRequests();
     await runPass();

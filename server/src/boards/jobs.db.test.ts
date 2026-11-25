@@ -1,9 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { azureConnection } from '../../test/azure-pending';
+import { boardsJobDeps } from '../../test/boards';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
-import { boardsLinks, jobs, projectBoardsSettings } from '../db/schema';
+import { boardsLinks, jobs, projectBoardsSettings, scmConnections } from '../db/schema';
+import type { WorkerLogger } from '../queue/worker';
 import {
   BOARDS_QUEUE,
   BOARDS_SYNC_INTERVAL_SECONDS,
@@ -15,6 +17,8 @@ import {
   scheduleBoardsSync,
   syncBoardsNow,
 } from './jobs';
+import { recordUnmovedProblem } from './create';
+import { boardsHandlers } from './run';
 
 const AZURE_PROJECT = '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c';
 
@@ -166,5 +170,55 @@ describe('the Boards job schedule (design §7.8, plan Ruling 6)', () => {
     await h.ctx.db.execute(sql`DELETE FROM jobs WHERE concurrency_key = ${boardsSyncKey(linked)}`);
     await syncBoardsNow(h.ctx.db, linked);
     expect(await queued(linked, 'sync')).toHaveLength(1);
+  });
+
+  it('a queued create and sync job of a deleted connection end quietly and queue nothing', async () => {
+    const gone = await connection('jobs-gone');
+    await enqueueBoardsCreate(h.ctx.db, gone);
+    await syncBoardsNow(h.ctx.db, gone);
+    const jobOf = async (kind: 'create' | 'sync') => (await queued(gone, kind))[0]!;
+    const create = await jobOf('create');
+    const sync = await jobOf('sync');
+    await h.ctx.db.delete(scmConnections).where(eq(scmConnections.id, gone));
+    const lines: string[] = [];
+    const logger: WorkerLogger = {
+      info: (...a: unknown[]) => void lines.push(JSON.stringify(['info', ...a])),
+      warn: (...a: unknown[]) => void lines.push(JSON.stringify(['warn', ...a])),
+      error: (...a: unknown[]) => void lines.push(JSON.stringify(['error', ...a])),
+    };
+    const handle = boardsHandlers(boardsJobDeps(h, { logger }))[BOARDS_QUEUE]!;
+    await handle(create);
+    await handle(sync);
+    expect(lines).toEqual([]);
+    expect(
+      await h.ctx.db
+        .select()
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.queue, BOARDS_QUEUE),
+            sql`${jobs.payload} ->> 'connectionId' = ${gone}`,
+            sql`${jobs.id} NOT IN (${create.id}, ${sync.id})`,
+          ),
+        ),
+    ).toEqual([]);
+  });
+
+  it("records a run's problem only while the connection keeps the address the run read", async () => {
+    const id = await connection('jobs-moved');
+    const rowOf = async () =>
+      (await h.ctx.db.select().from(scmConnections).where(eq(scmConnections.id, id)))[0]!;
+    const problemOf = async () => (await rowOf()).problem;
+    // The address the run read, then moved before its write.
+    const read = { id, baseUrl: (await rowOf()).baseUrl };
+    await h.ctx.db
+      .update(scmConnections)
+      .set({ baseUrl: 'https://dev.azure.com/jobs-elsewhere' })
+      .where(eq(scmConnections.id, id));
+    expect(await recordUnmovedProblem(h.ctx.db, read, 'undecryptable')).toBe(false);
+    expect(await problemOf()).toBeNull();
+    const now = { id, baseUrl: 'https://dev.azure.com/jobs-elsewhere' };
+    expect(await recordUnmovedProblem(h.ctx.db, now, 'undecryptable')).toBe(true);
+    expect(await problemOf()).toMatchObject({ code: 'undecryptable' });
   });
 });

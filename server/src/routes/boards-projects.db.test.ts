@@ -462,6 +462,36 @@ describe('the project Azure Boards mapping (design §7.8)', () => {
       }
     });
 
+    it("stores the name Azure DevOps lists for the project, never the body's, and refuses a project the connection does not see", async () => {
+      const azure = await connect();
+      const res = await put(azure, { azureProject: { id: payments.id, name: 'Platform' } });
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({
+        mapping: { azureProject: { id: payments.id, name: 'Payments' } },
+      });
+      expect(await stored()).toMatchObject({
+        azureProjectId: payments.id,
+        azureProjectName: 'Payments',
+      });
+
+      fake.clearRequests();
+      const unknown = await put(azure, {
+        azureProject: { id: '0b1d2c3e-4f50-4617-8a9b-0c1d2e3f4a5b', name: 'Gone' },
+      });
+      expect([unknown.statusCode, unknown.json().code]).toEqual([422, 'VALIDATION_FAILED']);
+      expect(unknown.json().errors).toEqual([
+        {
+          path: 'body.azureProject.id',
+          message: 'Not an Azure DevOps project the connection sees',
+        },
+      ]);
+      expect(validations()).toEqual([]);
+      expect(await stored()).toMatchObject({
+        azureProjectId: payments.id,
+        azureProjectName: 'Payments',
+      });
+    });
+
     it('lists what changed on an update, nothing when nothing did, and the whole mapping on remove', async () => {
       const azure = await connect();
       const second = await connect();

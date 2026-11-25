@@ -38,8 +38,8 @@ export interface ProblemExtensions {
   /**
    * 409 JIRA_CONNECTION_BROKEN: the code of the connection's credential problem (0.16 Jira §6.4).
    * 409 BOARDS_CONNECTION_BROKEN: the code of the Azure DevOps connection's stored credential
-   * problem (scm/problems.ts SCM_CREDENTIAL_PROBLEM_CODES). 502 BOARDS_UNAVAILABLE: the connection
-   * Test's code of the failed Azure DevOps call.
+   * problem, one of those that stop Azure Boards (boards/links.ts BOARDS_BLOCKING_CODES). 502
+   * BOARDS_UNAVAILABLE: the connection Test's code of the failed Azure DevOps call.
    */
   problemCode?: string;
 }

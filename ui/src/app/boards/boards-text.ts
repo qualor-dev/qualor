@@ -3,8 +3,15 @@ import { azureProblemText } from '../settings/azure-text';
 /**
  * Azure Boards link problems in the UI's own words, chosen by code. The server's `message` is a
  * fixed English text and is never shown, except a `field_refused` failure, which carries Azure
- * DevOps' own reason (cut to 500 characters by the server), shown as text.
+ * DevOps' own reason (cut to 500 characters by the server), shown as text after a fixed lead.
  */
+
+/**
+ * The server's `field_refused` message when Azure DevOps gave no words of its own
+ * (server/src/boards/create.ts BOARDS_FAILURE_TEXT): shown in the UI's own words instead.
+ */
+const FIELD_REFUSED_STAND_IN =
+  'Azure DevOps refused a field of the work item. Check the mapping of the project.';
 
 /** Why a work item could not be created, by the code of the link's failure. */
 function failureCodeText(code: string): string {
@@ -23,6 +30,8 @@ function failureCodeText(code: string): string {
       return $localize`:@@boards.failure.outcomeUnknown:Qualor could not tell whether Azure DevOps created the work item.`;
     case 'type_unsupported':
       return $localize`:@@boards.failure.typeUnsupported:The mapped work item type no longer exists or needs fields Qualor does not set. Map the project again.`;
+    case 'note_refused':
+      return $localize`:@@boards.failure.noteRefused:Azure DevOps refused Qualor's note on this work item.`;
     default:
       return $localize`:@@boards.failure.unknown:The work item could not be created.`;
   }
@@ -30,10 +39,16 @@ function failureCodeText(code: string): string {
 
 /**
  * A link's failure: its own text per code. `field_refused` shows the server's message, Azure
- * DevOps' own reason for refusing a field, the one place its words reach a finding.
+ * DevOps' own reason for refusing a field, after a fixed lead, as the mapping panel frames them:
+ * the one place its words reach a finding.
  */
 export function boardsFailureText(failure: { code: string; message: string }): string {
-  return failure.code === 'field_refused' ? failure.message : failureCodeText(failure.code);
+  if (failure.code !== 'field_refused') return failureCodeText(failure.code);
+  if (failure.message === '' || failure.message === FIELD_REFUSED_STAND_IN) {
+    return $localize`:@@boards.failure.fieldRefusedPlain:Azure DevOps refused a field of the work item. Check the mapping of the project.`;
+  }
+  const lead = $localize`:@@boards.failure.fieldRefused:Azure DevOps refused the work item. It said:`;
+  return `${lead} ${failure.message}`;
 }
 
 /**

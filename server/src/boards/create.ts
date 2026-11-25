@@ -58,7 +58,8 @@ export type BoardsFailureCode =
   | 'not_mapped'
   | 'finding_gone'
   | 'outcome_unknown'
-  | 'type_unsupported';
+  | 'type_unsupported'
+  | 'note_refused';
 
 /**
  * The fixed texts of the failures. `field_refused` carries Azure DevOps' own words instead (cut
@@ -77,6 +78,7 @@ export const BOARDS_FAILURE_TEXT: Record<BoardsFailureCode, string> = {
     'Azure DevOps did not answer the create, and Qualor could not find out whether the work item was made. It may exist in Azure Boards: check before you retry.',
   type_unsupported:
     'The mapped work item type no longer exists or needs fields Qualor does not set: map the project again',
+  note_refused: "Azure DevOps refused Qualor's note on this work item.",
 };
 
 /** Why a run stopped before its rows ran out, if it did. */
@@ -185,25 +187,31 @@ async function connectionUnmoved(ctx: BoardsRunContext): Promise<boolean> {
 
 /**
  * Records `code` as the connection's problem (Ruling 5: the slot decoration shares) while the
- * connection still has the run's address: checked and written under the connection row's lock, so
- * an address move cannot slip in between. The run's view follows.
+ * connection still has `connection`'s address: checked and written under the connection row's
+ * lock, so an address move cannot slip in between. Whether the address still held.
  */
-async function recordProblem(ctx: BoardsRunContext, code: ScmBackgroundProblemCode): Promise<void> {
-  const written = await ctx.deps.db.transaction(async (tx) => {
+export function recordUnmovedProblem(
+  db: Db,
+  connection: Pick<ScmConnectionRow, 'id' | 'baseUrl'>,
+  code: ScmBackgroundProblemCode,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
     const [held] = await tx
       .select({ id: scmConnections.id })
       .from(scmConnections)
       .where(
-        and(
-          eq(scmConnections.id, ctx.connection.id),
-          eq(scmConnections.baseUrl, ctx.connection.baseUrl),
-        ),
+        and(eq(scmConnections.id, connection.id), eq(scmConnections.baseUrl, connection.baseUrl)),
       )
       .for('no key update');
     if (!held) return false;
-    await recordScmProblem(tx, ctx.connection.id, code);
+    await recordScmProblem(tx, connection.id, code);
     return true;
   });
+}
+
+/** {@link recordUnmovedProblem} for the run's connection; the run's view follows. */
+async function recordProblem(ctx: BoardsRunContext, code: ScmBackgroundProblemCode): Promise<void> {
+  const written = await recordUnmovedProblem(ctx.deps.db, ctx.connection, code);
   if (written && ctx.connection.problem?.code !== code) {
     ctx.connection.problem = { code, at: new Date().toISOString() };
   }
