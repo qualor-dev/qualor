@@ -1171,7 +1171,7 @@ describe('AzureDevOpsPage service hooks', () => {
     const result = text(root.querySelector('section[data-key="a1"] .connection-result')!);
     expect(result).toContain('Connected as Qualor Bot');
     expect(result).toContain('cannot read who may change findings');
-    expect(result).toContain('Project Administrators');
+    expect(result).toContain('Identity (Read) scope');
     expect(result).not.toContain('read_permissions');
   });
 
@@ -1188,7 +1188,7 @@ describe('AzureDevOpsPage service hooks', () => {
     expect(result).toContain(
       'Create work items in the mapped Azure Boards project (Work items: Read & write)',
     );
-    expect(result).toContain('Project Administrators');
+    expect(result).toContain('Identity (Read) scope');
     expect(result).not.toContain('work_items');
   });
 });
