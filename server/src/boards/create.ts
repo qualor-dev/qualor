@@ -6,7 +6,6 @@ import {
   boardsLinks,
   projectBoardsSettings,
   type BoardsStateCategory,
-  type ScmProblemValue,
 } from '../db/schema';
 import type { VulnerabilityFacts } from '../jira/content';
 import { fenceOf, followUpDelay, recordset } from '../jira/create';
@@ -17,11 +16,7 @@ import { AzureError, type AzureJsonPatch, type AzureWorkItemType } from '../scm/
 import { problemCode } from '../scm/azure/connections';
 import type { ScmConnectionRow } from '../scm/connections';
 import { ScmError } from '../scm/provider';
-import {
-  recordScmProblem,
-  SCM_CREDENTIAL_PROBLEM_CODES,
-  type ScmBackgroundProblemCode,
-} from '../scm/problems';
+import { recordScmProblem, type ScmBackgroundProblemCode } from '../scm/problems';
 import { compare } from '../vulnerabilities/order';
 import {
   codeIssueWorkItem,
@@ -31,7 +26,7 @@ import {
   type WorkItemContent,
 } from './content';
 import { enqueueBoardsCreate } from './jobs';
-import type { BoardsLinkRow } from './links';
+import { BOARDS_BLOCKING_CODES, isBoardsBlockingProblem, type BoardsLinkRow } from './links';
 import { analyzeWorkItemType, AZURE_WORDS_MAX, type BoardsMappingRow } from './mapping';
 import type { BoardsRunContext } from './run';
 
@@ -138,12 +133,7 @@ export function boardsConnectionUnmoved(connection: Pick<ScmConnectionRow, 'id' 
      WHERE sc.id = ${connection.id} AND sc.base_url = ${connection.baseUrl})`;
 }
 
-const CREDENTIAL_CODES: ReadonlySet<string> = new Set(SCM_CREDENTIAL_PROBLEM_CODES);
-
-/** Whether the stored problem is one an administrator must fix: nothing is sent while it is set. */
-export function isBoardsCredentialProblem(problem: ScmProblemValue | null): boolean {
-  return problem !== null && CREDENTIAL_CODES.has(problem.code);
-}
+const BLOCKING: ReadonlySet<string> = new Set(BOARDS_BLOCKING_CODES);
 
 /** The category of a state of the type (`InProgress` → `inprogress`); null for one it lacks. */
 export function stateCategoryOf(
@@ -206,19 +196,21 @@ async function recordProblem(ctx: BoardsRunContext, code: ScmBackgroundProblemCo
 
 /**
  * What a failed Azure DevOps call means for a run: 429 and the request budget stop it; a refused
- * credential (401, a sign-in answer, Microsoft Entra refusing the principal, a 403 outside a
- * create) is recorded on the connection and stops it; a transient failure (timeout, no answer, a
- * 5xx) or an address the policy refuses stops it and records nothing (it passes by itself); a bad
- * answer or a 404 stops nothing.
+ * credential ({@link BOARDS_BLOCKING_CODES}: 401, a sign-in answer, Microsoft Entra refusing the
+ * principal) is recorded on the connection and stops it; a transient failure (timeout, no answer, a
+ * 5xx) or an address the policy refuses stops it and records nothing (it passes by itself). A 403,
+ * a bad answer or a 404 stops nothing: a 403 is never written to the connection, since it may
+ * concern one area or one right only (the step fails the link `permission_missing`).
  */
 export async function stopFor(ctx: BoardsRunContext, err: ScmError): Promise<BoardsStop> {
   if (err.kind === 'rate_limited') return 'rate_limited';
   if (err.kind === 'budget') return 'budget';
   const code = problemCode(err);
-  if (CREDENTIAL_CODES.has(code)) {
+  if (BLOCKING.has(code)) {
     await recordProblem(ctx, code as ScmBackgroundProblemCode);
     return 'credential';
   }
+  if (err.kind === 'auth' && err.reason === 'permission_missing') return null;
   if (err.kind === 'transient' || err.kind === 'refused' || err.kind === 'auth') return 'transient';
   return null;
 }
@@ -656,7 +648,7 @@ export async function createPendingWorkItems(
 ): Promise<BoardsCreateOutcome> {
   const limit = options.limit ?? CREATE_PER_RUN;
   const outcome: BoardsCreateOutcome = { created: 0, failed: 0, unanswered: 0, stop: null };
-  if (isBoardsCredentialProblem(ctx.connection.problem)) return { ...outcome, stop: 'credential' };
+  if (isBoardsBlockingProblem(ctx.connection.problem)) return { ...outcome, stop: 'credential' };
   const run: CreateRun = {
     ctx,
     priority: ctx.deps.limits().vulnerabilities.priority,

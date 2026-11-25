@@ -7,6 +7,7 @@ import {
   boardsLinks,
   scmConnections,
   type BoardsLinkState,
+  type ScmProblemValue,
 } from '../db/schema';
 import { conflict, ProblemError } from '../http/problem';
 import { iso, isoOrNull, timestamp } from '../http/schemas';
@@ -14,7 +15,7 @@ import { rowTarget, targetKey, type IssueLinkLookup, type LinkTarget } from '../
 import type { ProjectRow } from '../projects/access';
 import { azureWebBase } from '../scm/azure/url';
 import type { ScmConnectionRow } from '../scm/connections';
-import { SCM_CREDENTIAL_PROBLEM_CODES } from '../scm/problems';
+import type { ScmBackgroundProblemCode } from '../scm/problems';
 import { boardsMappingOf, type BoardsMappingRow } from './mapping';
 
 /*
@@ -204,9 +205,32 @@ export function liveLink<T extends { state: string }>(link: T | undefined): T | 
 const notConnected = (title: string) => conflict('BOARDS_NOT_CONNECTED', title);
 
 /**
+ * The connection problems that stop Azure Boards: the credential itself is refused or cannot be
+ * used. A `permission_missing` decoration recorded for one right of its own, a service hook code
+ * or a transient failure stops nothing; a Boards 403 is the link's `permission_missing` failure
+ * and is never written to the connection. The pass's probe clears only these codes.
+ */
+export const BOARDS_BLOCKING_CODES = [
+  'token_refused',
+  'sign_in_required',
+  'html_answer',
+  'token_endpoint',
+  'undecryptable',
+  'url_not_allowed',
+] as const satisfies readonly ScmBackgroundProblemCode[];
+
+const BLOCKING: ReadonlySet<string> = new Set(BOARDS_BLOCKING_CODES);
+
+/** Whether the stored problem stops Azure Boards: nothing is requested or sent while it is set. */
+export function isBoardsBlockingProblem(problem: ScmProblemValue | null): boolean {
+  return problem !== null && BLOCKING.has(problem.code);
+}
+
+/**
  * The organisation's Azure DevOps connection `connectionId` (a mapping's or a link's), unless it is
- * gone (409 BOARDS_NOT_CONNECTED) or has a credential problem (409 BOARDS_CONNECTION_BROKEN, with
- * the problem's code as `problemCode`); a transient or service hook problem refuses nothing.
+ * gone (409 BOARDS_NOT_CONNECTED) or has a blocking problem ({@link BOARDS_BLOCKING_CODES}: 409
+ * BOARDS_CONNECTION_BROKEN, with the problem's code as `problemCode`); any other problem refuses
+ * nothing.
  */
 export async function usableBoardsConnection(
   db: Executor,
@@ -225,10 +249,7 @@ export async function usableBoardsConnection(
     );
   if (!connection) throw notConnected('The Azure DevOps connection of the project is gone');
   const problem = connection.problem;
-  if (
-    problem !== null &&
-    (SCM_CREDENTIAL_PROBLEM_CODES as readonly string[]).includes(problem.code)
-  ) {
+  if (problem !== null && BLOCKING.has(problem.code)) {
     throw new ProblemError(
       409,
       'BOARDS_CONNECTION_BROKEN',

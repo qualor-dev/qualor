@@ -26,7 +26,7 @@ import {
   enqueueBoardsCreate,
   scheduleBoardsSync,
 } from './jobs';
-import { insertPendingBoardsLinks } from './links';
+import { BOARDS_BLOCKING_CODES, insertPendingBoardsLinks } from './links';
 import { openBoardsRun, type BoardsJobDeps } from './run';
 
 const PUBLIC_URL = 'https://qualor.example.com';
@@ -440,6 +440,37 @@ describe('the Boards create job (design §7.8, plan Task 6)', () => {
     for (const id of linkIds) {
       expect(await row(id)).toMatchObject({ state: 'pending', attemptedAt: null });
     }
+  });
+
+  it('a stored permission_missing does not stop creates; a stored token_refused does', async () => {
+    const setProblem = (code: 'permission_missing' | 'token_refused' | 'hook_disabled') =>
+      db()
+        .update(scmConnections)
+        .set({ problem: { code, at: new Date().toISOString() } })
+        .where(eq(scmConnections.id, connectionId));
+    for (const code of ['permission_missing', 'hook_disabled'] as const) {
+      await setProblem(code);
+      const [linkId] = await pending([await issue(`despite ${code}`)]);
+      await run();
+      expect(await row(linkId!), code).toMatchObject({ state: 'created' });
+      // Creating work items clears nothing either: the problem is decoration's.
+      expect((await connection())?.problem?.code).toBe(code);
+    }
+    expect(BOARDS_BLOCKING_CODES).toEqual([
+      'token_refused',
+      'sign_in_required',
+      'html_answer',
+      'token_endpoint',
+      'undecryptable',
+      'url_not_allowed',
+    ]);
+
+    await setProblem('token_refused');
+    fake.clearRequests();
+    const [blocked] = await pending([await issue('blocked')]);
+    await run();
+    expect(fake.requests).toHaveLength(0);
+    expect(await row(blocked!)).toMatchObject({ state: 'pending', attemptedAt: null });
   });
 
   it('a 429 → stop with Retry-After', async () => {

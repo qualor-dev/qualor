@@ -5,6 +5,7 @@ import type { RouteDeps } from '../app';
 import type { PROJECT_BOARDS_CHANGED_FIELDS } from '../audit/catalogue';
 import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
+import { syncBoardsNow } from '../boards/jobs';
 import {
   analyzeWorkItemType,
   AZURE_WORDS_MAX,
@@ -633,6 +634,10 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         );
         const changed = changedFields(before, next);
         if (changed.length > 0) {
+          // The connection's pass now (a new mapping, a new rule or another project), queued in
+          // this transaction as the Jira connection PUT queues its pass: the schedule lock before
+          // the audit chain's.
+          await syncBoardsNow(tx, row.id);
           await recordProjectEvent(deps.audit, tx, request, project, 'project.boards_updated', {
             changed,
           });

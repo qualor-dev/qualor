@@ -11,6 +11,7 @@ import { connectJira, jiraTestConfig, mapJira, seedJiraLink } from '../../test/j
 import { rbacPlugins } from '../../test/rbac';
 import { trustTestCa } from '../../test/tls';
 import { seedTargetRow } from '../../test/vulnerabilities';
+import { BOARDS_QUEUE, boardsCreateKey } from '../boards/jobs';
 import { uuidv7 } from '../db/ids';
 import {
   auditEvents,
@@ -18,6 +19,7 @@ import {
   branches,
   issues,
   jiraLinks,
+  jobs,
   projectBoardsSettings,
   projectJiraSettings,
   scmConnections,
@@ -269,6 +271,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     await db().delete(scmConnections);
     await db().delete(jiraLinks);
     await db().delete(projectJiraSettings);
+    await db().delete(jobs).where(eq(jobs.queue, BOARDS_QUEUE));
   });
 
   it('checks the preconditions in order: connected, no credential problem, mapped', async () => {
@@ -730,6 +733,51 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
       { workItemId: 42 },
       { workItemId: null },
     ]);
+  });
+
+  it("queues one create job on each link's own connection when a request or a retry made pending rows", async () => {
+    const queuedCreates = (connection: string) =>
+      db()
+        .select()
+        .from(jobs)
+        .where(
+          and(
+            eq(jobs.queue, BOARDS_QUEUE),
+            eq(jobs.status, 'queued'),
+            eq(jobs.concurrencyKey, boardsCreateKey(connection)),
+          ),
+        );
+    // A permission decoration recorded for one right of its own does not stop Boards.
+    await setProblem(connectionId, 'permission_missing');
+    const a = await code(main);
+    const b = await code(main);
+    const made = await items({ issueIds: [a, b] });
+    expect(made.map((i) => i.link?.state)).toEqual(['pending', 'pending']);
+    const [queued, ...more] = await queuedCreates(connectionId);
+    expect(more).toEqual([]);
+    expect(queued?.payload).toEqual({ kind: 'create', connectionId });
+
+    // A request that makes nothing queues nothing.
+    await db().delete(jobs).where(eq(jobs.queue, BOARDS_QUEUE));
+    await items({ issueIds: [a, b] });
+    expect(await queuedCreates(connectionId)).toEqual([]);
+
+    // A retry queues the create on the link's own connection, an earlier one here.
+    const earlier = await azureConnection(db(), {
+      organizationId: h.organizationId,
+      baseUrl: 'https://dev.azure.com/boards-links-earlier',
+      secretKey: h.ctx.config.secretKey,
+    });
+    const linkId = await seedBoardsLink({
+      issueId: await code(main),
+      connectionId: earlier.id,
+      state: 'failed',
+      failure: { code: 'field_refused', message: 'x' },
+    });
+    const res = await retry(linkId);
+    expect(res.statusCode, res.body).toBe(202);
+    expect(await queuedCreates(earlier.id)).toHaveLength(1);
+    expect(await queuedCreates(connectionId)).toEqual([]);
   });
 
   it('records one boards_link.requested per request that made rows, with the form as kind', async () => {

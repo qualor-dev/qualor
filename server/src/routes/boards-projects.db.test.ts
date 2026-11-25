@@ -13,6 +13,7 @@ import { createFakeJira, type FakeJira } from '../../test/fake-jira';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { connectJira, jiraTestConfig, mapJira } from '../../test/jira';
 import { rbacPlugins } from '../../test/rbac';
+import { BOARDS_QUEUE, boardsSyncKey } from '../boards/jobs';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import {
   auditEvents,
@@ -229,6 +230,7 @@ describe('the project Azure Boards mapping (design §7.8)', () => {
     await h.ctx.db.delete(scmConnections);
     await h.ctx.db.delete(jiraConnections);
     await h.ctx.db.delete(jobs).where(eq(jobs.queue, JIRA_QUEUE));
+    await h.ctx.db.delete(jobs).where(eq(jobs.queue, BOARDS_QUEUE));
   });
 
   it("GET: a viewer sees no mapping and the organisation's Azure connections", async () => {
@@ -498,6 +500,36 @@ describe('the project Azure Boards mapping (design §7.8)', () => {
         { changed: ['azureProject', 'areaPath', 'iterationPath'] },
         { changed: ['mapping'] },
       ]);
+    });
+
+    it("pulls the connection's pass to now when it changed something, and queues none when nothing", async () => {
+      const azure = await connect();
+      const passes = () =>
+        h.ctx.db
+          .select()
+          .from(jobs)
+          .where(
+            and(
+              eq(jobs.queue, BOARDS_QUEUE),
+              eq(jobs.status, 'queued'),
+              eq(jobs.concurrencyKey, boardsSyncKey(azure)),
+            ),
+          );
+      const dueNow = async () => {
+        const [pass, ...more] = await passes();
+        expect(more).toEqual([]);
+        expect(pass?.payload).toEqual({ kind: 'sync', connectionId: azure });
+        expect(pass!.runAt.getTime()).toBeLessThanOrEqual(Date.now() + 60_000);
+      };
+      expect((await put(azure)).statusCode).toBe(200);
+      await dueNow();
+
+      await h.ctx.db.delete(jobs).where(eq(jobs.queue, BOARDS_QUEUE));
+      expect((await put(azure)).statusCode).toBe(200);
+      expect(await passes()).toEqual([]);
+
+      expect((await put(azure, { tags: ['sec'] })).statusCode).toBe(200);
+      await dueNow();
     });
   });
 

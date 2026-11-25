@@ -5,6 +5,7 @@ import type { RouteDeps } from '../app';
 import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
 import { boardsLinkFor } from '../boards/access';
+import { enqueueBoardsCreate } from '../boards/jobs';
 import {
   boardsLinkDto,
   boardsLinkDtoOf,
@@ -218,6 +219,10 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
               ? new Map<string, BoardsLinkWithUrl>()
               : await boardsLinkRowsOf(tx, project.id, losers);
           if (pending.length > 0) {
+            // Every row made or re-armed is on this connection. Queued in this transaction (the
+            // worker cannot claim the job before the rows commit), the schedule lock before the
+            // audit chain's, as Jira's request takes them.
+            await enqueueBoardsCreate(tx, connection.id);
             await recordProjectEvent(deps.audit, tx, request, project, 'boards_link.requested', {
               count: pending.length,
               kind: issueIds !== undefined ? 'issue' : 'vulnerability',
@@ -290,6 +295,8 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
         row = await deps.db.transaction(async (tx) => {
           const rearmed = await rearmBoardsLink(tx, link.id, RETRYABLE_STATES, principal.user.id);
           if (!rearmed) notRetryable();
+          // A retry keeps the link's own connection: its create runs there.
+          await enqueueBoardsCreate(tx, rearmed.connectionId);
           await recordProjectEvent(deps.audit, tx, request, project, 'boards_link.requested', {
             count: 1,
             kind: rearmed.kind,
