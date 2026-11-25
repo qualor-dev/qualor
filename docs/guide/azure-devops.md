@@ -552,8 +552,9 @@ without a credential problem: otherwise the screen says what is missing.
 | Area path, iteration path | the mapping's |
 
 Do not edit or remove the line `Qualor reference: …`, and keep the tag `qualor`. When Azure
-DevOps's answer to a create is lost, Qualor finds the work item by both, so the finding gets one
-work item, not two.
+DevOps's answer to a create is lost, Qualor looks for the work item after 2 minutes. It finds it by
+the tag `qualor`, the identity that created it and the key line, so the finding gets one work item,
+not two. When Qualor does not find it, it sends the create again after 10 minutes.
 
 There is no code snippet: code stays in Qualor. Qualor escapes everything that came from a report,
 a rule, an advisory or a model, so it cannot become a link, a mention, an image or markup in Azure
@@ -575,7 +576,7 @@ Qualor adds notes to the work item's discussion, and never changes its state:
 | It finds it again | "Qualor finds this again: …" |
 
 What counts as gone is the same as for [Jira](./jira.md#status-and-comments). A closed work item
-gets notes too.
+gets notes too. If Azure DevOps refuses a note, Qualor does not try it again.
 
 ### The automatic rule
 
@@ -587,7 +588,7 @@ Enterprise.
 It follows [Jira's automatic rule](./jira.md#the-automatic-rule):
 
 - Only vulnerabilities first found after you save count, never the backlog.
-- At most 50 new work items per organisation in one pass. The rest follow in the next passes.
+- At most 50 new work items per connection in one pass. The rest follow in the next passes.
 - A finding you unlinked is never created again.
 - It needs vulnerability monitoring on for the project.
 
@@ -616,10 +617,10 @@ Every change is in the [audit log](./roles-and-audit.md#what-is-recorded).
 ### Troubleshooting
 
 A credential problem of the connection stops new work items and state reads: a refused credential,
-a sign-in page instead of data, a stored credential that can no longer be read, or an address the
-server no longer allows. **Settings → Azure DevOps** shows it, and the fixes are those of
-[a failing test](#test-the-connection). Each pass makes one call to check it and resumes when the
-call succeeds.
+a sign-in page instead of data, a stored credential that can no longer be read, an address the
+server no longer allows, or a failed Entra token request. **Settings → Azure DevOps** shows it,
+and the fixes are those of [a failing test](#test-the-connection). Each pass makes one call to
+check it and resumes when the call succeeds.
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -628,7 +629,7 @@ call succeeds.
 | "The mapped work item type no longer exists or needs fields Qualor does not set. Map the project again." | the type was removed, or gained a required field | [map the project](#map-a-project-to-azure-boards) with a type that works, then **Retry** |
 | "Azure DevOps did not find the project, or the credential cannot see it." | the Azure DevOps project is gone, or the identity cannot see it | map the project again, or add the identity to the Azure DevOps project |
 | "Azure DevOps refused the work item as too large." | Azure DevOps refused the request as too large | ask the Azure DevOps administrator about the limit |
-| "Qualor could not tell whether Azure DevOps created the work item." | the answer to a create was lost, and Azure DevOps refused the search for it | look in Azure Boards for a work item with the tag `qualor`. **Retry** creates it again |
+| "Qualor could not tell whether Azure DevOps created the work item." | the answer to a create was lost and Qualor could not find the work item: Azure DevOps refused or cut off the search for it | look in Azure Boards for a work item with the tag `qualor`. **Retry** creates it again |
 | "Not found in Azure Boards" | Qualor did not find the work item in two passes in a row: it was deleted, or the identity cannot see it any more | **Create again** makes a new one |
 | "The project had no Azure Boards mapping when the work item was to be created." | the mapping was removed before creation | map the project, then **Retry** |
 | "The finding is closed or can no longer have a work item." | the finding was deleted, or was closed, before the work item was made | nothing to do |
