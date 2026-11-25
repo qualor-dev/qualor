@@ -877,7 +877,9 @@ describe('qualor fix: the tool environment and its output (B9, §11.6)', () => {
       "console.error('npm ERR! GET https://ci-user:' + pass + '@npm.example.org/qf-a 401');",
       "console.error('npm ERR! token ' + process.env.NPM_TOKEN);",
       "console.error('npm ERR! project ' + process.env.LEAK);",
-      'process.exit(1);',
+      // exitCode, not exit(): stderr to a pipe is written asynchronously on Linux, and exit()
+      // would drop the lines still queued (the npm ERR! ones the test looks for).
+      'process.exitCode = 1;',
     ].join('\n');
     const leaking: FixAdapter = {
       ...goodJs,
