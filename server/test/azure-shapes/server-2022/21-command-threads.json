@@ -1,0 +1,473 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 83,
+        "publishedDate": "2026-11-25T10:45:29.343Z",
+        "lastUpdatedDate": "2026-11-25T10:46:07.253Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:issue cd0c7fe9-fd86-4e03-8710-fa6e00002bdd -->\n**High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186)\n\nUnexpected empty function ` 'emptyHandler' `.\n\n[View in Qualor](https://ado.example.invalid/projects/d95a7a50-9013-4fa0-863c-fa6e00007afc/issues/cd0c7fe9-fd86-4e03-8710-fa6e00002bdd)",
+            "publishedDate": "2026-11-25T10:45:29.343Z",
+            "lastUpdatedDate": "2026-11-25T10:45:29.343Z",
+            "lastContentUpdatedDate": "2026-11-25T10:45:29.343Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          },
+          {
+            "id": 2,
+            "parentCommentId": 1,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/08602480-7f1b-429f-8e7c-fa6e00005fbc",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "08602480-7f1b-429f-8e7c-fa6e00005fbc",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "Qualor probe item 21: why is this an issue, and how do I fix it?",
+            "publishedDate": "2026-11-25T10:46:02.25Z",
+            "lastUpdatedDate": "2026-11-25T10:46:02.25Z",
+            "lastContentUpdatedDate": "2026-11-25T10:46:02.25Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83/comments/2"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          },
+          {
+            "id": 3,
+            "parentCommentId": 1,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:reply 4b18e4d9-7299-48a2-8e43-fa6e00007943 -->\n**AI review** · reply\n\nS1186 flags a function whose body is empty. An empty function is either unfinished or a silent no-op, and a reader cannot tell which. Here ` emptyHandler ` in ` probe/item-21-20261125104346.js ` (line 2) has a body with no statements, so callers get nothing and the intent is unclear. The rule applies to any function, not only handlers.\n\nTo fix it, pick the option that matches the intent. If the function should do something, implement it. If it is meant to do nothing on purpose, put a comment inside the braces saying why, such as ` // intentionally a no-op: ... `, which the rule accepts. If nothing calls it, delete it. If it is a placeholder, make it throw ` new Error('not implemented') ` so the gap is visible at runtime.",
+            "publishedDate": "2026-11-25T10:46:07.253Z",
+            "lastUpdatedDate": "2026-11-25T10:46:07.253Z",
+            "lastContentUpdatedDate": "2026-11-25T10:46:07.253Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83/comments/3"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261125104346.js",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 2,
+            "offset": 33
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "95b6aa3700db49888351fa6e00000c1c"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/83"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 84,
+        "publishedDate": "2026-11-25T10:45:29.507Z",
+        "lastUpdatedDate": "2026-11-25T10:45:55.02Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:summary d95a7a50-9013-4fa0-863c-fa6e00007afc -->\n### ❌ Qualor: quality gate failed\n\n**Qualor way** · analysis ` 0df46580001f ` · **1 new issue** in this pull request\n\n| | Condition | Value | Required |\n|---|---|---|---|\n| ❌ | New issues | 1 | ≤ 0 |\n| ➖ | Coverage on new code | — | skipped: fewer than 20 new lines |\n| ➖ | Duplication on new code | — | skipped: fewer than 20 new lines |\n\n**By severity:** 🔴 1 high\n\n#### Most severe new issues\n\n1. 🔴 **High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186) · [` probe/item-21-20261125104346.js:2 `](https://ado.example.invalid/projects/d95a7a50-9013-4fa0-863c-fa6e00007afc/issues/cd0c7fe9-fd86-4e03-8710-fa6e00002bdd)\\\n   Unexpected empty function ` 'emptyHandler' `.\n\n1 new issue is commented inline. · **[Open in Qualor →](https://ado.example.invalid/projects/d95a7a50-9013-4fa0-863c-fa6e00007afc/branches/1632955e-dfab-4fb8-8d01-fa6e0000f04a)**\n\n#### AI review\n\nTwo findings in the probe file: an inverted authorisation predicate (critical) with no test covering it, and a minor mismatch between the pipeline's header comment and its mutable image tag.\n\n**Findings:** 1 high · 1 medium · 1 low\n\n- ` probe/item-21-20261125104346.js ` adds an empty exported function emptyHandler (flagged by the analyzer) and the canDeleteAccount predicate.\n- canDeleteAccount returns ` !user.isAdmin `, which contradicts its doc comment saying only administrators may delete accounts.\n- No test in the repository references canDeleteAccount.\n- ` .azure-pipelines/qualor-docker.yml ` adds a pipeline that checks out the pull request head and runs the Qualor scanner in Docker.\n- The header comment claims the image tag is fixed, but the image is pinned only by the mutable tag azure-dev.\n\nReviewed commit: ` 0df46580001f `\n\n<details><summary>Prompt for an AI agent</summary>\n\n```text\nFix the problems below, which an AI review found in this pull request.\nThe review can be wrong: read the code first and skip a finding that does not hold.\nKeep each change small and run the tests afterwards.\n\n1. probe/item-21-20261125104346.js:6 canDeleteAccount is inverted: non-admins pass and administrators are refused\n   The doc comment says only administrators may delete accounts, but `!user.isAdmin` returns true for every non-admin and false for admins. Any caller that uses this predicate to authorise account deletion lets ordinary users delete accounts and blocks administrators. Change the expression to `user.isAdmin === true`, or a stricter role check, and add tests for an admin and a non-admin user. Callers are not in the diff, so the impact depends on their use of the predicate.\n2. probe/item-21-20261125104346.js:5 New account-deletion guard canDeleteAccount has no test\n   A grep of the repository finds `canDeleteAccount` only at its definition, so no test covers the guard that decides account deletion. A test asserting that an admin may delete and a non-admin may not would fail on the current code, which inverts the documented rule. Add that test with the fix to the predicate.\n3. .azure-pipelines/qualor-docker.yml:14 Header promises a fixed image tag, but qualor/scanner:azure-dev is a mutable tag\n   The header says \"The image tag is fixed: nothing floats\", yet `QUALOR_SCANNER_IMAGE` is `qualor/scanner:azure-dev`. A tag can be re-pushed to a different image, so the scan can run different code without any change to this file. Pin the image by digest, or reword the comment to say the tag is named but not immutable.\n```\n\n</details>",
+            "publishedDate": "2026-11-25T10:45:29.507Z",
+            "lastUpdatedDate": "2026-11-25T10:45:55.02Z",
+            "lastContentUpdatedDate": "2026-11-25T10:45:55.02Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/84/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/84"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          }
+        ],
+        "status": "closed",
+        "threadContext": null,
+        "properties": null,
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/84"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 85,
+        "publishedDate": "2026-11-25T10:45:54.823Z",
+        "lastUpdatedDate": "2026-11-25T10:45:54.823Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:issue 88af6fea-e8fb-4a54-805e-fa6e0000e635 -->\n**AI review** · High · Logic · likely · ` ai:logic `\n\n**canDeleteAccount is inverted: non-admins pass and administrators are refused**\n\nThe doc comment says only administrators may delete accounts, but ` !user.isAdmin ` returns true for every non-admin and false for admins. Any caller that uses this predicate to authorise account deletion lets ordinary users delete accounts and blocks administrators. Change the expression to ` user.isAdmin === true `, or a stricter role check, and add tests for an admin and a non-admin user. Callers are not in the diff, so the impact depends on their use of the predicate.\n\nAssumes: The predicate is used, or will be used, as an authorisation gate for account deletion; the callers are not in the snapshot.\n\n```suggestion\nexport const canDeleteAccount = (user) => user.isAdmin === true;\n```\n\n[View in Qualor](https://ado.example.invalid/projects/d95a7a50-9013-4fa0-863c-fa6e00007afc/issues/88af6fea-e8fb-4a54-805e-fa6e0000e635)",
+            "publishedDate": "2026-11-25T10:45:54.823Z",
+            "lastUpdatedDate": "2026-11-25T10:45:54.823Z",
+            "lastContentUpdatedDate": "2026-11-25T10:45:54.823Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/85/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/85"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261125104346.js",
+          "rightFileStart": {
+            "line": 6,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 6,
+            "offset": 57
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "f0f9ad4011a74dd78a67fa6e0000d7ae"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/85"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 86,
+        "publishedDate": "2026-11-25T10:45:54.883Z",
+        "lastUpdatedDate": "2026-11-25T10:45:54.883Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:issue d958471d-cf9c-4378-89a7-fa6e0000767e -->\n**AI review** · Medium · Tests · likely · ` ai:tests `\n\n**New account-deletion guard canDeleteAccount has no test**\n\nA grep of the repository finds ` canDeleteAccount ` only at its definition, so no test covers the guard that decides account deletion. A test asserting that an admin may delete and a non-admin may not would fail on the current code, which inverts the documented rule. Add that test with the fix to the predicate.\n\n[View in Qualor](https://ado.example.invalid/projects/d95a7a50-9013-4fa0-863c-fa6e00007afc/issues/d958471d-cf9c-4378-89a7-fa6e0000767e)",
+            "publishedDate": "2026-11-25T10:45:54.883Z",
+            "lastUpdatedDate": "2026-11-25T10:45:54.883Z",
+            "lastContentUpdatedDate": "2026-11-25T10:45:54.883Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/86/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/86"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-21-20261125104346.js",
+          "rightFileStart": {
+            "line": 5,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 5,
+            "offset": 48
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "e4af3cd63a5045e6817cfa6e0000d3ae"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/86"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 87,
+        "publishedDate": "2026-11-25T10:46:07.56Z",
+        "lastUpdatedDate": "2026-11-25T10:46:09.457Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/08602480-7f1b-429f-8e7c-fa6e00005fbc",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "08602480-7f1b-429f-8e7c-fa6e00005fbc",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "qualor review",
+            "publishedDate": "2026-11-25T10:46:07.56Z",
+            "lastUpdatedDate": "2026-11-25T10:46:07.56Z",
+            "lastContentUpdatedDate": "2026-11-25T10:46:07.56Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/87/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/87"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          },
+          {
+            "id": 2,
+            "parentCommentId": 1,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:reply ac44d34b-fa6f-4ce8-8cae-fa6e00000d45 -->\n**AI review** · reply\n\nThis commit (` 0df46580001f `) has been reviewed. Push a new commit to review again.",
+            "publishedDate": "2026-11-25T10:46:09.457Z",
+            "lastUpdatedDate": "2026-11-25T10:46:09.457Z",
+            "lastContentUpdatedDate": "2026-11-25T10:46:09.457Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/87/comments/2"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/87"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": null,
+        "properties": null,
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/23/threads/87"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      }
+    ],
+    "count": 5
+  }
+}

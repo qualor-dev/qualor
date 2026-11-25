@@ -1,0 +1,79 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "value": [
+      {
+        "configuration": {
+          "createdBy": {
+            "displayName": "Probe User",
+            "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+            "_links": {
+              "avatar": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+              }
+            },
+            "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+            "uniqueName": "ado.example.invalid\\Probe User",
+            "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+            "descriptor": "win.<sid>"
+          },
+          "createdDate": "2026-11-25T10:04:33.3358536Z",
+          "isEnabled": true,
+          "isBlocking": false,
+          "isDeleted": false,
+          "settings": {
+            "buildDefinitionId": 5,
+            "queueOnSourceUpdateOnly": false,
+            "manualQueueOnly": false,
+            "displayName": "Qualor probe item 26",
+            "validDuration": 0,
+            "scope": [
+              {
+                "refName": "refs/heads/probe/26-target-20261125095808",
+                "matchKind": "Exact",
+                "repositoryId": "e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              }
+            ]
+          },
+          "isEnterpriseManaged": false,
+          "_links": {
+            "self": {
+              "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/policy/configurations/5"
+            },
+            "policyType": {
+              "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+            }
+          },
+          "revision": 1,
+          "id": 5,
+          "url": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/policy/configurations/5",
+          "type": {
+            "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+            "url": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+            "displayName": "Build"
+          }
+        },
+        "artifactId": "vstfs:///CodeReview/CodeReviewId/348a8c27-4a58-4651-864c-fa6e0000109f%2f17",
+        "evaluationId": "d7e07aa2-5e8f-4422-8b7c-fa6e00008799",
+        "startedDate": "2026-11-25T10:04:34.2894603Z",
+        "status": "queued",
+        "context": {
+          "lastMergeCommitId": "d25b2231db1a091d19e9fc4027c62559faa8229c",
+          "lastMergeSourceCommitId": "97f8330158236710371bea0201f52131db80320e",
+          "lastMergeTargetCommitId": "43d0ecbe84cf6ae9baceebd2c54980f4fecdf3b5",
+          "buildId": 7,
+          "buildDefinitionId": 5,
+          "buildDefinitionName": "Qualor probe item 26 20261125095808",
+          "buildIsNotCurrent": false,
+          "buildStartedUtc": "2026-11-25T10:04:34.2894603Z",
+          "isExpired": false,
+          "buildAfterMerge": false,
+          "wasAutoRequeued": false,
+          "buildOutputPreview": null
+        }
+      }
+    ],
+    "count": 1
+  }
+}

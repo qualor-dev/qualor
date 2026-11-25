@@ -1,0 +1,76 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": null,
+        "id": 3,
+        "publishedDate": "2026-11-25T09:43:16.56Z",
+        "lastUpdatedDate": "2026-11-25T09:43:16.56Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "Qualor probe item 3",
+            "publishedDate": "2026-11-25T09:43:16.56Z",
+            "lastUpdatedDate": "2026-11-25T09:43:16.56Z",
+            "lastContentUpdatedDate": "2026-11-25T09:43:16.56Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/2/threads/3/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/2/threads/3"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/2"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": null,
+        "properties": {
+          "Qualor.Marker": {
+            "$type": "System.String",
+            "$value": "issue 1"
+          },
+          "Qualor.ResolvedBy": {
+            "$type": "System.String",
+            "$value": "qualor"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/2/threads/3"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      }
+    ],
+    "count": 1
+  }
+}

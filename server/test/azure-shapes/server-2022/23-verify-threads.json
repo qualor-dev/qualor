@@ -1,0 +1,342 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 62,
+        "publishedDate": "2026-11-25T09:45:44.767Z",
+        "lastUpdatedDate": "2026-11-25T09:45:44.767Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "**Qualor probe item 23, thread A**: Apply change should replace lines 2-3.\n\n```suggestion\nbravo-charlie-1\nbravo-charlie-2\n```",
+            "publishedDate": "2026-11-25T09:45:44.767Z",
+            "lastUpdatedDate": "2026-11-25T09:45:44.767Z",
+            "lastContentUpdatedDate": "2026-11-25T09:45:44.767Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/62/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/62"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/13"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261125094311.txt",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 3,
+            "offset": 8
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "9555b4b27899497f8562fa6e00001371"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/62"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 63,
+        "publishedDate": "2026-11-25T09:45:44.887Z",
+        "lastUpdatedDate": "2026-11-25T09:45:44.887Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "**Qualor probe item 23, thread B**: Apply change should replace lines 4-5.\n\n```suggestion\ndelta-echo-1\ndelta-echo-2\ndelta-echo-3\n```",
+            "publishedDate": "2026-11-25T09:45:44.887Z",
+            "lastUpdatedDate": "2026-11-25T09:45:44.887Z",
+            "lastContentUpdatedDate": "2026-11-25T09:45:44.887Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/63/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/63"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/13"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261125094311.txt",
+          "rightFileStart": {
+            "line": 4,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 5,
+            "offset": 5
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "1a788a2eb66b46c18324fa6e00000b0e"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/63"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 1
+        },
+        "id": 64,
+        "publishedDate": "2026-11-25T09:45:44.993Z",
+        "lastUpdatedDate": "2026-11-25T09:45:44.993Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "8c1274a6-7d15-41b0-86b9-fa6e0000faab",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "**Qualor probe item 23, thread C**: Apply change should delete line 6.\n\n```suggestion\n```",
+            "publishedDate": "2026-11-25T09:45:44.993Z",
+            "lastUpdatedDate": "2026-11-25T09:45:44.993Z",
+            "lastContentUpdatedDate": "2026-11-25T09:45:44.993Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/64/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/64"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/13"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-23-20261125094311.txt",
+          "rightFileStart": {
+            "line": 6,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 6,
+            "offset": 8
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "6c720a7524704a4b82dafa6e0000a0ff"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/64"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 65,
+        "publishedDate": "2026-11-25T10:00:12.227Z",
+        "lastUpdatedDate": "2026-11-25T10:00:12.227Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Microsoft.TeamFoundation.System",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/000007f5-0000-8888-8000-000000000000",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+                }
+              },
+              "id": "000007f5-0000-8888-8000-000000000000",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+              "descriptor": "s2s.<secret>"
+            },
+            "content": "The reference refs/heads/probe/23-20261125094311 was updated.",
+            "publishedDate": "2026-11-25T10:00:12.227Z",
+            "lastUpdatedDate": "2026-11-25T10:00:12.227Z",
+            "lastContentUpdatedDate": "2026-11-25T10:00:12.227Z",
+            "commentType": "system",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/65/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/65"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/13"
+              }
+            }
+          }
+        ],
+        "threadContext": null,
+        "properties": {
+          "CodeReviewThreadType": {
+            "$type": "System.String",
+            "$value": "RefUpdate"
+          },
+          "CodeReviewRefName": {
+            "$type": "System.String",
+            "$value": "refs/heads/probe/23-20261125094311"
+          },
+          "CodeReviewRefNewCommits": {
+            "$type": "System.String",
+            "$value": "fc92fe403c969ca21013bed1b0550ce4696fbde8"
+          },
+          "CodeReviewRefNewCommitsCount": {
+            "$type": "System.Int32",
+            "$value": 1
+          },
+          "CodeReviewRefNewHeadCommit": {
+            "$type": "System.String",
+            "$value": "fc92fe403c969ca21013bed1b0550ce4696fbde8"
+          },
+          "CodeReviewRefUpdatedByIdentity": {
+            "$type": "System.String",
+            "$value": "1"
+          }
+        },
+        "identities": {
+          "1": {
+            "displayName": "Probe User",
+            "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/08602480-7f1b-429f-8e7c-fa6e00005fbc",
+            "_links": {
+              "avatar": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+              }
+            },
+            "id": "08602480-7f1b-429f-8e7c-fa6e00005fbc",
+            "uniqueName": "ado.example.invalid\\Probe User",
+            "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+            "descriptor": "win.<sid>"
+          }
+        },
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1/pullRequests/13/threads/65"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/348a8c27-4a58-4651-864c-fa6e0000109f/_apis/git/repositories/e56f18c2-8a72-4650-8cf0-fa6e000089a1"
+          }
+        }
+      }
+    ],
+    "count": 4
+  }
+}

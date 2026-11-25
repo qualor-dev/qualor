@@ -1,0 +1,13 @@
+{
+  "status": 500,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "The supplied URL scheme must be HTTPS when a basic authentication password is provided. <a href='https://aka.ms/ServiceHooksURLs' target='_blank'>Learn more</a>",
+    "typeName": "Microsoft.VisualStudio.Services.ServiceHooks.WebApi.ServiceHookException, Microsoft.VisualStudio.Services.ServiceHooks.WebApi",
+    "typeKey": "ServiceHookException",
+    "errorCode": 0,
+    "eventId": 4501
+  }
+}
