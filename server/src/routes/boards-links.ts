@@ -6,6 +6,7 @@ import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
 import { boardsLinkFor } from '../boards/access';
 import { enqueueBoardsCreate } from '../boards/jobs';
+import { boardsMappingOf } from '../boards/mapping';
 import {
   boardsLinkDto,
   boardsLinkDtoOf,
@@ -91,7 +92,9 @@ async function requireLinkable(
 /**
  * Design §7.8: requesting Azure Boards work items for findings, retrying a failed or missing link,
  * and dismissing one (`issue.triage`), as the Jira link routes. Each link made or re-armed costs
- * its user one issue change (ruling G7). A finding with a Jira link row, in any state, gets no work
+ * its user one issue change (ruling G7). A request, and a retry while the project is mapped,
+ * re-arm a link onto the mapping's connection and Azure DevOps project, so a project mapped again
+ * creates there. A finding with a Jira link row, in any state, gets no work
  * item (plan Ruling 9).
  */
 export const boardsLinkRoutes: FastifyPluginAsyncZod<{
@@ -272,7 +275,7 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
       schema: {
         tags: ['boards'],
         summary:
-          "Retry a failed or missing Azure Boards link whose finding may still have one (as for a request): it goes back to pending as a new create (its generation goes up, its old work item id, state and failure are cleared). Only the link's connection is checked, not the mapping: without one, the create step fails the link `not_mapped`",
+          "Retry a failed or missing Azure Boards link whose finding may still have one (as for a request): it goes back to pending as a new create (its generation goes up, its old work item id, state and failure are cleared). While the project is mapped, the link moves to the mapping's connection and Azure DevOps project, whose connection is checked as for a request, so a project mapped again retries there. Without a mapping it keeps its own connection, which is checked, and the create step fails the link `not_mapped`",
         params: idParams,
         response: { 202: boardsLinkSchema },
       },
@@ -285,29 +288,64 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
         request.params.id,
         'issue.triage',
       );
-      // As Jira's ruling P15: the connection, not the mapping.
-      const connection = await usableBoardsConnection(deps.db, project, link.connectionId);
+      // The mapping's connection and Azure DevOps project while the project is mapped (a request's
+      // check of its connection), the link's own otherwise: as Jira's ruling P15, no mapping
+      // refuses nothing here.
+      const mapping = await boardsMappingOf(deps.db, project.id);
+      const onto =
+        mapping === null
+          ? undefined
+          : { connectionId: mapping.connectionId, azureProjectId: mapping.azureProjectId };
+      const connection = await usableBoardsConnection(
+        deps.db,
+        project,
+        onto?.connectionId ?? link.connectionId,
+      );
       if (!(RETRYABLE_STATES as readonly string[]).includes(link.state)) notRetryable();
       await requireLinkable(deps.db, project.id, link);
       chargeChanges(principal.user.id, 1);
-      let row: BoardsLinkRow;
+      let outcome: { row: BoardsLinkRow; baseUrl: string };
       try {
-        row = await deps.db.transaction(async (tx) => {
-          const rearmed = await rearmBoardsLink(tx, link.id, RETRYABLE_STATES, principal.user.id);
+        outcome = await deps.db.transaction(async (tx) => {
+          // The request's lock order (project row, then connection row): a connection removed
+          // meanwhile stops here instead of failing the write.
+          await tx
+            .select({ id: projects.id })
+            .from(projects)
+            .where(eq(projects.id, project.id))
+            .for('key share');
+          const [current] = await tx
+            .select({ baseUrl: scmConnections.baseUrl })
+            .from(scmConnections)
+            .where(eq(scmConnections.id, connection.id))
+            .for('key share');
+          if (!current) {
+            throw conflict(
+              'BOARDS_NOT_CONNECTED',
+              'The Azure DevOps connection of the project is gone',
+            );
+          }
+          const rearmed = await rearmBoardsLink(
+            tx,
+            link.id,
+            RETRYABLE_STATES,
+            principal.user.id,
+            onto,
+          );
           if (!rearmed) notRetryable();
-          // A retry keeps the link's own connection: its create runs there.
+          // The create runs on the connection the row is on now.
           await enqueueBoardsCreate(tx, rearmed.connectionId);
           await recordProjectEvent(deps.audit, tx, request, project, 'boards_link.requested', {
             count: 1,
             kind: rearmed.kind,
           });
-          return rearmed;
+          return { row: rearmed, baseUrl: current.baseUrl };
         });
       } catch (err) {
         chargeChanges.refund(principal.user.id, 1);
         throw err;
       }
-      return reply.code(202).send(boardsLinkDto(row, connection.baseUrl));
+      return reply.code(202).send(boardsLinkDto(outcome.row, outcome.baseUrl));
     },
   );
 

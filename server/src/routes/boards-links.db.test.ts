@@ -80,7 +80,7 @@ function captureQueries(pool: Pool): string[] {
   return seen;
 }
 
-describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, plan Ruling 9)', () => {
+describe('Azure Boards links: request, retry, dismiss, embedded (design Â§7.8, plan Ruling 9)', () => {
   let h: IngestHarness;
   let jira: FakeJira;
   let untrust: () => void;
@@ -618,36 +618,73 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     );
   });
 
-  it('retries a failed or missing link with generation + 1; refuses another state and an invisible one', async () => {
+  it('retries a failed or missing link with generation + 1 onto the current mapping; refuses another state and an invisible one', async () => {
     const old = await azureConnection(db(), {
       organizationId: h.organizationId,
       baseUrl: 'https://dev.azure.com/boards-links-old',
       secretKey: h.ctx.config.secretKey,
     });
-    const failed = await seedBoardsLink({
+    const remapped = await seedBoardsLink({
       issueId: await code(main),
       connectionId: old.id,
       azureProjectId: OLD_PROJECT,
       state: 'failed',
-      failure: { code: 'permission_missing', message: 'x' },
+      failure: { code: 'not_found', message: 'x' },
       attemptedAt: NOW,
     });
-    // As Jira's ruling P15: the mapping is not checked; the create step fails the row `not_mapped`.
-    await unmapBoards();
-    const res = await retry(failed);
+    // The project was mapped again (the mapping: another connection and Azure DevOps project): the
+    // retry goes there, and only the mapping's connection is checked, as for a request.
+    await setProblem(old.id, 'token_refused');
+    const res = await retry(remapped);
     expect(res.statusCode, res.body).toBe(202);
-    expect(res.json()).toMatchObject({ id: failed, state: 'pending', failure: null, url: null });
-    // A retry keeps the link's own connection and Azure DevOps project.
-    expect(await row(failed)).toMatchObject({
+    expect(res.json()).toMatchObject({ id: remapped, state: 'pending', failure: null, url: null });
+    expect(await row(remapped)).toMatchObject({
       state: 'pending',
       generation: 2,
       attemptedAt: null,
-      connectionId: old.id,
-      azureProjectId: OLD_PROJECT,
+      connectionId,
+      azureProjectId: AZURE_PROJECT,
     });
     expect(await events('boards_link.requested')).toEqual([
       { details: { count: 1, kind: 'issue' }, targetType: 'project', targetId: projectId },
     ]);
+    // The mapping's connection with a credential problem refuses, whatever the link's has.
+    const unmovedLink = await seedBoardsLink({
+      issueId: await code(main),
+      connectionId: old.id,
+      azureProjectId: OLD_PROJECT,
+      state: 'failed',
+      failure: { code: 'not_found', message: 'x' },
+    });
+    await setProblem(old.id, null);
+    await setProblem(connectionId, 'sign_in_required');
+    const mappingBroken = await retry(unmovedLink);
+    expect([
+      mappingBroken.statusCode,
+      mappingBroken.json().code,
+      mappingBroken.json().problemCode,
+    ]).toEqual([409, 'BOARDS_CONNECTION_BROKEN', 'sign_in_required']);
+    expect(await row(unmovedLink)).toMatchObject({ state: 'failed', connectionId: old.id });
+    await setProblem(connectionId, null);
+
+    // As Jira's ruling P15, no mapping refuses nothing: the link keeps its own connection, which is
+    // checked, and Azure DevOps project, and the create step fails it `not_mapped`.
+    await unmapBoards();
+    await setProblem(old.id, 'token_refused');
+    const oldBroken = await retry(unmovedLink);
+    expect([oldBroken.statusCode, oldBroken.json().code]).toEqual([
+      409,
+      'BOARDS_CONNECTION_BROKEN',
+    ]);
+    await setProblem(old.id, null);
+    const kept = await retry(unmovedLink);
+    expect(kept.statusCode, kept.body).toBe(202);
+    expect(await row(unmovedLink)).toMatchObject({
+      state: 'pending',
+      generation: 2,
+      connectionId: old.id,
+      azureProjectId: OLD_PROJECT,
+    });
 
     const missing = await seedBoardsLink({
       issueId: await code(main),
@@ -672,7 +709,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     const refused = await retry(created);
     expect([refused.statusCode, refused.json().code]).toEqual([409, 'BOARDS_LINK_NOT_RETRYABLE']);
     // The pending row just re-armed is not retryable either.
-    expect((await retry(failed)).json().code).toBe('BOARDS_LINK_NOT_RETRYABLE');
+    expect((await retry(remapped)).json().code).toBe('BOARDS_LINK_NOT_RETRYABLE');
 
     await db().update(boardsLinks).set({ state: 'missing' }).where(eq(boardsLinks.id, created));
     await setProblem(connectionId, 'sign_in_required');
@@ -735,7 +772,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     ]);
   });
 
-  it("queues one create job on each link's own connection when a request or a retry made pending rows", async () => {
+  it('queues one create job on the connection of the rows a request or a retry made pending', async () => {
     const queuedCreates = (connection: string) =>
       db()
         .select()
@@ -762,20 +799,30 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     await items({ issueIds: [a, b] });
     expect(await queuedCreates(connectionId)).toEqual([]);
 
-    // A retry queues the create on the link's own connection, an earlier one here.
+    // A retry of a link made on an earlier connection queues the create on the mapping's
+    // connection, which the row moved to; without a mapping, on the link's own.
     const earlier = await azureConnection(db(), {
       organizationId: h.organizationId,
       baseUrl: 'https://dev.azure.com/boards-links-earlier',
       secretKey: h.ctx.config.secretKey,
     });
-    const linkId = await seedBoardsLink({
-      issueId: await code(main),
-      connectionId: earlier.id,
-      state: 'failed',
-      failure: { code: 'field_refused', message: 'x' },
-    });
-    const res = await retry(linkId);
+    const earlierLink = () =>
+      code(main).then((issueId) =>
+        seedBoardsLink({
+          issueId,
+          connectionId: earlier.id,
+          state: 'failed',
+          failure: { code: 'field_refused', message: 'x' },
+        }),
+      );
+    const res = await retry(await earlierLink());
     expect(res.statusCode, res.body).toBe(202);
+    expect(await queuedCreates(connectionId)).toHaveLength(1);
+    expect(await queuedCreates(earlier.id)).toEqual([]);
+    await db().delete(jobs).where(eq(jobs.queue, BOARDS_QUEUE));
+    await unmapBoards();
+    const unmapped = await retry(await earlierLink());
+    expect(unmapped.statusCode, unmapped.body).toBe(202);
     expect(await queuedCreates(earlier.id)).toHaveLength(1);
     expect(await queuedCreates(connectionId)).toEqual([]);
   });

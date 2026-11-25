@@ -20326,7 +20326,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Retry a failed or missing Azure Boards link whose finding may still have one (as for a request): it goes back to pending as a new create (its generation goes up, its old work item id, state and failure are cleared). Only the link's connection is checked, not the mapping: without one, the create step fails the link `not_mapped` */
+        /** Retry a failed or missing Azure Boards link whose finding may still have one (as for a request): it goes back to pending as a new create (its generation goes up, its old work item id, state and failure are cleared). While the project is mapped, the link moves to the mapping's connection and Azure DevOps project, whose connection is checked as for a request, so a project mapped again retries there. Without a mapping it keeps its own connection, which is checked, and the create step fails the link `not_mapped` */
         post: {
             parameters: {
                 query?: never;

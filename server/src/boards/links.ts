@@ -353,7 +353,8 @@ export async function insertPendingBoardsLinks(
  * old work item's reconciliation key no longer matches), and everything of the old work item and
  * its creation cleared (id, state, failure, `attempted_at`, so the create claims it;
  * `missed_passes`, `reported_fixed_at`). With `onto` the row moves to that connection and Azure
- * DevOps project (a request re-arms onto the mapping's current ones; a retry keeps the link's).
+ * DevOps project (a request, and a retry of a mapped project, re-arm onto the mapping's current
+ * ones; a retry without a mapping keeps the link's).
  * Null when the row is in another state, as when a concurrent request re-armed it first.
  */
 export async function rearmBoardsLink(
