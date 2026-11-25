@@ -1,4 +1,4 @@
-export const VERSION = '0.16.0';
+export const VERSION = '0.17.0';
 export * from './paths';
 export * from './hash';
 export * from './report/taxonomy';

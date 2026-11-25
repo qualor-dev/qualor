@@ -42,6 +42,6 @@ steps:
     displayName: Qualor fix
     inputs:
       command: fix
-      imageTag: '0.16'
+      imageTag: '0.17'
     env:
       QUALOR_TOKEN: $(QUALOR_TOKEN)

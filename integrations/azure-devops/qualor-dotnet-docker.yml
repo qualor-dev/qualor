@@ -27,7 +27,7 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  QUALOR_SCANNER_IMAGE: qualor/scanner-dotnet:0.16
+  QUALOR_SCANNER_IMAGE: qualor/scanner-dotnet:0.17
 
 steps:
   - checkout: self

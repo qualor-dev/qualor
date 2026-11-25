@@ -9,7 +9,7 @@
   "author": "Qualor",
   "version": {
     "Major": 0,
-    "Minor": 16,
+    "Minor": 17,
     "Patch": 0
   },
   "minimumAgentVersion": "3.218.0",
@@ -48,7 +48,7 @@
       "name": "imageTag",
       "type": "string",
       "label": "Scanner image tag",
-      "defaultValue": "0.16.0",
+      "defaultValue": "0.17.0",
       "required": false,
       "helpMarkDown": "The tag of `qualor/scanner` (or `qualor/scanner-dotnet`) to run. The default is the extension's version."
     },

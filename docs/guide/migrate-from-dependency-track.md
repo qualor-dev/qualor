@@ -53,7 +53,7 @@ After, with Qualor:
 ```sh
 docker run --rm -v "$PWD":/work -w /work \
   -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY=acme/shop \
-  qualor/scanner:0.16 upload-sbom sbom.json --version "$TAG"
+  qualor/scanner:0.17 upload-sbom sbom.json --version "$TAG"
 ```
 
 [An image SBOM in CI](./sbom-upload.md#an-image-sbom-in-ci) shows the whole step, with Trivy or

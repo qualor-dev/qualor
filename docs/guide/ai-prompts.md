@@ -174,7 +174,7 @@ Steps:
    and disk space. Report what is missing.
 2. Create /opt/qualor/compose.yml exactly as install-server.md
    shows, and check that the host can pull qualor/server:<tag> from
-   Docker Hub (tag: <0.16 | a full version such as 0.16.0>).
+   Docker Hub (tag: <0.17 | a full version such as 0.17.0>).
 3. Create /opt/qualor/.env with mode 600: QUALOR_VERSION, a value
    from `openssl rand -hex 32` for each secret, QUALOR_PUBLIC_URL,
    QUALOR_TRUST_PROXY=1 and, if needed, QUALOR_SCM_INTERNAL_HOSTS,
@@ -208,7 +208,7 @@ https://qualor.dev/docs/configuration.md.
 
 Inputs:
 - Qualor server: <https://qualor.example.com>
-- Qualor release: <0.16 | a full version such as 0.16.0>
+- Qualor release: <0.17 | a full version such as 0.17.0>
 - scanner image: <qualor/scanner (qualor/scanner-dotnet for C#) |
   our copy at mirror.acme.internal/qualor/scanner>
 - GitLab: <GitLab.com: use gitlab.com/qualor/qualor/qualor |
@@ -265,7 +265,7 @@ https://qualor.dev/docs/configuration.md.
 
 Inputs:
 - Qualor server: <https://qualor.example.com>
-- scanner image: <qualor/scanner:0.16 (qualor/scanner-dotnet:0.16 for
+- scanner image: <qualor/scanner:0.17 (qualor/scanner-dotnet:0.17 for
   C#) | a full version | our copy in a private registry>
 
 Do this:
@@ -311,7 +311,7 @@ Inputs:
 - Qualor server: <https://qualor.example.com>
 - Azure DevOps: <Services: https://dev.azure.com/acme |
   Server: https://ado.example.com/DefaultCollection>
-- scanner image: <qualor/scanner:0.16 (qualor/scanner-dotnet:0.16 for
+- scanner image: <qualor/scanner:0.17 (qualor/scanner-dotnet:0.17 for
   C#) | a full version | our copy in a private registry>
 - extension: <the Qualor extension is installed: use the Qualor@0
   task | it is not: use the docker run file>

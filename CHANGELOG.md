@@ -6,6 +6,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-25
+
 ### Added
 
 - Azure DevOps, on Azure DevOps Services and on Azure DevOps Server 2022 or later. An organisation

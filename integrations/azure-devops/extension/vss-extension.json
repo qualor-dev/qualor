@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "qualor",
   "publisher": "qualor",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "name": "Qualor",
   "description": "Scan every pull request and branch with Qualor, the self-hosted code quality and security server.",
   "categories": ["Azure Pipelines"],

@@ -36,7 +36,7 @@ steps:
   - task: Qualor@0
     displayName: Qualor scan
     inputs:
-      imageTag: '0.16'
+      imageTag: '0.17'
       dotnet: true
       dotnetBuild: dotnet build --no-incremental
     env:

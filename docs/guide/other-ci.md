@@ -32,7 +32,7 @@ qualor scan --project-key acme/payments-api \
 
 ```groovy
 pipeline {
-  agent { docker { image 'qualor/scanner:0.16'; args '--entrypoint=' } }
+  agent { docker { image 'qualor/scanner:0.17'; args '--entrypoint=' } }
   environment {
     QUALOR_URL   = 'https://qualor.example.com'
     QUALOR_TOKEN = credentials('qualor-token')           // a "Secret text" credential
@@ -60,7 +60,7 @@ pipeline {
 Set `QUALOR_URL` and `QUALOR_TOKEN` as secured repository variables.
 
 ```yaml
-image: qualor/scanner:0.16
+image: qualor/scanner:0.17
 clone:
   depth: full
 pipelines:
@@ -115,7 +115,7 @@ dependencies ([Fix merge requests](./fix-merge-requests.md)). Azure Pipelines ha
 - It runs on a daily schedule, so a request is served within a day.
 
 ```sh
-id=$(docker create qualor/scanner:0.16)
+id=$(docker create qualor/scanner:0.17)
 docker cp "$id:/usr/local/bin/qualor" ./qualor-bin
 docker rm "$id"
 ./qualor-bin fix --project-key acme/payments-api      # QUALOR_URL and QUALOR_TOKEN in the environment
@@ -130,7 +130,7 @@ credentials.
 ```sh
 docker run --rm -v "$PWD":/src -w /src \
   -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY \
-  qualor/scanner:0.16 scan
+  qualor/scanner:0.17 scan
 ```
 
 Started through the image's entrypoint, the scanner keeps `QUALOR_TOKEN` out of the environment of
@@ -140,7 +140,7 @@ Without a server, `--dry-run --output report.json.gz` writes the report to a fil
 nothing:
 
 ```sh
-docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.16 scan --dry-run --output report.json.gz --project-key local/test
+docker run --rm -v "$PWD":/src -w /src qualor/scanner:0.17 scan --dry-run --output report.json.gz --project-key local/test
 ```
 
 When a scan behaves unexpectedly, run `qualor validate` first. It prints the resolved

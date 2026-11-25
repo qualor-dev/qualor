@@ -103,7 +103,7 @@ docker run --rm anchore/syft:v1.57.1 "$IMAGE" -o cyclonedx-json > sbom.cdx.json
 # upload
 docker run --rm -v "$PWD":/work -w /work \
   -e QUALOR_URL -e QUALOR_TOKEN -e QUALOR_PROJECT_KEY=acme/shop-image \
-  qualor/scanner:0.16 upload-sbom sbom.cdx.json --version "$IMAGE_TAG"
+  qualor/scanner:0.17 upload-sbom sbom.cdx.json --version "$IMAGE_TAG"
 ```
 
 - `QUALOR_TOKEN` is the analysis token of the `shop-image` project.

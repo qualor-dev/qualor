@@ -119,9 +119,9 @@ Add three inputs to the [component](./gitlab.md#with-the-cicd-component-recommen
 
 ```yaml
 include:
-  - component: gitlab.com/qualor/qualor/qualor@0.16
+  - component: gitlab.com/qualor/qualor/qualor@0.17
     inputs:
-      image-tag: '0.16'
+      image-tag: '0.17'
       fix: true
       fix-image: node:22-bookworm   # your build image: your package manager, glibc
 ```
@@ -165,7 +165,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - uses: qualor-dev/scan-action/fix@v0.16
+      - uses: qualor-dev/scan-action/fix@v0.17
         with:
           server-url: ${{ vars.QUALOR_URL }}
           token: ${{ secrets.QUALOR_TOKEN }}
@@ -198,7 +198,7 @@ Run `qualor fix` in a job of the main branch, in an image with your package mana
 from the scanner image:
 
 ```sh
-id=$(docker create qualor/scanner:0.16)
+id=$(docker create qualor/scanner:0.17)
 docker cp "$id:/usr/local/bin/qualor" ./qualor-bin
 docker rm "$id"
 QUALOR_URL=https://qualor.example.com QUALOR_TOKEN=… \
