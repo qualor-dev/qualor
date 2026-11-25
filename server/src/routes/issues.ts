@@ -40,6 +40,8 @@ import {
   withProvenance,
 } from '../llm/provenance';
 import { transitionIssues, USER_STATUSES } from '../issues/transitions';
+import { boardsLinkSchema, boardsLinksForIssues, liveLink, type BoardsLink } from '../boards/links';
+import { boardsMappingOf } from '../boards/mapping';
 import {
   isPairIssue,
   issueLinkable,
@@ -105,9 +107,20 @@ export const issueSchema = z.object({
   jira: jiraLinkSchema.nullable(),
   /**
    * R6: whether a Jira issue may be requested for it: a code issue of the main branch, or a Trivy
-   * issue of main or a tracked branch, that is not closed.
+   * issue of main or a tracked branch, that is not closed, and that has no Azure Boards link in
+   * any state (Azure DevOps plan Ruling 9: one tracker per finding).
    */
   jiraLinkable: z.boolean(),
+  /**
+   * Azure DevOps design §7.8: the finding's Azure Boards link while one exists that is not
+   * dismissed, looked up as `jira`; null otherwise.
+   */
+  boards: boardsLinkSchema.nullable(),
+  /**
+   * Whether a work item may be requested for it: as R6, while the project has an Azure Boards
+   * mapping and the finding has no Jira link in any state (Ruling 9).
+   */
+  boardsLinkable: z.boolean(),
   /**
    * 0.16 fix MRs R12: a Trivy issue of main shows the fix of its package while main has a row of
    * its vulnerability; null otherwise (a code issue, another branch, a merge request).
@@ -127,11 +140,21 @@ export const issueSchema = z.object({
 });
 export type IssueDto = z.infer<typeof issueSchema>;
 
-/** An issue's Jira link and whether one may be requested (R6). */
-export interface IssueJira {
-  link: JiraLink | null;
-  linkable: boolean;
+/** An issue's tracker links and whether each may be requested (R6, Azure DevOps plan Ruling 9). */
+export interface IssueTrackers {
+  jira: JiraLink | null;
+  jiraLinkable: boolean;
+  boards: BoardsLink | null;
+  boardsLinkable: boolean;
 }
+
+/** Off the lists' pages: no link, none to request. */
+const NO_TRACKERS: IssueTrackers = Object.freeze({
+  jira: null,
+  jiraLinkable: false,
+  boards: null,
+  boardsLinkable: false,
+});
 
 /**
  * What an AI review kept beside the issue it raised: the finding's own text, what it takes
@@ -304,7 +327,7 @@ const NO_FIX: FixFacet = Object.freeze({
   ecosystem: null,
 });
 
-export function issueDto(row: IssueListRow, jira: IssueJira, fix: FixFacet): IssueDto {
+export function issueDto(row: IssueListRow, trackers: IssueTrackers, fix: FixFacet): IssueDto {
   return {
     id: row.id,
     projectId: row.projectId,
@@ -329,8 +352,10 @@ export function issueDto(row: IssueListRow, jira: IssueJira, fix: FixFacet): Iss
     closedAt: isoOrNull(row.closedAt),
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
-    jira: jira.link,
-    jiraLinkable: jira.linkable,
+    jira: trackers.jira,
+    jiraLinkable: trackers.jiraLinkable,
+    boards: trackers.boards,
+    boardsLinkable: trackers.boardsLinkable,
     fix: fix.fix,
     fixable: fix.fixable,
     fixEcosystem: fix.ecosystem,
@@ -347,29 +372,34 @@ export const issueRoutes: FastifyPluginAsyncZod<{
   const chargeChanges = chargeIssueChanges ?? issueChangeCharge();
 
   /**
-   * The Jira links of issues of one branch, in one batched lookup (spec §6.8), and R6. A Trivy
-   * issue is looked up by its pair only on main or a tracked branch, so a merge request's embeds
-   * nothing.
+   * The Jira and Azure Boards links of issues of one branch, in one batched lookup per tracker
+   * (spec §6.8), and R6. A Trivy issue is looked up by its pair only on main or a tracked branch,
+   * so a merge request's embeds nothing. Dismissed rows are read too: a row of either tracker, in
+   * any state, keeps the other one's create away (Azure DevOps plan Ruling 9).
    */
-  const jiraOf = async (
+  const trackersOf = async (
     projectId: string,
     branch: Branch,
     settings: VulnerabilitySettings,
     rows: readonly IssueListRow[],
-  ): Promise<(row: IssueListRow) => IssueJira> => {
+  ): Promise<(row: IssueListRow) => IssueTrackers> => {
     const tracked = isTrackedBranch(settings, branch);
-    const links = await linksForIssues(
-      deps.db,
-      projectId,
-      rows.flatMap((row): IssueLinkLookup[] => {
-        if (!isPairIssue(row)) return [{ id: row.id, packageName: null, vulnerabilityId: null }];
-        if (!tracked) return [];
-        return [{ id: row.id, packageName: row.packageName, vulnerabilityId: row.engineRuleId }];
-      }),
+    const lookups = rows.flatMap((row): IssueLinkLookup[] => {
+      if (!isPairIssue(row)) return [{ id: row.id, packageName: null, vulnerabilityId: null }];
+      if (!tracked) return [];
+      return [{ id: row.id, packageName: row.packageName, vulnerabilityId: row.engineRuleId }];
+    });
+    const jira = await linksForIssues(deps.db, projectId, lookups, { dismissed: true });
+    const boards = await boardsLinksForIssues(deps.db, projectId, lookups, { dismissed: true });
+    const linkable = new Set(
+      rows.filter((row) => issueLinkable(row, branch, settings)).map((row) => row.id),
     );
+    const mapped = linkable.size > 0 && (await boardsMappingOf(deps.db, projectId)) !== null;
     return (row) => ({
-      link: links.get(row.id) ?? null,
-      linkable: issueLinkable(row, branch, settings),
+      jira: liveLink(jira.get(row.id)),
+      jiraLinkable: linkable.has(row.id) && !boards.has(row.id),
+      boards: liveLink(boards.get(row.id)),
+      boardsLinkable: mapped && linkable.has(row.id) && !jira.has(row.id),
     });
   };
 
@@ -466,10 +496,10 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       engineId: rule.engineId,
       engineRuleId: rule.engineRuleId,
     };
-    const jira = await jiraOf(issue.projectId, branch, settings, [row]);
+    const trackers = await trackersOf(issue.projectId, branch, settings, [row]);
     const fix = await fixOf(issue.projectId, branch, [row]);
     return {
-      ...issueDto(row, jira(row), fix(row)),
+      ...issueDto(row, trackers(row), fix(row)),
       rule: {
         key: rule.key,
         name: rule.name,
@@ -536,10 +566,10 @@ export const issueRoutes: FastifyPluginAsyncZod<{
         facets.length > 0 ? issueFacets(deps.db, filters, facets) : undefined,
       ]);
       // After the page, so the request still holds at most three pool connections (api.md §4).
-      const jira =
+      const trackers =
         page.items.length === 0
-          ? () => ({ link: null, linkable: false })
-          : await jiraOf(
+          ? () => NO_TRACKERS
+          : await trackersOf(
               branch.projectId,
               branch,
               await vulnerabilitySettings(deps.db, branch.projectId),
@@ -547,7 +577,7 @@ export const issueRoutes: FastifyPluginAsyncZod<{
             );
       const fix = await fixOf(branch.projectId, branch, page.items);
       return {
-        items: page.items.map((row) => issueDto(row, jira(row), fix(row))),
+        items: page.items.map((row) => issueDto(row, trackers(row), fix(row))),
         nextCursor: page.nextCursor,
         ...(counts === undefined ? {} : { facets: counts }),
       };

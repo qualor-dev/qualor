@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { recordProjectEvent } from '../audit/refs';
 import { accessOf, requireUser } from '../auth/access';
+import { boardsLinkRowsOf } from '../boards/links';
 import { uuidList } from '../db/bulk';
 import type { Executor } from '../db/client';
 import { branches, issues, jiraConnections, jiraLinks, projects, rules } from '../db/schema';
@@ -44,9 +45,10 @@ const pairSchema = z.strictObject({
   packageName: noNul(z.string().min(1).max(512)),
   vulnerabilityId: noNul(z.string().min(1).max(128)),
 });
-type Pair = z.infer<typeof pairSchema>;
+export type Pair = z.infer<typeof pairSchema>;
 
-const linkBody = z.strictObject({
+/** A link request's body, Jira's and Azure Boards' alike. */
+export const linkBody = z.strictObject({
   issueIds: z.array(z.uuid()).min(1).max(MAX_LINK_ISSUE_IDS).optional().meta({
     description:
       'Issues: a code issue of the main branch, or a Trivy issue of main or a tracked branch (its vulnerability is linked)',
@@ -73,9 +75,12 @@ const linkItem = z.union([
 const CONNECTION_PROBLEMS =
   'JIRA_NOT_CONNECTED: the organisation has no Jira connection; JIRA_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix';
 
-/** One item of a request, as it names it, and the finding it asks for, or why there is none. */
-type Resolved = { item: { issueId: string } | Pair } & (
-  { target: LinkTarget } | { skipped: Exclude<LinkSkip, 'ALREADY_LINKED'> }
+/**
+ * One item of a request, as it names it, and the finding it asks for, or why there is none
+ * (ALREADY_LINKED here: the finding has a link of the other tracker).
+ */
+export type Resolved = { item: { issueId: string } | Pair } & (
+  { target: LinkTarget } | { skipped: LinkSkip }
 );
 
 /**
@@ -83,7 +88,7 @@ type Resolved = { item: { issueId: string } | Pair } & (
  * NOT_FOUND; an issue R6 does not let be linked is NOT_ELIGIBLE (another branch, a merge request,
  * an untracked branch for a Trivy issue, a closed issue).
  */
-async function issueTargets(
+export async function issueTargets(
   db: Executor,
   projectId: string,
   issueIds: readonly string[],
@@ -129,7 +134,7 @@ async function issueTargets(
  * judges presence ({@link pairPresence}) is linkable; one the project holds only elsewhere (an
  * untracked target, a merge request, closed Trivy issues) is NOT_ELIGIBLE; any other is NOT_FOUND.
  */
-async function pairTargets(
+export async function pairTargets(
   db: Executor,
   projectId: string,
   pairs: readonly Pair[],
@@ -140,6 +145,24 @@ async function pairTargets(
     if (presence.linkable.has(key)) return { item: p, target: { kind: 'vulnerability', ...p } };
     return { item: p, skipped: presence.known.has(key) ? 'NOT_ELIGIBLE' : 'NOT_FOUND' };
   });
+}
+
+/**
+ * Azure DevOps plan Ruling 9: one tracker per finding. Each finding `linkedElsewhere` returns a row
+ * of (the other tracker's link rows of the targets, in any state, by `targetKey`) is
+ * ALREADY_LINKED with no link of this tracker.
+ */
+export async function withoutOtherTracker(
+  resolved: readonly Resolved[],
+  linkedElsewhere: (targets: LinkTarget[]) => Promise<ReadonlyMap<string, unknown>>,
+): Promise<Resolved[]> {
+  const targets = resolved.flatMap((r) => ('target' in r ? [r.target] : []));
+  const other = targets.length === 0 ? new Map<string, unknown>() : await linkedElsewhere(targets);
+  return resolved.map((r) =>
+    'target' in r && other.has(targetKey(r.target))
+      ? { item: r.item, skipped: 'ALREADY_LINKED' }
+      : r,
+  );
 }
 
 /** R9: 409 for a row Retry does not take back to pending. */
@@ -218,10 +241,13 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
         ]);
       }
       const { connection } = await linkPreconditions(deps.db, project);
-      const resolved =
+      // Azure DevOps plan Ruling 9: a finding with an Azure Boards link row stays in Boards.
+      const resolved = await withoutOtherTracker(
         issueIds !== undefined
           ? await issueTargets(deps.db, project.id, issueIds)
-          : await pairTargets(deps.db, project.id, vulnerabilities ?? []);
+          : await pairTargets(deps.db, project.id, vulnerabilities ?? []),
+        (targets) => boardsLinkRowsOf(deps.db, project.id, targets),
+      );
 
       // One link per finding (R21): the first item of a finding claims it, the later ones answer
       // with its link.

@@ -6582,6 +6582,30 @@ export interface paths {
                                     createdAt: string;
                                 } | null;
                                 jiraLinkable: boolean;
+                                boards: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    workItemId: number | null;
+                                    url: string | null;
+                                    workItemState: {
+                                        name: string;
+                                        category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                    } | null;
+                                    stateCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                boardsLinkable: boolean;
                                 fix: {
                                     /** Format: uuid */
                                     id: string;
@@ -7885,6 +7909,30 @@ export interface paths {
                                     createdAt: string;
                                 } | null;
                                 jiraLinkable: boolean;
+                                boards: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    workItemId: number | null;
+                                    url: string | null;
+                                    workItemState: {
+                                        name: string;
+                                        category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                    } | null;
+                                    stateCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                boardsLinkable: boolean;
                                 fix: {
                                     /** Format: uuid */
                                     id: string;
@@ -8059,6 +8107,30 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            boards: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                workItemId: number | null;
+                                url: string | null;
+                                workItemState: {
+                                    name: string;
+                                    category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                } | null;
+                                stateCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            boardsLinkable: boolean;
                             fix: {
                                 /** Format: uuid */
                                 id: string;
@@ -8272,6 +8344,30 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            boards: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                workItemId: number | null;
+                                url: string | null;
+                                workItemState: {
+                                    name: string;
+                                    category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                } | null;
+                                stateCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            boardsLinkable: boolean;
                             fix: {
                                 /** Format: uuid */
                                 id: string;
@@ -8523,6 +8619,30 @@ export interface paths {
                                 createdAt: string;
                             } | null;
                             jiraLinkable: boolean;
+                            boards: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                /** @enum {string} */
+                                origin: "manual" | "auto";
+                                workItemId: number | null;
+                                url: string | null;
+                                workItemState: {
+                                    name: string;
+                                    category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                } | null;
+                                stateCheckedAt: string | null;
+                                failure: {
+                                    /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                    code: string;
+                                    message: string;
+                                } | null;
+                                reportedFixedAt: string | null;
+                                /** Format: date-time */
+                                createdAt: string;
+                            } | null;
+                            boardsLinkable: boolean;
                             fix: {
                                 /** Format: uuid */
                                 id: string;
@@ -20037,6 +20157,361 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v0/projects/{id}/boards/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Azure Boards work items for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link on the mapping's connection. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link (with no link when the finding has a Jira link, in any state) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Issues: a code issue of the main branch, or a Trivy issue of main or a tracked branch (its vulnerability is linked) */
+                        issueIds?: string[];
+                        /** @description Vulnerabilities of the project, as the Vulnerabilities tab lists them */
+                        vulnerabilities?: {
+                            packageName: string;
+                            vulnerabilityId: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: ({
+                                /** Format: uuid */
+                                issueId: string;
+                                link: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    workItemId: number | null;
+                                    url: string | null;
+                                    workItemState: {
+                                        name: string;
+                                        category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                    } | null;
+                                    stateCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                skipped: ("NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_LINKED") | null;
+                            } | {
+                                packageName: string;
+                                vulnerabilityId: string;
+                                link: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                                    /** @enum {string} */
+                                    origin: "manual" | "auto";
+                                    workItemId: number | null;
+                                    url: string | null;
+                                    workItemState: {
+                                        name: string;
+                                        category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                                    } | null;
+                                    stateCheckedAt: string | null;
+                                    failure: {
+                                        /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                        code: string;
+                                        message: string;
+                                    } | null;
+                                    reportedFixedAt: string | null;
+                                    /** Format: date-time */
+                                    createdAt: string;
+                                } | null;
+                                skipped: ("NOT_FOUND" | "NOT_ELIGIBLE" | "ALREADY_LINKED") | null;
+                            })[];
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the organisation has no Azure DevOps connection, or the project's is gone; BOARDS_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; BOARDS_PROJECT_NOT_MAPPED: the project has no Azure Boards mapping; AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED), also without exactly one of `issueIds` and `vulnerabilities` */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too many issue changes by this user, one per link made or re-armed (RATE_LIMITED); see Retry-After */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/boards-links/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a failed or missing Azure Boards link whose finding may still have one (as for a request): it goes back to pending as a new create (its generation goes up, its old work item id, state and failure are cleared). Only the link's connection is checked, not the mapping: without one, the create step fails the link `not_mapped` */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            state: "pending" | "created" | "failed" | "missing" | "dismissed";
+                            /** @enum {string} */
+                            origin: "manual" | "auto";
+                            workItemId: number | null;
+                            url: string | null;
+                            workItemState: {
+                                name: string;
+                                category: ("proposed" | "inprogress" | "resolved" | "completed" | "removed") | null;
+                            } | null;
+                            stateCheckedAt: string | null;
+                            failure: {
+                                /** @description field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported */
+                                code: string;
+                                message: string;
+                            } | null;
+                            reportedFixedAt: string | null;
+                            /** Format: date-time */
+                            createdAt: string;
+                        };
+                    };
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description BOARDS_NOT_CONNECTED: the organisation has no Azure DevOps connection, or the project's is gone; BOARDS_CONNECTION_BROKEN: the connection has a credential problem (its code in `problemCode`), which an organisation admin must fix; BOARDS_LINK_NOT_RETRYABLE: the link is neither failed nor missing, or its finding is closed or no longer linkable (a code issue off the main branch, a vulnerability no tracked target or Trivy issue holds); AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Too many issue changes by this user (RATE_LIMITED); see Retry-After */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v0/boards-links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Dismiss: the link becomes dismissed and reads as no link; its work item id is kept, the work item stays, and the automatic rule never brings it back. Requesting a work item for the finding again re-arms it. Dismissing a dismissed link changes nothing */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not authenticated (UNAUTHENTICATED, INVALID_CREDENTIALS) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Authenticated but not allowed (FORBIDDEN, INSUFFICIENT_SCOPE, TOKEN_NOT_ALLOWED, SESSION_REQUIRED, CSRF_FAILED, PASSWORD_CHANGE_REQUIRED) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Not found, or not visible to the caller */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description AUDIT_CHAIN_ANCHOR_MALFORMED: the audit-chain instance setting is malformed while no audit event is stored; an administrator must restore it (a retry does not help) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                /** @description Validation failed (VALIDATION_FAILED; errors[] names each field) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v0/organizations/{id}/setup-checklist": {
         parameters: {
             query?: never;
@@ -20226,7 +20701,7 @@ export interface components {
             };
             /** @description JIRA_ISSUE_TYPE_UNSUPPORTED: the names, as Jira shows them, of the required fields of the issue type that Qualor cannot fill. BOARDS_WORK_ITEM_TYPE_UNSUPPORTED: the reference names of the always-required fields without a default of the work item type that Qualor cannot fill (System.Description when the type has neither Description nor Repro Steps), empty when the Azure DevOps project offers no such type */
             missingFields?: string[];
-            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
+            /** @description JIRA_CONNECTION_BROKEN: the code of the Jira connection's credential problem (token_refused, captcha, redirected, not_public, url_not_allowed, undecryptable); an organisation admin must fix the connection. BOARDS_CONNECTION_BROKEN: the code of the Azure DevOps connection's stored credential problem (token_refused, sign_in_required, html_answer, token_endpoint, permission_missing, undecryptable, url_not_allowed); an organisation admin must fix the connection. BOARDS_UNAVAILABLE: the connection Test's problem code of the failed Azure DevOps call (token_refused, permission_missing, sign_in_required, not_found, timeout ...) */
             problemCode?: string;
             errors?: {
                 /** @description <body|query|params|headers>.<dotted path> */

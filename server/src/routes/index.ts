@@ -6,6 +6,7 @@ import { aiRoutes } from './ai';
 import { analysisRoutes } from './analyses';
 import { accountRoutes } from './account';
 import { autoFixRoutes } from './auto-fix';
+import { boardsLinkRoutes } from './boards-links';
 import { boardsProjectRoutes } from './boards-projects';
 import { authRoutes } from './auth';
 import { branchRoutes } from './branches';
@@ -110,6 +111,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(jiraProjectRoutes, { prefix: '/api/v0', deps });
   await app.register(jiraLinkRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });
   await app.register(boardsProjectRoutes, { prefix: '/api/v0', deps });
+  await app.register(boardsLinkRoutes, { prefix: '/api/v0', deps, chargeIssueChanges });
   await app.register(setupChecklistRoutes, { prefix: '/api/v0', deps });
   // Their own plugins: each one's raw-body JSON parser stays in its encapsulation context
   // (github.md §9).

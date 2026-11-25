@@ -72,6 +72,8 @@ function detail(overrides: Partial<IssueDetail> = {}): IssueDetail {
     updatedAt: '2026-09-15T09:00:00.000Z',
     jira: null,
     jiraLinkable: false,
+    boards: null,
+    boardsLinkable: false,
     fix: null,
     fixable: false,
     fixEcosystem: null,

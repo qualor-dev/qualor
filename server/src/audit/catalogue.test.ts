@@ -277,6 +277,37 @@ describe('compliance report events (4E-1 §2.4)', () => {
   });
 });
 
+describe('Azure Boards link events (Azure DevOps design §7.8)', () => {
+  it('records a request as Jira does and a dismissal with its work item id or null', () => {
+    const requested = AUDIT_CATALOGUE['boards_link.requested'];
+    expect(requested.target).toBe('project');
+    for (const [details, ok] of [
+      [{ count: 1, kind: 'issue' }, true],
+      [{ count: 500, kind: 'vulnerability' }, true],
+      [{ count: 0, kind: 'issue' }, false],
+      [{ count: 501, kind: 'issue' }, false],
+      [{ count: 1.5, kind: 'issue' }, false],
+      [{ count: 1, kind: 'epic' }, false],
+    ] as const) {
+      expect(requested.details.safeParse(details).success, JSON.stringify(details)).toBe(ok);
+    }
+    const dismissed = AUDIT_CATALOGUE['boards_link.dismissed'];
+    expect(dismissed.target).toBe('project');
+    for (const [workItemId, ok] of [
+      [42, true],
+      [null, true],
+      [2_147_483_647, true],
+      [0, false],
+      [2_147_483_648, false],
+      [4.2, false],
+      ['42', false],
+    ] as const) {
+      expect(dismissed.details.safeParse({ workItemId }).success, String(workItemId)).toBe(ok);
+    }
+    expect(dismissed.details.safeParse({}).success).toBe(false);
+  });
+});
+
 describe('the support bundle event (4E-3b §4)', () => {
   it('names no target and records the source and the size', () => {
     const d = AUDIT_CATALOGUE['support.bundle_downloaded'];

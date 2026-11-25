@@ -4,6 +4,8 @@ import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { actorOf } from '../audit/recorder';
 import { accessOf, requireUser } from '../auth/access';
+import { boardsLinkSchema, boardsLinksForPairs, liveLink } from '../boards/links';
+import { boardsMappingOf } from '../boards/mapping';
 import type { Executor } from '../db/client';
 import { branches, projectVersions } from '../db/schema';
 import { fixFacets } from '../fixes/eligibility';
@@ -162,9 +164,17 @@ const itemSchema = z.object({
   jira: jiraLinkSchema.nullable(),
   /**
    * Ruling T6d: whether a Jira issue may be requested for the pair: it has a row on a tracked
-   * target, or a non-closed Trivy issue of main or a tracked branch (not only an untracked target).
+   * target, or a non-closed Trivy issue of main or a tracked branch (not only an untracked target),
+   * and no Azure Boards link in any state (Azure DevOps plan Ruling 9: one tracker per finding).
    */
   jiraLinkable: z.boolean(),
+  /** Azure DevOps design §7.8: the pair's Azure Boards link while one exists that is not dismissed. */
+  boards: boardsLinkSchema.nullable(),
+  /**
+   * Whether a work item may be requested for the pair: as T6d, while the project has an Azure
+   * Boards mapping and the pair has no Jira link in any state (Ruling 9).
+   */
+  boardsLinkable: z.boolean(),
   /**
    * 0.16 fix MRs R12: the fix of the pair's package while main has a row of the pair; null
    * otherwise (also on a pair only another target has).
@@ -335,18 +345,27 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         },
         { priority },
       );
-      // One batched lookup each for the page, never a query per item.
-      const links = await linksForPairs(deps.db, project.id, page.items);
+      // One batched lookup each for the page, never a query per item. Dismissed links are read
+      // too: a row of either tracker, in any state, keeps the other one's create away (Ruling 9).
+      const links = await linksForPairs(deps.db, project.id, page.items, { dismissed: true });
+      const boards = await boardsLinksForPairs(deps.db, project.id, page.items, {
+        dismissed: true,
+      });
       const presence = await pairPresence(deps.db, project.id, page.items);
+      const mapped =
+        presence.linkable.size > 0 && (await boardsMappingOf(deps.db, project.id)) !== null;
       const fixes = await fixFacets(deps.db, project.id, page.items);
       return {
         ...page,
         items: page.items.map((item) => {
           const key = pairKey(item.packageName, item.vulnerabilityId);
+          const linkable = presence.linkable.has(key);
           return {
             ...item,
-            jira: links.get(key) ?? null,
-            jiraLinkable: presence.linkable.has(key),
+            jira: liveLink(links.get(key)),
+            jiraLinkable: linkable && !boards.has(key),
+            boards: liveLink(boards.get(key)),
+            boardsLinkable: mapped && linkable && !links.has(key),
             fix: fixes.get(key)?.fix ?? null,
             fixable: fixes.get(key)?.fixable ?? false,
           };

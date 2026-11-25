@@ -721,6 +721,21 @@ export const AUDIT_CATALOGUE = {
       key: z.string().max(255).regex(JIRA_ISSUE_KEY_PATTERN).nullable(),
     }),
   },
+  // Azure DevOps design §7.8: Jira's link events for Azure Boards; `workItemId` the dismissed
+  // link's work item (1..2^31-1, as Azure DevOps numbers them), null when it had none.
+  'boards_link.requested': {
+    target: 'project',
+    details: z.strictObject({
+      count: z.number().int().min(1).max(500),
+      kind: z.enum(['issue', 'vulnerability']),
+    }),
+  },
+  'boards_link.dismissed': {
+    target: 'project',
+    details: z.strictObject({
+      workItemId: z.number().int().min(1).max(2_147_483_647).nullable(),
+    }),
+  },
   // 0.16 fix MRs §6.8: the fix's family and package (a public package name, never a secret).
   'dependency_fix.requested': { target: 'project', details: fixRef },
   'dependency_fix.retried': { target: 'project', details: fixRef },

@@ -142,8 +142,10 @@ export function targetKey(target: LinkTarget): string {
     : pairKey(target.packageName, target.vulnerabilityId);
 }
 
-/** The target a stored row is about. */
-export function rowTarget(row: JiraLinkRow): LinkTarget {
+/** The target a stored row is about (a Jira or an Azure Boards link row). */
+export function rowTarget(
+  row: Pick<JiraLinkRow, 'kind' | 'issueId' | 'packageName' | 'vulnerabilityId'>,
+): LinkTarget {
   return row.kind === 'issue'
     ? { kind: 'issue', issueId: row.issueId ?? '' }
     : {
@@ -217,15 +219,18 @@ export interface IssueLinkLookup {
 }
 
 /**
- * The links of issues of the project, by issue id, without the dismissed ones (spec §6.8). An
- * issue with a `vulnerabilityId` (the Trivy rule's `engine_rule_id`) and a package is looked up by
- * its pair, any other by its id. Callers pass a Trivy issue's pair only when its branch is main or
- * tracked, so a merge request's Trivy issue embeds nothing; a closed issue still shows its link.
+ * The links of issues of the project, by issue id, without the dismissed ones (spec §6.8) unless
+ * `dismissed` (Azure DevOps plan Ruling 9: a row in any state keeps the finding out of Azure
+ * Boards). An issue with a `vulnerabilityId` (the Trivy rule's `engine_rule_id`) and a package is
+ * looked up by its pair, any other by its id. Callers pass a Trivy issue's pair only when its
+ * branch is main or tracked, so a merge request's Trivy issue embeds nothing; a closed issue still
+ * shows its link.
  */
 export async function linksForIssues(
   db: Executor,
   projectId: string,
   issues: readonly IssueLinkLookup[],
+  options: { dismissed?: boolean } = {},
 ): Promise<Map<string, JiraLink>> {
   const targetOf = (i: IssueLinkLookup): LinkTarget =>
     i.packageName !== null && i.vulnerabilityId !== null
@@ -233,7 +238,9 @@ export async function linksForIssues(
       : { kind: 'issue', issueId: i.id };
   const found = new Map<string, JiraLink>();
   if (issues.length === 0) return found;
-  const rows = await linkRowsOf(db, projectId, issues.map(targetOf), { live: true });
+  const rows = await linkRowsOf(db, projectId, issues.map(targetOf), {
+    live: options.dismissed !== true,
+  });
   for (const issue of issues) {
     const row = rows.get(targetKey(targetOf(issue)));
     if (row) found.set(issue.id, jiraLinkDto(row, row.siteUrl));
@@ -241,11 +248,15 @@ export async function linksForIssues(
   return found;
 }
 
-/** The links of vulnerabilities of the project, by {@link pairKey}, without the dismissed ones. */
+/**
+ * The links of vulnerabilities of the project, by {@link pairKey}, without the dismissed ones
+ * unless `dismissed` (as {@link linksForIssues}).
+ */
 export async function linksForPairs(
   db: Executor,
   projectId: string,
   pairs: readonly { packageName: string; vulnerabilityId: string }[],
+  options: { dismissed?: boolean } = {},
 ): Promise<Map<string, JiraLink>> {
   const found = new Map<string, JiraLink>();
   if (pairs.length === 0) return found;
@@ -253,7 +264,7 @@ export async function linksForPairs(
     db,
     projectId,
     pairs.map((p) => ({ kind: 'vulnerability', ...p })),
-    { live: true },
+    { live: options.dismissed !== true },
   );
   for (const [key, row] of rows) found.set(key, jiraLinkDto(row, row.siteUrl));
   return found;

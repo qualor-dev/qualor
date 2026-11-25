@@ -4,6 +4,7 @@ import type { Report } from '@qualor/shared';
 import type { Config } from '../src/config';
 import {
   analyses,
+  boardsLinks,
   branches,
   dependencyFixes,
   instanceSettings,
@@ -606,7 +607,25 @@ export async function runAuditScenario(
   };
   await call('PUT', `/projects/${main.id}/boards`, 200, boardsMapping);
   await call('PUT', `/projects/${main.id}/boards`, 200, { ...boardsMapping, tags: ['scenario'] });
+  // boards_link.requested (a request, then a retry of the link once it failed),
+  // boards_link.dismissed (the link once created). Nothing calls Azure DevOps: no worker runs.
+  const boardsRequested = await call('POST', `/projects/${main.id}/boards/links`, 202, {
+    issueIds: [open.id],
+  });
+  const boardsLinkId = (boardsRequested.json() as { items: { link: { id: string } }[] }).items[0]!
+    .link.id;
+  await ctx.db
+    .update(boardsLinks)
+    .set({ state: 'failed', failure: { code: 'permission_missing', message: 'scenario' } })
+    .where(eq(boardsLinks.id, boardsLinkId));
+  await call('POST', `/boards-links/${boardsLinkId}/retry`, 202);
+  await ctx.db
+    .update(boardsLinks)
+    .set({ state: 'created', workItemId: 1 })
+    .where(eq(boardsLinks.id, boardsLinkId));
+  await call('DELETE', `/boards-links/${boardsLinkId}`, 204);
   await call('DELETE', `/projects/${main.id}/boards`, 204);
+  // The connection's links go with it, so the Jira steps below may link the same issue.
   await call('DELETE', `/scm-connections/${boardsConnection}`, 204);
 
   // jira_connection.created (a Data Center), .updated (a new address, Cloud with the email and
