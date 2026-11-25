@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
  * `pnpm site:screens`: the qualor.dev site's product screens (overview, issues, issue-ai, gate),
  * captured from the seeded e2e server (ui/e2e/site-screens.shot.ts). The site's Vulnerabilities
  * screens come from the demo: `SITE_SCREENS_VULNERABILITIES=1` captures them from the e2e seed
- * instead. The issue-ai screen asks the real model, so the key is required before anything
- * starts: no build, no server, no browser. The key is only passed on in the environment, never
- * printed.
+ * instead. The issue-ai screen asks a real model, so a key is required before anything starts: no
+ * build, no server, no browser. SITE_SCREENS_ANTHROPIC_API_KEY asks Anthropic, LIVE_OPENAI_API_KEY
+ * OpenAI. The key is only passed on in the environment, never printed.
  */
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -28,12 +28,15 @@ export function planSiteScreens(
   exists: (dir: string) => boolean,
   base = root,
 ): SiteScreensPlan {
-  if ((env['LIVE_OPENAI_API_KEY'] ?? '') === '') {
+  if (
+    (env['LIVE_OPENAI_API_KEY'] ?? '') === '' &&
+    (env['SITE_SCREENS_ANTHROPIC_API_KEY'] ?? '') === ''
+  ) {
     return {
       ok: false,
       message:
-        'site:screens asks the real model for the issue-ai screen and needs LIVE_OPENAI_API_KEY in ' +
-        'the environment. Nothing was started.',
+        'site:screens asks a real model for the issue-ai screen and needs LIVE_OPENAI_API_KEY or ' +
+        'SITE_SCREENS_ANTHROPIC_API_KEY in the environment. Nothing was started.',
     };
   }
   const vulnerabilities = env['SITE_SCREENS_VULNERABILITIES'] === '1';

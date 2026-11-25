@@ -31,10 +31,10 @@ so development servers do not report.
 - `pnpm ui:e2e`, `pnpm ui:screenshots`: the UI's Playwright tests, and one screenshot per screen
   (see `ui/README.md`)
 - `pnpm site:screens`: the qualor.dev site's product screens (overview, issues, issue-ai, gate), with
-  a real answer from OpenAI for the AI one. It needs `LIVE_OPENAI_API_KEY` and writes to
-  `SITE_SCREENS_OUT` (default `../qualor.dev/src/assets/screens`). The site's Vulnerabilities
-  screens come from the demo: `SITE_SCREENS_VULNERABILITIES=1` captures them from the e2e seed
-  instead
+  a real answer for the AI one: from Anthropic with `SITE_SCREENS_ANTHROPIC_API_KEY`, else from
+  OpenAI with `LIVE_OPENAI_API_KEY`. It writes to `SITE_SCREENS_OUT` (default
+  `../qualor.dev/src/assets/screens`). The site's Vulnerabilities screens come from the demo:
+  `SITE_SCREENS_VULNERABILITIES=1` captures them from the e2e seed instead
 - `pnpm helm:test`, `pnpm helm:smoke`: the Helm chart's render tests, and an install on k3s in
   Docker
 - `pnpm release:test`, `pnpm release:dry-run`, `pnpm release:verify`: the release tools' tests, a

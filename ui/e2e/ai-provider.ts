@@ -98,8 +98,10 @@ async function saveStored(
   expect(saved.status(), await saved.text()).toBe(200);
 }
 
-/** An OpenAI-compatible provider as the API takes one: its address, model and key. */
+/** A provider as the API takes one: its kind, address, model and key. */
 export interface ProviderSetup {
+  /** Left out: an OpenAI-compatible provider. */
+  kind?: 'openai' | 'anthropic';
   baseUrl: string;
   model: string;
   apiKey: string;

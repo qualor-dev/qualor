@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { type Browser, type Page, request } from '@playwright/test';
-import { setProvider } from './ai-provider';
+import { type ProviderSetup, setProvider } from './ai-provider';
 import { expect, rowOf, test } from './fixtures';
 import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
 
@@ -9,27 +9,48 @@ import { PAYMENTS, STORAGE_STATE, VULNERABILITIES } from './seed-data';
  * The qualor.dev site's product screens (overview, issues, issue-ai, gate) with the seeded data, as
  * viewport captures in the dark theme at the site's sizes, 1440 wide at DPR 2 (the height of the
  * screen) and 390×844 at DPR 3. Opt-in, never part of `pnpm ui:e2e`: `pnpm site:screens` runs it
- * (tools/ui/site-screens.ts), which refuses to start without LIVE_OPENAI_API_KEY and writes to
- * SITE_SCREENS_OUT.
+ * (tools/ui/site-screens.ts), which refuses to start without LIVE_OPENAI_API_KEY or
+ * SITE_SCREENS_ANTHROPIC_API_KEY and writes to SITE_SCREENS_OUT.
  *
  * The site's Vulnerabilities screens come from the demo: `SITE_SCREENS_VULNERABILITIES=1` captures
  * them from the e2e seed instead (vulnerabilities-by-version, vulnerabilities-by-vulnerability, the
  * Vulnerabilities tab of Payments API), into SITE_SCREENS_OUT.
  *
- * issue-ai asks the real model: the assistant is set to api.openai.com (gpt-6.1-terra, the
- * Responses API) for that screen alone, and the fake provider is put back afterwards, also when the
- * capture fails. The key lives only in the throwaway e2e database; the project records no trace and
- * no video, and nothing here logs or asserts on it.
+ * issue-ai asks the real model: the assistant is set to api.anthropic.com (claude-sonnet-5-5) when
+ * SITE_SCREENS_ANTHROPIC_API_KEY is set, else to api.openai.com (gpt-6.1-terra, the Responses API),
+ * for that screen alone, and the fake provider is put back afterwards, also when the capture fails.
+ * The key lives only in the throwaway e2e database; the project records no trace and no video, and
+ * nothing here logs or asserts on it.
  *
  * Checking the navigation without the real model (what a test of this file does, never the
- * script): SITE_SCREENS_FAKE=1 without the key keeps the fake provider and expects its answer.
+ * script): SITE_SCREENS_FAKE=1 without a key keeps the fake provider and expects its answer.
  *
  * The test `vulnerability screens` asks no model: run it alone with `-g "vulnerability screens"`.
  * With README_SCREENS_OUT it writes the README's copies (docs/screenshots/: 1440×900, DPR 1); with
  * neither that nor SITE_SCREENS_VULNERABILITIES=1 it is skipped.
  */
-const KEY = process.env['LIVE_OPENAI_API_KEY'] ?? '';
-const FAKE = KEY === '' && process.env['SITE_SCREENS_FAKE'] === '1';
+const OPENAI_KEY = process.env['LIVE_OPENAI_API_KEY'] ?? '';
+const ANTHROPIC_KEY = process.env['SITE_SCREENS_ANTHROPIC_API_KEY'] ?? '';
+/** The real provider of the issue-ai screen, and the host its panel names: Anthropic's key first. */
+const REAL: (ProviderSetup & { host: string }) | null =
+  ANTHROPIC_KEY !== ''
+    ? {
+        kind: 'anthropic',
+        baseUrl: 'https://api.anthropic.com',
+        model: 'claude-sonnet-5-5',
+        apiKey: ANTHROPIC_KEY,
+        host: 'api.anthropic.com',
+      }
+    : OPENAI_KEY !== ''
+      ? {
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-6.1-terra',
+          api: 'responses',
+          apiKey: OPENAI_KEY,
+          host: 'api.openai.com',
+        }
+      : null;
+const FAKE = REAL === null && process.env['SITE_SCREENS_FAKE'] === '1';
 const OUT = process.env['SITE_SCREENS_OUT'] ?? '';
 /** Where the site's Vulnerabilities screens go: nowhere unless asked for (they come from the demo). */
 const VULN_OUT = process.env['SITE_SCREENS_VULNERABILITIES'] === '1' ? OUT : '';
@@ -37,7 +58,6 @@ const README_OUT = process.env['README_SCREENS_OUT'] ?? '';
 /** The fake LLM's key (server/test/fake-llm.ts), which the restore stores again. */
 const FAKE_KEY = ['fake', 'llm', 'key', '0123456789'].join('-');
 const FAKE_ANSWER = 'Loose equality compares after type coercion.';
-const MODEL = 'gpt-6.1-terra';
 
 interface View {
   suffix: '' | '-phone';
@@ -107,8 +127,10 @@ async function openPayments(page: Page): Promise<void> {
 
 test('site screens', async ({ browser, baseURL }) => {
   test.setTimeout(600_000);
-  if (KEY === '' && !FAKE) {
-    throw new Error('The site screens need LIVE_OPENAI_API_KEY: run pnpm site:screens.');
+  if (REAL === null && !FAKE) {
+    throw new Error(
+      'The site screens need LIVE_OPENAI_API_KEY or SITE_SCREENS_ANTHROPIC_API_KEY: run pnpm site:screens.',
+    );
   }
   if (OUT === '') throw new Error('The site screens need SITE_SCREENS_OUT.');
   mkdirSync(OUT, { recursive: true });
@@ -135,12 +157,13 @@ test('site screens', async ({ browser, baseURL }) => {
   };
   let failure: unknown;
   try {
-    if (!FAKE) {
+    if (REAL !== null) {
       await setProvider(admin, {
-        baseUrl: 'https://api.openai.com/v1',
-        model: MODEL,
-        api: 'responses',
-        apiKey: KEY,
+        ...(REAL.kind !== undefined && { kind: REAL.kind }),
+        ...(REAL.api !== undefined && { api: REAL.api }),
+        baseUrl: REAL.baseUrl,
+        model: REAL.model,
+        apiKey: REAL.apiKey,
       });
     }
     await inEachView(
@@ -170,11 +193,11 @@ test('site screens', async ({ browser, baseURL }) => {
         await ask.click();
         await answered;
         await expect(panel.getByText('Asking the model…')).toHaveCount(0, { timeout: 120_000 });
-        if (FAKE) {
+        if (REAL === null) {
           await expect(panel.getByText(FAKE_ANSWER)).toBeVisible();
         } else {
-          await expect(panel.getByText(`api.openai.com (${MODEL})`)).toBeVisible();
-          await expect(panel.getByText(new RegExp(`${MODEL} · `))).toBeVisible({
+          await expect(panel.getByText(`${REAL.host} (${REAL.model})`)).toBeVisible();
+          await expect(panel.getByText(new RegExp(`${REAL.model} · `))).toBeVisible({
             timeout: 120_000,
           });
           await expect(panel.getByText(FAKE_ANSWER)).toHaveCount(0);

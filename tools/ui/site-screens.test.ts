@@ -18,6 +18,12 @@ describe('planSiteScreens', () => {
 
   it('refuses an empty key', () => {
     expect(planSiteScreens({ LIVE_OPENAI_API_KEY: '' }, () => true).ok).toBe(false);
+    expect(planSiteScreens({ SITE_SCREENS_ANTHROPIC_API_KEY: '' }, () => true).ok).toBe(false);
+  });
+
+  it('starts with an Anthropic key alone', () => {
+    const env = { SITE_SCREENS_ANTHROPIC_API_KEY: 'not-a-real-key', SITE_SCREENS_OUT: 'shots' };
+    expect(planSiteScreens(env, () => false, base)).toMatchObject({ ok: true });
   });
 
   it('writes to SITE_SCREENS_OUT when it is set', () => {
@@ -55,7 +61,7 @@ describe('planSiteScreens', () => {
 
   it('exits with 1 and starts nothing when run without the key', () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const env = { ...process.env, LIVE_OPENAI_API_KEY: '' };
+    const env = { ...process.env, LIVE_OPENAI_API_KEY: '', SITE_SCREENS_ANTHROPIC_API_KEY: '' };
     const run = spawnSync(process.execPath, ['--import', 'tsx', 'tools/ui/site-screens.ts'], {
       cwd: root,
       env,
