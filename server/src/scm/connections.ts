@@ -115,7 +115,9 @@ export type TestProblemCode = (typeof TEST_PROBLEM_CODES)[number];
  * comment event; and the events the App subscribes to: Check run (the Re-run button), Issue
  * comment (commands) and Pull request review comment (replies in Qualor's conversations). Azure
  * DevOps (sub-plan 5): `read_permissions`, the identity cannot read identities or a repository's
- * permissions, so no reply changes a status and every command is refused.
+ * permissions, so no reply changes a status and every command is refused. Sub-plan 8:
+ * `work_items`, the identity may not create work items in a mapped Azure Boards project (Work
+ * items: Read & write).
  */
 export const MISSING_ACCESS = [
   'contents_write',
@@ -124,6 +126,7 @@ export const MISSING_ACCESS = [
   'event_issue_comment',
   'event_pull_request_review_comment',
   'read_permissions',
+  'work_items',
 ] as const;
 export type MissingAccess = (typeof MISSING_ACCESS)[number];
 

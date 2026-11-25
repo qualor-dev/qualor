@@ -1174,4 +1174,21 @@ describe('AzureDevOpsPage service hooks', () => {
     expect(result).toContain('Project Administrators');
     expect(result).not.toContain('read_permissions');
   });
+
+  it('FB8: a passing Test says when the identity cannot create work items', async () => {
+    const server = setup([WITH_SECRET]);
+    server.on('POST', '/api/v0/scm-connections/a1/test', () => ({
+      body: { ...TEST_OK, missingAccess: ['read_permissions', 'work_items'], hooks: [] },
+    }));
+    const { fixture, root } = await render();
+    button(root, 'Test').click();
+    await settle(fixture);
+    const result = text(root.querySelector('section[data-key="a1"] .connection-result')!);
+    expect(result).toContain('Connected as Qualor Bot');
+    expect(result).toContain(
+      'Create work items in the mapped Azure Boards project (Work items: Read & write)',
+    );
+    expect(result).toContain('Project Administrators');
+    expect(result).not.toContain('work_items');
+  });
 });

@@ -116,9 +116,12 @@ export function azureTestText(result: TestResult, expiredOn: string | null = nul
       : $localize`:@@azure.problem.unknown:The test failed.`;
   }
   const connected = connectedText(result, result.user.username);
-  return result.missingAccess?.includes('read_permissions')
-    ? `${connected} ${azureReadPermissionsText()}`
-    : connected;
+  const missing = result.missingAccess ?? [];
+  return [
+    connected,
+    ...(missing.includes('read_permissions') ? [azureReadPermissionsText()] : []),
+    ...(missing.includes('work_items') ? [azureWorkItemsText()] : []),
+  ].join(' ');
 }
 
 function connectedText(result: TestResult, name: string): string {
@@ -137,6 +140,11 @@ function connectedText(result: TestResult, name: string): string {
 /** A passing Test's `read_permissions`: the identity cannot look up commenters or read the repository's permissions. */
 export function azureReadPermissionsText(): string {
   return $localize`:@@azure.missing.readPermissions:The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. Add it to Project Administrators in the project, which may read identities and permissions.`;
+}
+
+/** A passing Test's `work_items`: a dry-run work item in a mapped Boards project was refused for the right. */
+export function azureWorkItemsText(): string {
+  return $localize`:@@azure.missing.workItems:The identity lacks a right: Create work items in the mapped Azure Boards project (Work items: Read & write).`;
 }
 
 /** A passing Test that could not read the service hook subscriptions. */

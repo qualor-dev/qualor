@@ -49,6 +49,7 @@ import {
   mappedRepositoryRefs,
   markHookPasswordHeld,
   storeNewHookPassword as storeHookPasswordFor,
+  boardsChecksOf,
   testAzureConnection,
 } from '../scm/azure/connections';
 import { subscribeProjects, type SubscribeResult } from '../scm/azure/hooks';
@@ -202,7 +203,7 @@ const testResultSchema = z.object({
   problem: z.object({ code: z.enum(TEST_PROBLEM_CODES), message: z.string() }).nullable(),
   missingAccess: z.array(z.enum(MISSING_ACCESS)).nullable().meta({
     description:
-      "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). Azure DevOps, checked on the first mapped repository the identity sees: `read_permissions` (the identity cannot read identities or the repository's permissions, so no reply changes a status and every command is refused). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository (Azure DevOps: without a mapped repository the identity sees), when the Azure DevOps check got no clear answer, and when the test failed.",
+      "GitHub, with a repository: what the App's installation lacks of the access Qualor uses beyond what every job needs (Checks and Pull requests, read and write, whose lack fails the test), in this order: `contents_write` (Qualor's conversations are not resolved or reopened), `issues_read` (GitHub sends no Issue comment event), `event_check_run` (the Re-run button does nothing), `event_issue_comment` and `event_pull_request_review_comment` (commands and replies are answered at the next analysis). Azure DevOps, checked on the first mapped repository the identity sees: `read_permissions` (the identity cannot read identities or the repository's permissions, so no reply changes a status and every command is refused), then `work_items` (a dry-run work item in a mapped Azure Boards project, up to 3 mappings, was refused with 401 or 403: the identity needs Work items: Read & write). `[]` when nothing is missing; the test passes either way. Null for GitLab, without a repository (Azure DevOps: without a mapped repository the identity sees), when the Azure DevOps check got no clear answer, and when the test failed.",
   }),
   visible: z
     .object({ repositories: z.number().int(), projects: z.number().int() })
@@ -1144,6 +1145,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
           const url = publicUrl === null ? null : azureWebhookUrl(publicUrl, row.id);
           const result = await testAzureConnection(row, scmDeps, ref, {
             repositoryRefs: await mappedRepositoryRefs(deps.db, row.id),
+            boards: await boardsChecksOf(deps.db, row.id),
             url,
             current:
               row.webhookSecretEnc?.hooksPushed === true &&

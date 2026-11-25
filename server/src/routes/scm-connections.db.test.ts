@@ -27,6 +27,7 @@ import {
   branches,
   jobs,
   organizations,
+  projectBoardsSettings,
   projectMemberships,
   projects,
   scmConnections,
@@ -2580,6 +2581,70 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
         fake.close();
       }
     }
+  });
+
+  it('FB8: the Test dry-runs a work item for each of up to 3 Boards mappings and names a missing right', async () => {
+    const pat = await created({ azureAuth: 'pat', token: services.pat });
+    const board = services.addProject({ name: 'Tests-FB8', process: 'agile' });
+    const CREATE = /\/_apis\/wit\/workitems\/\$/;
+    const testOf = async () =>
+      (await test(pat.id)).json() as { ok: boolean; missingAccess: string[] | null };
+    const map = async (key: string) => {
+      const project = await h.project(key);
+      await h.ctx.db.insert(projectBoardsSettings).values({
+        projectId: project.id,
+        connectionId: pat.id,
+        azureProjectId: board.id,
+        azureProjectName: 'Tests-FB8',
+        workItemTypeRef: 'Microsoft.VSTS.WorkItemTypes.Bug',
+        workItemTypeName: 'Bug',
+        tags: ['team-a'],
+      });
+      return project;
+    };
+    // No mapping: no extra call, nothing said.
+    services.clearRequests();
+    expect(await testOf()).toMatchObject({ ok: true, missingAccess: null });
+    expect(services.countRequests('POST', CREATE)).toBe(0);
+    // A mapping the identity may create with: one dry run, nothing missing.
+    const first = await map('scm/fb8-a');
+    services.clearRequests();
+    expect(await testOf()).toMatchObject({ ok: true, missingAccess: [] });
+    expect(services.countRequests('POST', CREATE)).toBe(1);
+    expect(services.workItems()).toHaveLength(0);
+    // 403 and 401: `work_items`, once however many mappings there are.
+    await map('scm/fb8-b');
+    await map('scm/fb8-c');
+    await map('scm/fb8-d');
+    for (const status of [403, 401]) {
+      services.clearRequests();
+      services.inject('POST', CREATE, { status, body: { message: 'no' } });
+      expect(await testOf(), String(status)).toMatchObject({
+        ok: true,
+        missingAccess: ['work_items'],
+      });
+      // The first refusal is the answer: the other mappings are not asked.
+      expect(services.countRequests('POST', CREATE)).toBe(1);
+    }
+    // After `read_permissions`, when that is missing too (a mapped repository is needed to ask).
+    await h.ctx.db
+      .update(projects)
+      .set({ scmConnectionId: pat.id, scmProjectRef: api.id })
+      .where(eq(projects.id, first.id));
+    services.inject('GET', /\/_apis\/identities$/, { status: 403, body: { message: 'no' } });
+    services.inject('POST', CREATE, { status: 403, body: { message: 'no' } });
+    expect(await testOf()).toMatchObject({
+      ok: true,
+      missingAccess: ['read_permissions', 'work_items'],
+    });
+    // Another refusal is a mapping problem, a transient one says nothing: neither adds anything.
+    await h.ctx.db.delete(projectBoardsSettings);
+    await map('scm/fb8-e');
+    services.inject('POST', CREATE, { status: 400, body: { message: 'TF401320: Rule Error' } });
+    expect(await testOf()).toMatchObject({ ok: true, missingAccess: [] });
+    services.inject('POST', CREATE, ...[1, 2, 3, 4].map(() => ({ status: 503, body: {} })));
+    expect(await testOf()).toMatchObject({ ok: true, missingAccess: [] });
+    await h.ctx.db.delete(projectBoardsSettings);
   });
 
   it('sends nothing to an address the operator no longer lists or the Azure DevOps rules refuse', async () => {

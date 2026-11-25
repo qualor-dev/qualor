@@ -2,7 +2,8 @@ import { assertNever } from '@qualor/shared';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { decryptSecret, encryptionKey } from '../../crypto/secrets';
 import type { Executor } from '../../db/client';
-import { projects, scmConnections } from '../../db/schema';
+import { mappingCheckOps } from '../../boards/mapping';
+import { projectBoardsSettings, projects, scmConnections } from '../../db/schema';
 import type { FieldError } from '../../http/problem';
 import {
   SCM_TOKEN_AAD,
@@ -18,7 +19,7 @@ import { ScmError, type ScmErrorReason } from '../provider';
 import { isInternalHostAllowed, scmBaseUrlProblem } from '../url';
 import type { AzureAuthKind } from './auth-kinds';
 import { AZURE_CERTIFICATE_PROBLEM_TEXT, parseAzureCertificate } from './certificate';
-import { AzureDevOpsClient, type AzureCredential } from './client';
+import { AzureDevOpsClient, AzureError, type AzureCredential } from './client';
 import { generateHookPassword, ownSubscriptions, projectHookState } from './hooks';
 import { azureRightsReadable } from './rights';
 import {
@@ -512,6 +513,20 @@ export interface HookTestInput {
   url: string | null;
   /** Whether Azure DevOps holds the stored password (`hooksCurrent` of the DTO); false reads `stale`. */
   current: boolean;
+  /** The connection's Boards mappings (at most {@link BOARDS_CHECKED}): the Test's dry runs. */
+  boards?: readonly BoardsCheck[];
+}
+
+/** How many Boards mappings one Test dry-runs. */
+export const BOARDS_CHECKED = 3;
+
+/** What a Boards mapping's dry run needs, as `project_boards_settings` stores it. */
+export interface BoardsCheck {
+  azureProjectId: string;
+  workItemTypeName: string;
+  areaPath: string | null;
+  iterationPath: string | null;
+  tags: readonly string[];
 }
 
 /**
@@ -542,11 +557,9 @@ export async function testAzureConnection(
     const repositories = await found.client.repositories();
     const repository = projectRef === null ? null : await found.client.repository(projectRef);
     const hooks = await hookStates(found.client, repositories, hookInput);
-    const missingAccess = await rightsAccess(
-      found.client,
-      identity.id,
-      repositories,
-      hookInput.repositoryRefs,
+    const missingAccess = combineAccess(
+      await rightsAccess(found.client, identity.id, repositories, hookInput.repositoryRefs),
+      await boardsAccess(found.client, hookInput.boards ?? []),
     );
     return {
       ok: true,
@@ -591,6 +604,59 @@ async function rightsAccess(
   const readable = await azureRightsReadable(client, repository, identityId);
   if (readable === null) return null;
   return readable ? [] : ['read_permissions'];
+}
+
+/**
+ * Whether the identity may create work items in the mapped Azure Boards projects: one `validateOnly`
+ * create per mapping (at most {@link BOARDS_CHECKED}), with the stored type name. A 401 or 403
+ * means the right is missing (`['work_items']`); any other refusal is a mapping problem the PUT
+ * shows. Null without a mapping or a clear answer (a transient failure), `[]` when a dry run got one
+ * and none was refused for the right.
+ */
+async function boardsAccess(
+  client: AzureDevOpsClient,
+  boards: readonly BoardsCheck[],
+): Promise<MissingAccess[] | null> {
+  let clear = false;
+  for (const mapping of boards.slice(0, BOARDS_CHECKED)) {
+    try {
+      await client.validateWorkItem(
+        mapping.azureProjectId,
+        mapping.workItemTypeName,
+        mappingCheckOps(mapping, false),
+      );
+      clear = true;
+    } catch (err) {
+      if (!(err instanceof AzureError)) throw err;
+      if (err.kind === 'auth' && (err.status === 401 || err.status === 403)) return ['work_items'];
+      if (err.kind === 'not_found' || err.kind === 'refused') clear = true;
+    }
+  }
+  return clear ? [] : null;
+}
+
+/** The two checks of the Test in one list; null when neither gave an answer. */
+function combineAccess(
+  rights: MissingAccess[] | null,
+  boards: MissingAccess[] | null,
+): MissingAccess[] | null {
+  return rights === null && boards === null ? null : [...(rights ?? []), ...(boards ?? [])];
+}
+
+/** The connection's Boards mappings the Test dry-runs (the first {@link BOARDS_CHECKED}). */
+export async function boardsChecksOf(db: Executor, connectionId: string): Promise<BoardsCheck[]> {
+  return db
+    .select({
+      azureProjectId: projectBoardsSettings.azureProjectId,
+      workItemTypeName: projectBoardsSettings.workItemTypeName,
+      areaPath: projectBoardsSettings.areaPath,
+      iterationPath: projectBoardsSettings.iterationPath,
+      tags: projectBoardsSettings.tags,
+    })
+    .from(projectBoardsSettings)
+    .where(eq(projectBoardsSettings.connectionId, connectionId))
+    .orderBy(projectBoardsSettings.projectId)
+    .limit(BOARDS_CHECKED);
 }
 
 /** The repository ids the connection's projects are mapped to. */
