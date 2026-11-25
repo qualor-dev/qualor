@@ -334,10 +334,11 @@ Do this:
    set scm.mainBranch in it.
 4. Tell me to set the pipeline variables QUALOR_URL and QUALOR_TOKEN
    (a secret), and the exact Qualor project key: <project>/<repository>
-   (the Azure DevOps project name, a slash, the repository name). If
-   QUALOR_ADMIN_TOKEN is in the environment, create the Qualor
-   project and a project analysis token through the Qualor API
-   (users-projects-tokens.md), and set the pipeline's variables
+   (the Azure DevOps project name, a slash, the repository name), with
+   characters a key cannot hold replaced by - (azure-devops.md, The
+   project key). If QUALOR_ADMIN_TOKEN is in the environment, create
+   the Qualor project and a project analysis token through the Qualor
+   API (users-projects-tokens.md), and set the pipeline's variables
    through the Azure DevOps API with a token from
    AZURE_DEVOPS_PAT. Never print any of them.
 5. Open a pull request titled "ci: add Qualor quality gate". Azure

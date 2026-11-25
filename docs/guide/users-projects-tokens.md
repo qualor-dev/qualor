@@ -197,7 +197,8 @@ each with its own key and its own `sources.include`.
   ([Quick start](./quick-start.md#fastest-path-add-repositories)). An upload never creates a
   project: the project must exist before the first scan.
 - **The key** is what the scanner reports. It defaults to the CI project path (`CI_PROJECT_PATH`,
-  `GITHUB_REPOSITORY`). Set it with `project.key` in `qualor.yml`, `QUALOR_PROJECT_KEY` or
+  `GITHUB_REPOSITORY`, or in Azure Pipelines `<project>/<repository>`, with characters a key cannot
+  hold replaced by `-`). Set it with `project.key` in `qualor.yml`, `QUALOR_PROJECT_KEY` or
   `--project-key`. Keys are unique on the instance and may contain letters, digits, `.`, `_`, `-`,
   `/` and `:`.
 - **The main branch** is `main` by default. Every other branch and every merge request is compared

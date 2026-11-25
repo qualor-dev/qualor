@@ -91,8 +91,10 @@ way.
 
 1. **Projects → New project.** The **Key** identifies the project in every scan. By default the
    scanner uses the CI project path as the key: `CI_PROJECT_PATH` on GitLab (`group/app`),
-   `GITHUB_REPOSITORY` on GitHub (`owner/repo`). Use the same value here and you need no config
-   file.
+   `GITHUB_REPOSITORY` on GitHub (`owner/repo`), and in Azure Pipelines `<project>/<repository>`,
+   with characters a key cannot hold replaced by `-`
+   ([The project key](./azure-devops.md#the-project-key)). Use the same value here and you need no
+   config file.
 2. The main branch is `main`, and analyses of every other branch are compared with it. If your
    default branch has another name, such as `master`, change it before the first scan in
    **Project → Settings → Main branch** ([Projects](./users-projects-tokens.md#projects)).

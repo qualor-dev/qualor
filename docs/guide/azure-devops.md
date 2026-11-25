@@ -117,9 +117,8 @@ request. Your pipelines on the main branch don't change until you merge it. The 
 secret variable are created right away. The first analysis runs on the main branch once the pull
 request is merged. Pull requests are analysed after that, through the Build validation policy.
 
-Each repository shows as `Project / Repository`. The project key is `<project>/<repository>`, with
-every character outside `A-Z a-z 0-9 . _ / : -` replaced by `-`. The project's name keeps the
-original characters.
+Each repository shows as `Project / Repository`. Its project key is made from that name as in
+[The project key](#the-project-key). The project's name keeps the original characters.
 
 ### Turn it on
 
@@ -204,6 +203,24 @@ own.
 A pipeline runs the scanner on Linux agents with Docker and uploads the report to your Qualor
 server. Pipelines on Azure Repos are detected: Qualor reads the branch, the tag, the pull request
 and its target, and the commit from the agent's variables.
+
+### The project key
+
+The scanner's project key is `<project>/<repository>`, the names of the Azure DevOps project and
+the repository. **Add repositories** gives a project the same key.
+
+- Each character outside `A-Z a-z 0-9 . _ / : -` becomes `-`.
+- A run of `-` becomes one `-`, and a `-` at either end is dropped.
+- A name with no letter or digit left uses the repository's id as the key.
+
+| Project / Repository | Project key |
+|---|---|
+| `Shop / web` | `Shop/web` |
+| `Fabrikam Fiber / My Repo` | `Fabrikam-Fiber/My-Repo` |
+| `Проект / Репо` | the repository's id, such as `0f8fad5b-d9cb-469f-a165-70867728950e` |
+
+`--project-key`, `QUALOR_PROJECT_KEY` or `project.key` in `qualor.yml` overrides it
+([Precedence](./configuration.md#precedence)).
 
 ### Variables
 

@@ -41,7 +41,9 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - The `Qualor@0` task of the Qualor extension for Azure Pipelines, and pipeline files that run the
   scanner with `docker run` and need no extension
   ([Pick a pipeline](docs/guide/azure-devops.md#pick-a-pipeline)).
-- The scanner detects Azure Pipelines by itself: the project key is `<project>/<repository>`.
+- The scanner detects Azure Pipelines by itself. The project key is `<project>/<repository>`, with
+  characters a key cannot hold replaced by `-`, the key **Add repositories** gives
+  ([The project key](docs/guide/azure-devops.md#the-project-key)).
 - Telemetry counts Azure DevOps connections and analyses
   ([Telemetry](docs/guide/telemetry.md)).
 

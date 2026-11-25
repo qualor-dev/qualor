@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import {
+  azureProjectKey,
   GITHUB_ID,
   GITLAB_ID,
   GITLAB_MR_EVENT_TYPES,
@@ -137,6 +138,21 @@ function azureCi(env: Env, mergeCommit: string | null): AzureCi {
   };
 }
 
+/**
+ * The project key Add repositories gives the repository (`azureProjectKey`):
+ * `<project>/<repository>` with the characters a key cannot hold made `-`, or the repository's id
+ * when no letter or digit is left. Null without the names, or without a well-formed id when the id
+ * is needed.
+ */
+function azureKey(env: Env, project: string | null, repository: string | null): string | null {
+  if (project === null || repository === null) return null;
+  const key = azureProjectKey(
+    `${project}/${repository}`,
+    azureGuid(env, 'BUILD_REPOSITORY_ID') ?? '',
+  );
+  return key === '' ? null : key;
+}
+
 function detectAzure(env: Env): CiInfo {
   const sourceRef = get(env, 'BUILD_SOURCEBRANCH');
   const version = fullSha(get(env, 'BUILD_SOURCEVERSION')?.toLowerCase());
@@ -161,7 +177,7 @@ function detectAzure(env: Env): CiInfo {
       ? { id: prId, targetBranch: target, headSha: head, title: null, description: null }
       : null,
     mainBranch: null,
-    projectPath: project !== null && repository !== null ? `${project}/${repository}` : null,
+    projectPath: azureKey(env, project, repository),
     gitlab: null,
     github: null,
     azure: azureCi(env, isPr ? version : null),

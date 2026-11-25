@@ -36,7 +36,7 @@ qualor upload-sbom sbom.cdx.json --version 1.4.0 --project-key acme/shop-image
 | Option | Meaning |
 |---|---|
 | `--version LABEL` | the version label. Default: the SBOM's own version |
-| `--project-key KEY` | the Qualor project. Without it: `QUALOR_PROJECT_KEY`, then `project.key` in `qualor.yml`, then the CI project path (GitLab `CI_PROJECT_PATH`, GitHub `GITHUB_REPOSITORY`, Azure Pipelines `<project>/<repository>`, from `SYSTEM_TEAMPROJECT` and `BUILD_REPOSITORY_NAME`). For an image, set the image's project |
+| `--project-key KEY` | the Qualor project. Without it: `QUALOR_PROJECT_KEY`, then `project.key` in `qualor.yml`, then the CI project path (GitLab `CI_PROJECT_PATH`, GitHub `GITHUB_REPOSITORY`, Azure Pipelines `<project>/<repository>` from `SYSTEM_TEAMPROJECT` and `BUILD_REPOSITORY_NAME`, with characters a key cannot hold replaced by `-`). For an image, set the image's project |
 | `--server-url`, `--token-file`, `--ca-file`, `--config` | as in [`qualor scan`](./cli.md#qualor-scan) |
 
 The CLI gzips the file and prints what the server stored. It tries again while the server is busy

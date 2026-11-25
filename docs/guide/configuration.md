@@ -31,7 +31,9 @@ Only `version` is required. Unknown keys are an error, so typos are caught.
 version: 1                          # required; only 1 is valid
 
 project:
-  key: acme/payments-api            # default: CI_PROJECT_PATH / GITHUB_REPOSITORY
+  key: acme/payments-api            # default: CI_PROJECT_PATH / GITHUB_REPOSITORY; in Azure
+                                    # Pipelines <project>/<repository>, with characters a key
+                                    # cannot hold replaced by -
   name: Payments API                # default: last segment of the key
   version: 2.3.4                    # optional: a tag scan's version (default: the tag) and the
                                     # label previous_version compares on the main branch

@@ -2,7 +2,7 @@
 // existing one adopted) mapped to it, then its CI: a merge request that adds the Qualor job and
 // keeps the project's token in the repository's CI secrets, or a snippet and the token to copy.
 // Every step's outcome is saved as soon as it is known, so a retried job resumes where it stopped.
-import { assertNever, type ScmProvider } from '@qualor/shared';
+import { assertNever, azureProjectKey, type ScmProvider } from '@qualor/shared';
 import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { canonicalJson } from '../audit/canonical';
@@ -469,19 +469,10 @@ interface OpenedRepository {
 }
 
 /**
- * The project key of an Azure DevOps repository (Ruling 8): `<project>/<repository>` with every
- * character a key may not hold made `-`, runs of `-` collapsed and trimmed. A name of other
- * scripts only leaves no letter or digit: the repository's id is the key then. The project's name
- * keeps the original.
+ * The project key of an Azure DevOps repository (Ruling 8; `azureProjectKey` of packages/shared,
+ * which the scanner in Azure Pipelines uses too). The project's name keeps the original.
  */
-export function azureProjectKey(name: string, repositoryId: string): string {
-  const key = [...name]
-    .map((c) => (PROJECT_KEY_PATTERN.test(c) ? c : '-'))
-    .join('')
-    .replace(/-{2,}/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return /[A-Za-z0-9]/.test(key) ? key : repositoryId.toLowerCase();
-}
+export { azureProjectKey };
 
 /** The key a repository's project gets before a `-2` … `-20` suffix: the one a run adopts. */
 export function setupKeyOf(provider: ScmProvider, name: string, ref: string): string {

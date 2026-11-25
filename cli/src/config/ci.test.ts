@@ -448,6 +448,28 @@ describe('detectCi: Azure Pipelines (azure-devops.md §7.3)', () => {
     });
   });
 
+  it('makes the project key of Add repositories from names a key cannot hold', () => {
+    const key = (project: string, repository: string, id: string | undefined) =>
+      detectCi(
+        {
+          ...pr,
+          SYSTEM_TEAMPROJECT: project,
+          BUILD_REPOSITORY_NAME: repository,
+          BUILD_REPOSITORY_ID: id,
+        },
+        noFile,
+      ).projectPath;
+    expect(key('Fabrikam Fiber', 'My Repo', repo)).toBe('Fabrikam-Fiber/My-Repo');
+    expect(key('Café', 'Säännöt', repo)).toBe('Caf-/S-nn-t');
+    expect(key('Shop', 'web', repo)).toBe('Shop/web');
+    // Nothing of the names is left: the repository's id, lower-cased.
+    expect(key('Проект', 'Репо', repo.toUpperCase())).toBe(repo);
+    // ... and without a well-formed id, no key at all.
+    expect(key('Проект', 'Репо', 'not-a-guid')).toBeNull();
+    expect(key('Проект', 'Репо', undefined)).toBeNull();
+    expect(key('Fabrikam Fiber', 'My Repo', undefined)).toBe('Fabrikam-Fiber/My-Repo');
+  });
+
   it('falls back to the merge commit without SYSTEM_PULLREQUEST_SOURCECOMMITID', () => {
     const ci = detectCi({ ...pr, SYSTEM_PULLREQUEST_SOURCECOMMITID: undefined }, noFile);
     expect(ci.pullRequestHead).toBeNull();
