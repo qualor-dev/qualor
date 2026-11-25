@@ -117,6 +117,13 @@ export const settingsRoutes: Routes = [
     loadComponent: () => import('./mcp.page').then((m) => m.McpPage),
   },
   {
+    // Issue #38: the server defaults of the cleanup of inactive branches and merge requests
+    // (instance admins).
+    path: 'cleanup',
+    title: $localize`:@@title.cleanup:Cleanup`,
+    loadComponent: () => import('./cleanup.page').then((m) => m.CleanupPage),
+  },
+  {
     path: 'license',
     title: $localize`:@@title.license:Licence`,
     loadComponent: () => import('./license.page').then((m) => m.LicensePage),

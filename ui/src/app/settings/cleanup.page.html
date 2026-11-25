@@ -1,0 +1,101 @@
+<div class="settings-head">
+  <div>
+    <h2 #heading tabindex="-1" i18n="@@cleanup.title">Cleanup</h2>
+    @if (!instanceAdmin()) {
+      <p class="muted" i18n="@@cleanup.adminsOnly">
+        Only instance administrators change the cleanup settings.
+      </p>
+    } @else {
+      <p class="muted" i18n="@@cleanup.intro">
+        Qualor deletes branches and merge requests that have not been analysed for a while. It
+        checks once a day.
+      </p>
+    }
+  </div>
+</div>
+@if (!instanceAdmin()) {
+  <!-- Nothing more: the server is asked nothing. -->
+} @else if (loadError(); as message) {
+  <p class="alert alert-error" role="alert">{{ message }}</p>
+} @else if (current()) {
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error" role="alert">{{ message }}</p>
+  }
+  <form
+    class="card panel"
+    aria-labelledby="cleanup-defaults-title"
+    novalidate
+    (submit)="save($event)"
+  >
+    <div class="panel-head">
+      <div class="sec-title">
+        <h3 id="cleanup-defaults-title" i18n="@@cleanup.defaults">Server defaults</h3>
+        <p class="sec-purpose" i18n="@@cleanup.defaultsPurpose">
+          Every project follows these rules. A project admin can set other rules for one project.
+        </p>
+      </div>
+    </div>
+    <div class="setting-row" data-line="branches">
+      <div class="setting-text">
+        <label for="cleanup-branches" i18n="@@cleanup.branchesLabel"
+          >Branches not analysed for</label
+        >
+      </div>
+      <div class="setting-field">
+        <select id="cleanup-branches" class="days-select" (change)="setBranches($event)">
+          @for (c of branchChoices(); track c.value) {
+            <option [value]="c.value" [selected]="c.value === branches()">{{ c.text }}</option>
+          }
+        </select>
+      </div>
+    </div>
+    <div class="setting-row" data-line="merge-requests">
+      <div class="setting-text">
+        <label for="cleanup-merge-requests" i18n="@@cleanup.mergeRequestsLabel"
+          >Merge requests not analysed for</label
+        >
+      </div>
+      <div class="setting-field">
+        <select id="cleanup-merge-requests" class="days-select" (change)="setMergeRequests($event)">
+          @for (c of mergeRequestChoices(); track c.value) {
+            <option [value]="c.value" [selected]="c.value === mergeRequests()">
+              {{ c.text }}
+            </option>
+          }
+        </select>
+      </div>
+    </div>
+    <div class="setting-row" data-line="kept">
+      <div class="setting-text">
+        <span class="setting-name" i18n="@@cleanup.keptLabel">Always kept</span>
+      </div>
+      <div class="setting-field">
+        <p i18n="@@cleanup.keptServer">
+          The main branch of each project, and the branches its vulnerability monitoring tracks.
+        </p>
+      </div>
+    </div>
+    <div class="setting-actions">
+      <p id="cleanup-warning" class="cleanup-warning" i18n="@@cleanup.warning">
+        Deleted analyses cannot be recovered.
+      </p>
+      <button
+        type="submit"
+        class="btn"
+        aria-describedby="cleanup-warning"
+        [class.btn-primary]="dirty()"
+        [disabled]="!dirty() || busy()"
+        i18n="@@cleanup.save"
+      >
+        Save
+      </button>
+    </div>
+  </form>
+} @else {
+  <p class="hint" i18n="@@cleanup.loading">Loading…</p>
+}

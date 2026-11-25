@@ -1,0 +1,103 @@
+/*
+ * Project → Settings → Cleanup: a section card of setting rows, built from the shared parts of
+ * styles.css (the head with its purpose, the rows, the actions), plus the chips of what is always
+ * kept and of the keep patterns, and the warning beside Save.
+ */
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.setting-field > .days-select {
+  justify-self: start;
+  width: auto;
+  min-width: 14rem;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.kept-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kept-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.kept-list .chip {
+  overflow-wrap: anywhere;
+}
+
+.setting-field > .hint {
+  margin: 0;
+}
+
+.keep-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 36rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.keep-list > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-right: 2px;
+}
+
+.keep-text {
+  overflow-wrap: anywhere;
+}
+
+.keep-remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.keep-remove:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.keep-remove:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.setting-actions {
+  align-items: center;
+}
+
+.cleanup-warning {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}

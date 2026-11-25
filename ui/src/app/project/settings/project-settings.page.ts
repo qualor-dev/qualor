@@ -16,6 +16,7 @@ import { SessionStore } from '../../auth/session';
 import { CurrentProject } from '../current-project';
 import { ProjectAiPanel } from './ai-panel';
 import { ProjectBoardsPanel } from './boards-panel';
+import { CleanupPanel } from './cleanup-panel';
 import { ProjectFixesPanel } from './fixes-panel';
 import { GateProfilesPanel } from './gate-profiles-panel';
 import { ProjectJiraPanel } from './jira-panel';
@@ -43,6 +44,7 @@ const MOVED: ReadonlyMap<string, string> = new Map([
 @Component({
   selector: 'q-project-settings-page',
   imports: [
+    CleanupPanel,
     DeleteProjectPanel,
     GateProfilesPanel,
     MainBranchPanel,

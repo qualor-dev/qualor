@@ -341,6 +341,47 @@ export function pendingBoardsLink(overrides: Partial<BoardsLink> = {}): BoardsLi
   });
 }
 
+export type CleanupDefaults = ResponseBody<'/api/v0/system/cleanup', 'get'>;
+export type ProjectCleanup = ResponseBody<'/api/v0/projects/{id}/cleanup', 'get'>;
+
+/** The server defaults of the cleanup as `GET /system/cleanup` answers them: both rules off. */
+export function cleanupDefaults(given: Partial<CleanupDefaults> = {}): CleanupDefaults {
+  return { branchesDays: null, mergeRequestsDays: null, ...given };
+}
+
+/** A rule in force, as the server works it out: the project's own days, 0 off, null the default. */
+function effectiveDays(own: number | null, serverDefault: number | null): number | null {
+  if (own === null) return serverDefault;
+  return own === 0 ? null : own;
+}
+
+/**
+ * A project's cleanup as `GET /projects/{id}/cleanup` answers it: no rule of its own, the server
+ * defaults off, no keep pattern, the main branch `main` and no tracked pattern always kept, by
+ * default. `effective` follows the values given, as the server's does, unless it is given too.
+ */
+export function projectCleanup(
+  given: Partial<Omit<ProjectCleanup, 'serverDefaults' | 'alwaysKept'>> & {
+    serverDefaults?: Partial<CleanupDefaults>;
+    alwaysKept?: Partial<ProjectCleanup['alwaysKept']>;
+  } = {},
+): ProjectCleanup {
+  const serverDefaults = cleanupDefaults(given.serverDefaults);
+  const branchesDays = given.branchesDays ?? null;
+  const mergeRequestsDays = given.mergeRequestsDays ?? null;
+  return {
+    branchesDays,
+    mergeRequestsDays,
+    keepBranches: given.keepBranches ?? [],
+    serverDefaults,
+    effective: given.effective ?? {
+      branchesDays: effectiveDays(branchesDays, serverDefaults.branchesDays),
+      mergeRequestsDays: effectiveDays(mergeRequestsDays, serverDefaults.mergeRequestsDays),
+    },
+    alwaysKept: { mainBranch: 'main', trackedPatterns: [], ...given.alwaysKept },
+  };
+}
+
 /**
  * A project's fix MR settings as `GET /projects/{id}/fixes/settings` answers them: switched off, a
  * bound repository whose connection allows fix MRs, monitoring on, the fix job never seen, nothing

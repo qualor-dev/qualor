@@ -9,6 +9,7 @@ import {
   me,
   ORG_ADMIN_PERMISSIONS,
   ORG_ID,
+  projectCleanup,
   provideFakeServer,
   settle,
 } from '../../../testing/fake-server';
@@ -76,6 +77,7 @@ function setup(options: Setup): FakeServer {
     body: boardsProjectSettings({ connected: options.boards ?? false, mapped: false }),
   });
   server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, { body: fixSettings() });
+  server.on('GET', `/api/v0/projects/${PROJECT}/cleanup`, { body: projectCleanup() });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(options.routes ?? [{ path: '**', children: [] }], withComponentInputBinding()),
@@ -129,11 +131,13 @@ describe('ProjectSettingsPage', () => {
       'Jira',
       'Fix MRs',
       'AI',
+      'Cleanup',
       'Analysis tokens',
       'Danger zone',
     ]);
     expect(texts(root, 'nav.settings-index a')).toEqual(headings);
     expect(root.querySelector('q-vulnerability-panel .alert-error')).toBeNull();
+    expect(root.querySelector('q-cleanup-panel .alert-error')).toBeNull();
     expect([...root.querySelectorAll('.card.panel')].map((p) => p.id)).toEqual([
       'new-code',
       'gate',
@@ -142,6 +146,7 @@ describe('ProjectSettingsPage', () => {
       'jira',
       'fixes',
       'ai',
+      'cleanup',
       'tokens',
       'danger',
     ]);
@@ -234,13 +239,22 @@ describe('ProjectSettingsPage index', () => {
       'Jira',
       'Fix MRs',
       'AI',
+      'Cleanup',
       'Danger zone',
     ]);
     // To open in a new tab or copy: the page's own address, with the panel.
     expect(links.map((a) => a.getAttribute('href'))).toEqual(
-      ['new-code', 'gate', 'main-branch', 'vulnerabilities', 'jira', 'fixes', 'ai', 'danger'].map(
-        (id) => `/projects/${PROJECT}/settings#${id}`,
-      ),
+      [
+        'new-code',
+        'gate',
+        'main-branch',
+        'vulnerabilities',
+        'jira',
+        'fixes',
+        'ai',
+        'cleanup',
+        'danger',
+      ].map((id) => `/projects/${PROJECT}/settings#${id}`),
     );
   });
 

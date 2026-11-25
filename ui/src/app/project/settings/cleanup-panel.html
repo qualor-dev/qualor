@@ -1,0 +1,187 @@
+<section class="card panel" id="cleanup" aria-labelledby="cleanup-heading">
+  <div class="panel-head">
+    <div class="sec-title">
+      <h2 id="cleanup-heading" tabindex="-1" i18n="@@project.settings.cleanup">Cleanup</h2>
+      <p class="sec-purpose" i18n="@@cleanup.panel.purpose">
+        Qualor deletes branches and merge requests that have not been analysed for a while. It
+        checks once a day.
+      </p>
+      @if (!canEdit()) {
+        <p class="sec-purpose" i18n="@@cleanup.readOnly">
+          Only project admins change these settings.
+        </p>
+      }
+    </div>
+  </div>
+
+  <div role="status">
+    @if (announcement(); as message) {
+      <p class="alert alert-success panel-alert">{{ message }}</p>
+    }
+  </div>
+  @if (error(); as message) {
+    <p class="alert alert-error panel-alert" role="alert">{{ message }}</p>
+  }
+
+  @if (loadError(); as message) {
+    <div class="panel-body">
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+      <button
+        type="button"
+        class="btn"
+        [disabled]="loading()"
+        (click)="load(project().id, true)"
+        i18n="@@cleanup.retry"
+      >
+        Try again
+      </button>
+    </div>
+  } @else if (loaded(); as l) {
+    <div class="setting-row" data-line="branches">
+      <div class="setting-text">
+        <label for="cleanup-branches" i18n="@@cleanup.branchesLabel"
+          >Branches not analysed for</label
+        >
+      </div>
+      <div class="setting-field">
+        <select
+          id="cleanup-branches"
+          class="days-select"
+          [disabled]="!canEdit()"
+          (change)="setBranches($event)"
+        >
+          @for (c of branchChoices(); track c.value) {
+            <option [value]="c.value" [selected]="c.value === branches()">{{ c.text }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="setting-row" data-line="merge-requests">
+      <div class="setting-text">
+        <label for="cleanup-merge-requests" i18n="@@cleanup.mergeRequestsLabel"
+          >Merge requests not analysed for</label
+        >
+      </div>
+      <div class="setting-field">
+        <select
+          id="cleanup-merge-requests"
+          class="days-select"
+          [disabled]="!canEdit()"
+          (change)="setMergeRequests($event)"
+        >
+          @for (c of mergeRequestChoices(); track c.value) {
+            <option [value]="c.value" [selected]="c.value === mergeRequests()">
+              {{ c.text }}
+            </option>
+          }
+        </select>
+      </div>
+    </div>
+
+    <div class="setting-row" data-line="kept">
+      <div class="setting-text">
+        <span class="setting-name" i18n="@@cleanup.keptLabel">Always kept</span>
+        <p i18n="@@cleanup.keptHint">Qualor never deletes these branches.</p>
+      </div>
+      <div class="setting-field">
+        <ul class="kept-list">
+          <li>
+            <span class="chip mono">{{ mainBranch() }}</span
+            >&ngsp;<span class="hint" i18n="@@cleanup.keptMain">the main branch</span>
+          </li>
+          @if (l.alwaysKept.trackedPatterns.length > 0) {
+            <li>
+              @for (pattern of l.alwaysKept.trackedPatterns; track pattern) {
+                <span class="chip mono">{{ pattern }}</span
+                >&ngsp;
+              }
+              <span class="hint" i18n="@@cleanup.keptTracked"
+                >branches that vulnerability monitoring tracks</span
+              >
+            </li>
+          }
+        </ul>
+      </div>
+    </div>
+
+    <div class="setting-row" data-line="keep">
+      <div class="setting-text">
+        @if (canEdit()) {
+          <label for="cleanup-keep" i18n="@@cleanup.keepLabel">Also keep branches matching</label>
+          <p id="cleanup-keep-hint" i18n="@@cleanup.keepHint">
+            Up to 20 patterns, such as release/*. Press Enter after each one.
+          </p>
+        } @else {
+          <span class="setting-name" i18n="@@cleanup.keepLabel">Also keep branches matching</span>
+        }
+      </div>
+      <div class="setting-field">
+        @if (keep().length > 0) {
+          <ul class="keep-list">
+            @for (pattern of keep(); track pattern) {
+              <li class="chip">
+                <span class="keep-text mono">{{ pattern }}</span>
+                @if (canEdit()) {
+                  <button
+                    type="button"
+                    class="keep-remove"
+                    [attr.aria-label]="removePatternLabel(pattern)"
+                    (click)="removePattern(pattern)"
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                }
+              </li>
+            }
+          </ul>
+        } @else if (!canEdit()) {
+          <p class="hint" i18n="@@cleanup.keepNone">No pattern.</p>
+        }
+        @if (canEdit()) {
+          <input
+            #keepField
+            id="cleanup-keep"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            [attr.aria-describedby]="
+              keepError() ? 'cleanup-keep-error cleanup-keep-hint' : 'cleanup-keep-hint'
+            "
+            [attr.aria-invalid]="keepError() ? 'true' : null"
+            [value]="keepText()"
+            (input)="typePattern($event)"
+            (keydown.enter)="enterPattern($event)"
+            (blur)="leavePatterns()"
+          />
+          @if (keepError(); as message) {
+            <span id="cleanup-keep-error" class="field-error" role="alert">{{ message }}</span>
+          }
+        }
+      </div>
+    </div>
+
+    @if (canEdit()) {
+      <div class="setting-actions">
+        <p id="cleanup-warning" class="cleanup-warning" i18n="@@cleanup.warning">
+          Deleted analyses cannot be recovered.
+        </p>
+        <button
+          type="button"
+          class="btn"
+          aria-describedby="cleanup-warning"
+          [class.btn-primary]="dirty()"
+          [disabled]="!dirty() || busy()"
+          (click)="save()"
+          i18n="@@cleanup.save"
+        >
+          Save
+        </button>
+      </div>
+    }
+  } @else {
+    <div class="panel-body">
+      <p class="hint" i18n="@@cleanup.loading">Loading…</p>
+    </div>
+  }
+</section>

@@ -599,6 +599,7 @@ describe('SettingsPage navigation for members and enterprise entries (rbac-audit
       'Email',
       'Vulnerability database',
       'MCP',
+      'Cleanup',
       'Licence',
     ]);
   });
