@@ -213,7 +213,18 @@
             >
               Change status
             </button>
-            @if (jiraReady()) {
+            @if (boardsReady()) {
+              <button
+                type="button"
+                class="btn"
+                [disabled]="!canCreateBoards()"
+                [attr.aria-describedby]="overLimit() ? 'bulk-limit' : null"
+                (click)="createBoards()"
+                i18n="@@boards.bulk.create"
+              >
+                Create Azure Boards work items
+              </button>
+            } @else if (jiraReady()) {
               <button
                 type="button"
                 class="btn"
@@ -249,6 +260,9 @@
           }
           @if (jiraResult(); as summary) {
             <p class="alert alert-success"><q-jira-request-result [summary]="summary" /></p>
+          }
+          @if (boardsResult(); as summary) {
+            <p class="alert alert-success"><q-boards-request-result [summary]="summary" /></p>
           }
           @if (bulkError(); as message) {
             <p class="alert alert-error">{{ message }}</p>
@@ -320,11 +334,21 @@
                     @if (issue.confidence === 'medium') {
                       <span class="badge badge-tag" i18n="@@issues.possible">Possible</span>
                     }
-                    <!-- The pill only: the bulk bar creates Jira issues (spec §6.9). -->
+                    <!-- The pill only: the bulk bar creates Jira issues or work items (spec
+                         §6.9). One tracker per finding: a Jira link wins. -->
                     @if (issue.jira) {
                       <q-jira-link
                         [link]="issue.jira"
                         [linkable]="issue.jiraLinkable"
+                        [canTriage]="false"
+                        [projectId]="projectId()"
+                        [target]="{ issueId: issue.id }"
+                        [compact]="true"
+                      />
+                    } @else if (issue.boards) {
+                      <q-boards-link
+                        [link]="issue.boards"
+                        [linkable]="issue.boardsLinkable"
                         [canTriage]="false"
                         [projectId]="projectId()"
                         [target]="{ issueId: issue.id }"

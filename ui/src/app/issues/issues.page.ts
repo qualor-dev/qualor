@@ -19,6 +19,17 @@ import { ActivatedRoute, type Params, Router, RouterLink } from '@angular/router
 import { Api, ok } from '../api/api';
 import { isRetryable, problemMessage } from '../api/errors';
 import type { ItemOf, RequestBody, ResponseBody } from '../api/types';
+import { BoardsLinkView } from '../boards/boards-link';
+import { BoardsProjectState } from '../boards/boards-project';
+import {
+  BOARDS_ISSUES_MAX,
+  BoardsRequestResult,
+  type BoardsRequestSummary,
+  boardsRequestError,
+  boardsRequestSummary,
+  boardsStateGone,
+  createBoardsLinks,
+} from '../boards/boards-request';
 import { Distribution, type DistributionItem } from '../charts/distribution';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label, type LabelKind } from '../i18n/labels';
@@ -150,11 +161,15 @@ function bulkSummary(result: BulkResult): string {
  *
  * Jira (spec §6.9): a row with a Jira link shows it as a pill, and the bulk bar of a project mapped
  * to Jira creates Jira issues for the selection; while a shown link is pending, the list is read
- * again every 3 s, at most 40 times (R22).
+ * again every 3 s, at most 40 times (R22). Azure Boards the same way: a row with a Boards link (and
+ * no Jira link: one tracker per finding) shows its work item as a pill, and the bulk bar of a
+ * project mapped to Boards creates work items instead.
  */
 @Component({
   selector: 'q-issues-page',
   imports: [
+    BoardsLinkView,
+    BoardsRequestResult,
     DateTimePipe,
     Distribution,
     Icon,
@@ -165,8 +180,9 @@ function bulkSummary(result: BulkResult): string {
   ],
   templateUrl: './issues.page.html',
   styleUrls: ['./issues.page.css', './issue-filters.css'],
-  // The project's Jira state is read afresh for each visit (a mapping may have been saved since).
-  providers: [JiraProjectState],
+  // The project's Jira and Boards state is read afresh for each visit (a mapping may have been
+  // saved since).
+  providers: [JiraProjectState, BoardsProjectState],
 })
 export class IssuesPage {
   private readonly api = inject(Api);
@@ -177,6 +193,7 @@ export class IssuesPage {
   private readonly injector = inject(Injector);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly jira = inject(JiraProjectState);
+  private readonly boards = inject(BoardsProjectState);
   readonly projectId = input.required<string>();
   /**
    * Whether the caller may change issue statuses here (`issue.triage`): otherwise the selection
@@ -261,6 +278,8 @@ export class IssuesPage {
   protected readonly bulkError = signal<string | null>(null);
   /** What the last "Create Jira issues" did, for the live region. */
   protected readonly jiraResult = signal<JiraRequestSummary | null>(null);
+  /** What the last "Create Azure Boards work items" did, for the live region. */
+  protected readonly boardsResult = signal<BoardsRequestSummary | null>(null);
   /** The change a 503 refused, to send again as it was. */
   protected readonly retryOffer = new RetryOffer<BulkRequest>();
   private readonly bulkStatus = viewChild<ElementRef<HTMLElement>>('bulkStatus');
@@ -363,6 +382,16 @@ export class IssuesPage {
   protected readonly canCreateJira = computed(
     () => !this.busy() && this.selected().size > 0 && this.selected().size <= JIRA_ISSUES_MAX,
   );
+  /**
+   * The project is mapped to Azure Boards: the bulk bar offers "Create Azure Boards work items"
+   * instead (a project has one tracker).
+   */
+  protected readonly boardsReady = computed(
+    () => this.boards.of(this.projectId())()?.mapped === true,
+  );
+  protected readonly canCreateBoards = computed(
+    () => !this.busy() && this.selected().size > 0 && this.selected().size <= BOARDS_ISSUES_MAX,
+  );
   protected readonly canApply = computed(
     () =>
       !this.busy() &&
@@ -404,7 +433,8 @@ export class IssuesPage {
     });
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
     refreshWhilePending(
-      () => this.list.items().some((i) => i.jira?.state === 'pending'),
+      () =>
+        this.list.items().some((i) => i.jira?.state === 'pending' || i.boards?.state === 'pending'),
       () => void this.list.refresh(),
       inject(DestroyRef),
     );
@@ -523,6 +553,7 @@ export class IssuesPage {
     this.bulkError.set(null);
     this.bulkMessage.set(null);
     this.jiraResult.set(null);
+    this.boardsResult.set(null);
     this.retryOffer.clear();
     let succeeded = false;
     try {
@@ -540,11 +571,40 @@ export class IssuesPage {
     this.focusResult(succeeded);
   }
 
+  /** "Create Azure Boards work items": the selection is done with once the request is accepted. */
+  protected async createBoards(): Promise<void> {
+    if (!this.canCreateBoards()) return;
+    const projectId = this.projectId();
+    this.busy.set(true);
+    this.bulkError.set(null);
+    this.bulkMessage.set(null);
+    this.jiraResult.set(null);
+    this.boardsResult.set(null);
+    this.retryOffer.clear();
+    let succeeded = false;
+    try {
+      const items = await createBoardsLinks(this.api, projectId, {
+        issueIds: [...this.selected()],
+      });
+      this.boardsResult.set(boardsRequestSummary(items));
+      this.selected.set(new Set());
+      await this.list.refresh();
+      succeeded = true;
+    } catch (err) {
+      this.bulkError.set(boardsRequestError(err));
+      if (boardsStateGone(err)) this.boards.reload(projectId);
+    } finally {
+      this.busy.set(false);
+    }
+    this.focusResult(succeeded);
+  }
+
   private async send(request: BulkRequest): Promise<void> {
     this.busy.set(true);
     this.bulkError.set(null);
     this.bulkMessage.set(null);
     this.jiraResult.set(null);
+    this.boardsResult.set(null);
     this.retryOffer.clear();
     let succeeded = false;
     try {

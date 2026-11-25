@@ -1,0 +1,195 @@
+@if (visible()) {
+  @if (compact()) {
+    <span class="boards-compact"><ng-container *ngTemplateOutlet="body" /></span>
+  } @else {
+    <section class="card boards-card" [attr.aria-labelledby]="uid + '-heading'">
+      <h3 [id]="uid + '-heading'" #heading tabindex="-1" i18n="@@boards.link.heading">
+        Azure Boards
+      </h3>
+      <ng-container *ngTemplateOutlet="body" />
+    </section>
+  }
+  @if (confirming()) {
+    <dialog
+      #dialog
+      class="dialog"
+      [attr.aria-labelledby]="uid + '-title'"
+      [attr.aria-describedby]="uid + '-text'"
+      (close)="confirming.set(false)"
+    >
+      <form novalidate (submit)="unlink($event)">
+        <div class="dialog-head">
+          <h2 [id]="uid + '-title'" i18n="@@boards.link.unlinkTitle">Unlink the work item</h2>
+        </div>
+        <div class="dialog-body">
+          @if (shown()?.workItemId; as id) {
+            <p [id]="uid + '-text'" i18n="@@boards.link.unlinkTextId">
+              This finding stops showing #{{ id }}, and Qualor no longer updates it. The work item
+              stays in Azure Boards, and Qualor does not create another one for this finding by
+              itself.
+            </p>
+          } @else {
+            <p [id]="uid + '-text'" i18n="@@boards.link.unlinkText">
+              Qualor stops creating this work item and does not create another one for this finding
+              by itself.
+            </p>
+          }
+        </div>
+        <div class="dialog-actions">
+          <button
+            type="button"
+            class="btn"
+            autofocus
+            (click)="closeUnlink()"
+            i18n="@@dialog.cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-danger-solid"
+            [disabled]="busy()"
+            i18n="@@boards.link.unlinkConfirm"
+          >
+            Unlink
+          </button>
+        </div>
+      </form>
+    </dialog>
+  }
+}
+
+<!-- The state, the error and the actions: the same in the card and in the pill. -->
+<ng-template #body>
+  <span class="boards-status" [attr.role]="compact() ? null : 'status'">
+    @if (shown(); as l) {
+      @switch (l.state) {
+        @case ('pending') {
+          @if (compact()) {
+            <span class="badge badge-tag" i18n="@@boards.link.creatingPill"
+              >Creating work item…</span
+            >
+          } @else {
+            <span i18n="@@boards.link.creating">Creating…</span>
+          }
+        }
+        @case ('created') {
+          @if (l.workItemId; as id) {
+            @if (url(); as href) {
+              <a class="boards-id" [href]="href" target="_blank" rel="noopener noreferrer"
+                >#{{ id }}<q-icon name="external"
+              /></a>
+            } @else {
+              <span class="boards-id">#{{ id }}</span>
+            }
+          }
+          @if (l.workItemState; as state) {
+            <span
+              class="badge boards-state"
+              [class]="state.category ? 'boards-state-' + state.category : ''"
+              >{{ state.name }}</span
+            >
+          }
+          @if (!compact() && checked(); as ago) {
+            <span class="boards-checked" [title]="l.stateCheckedAt | dateTime">
+              @switch (ago.unit) {
+                @case ('now') {
+                  <ng-container i18n="@@boards.link.checkedNow">checked just now</ng-container>
+                }
+                @case ('minutes') {
+                  <ng-container i18n="@@boards.link.checkedMinutes">{ago.count, plural,
+                    =1 {checked 1 min ago}
+                    other {checked {{ ago.count }} min ago}
+                  }</ng-container>
+                }
+                @case ('hours') {
+                  <ng-container i18n="@@boards.link.checkedHours">{ago.count, plural,
+                    =1 {checked 1 hour ago}
+                    other {checked {{ ago.count }} hours ago}
+                  }</ng-container>
+                }
+                @default {
+                  <ng-container i18n="@@boards.link.checkedOn">checked {{ ago.date }}</ng-container>
+                }
+              }
+            </span>
+          }
+        }
+        @case ('failed') {
+          <span
+            class="boards-failure"
+            [class.badge]="compact()"
+            [class.badge-failed]="compact()"
+            [attr.title]="compact() ? failure() : null"
+            >{{ failure() }}</span
+          >
+        }
+        @case ('missing') {
+          <span [class.badge]="compact()" [class.badge-tag]="compact()" i18n="@@boards.link.missing"
+            >Not found in Azure Boards</span
+          >
+        }
+      }
+    }
+  </span>
+  @if (error(); as message) {
+    @if (compact()) {
+      <span class="boards-error" role="alert">{{ message }}</span>
+    } @else {
+      <p class="alert alert-error" role="alert">{{ message }}</p>
+    }
+  }
+  @if (shown(); as l) {
+    @if (canTriage()) {
+      <span class="boards-actions">
+        <!-- Only a finding that may still have a work item: Unlink stays either way. -->
+        @if (l.state === 'failed' && linkable()) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-label]="labels().retry"
+            [disabled]="busy()"
+            (click)="retry()"
+            i18n="@@boards.link.retry"
+          >
+            Retry
+          </button>
+        } @else if (l.state === 'missing' && linkable()) {
+          <button
+            type="button"
+            class="btn"
+            [attr.aria-label]="labels().createAgain"
+            [disabled]="busy()"
+            (click)="retry()"
+            i18n="@@boards.link.createAgain"
+          >
+            Create again
+          </button>
+        }
+        <button
+          type="button"
+          class="btn-quiet danger"
+          [attr.aria-label]="labels().unlink"
+          [attr.aria-disabled]="busy() ? true : null"
+          (click)="openUnlink()"
+          i18n="@@boards.link.unlink"
+        >
+          Unlink
+        </button>
+      </span>
+    }
+  } @else if (canCreate()) {
+    <span class="boards-actions">
+      <button
+        type="button"
+        class="btn"
+        [attr.aria-label]="labels().create"
+        [disabled]="busy()"
+        (click)="create()"
+        i18n="@@boards.link.create"
+      >
+        Create work item
+      </button>
+    </span>
+  }
+</ng-template>

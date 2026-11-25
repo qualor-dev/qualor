@@ -1,6 +1,8 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
+  boardsLink,
+  boardsProjectSettings,
   dependencyFix,
   FakeServer,
   fixSettings,
@@ -10,6 +12,7 @@ import {
   MEMBER_PROJECT_PERMISSIONS,
   ORG_ID,
   page,
+  pendingBoardsLink,
   problem,
   provideFakeServer,
   settle,
@@ -1016,6 +1019,69 @@ describe('IssuePage', () => {
     });
   });
 
+  describe('the Azure Boards card', () => {
+    const LINKS = '/api/v0/projects/p1/boards/links';
+    const headings = (root: HTMLElement) =>
+      [...root.querySelectorAll('.issue-aside section.card h3')].map((h) => h.textContent?.trim());
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', {
+        body: jiraProjectSettings({ mapped: false }),
+      });
+      server.on('GET', '/api/v0/projects/p1/boards', { body: boardsProjectSettings() });
+    });
+
+    it('shows the issue’s work item in a card after Details, in place of Jira', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ boards: boardsLink(), boardsLinkable: false }),
+      });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Azure Boards']);
+      expect(headings(root)).not.toContain('Jira');
+      const id = root.querySelector('.issue-aside a.boards-id');
+      expect(id?.textContent?.trim()).toBe('#42');
+      expect(root.querySelector('.issue-aside .boards-state')?.textContent?.trim()).toBe('Active');
+    });
+
+    it('creates the work item of this issue in a project mapped to Boards', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ jiraLinkable: true, boardsLinkable: true }),
+      });
+      server.on('POST', LINKS, {
+        status: 202,
+        body: { items: [{ issueId: ID, link: pendingBoardsLink(), skipped: null }] },
+      });
+      const { fixture, root } = await render();
+      expect(root.querySelector('q-jira-link')).toBeNull();
+      buttonIn(root, 'Create work item')!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', LINKS).map((r) => r.body)).toEqual([{ issueIds: [ID] }]);
+      expect(root.querySelector('.issue-aside')?.textContent).toContain('Creating…');
+    });
+
+    it('shows a finding with a Jira link Jira only, though the project is mapped to Boards', async () => {
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ jira: jiraLink(), jiraLinkable: true, boardsLinkable: false }),
+      });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Jira']);
+      expect(root.querySelector('.issue-aside a.jira-key')?.textContent?.trim()).toBe('PAY-12');
+      expect(root.querySelector('q-boards-link')).toBeNull();
+      expect(buttonIn(root, 'Create work item')).toBeUndefined();
+    });
+
+    it('keeps the Jira card of a project not mapped to Boards', async () => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      server.on('GET', '/api/v0/projects/p1/boards', {
+        body: boardsProjectSettings({ mapped: false }),
+      });
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ jiraLinkable: true }) });
+      const { root } = await render();
+      expect(buttonIn(root, 'Create Jira issue')).toBeDefined();
+      expect(root.querySelector('q-boards-link')).toBeNull();
+    });
+  });
+
   describe('the Fix card', () => {
     const SETTINGS = '/api/v0/projects/p1/fixes/settings';
     const CREATE = '/api/v0/projects/p1/fixes';
@@ -1196,6 +1262,22 @@ describe('IssuePage while its Jira link is pending (R22)', () => {
     expect(reads()).toBe(2);
     for (let i = 0; i < 45; i++) await advance(3_000);
     expect(reads()).toBe(41);
+  });
+
+  it('reads the issue again while its work item is being created, and stops once it is', async () => {
+    server.on('GET', '/api/v0/projects/p1/boards', { body: boardsProjectSettings() });
+    let answers = 0;
+    server.on('GET', `/api/v0/issues/${ID}`, () => ({
+      body: detail({ boards: ++answers < 3 ? pendingBoardsLink() : boardsLink() }),
+    }));
+    const root = await render();
+    expect(root.querySelector('.issue-aside')?.textContent).toContain('Creating…');
+    await advance(3_000);
+    await advance(3_000);
+    expect(reads()).toBe(3);
+    expect(root.querySelector('a.boards-id')?.textContent?.trim()).toBe('#42');
+    for (let i = 0; i < 5; i++) await advance(3_000);
+    expect(reads()).toBe(3);
   });
 
   it('stops reading once the Jira issue is created', async () => {

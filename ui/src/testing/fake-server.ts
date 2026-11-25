@@ -7,6 +7,7 @@ import type {
   PortfolioProjectRow,
 } from '../app/api/ee';
 import type {
+  BoardsLink,
   BoardsProjectSettings,
   FixSettingsAnswer,
   ItemOf,
@@ -309,6 +310,35 @@ export function boardsProjectSettings(
     monitoringOn: true,
     exploitedAvailable: false,
   };
+}
+
+/** A finding's Azure Boards link: work item 42 of Fabrikam, created by hand, Active, by default. */
+export function boardsLink(overrides: Partial<BoardsLink> = {}): BoardsLink {
+  return {
+    id: '0190a6c2-0000-7000-8000-0000000000ca',
+    state: 'created',
+    origin: 'manual',
+    workItemId: 42,
+    url: 'https://dev.azure.com/contoso/6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c/_workitems/edit/42',
+    workItemState: { name: 'Active', category: 'inprogress' },
+    stateCheckedAt: '2026-11-25T10:00:00.000Z',
+    failure: null,
+    reportedFixedAt: null,
+    createdAt: '2026-11-25T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A Boards link waiting for the create job: no work item yet. */
+export function pendingBoardsLink(overrides: Partial<BoardsLink> = {}): BoardsLink {
+  return boardsLink({
+    state: 'pending',
+    workItemId: null,
+    url: null,
+    workItemState: null,
+    stateCheckedAt: null,
+    ...overrides,
+  });
 }
 
 /**

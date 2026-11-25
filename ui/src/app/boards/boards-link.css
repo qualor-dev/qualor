@@ -1,0 +1,109 @@
+/* A finding's Azure Boards work item: the issue page's card, or a pill in a list row. The host
+   draws no box, so an empty view takes no gap of a column and the pill's parts join the row. */
+:host {
+  display: contents;
+}
+
+.boards-card {
+  display: grid;
+  gap: 10px;
+}
+.boards-card h3 {
+  margin: 0;
+}
+.boards-card .boards-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.boards-status:empty {
+  display: none;
+}
+.boards-card .boards-failure {
+  color: var(--bad);
+  overflow-wrap: anywhere;
+}
+.boards-card .alert {
+  margin: 0;
+}
+
+.boards-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.boards-id:hover {
+  text-decoration: underline;
+}
+.boards-id q-icon {
+  width: 12px;
+  height: 12px;
+}
+.boards-checked {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* The work item's state by its category, in the colours of the other pills: proposed and removed
+   grey, in progress blue, resolved and completed green. A state without a known category keeps
+   the plain pill. */
+.boards-state {
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+}
+.boards-state-inprogress {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.boards-state-resolved,
+.boards-state-completed {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.boards-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The pill: the id and state, or the link's state, and the row's actions on one line. */
+.boards-compact {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.boards-compact .boards-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.boards-compact .btn {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.boards-compact .btn-quiet {
+  min-height: 28px;
+  font-size: 12.5px;
+}
+/* A long reason (Azure DevOps' own words) is cut in the row; the title holds it whole. */
+.boards-compact .boards-failure {
+  display: inline-block;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.boards-error {
+  color: var(--bad);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

@@ -291,14 +291,26 @@
         </dl>
       </section>
 
-      <q-jira-link
-        [link]="i.jira"
-        [linkable]="i.jiraLinkable"
-        [canTriage]="canTriage()"
-        [projectId]="projectId()"
-        [target]="{ issueId: i.id }"
-        (changed)="issue.reload()"
-      />
+      <!-- One tracker per finding: its Boards link, or Boards for a project mapped to it; else Jira. -->
+      @if (boardsShown(i)) {
+        <q-boards-link
+          [link]="i.boards"
+          [linkable]="i.boardsLinkable"
+          [canTriage]="canTriage()"
+          [projectId]="projectId()"
+          [target]="{ issueId: i.id }"
+          (changed)="issue.reload()"
+        />
+      } @else {
+        <q-jira-link
+          [link]="i.jira"
+          [linkable]="i.jiraLinkable"
+          [canTriage]="canTriage()"
+          [projectId]="projectId()"
+          [target]="{ issueId: i.id }"
+          (changed)="issue.reload()"
+        />
+      }
 
       @if (fixTarget(); as fixFor) {
         <q-fix-link

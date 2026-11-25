@@ -87,6 +87,21 @@ export type BoardsWorkItemType = ItemOf<'/api/v0/projects/{id}/boards/work-item-
 /** `GET /projects/{id}/boards/paths`: the area and iteration paths, the root first. */
 export type BoardsPaths = ResponseBody<'/api/v0/projects/{id}/boards/paths', 'get'>;
 /**
+ * A finding's Azure Boards link, as issue and vulnerability items embed it (`boards`, null while
+ * the finding has none: a dismissed link reads as none). `state` is the link's own state; the work
+ * item's state in Azure DevOps is `workItemState`.
+ */
+export type BoardsLink = NonNullable<ItemOf<'/api/v0/issues'>['boards']>;
+/**
+ * One item of `POST /projects/{id}/boards/links`: the issue or the vulnerability, its link, and why
+ * it was skipped (`ALREADY_LINKED` carries the link it has, or none when the finding has a Jira
+ * link).
+ */
+export type BoardsLinkItem = AcceptedBody<
+  '/api/v0/projects/{id}/boards/links',
+  'post'
+>['items'][number];
+/**
  * A finding's Jira link, as issue and vulnerability items embed it (`jira`, null while the finding
  * has none: a dismissed link reads as none).
  */

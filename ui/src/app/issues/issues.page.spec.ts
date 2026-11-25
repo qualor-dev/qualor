@@ -1,6 +1,8 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import {
+  boardsLink,
+  boardsProjectSettings,
   FakeServer,
   jiraLink,
   jiraProjectSettings,
@@ -8,6 +10,7 @@ import {
   MEMBER_PROJECT_PERMISSIONS,
   ORG_ID,
   page,
+  pendingBoardsLink,
   problem,
   provideFakeServer,
   settle,
@@ -833,6 +836,122 @@ describe('IssuesPage', () => {
       // 501 rendered rows take about 4 s alone and more on a busy machine: past the default 5 s.
     }, 20_000);
   });
+
+  describe('Azure Boards', () => {
+    const LINKS = '/api/v0/projects/p1/boards/links';
+    const bulkButtons = (root: HTMLElement) =>
+      [...root.querySelectorAll<HTMLButtonElement>('form.bulk button')].map((b) =>
+        b.textContent?.trim(),
+      );
+    const boardsButton = (root: HTMLElement) =>
+      [...root.querySelectorAll<HTMLButtonElement>('form.bulk button')].find(
+        (b) => b.textContent?.trim() === 'Create Azure Boards work items',
+      );
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', {
+        body: jiraProjectSettings({ mapped: false }),
+      });
+      server.on('GET', '/api/v0/projects/p1/boards', { body: boardsProjectSettings() });
+    });
+
+    it('names Boards on the bulk button of a project mapped to Boards, and not Jira', async () => {
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(boardsButton(root)).toBeDefined();
+      expect(bulkButtons(root)).not.toContain('Create Jira issues');
+    });
+
+    it('offers no Boards button while the project is not mapped to Boards', async () => {
+      server.on('GET', '/api/v0/projects/p1/boards', {
+        body: boardsProjectSettings({ mapped: false }),
+      });
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(boardsButton(root)).toBeUndefined();
+      expect(bulkButtons(root)).toContain('Create Jira issues');
+    });
+
+    it('creates work items for the selection and says what happened to each', async () => {
+      const ids = ['i1', 'i2', 'i3', 'i4'];
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: ids.map((id) => issue(id, { boardsLinkable: true })),
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      server.on('POST', LINKS, {
+        status: 202,
+        body: {
+          items: [
+            { issueId: 'i1', link: pendingBoardsLink(), skipped: null },
+            { issueId: 'i2', link: pendingBoardsLink(), skipped: null },
+            { issueId: 'i3', link: null, skipped: 'ALREADY_LINKED' },
+            { issueId: 'i4', link: null, skipped: 'NOT_ELIGIBLE' },
+          ],
+        },
+      });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      boardsButton(root)!.click();
+      await settle(fixture);
+      expect(server.requestsTo('POST', LINKS).map((r) => r.body)).toEqual([{ issueIds: ids }]);
+      expect(server.requestsTo('POST', '/api/v0/projects/p1/jira/links')).toHaveLength(0);
+      expect(root.querySelector('[role="status"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '2 work items queued, 1 already linked, 1 not linkable',
+      );
+      expect(server.requestsTo('GET', '/api/v0/issues')).toHaveLength(2);
+      expect(root.querySelector('form.bulk')).toBeNull();
+    });
+
+    it('explains a refused request in its own words', async () => {
+      server.on('POST', LINKS, { status: 409, body: problem(409, 'BOARDS_NOT_CONNECTED') });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      boardsButton(root)!.click();
+      await settle(fixture);
+      expect(root.querySelector('[role="status"]')?.textContent).toContain(
+        'no Azure DevOps connection for Azure Boards',
+      );
+      expect(root.querySelector('form.bulk .label')?.textContent?.trim()).toBe('2 issues selected');
+    });
+
+    it('shows a work item pill on the rows that have one, and a Jira-linked row Jira only', async () => {
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: [
+            issue('i1', { boards: boardsLink() }),
+            issue('i2', { jira: jiraLink() }),
+            issue('i3', { boardsLinkable: true }),
+          ],
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      const { root } = await render();
+      const rows = [...root.querySelectorAll('tbody tr')];
+      expect(rows[0]?.querySelector('a.boards-id')?.textContent?.trim()).toBe('#42');
+      expect(rows[0]?.querySelector('.boards-state')?.textContent?.trim()).toBe('Active');
+      expect(rows[1]?.querySelector('a.jira-key')?.textContent?.trim()).toBe('PAY-12');
+      expect(rows[1]?.querySelector('q-boards-link')).toBeNull();
+      expect(rows[2]?.querySelector('q-boards-link')).toBeNull();
+      expect(root.querySelector('tbody button')).toBeNull();
+    });
+
+    it('says "Creating work item…" in a row whose work item is pending', async () => {
+      server.on('GET', '/api/v0/issues', {
+        body: {
+          items: [issue('i1', { boards: pendingBoardsLink() })],
+          nextCursor: null,
+          facets: {},
+        },
+      });
+      const { root } = await render();
+      expect(root.querySelector('tbody')?.textContent).toContain('Creating work item…');
+    });
+  });
 });
 
 describe('IssuesPage while a shown Jira link is pending (R22)', () => {
@@ -913,5 +1032,21 @@ describe('IssuesPage while a shown Jira link is pending (R22)', () => {
       await flush();
     }
     expect(reads()).toBe(41);
+  });
+
+  it('reads the list again while a shown work item is pending', async () => {
+    server.on('GET', '/api/v0/projects/p1/boards', { body: boardsProjectSettings() });
+    server.on('GET', '/api/v0/issues', {
+      body: { items: [issue('i1', { boards: pendingBoardsLink() })], nextCursor: null, facets: {} },
+    });
+    const fixture = TestBed.createComponent(IssuesPage);
+    current = fixture;
+    fixture.componentRef.setInput('projectId', 'p1');
+    await flush();
+    const reads = () => server.requestsTo('GET', '/api/v0/issues').length;
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await flush();
+    expect(reads()).toBe(2);
   });
 });

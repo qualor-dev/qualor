@@ -20,6 +20,8 @@ import type { ResponseBody } from '../api/types';
 import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
+import { BoardsLinkView } from '../boards/boards-link';
+import { BoardsProjectState, showsBoards } from '../boards/boards-project';
 import { FixLinkView } from '../fixes/fix-link';
 import { FixProjectState } from '../fixes/fix-project';
 import { type FixTarget, fixPending } from '../fixes/fix-request';
@@ -86,24 +88,36 @@ export function readSnippet(raw: unknown): Snippet | null {
  * - A 503 `CONCURRENCY_CONFLICT` offers to send the same change again once `Retry-After` passed.
  * - An id that is not a UUID is "not found" without asking the server.
  * - The aside's "Jira" card shows the issue's Jira link; while it is pending, the issue is read
- *   again every 3 s, at most 40 times (R22).
+ *   again every 3 s, at most 40 times (R22). An issue with an Azure Boards link, or of a project
+ *   mapped to Boards, shows the "Azure Boards" card in its place (one tracker per finding), read
+ *   again the same way while its work item is pending.
  * - A Trivy issue of main also gets a "Fix MR" card after it: the fix MR of its package, read
  *   again the same way while it waits, is prepared or is rebuilt.
  */
 @Component({
   selector: 'q-issue-page',
-  imports: [AiPanel, DateTimePipe, FixLinkView, Icon, JiraLinkView, LabelPipe, RouterLink],
+  imports: [
+    AiPanel,
+    BoardsLinkView,
+    DateTimePipe,
+    FixLinkView,
+    Icon,
+    JiraLinkView,
+    LabelPipe,
+    RouterLink,
+  ],
   templateUrl: './issue.page.html',
   styleUrl: './issue.page.css',
-  // The project's Jira and fix MR state is read afresh for each visit (settings may have been saved
-  // since).
-  providers: [JiraProjectState, FixProjectState],
+  // The project's Jira, Boards and fix MR state is read afresh for each visit (settings may have
+  // been saved since).
+  providers: [JiraProjectState, BoardsProjectState, FixProjectState],
 })
 export class IssuePage {
   private readonly api = inject(Api);
   private readonly document = inject(DOCUMENT);
   private readonly project = inject(CurrentProject);
   private readonly locale = inject(LOCALE_ID);
+  private readonly boards = inject(BoardsProjectState);
   readonly projectId = input.required<string>();
   readonly issueId = input.required<string>();
 
@@ -121,6 +135,11 @@ export class IssuePage {
     const permissions = this.project.permissions(this.projectId());
     return permissions !== undefined && !can(permissions, 'issue.triage');
   });
+
+  /** The issue shows its Azure Boards card in place of the Jira one (one tracker per finding). */
+  protected boardsShown(issue: IssueDetail): boolean {
+    return showsBoards(issue, this.boards.of(this.projectId())());
+  }
 
   /** The directory (with its last slash) and the file name, so the name can stay whole. */
   protected splitPath(path: string): { dir: string; base: string } {
@@ -275,7 +294,10 @@ export class IssuePage {
     });
     inject(DestroyRef).onDestroy(() => this.retryOffer.clear());
     refreshWhilePending(
-      () => this.current()?.jira?.state === 'pending' || fixPending(this.current()?.fix),
+      () =>
+        this.current()?.jira?.state === 'pending' ||
+        this.current()?.boards?.state === 'pending' ||
+        fixPending(this.current()?.fix),
       () => this.issue.reload(),
       inject(DestroyRef),
     );

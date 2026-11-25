@@ -1,0 +1,31 @@
+@for (part of parts(); track part.kind; let last = $last) {
+  @switch (part.kind) {
+    @case ('queued') {
+      <span i18n="@@boards.request.queued">{part.count, plural,
+        =1 {1 work item queued}
+        other {{{ part.count }} work items queued}
+      }</span>
+    }
+    @case ('alreadyLinked') {
+      <span i18n="@@boards.request.alreadyLinked">{part.count, plural,
+        =1 {1 already linked}
+        other {{{ part.count }} already linked}
+      }</span>
+    }
+    @case ('notLinkable') {
+      <span i18n="@@boards.request.notLinkable">{part.count, plural,
+        =1 {1 not linkable}
+        other {{{ part.count }} not linkable}
+      }</span>
+    }
+    @case ('notFound') {
+      <span i18n="@@boards.request.notFound">{part.count, plural,
+        =1 {1 not found}
+        other {{{ part.count }} not found}
+      }</span>
+    }
+  }
+  @if (!last) {
+    <span>, </span>
+  }
+}
