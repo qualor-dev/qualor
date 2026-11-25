@@ -125,10 +125,10 @@ describe('item 19 readers', () => {
 
   it('redacts the bench Qualor host and token', () => {
     const table = buildRedactionTable({
-      AZURE_PROBE_QUALOR_URL: 'https://qualor.16.192.106.23.sslip.io',
+      AZURE_PROBE_QUALOR_URL: 'https://qualor.203.0.113.23.sslip.io',
       AZURE_PROBE_QUALOR_TOKEN: 'qlr_secret_value_123456',
     });
-    expect(table.hosts).toContain('qualor.16.192.106.23.sslip.io');
+    expect(table.hosts).toContain('qualor.203.0.113.23.sslip.io');
     expect(table.secrets).toContain('qlr_secret_value_123456');
   });
 });
