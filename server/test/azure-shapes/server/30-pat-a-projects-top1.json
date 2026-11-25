@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": "6da678c1-da37-4eef-8915-fa6e000089d9",
+        "name": "probe-scrum",
+        "description": "Qualor probe bench (Scrum)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/6da678c1-da37-4eef-8915-fa6e000089d9",
+        "state": "wellFormed",
+        "revision": 24,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:49.92Z"
+      }
+    ]
+  },
+  "continuationToken": "1"
+}

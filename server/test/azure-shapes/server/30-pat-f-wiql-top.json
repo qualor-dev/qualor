@@ -1,0 +1,32 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "queryType": "flat",
+    "queryResultType": "workItem",
+    "asOf": "2026-11-25T01:25:32.047Z",
+    "columns": [
+      {
+        "referenceName": "System.Id",
+        "name": "ID",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/wit/fields/System.Id"
+      }
+    ],
+    "sortColumns": [
+      {
+        "field": {
+          "referenceName": "System.Id",
+          "name": "ID",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/wit/fields/System.Id"
+        },
+        "descending": true
+      }
+    ],
+    "workItems": [
+      {
+        "id": 15,
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/15"
+      }
+    ]
+  }
+}

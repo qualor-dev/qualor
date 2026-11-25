@@ -1,0 +1,50 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 15,
+    "type": "Issue",
+    "name": "Qualor probe item 30 reconcile 2 (20261125012528)",
+    "project": "probe-org",
+    "deletedDate": "11/25/2026 1:25:32 AM",
+    "deletedBy": "Probe User <ado.example.invalid\\Probe User>",
+    "code": 200,
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/recyclebin/15",
+    "resource": {
+      "id": 15,
+      "rev": 2,
+      "fields": {
+        "System.AreaPath": "probe-org",
+        "System.TeamProject": "probe-org",
+        "System.IterationPath": "probe-org",
+        "System.WorkItemType": "Issue",
+        "System.State": "Active",
+        "System.Reason": "New",
+        "System.AssignedTo": "Probe User <ado.example.invalid\\Probe User>",
+        "System.CreatedDate": "2026-11-25T01:25:30.913Z",
+        "System.CreatedBy": "Probe User <ado.example.invalid\\Probe User>",
+        "System.ChangedDate": "2026-11-25T01:25:32.15Z",
+        "System.ChangedBy": "Probe User <ado.example.invalid\\Probe User>",
+        "System.CommentCount": 0,
+        "System.Title": "Qualor probe item 30 reconcile 2 (20261125012528)",
+        "Microsoft.VSTS.Common.StateChangeDate": "2026-11-25T01:25:30.913Z",
+        "Microsoft.VSTS.Common.ActivatedDate": "2026-11-25T01:25:30.913Z",
+        "Microsoft.VSTS.Common.ActivatedBy": "Probe User <ado.example.invalid\\Probe User>",
+        "Microsoft.VSTS.Common.Priority": 2,
+        "System.Tags": "probe30; qualor"
+      },
+      "_links": {
+        "self": {
+          "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/recyclebin/15"
+        },
+        "workItemType": {
+          "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItemTypes/Issue"
+        },
+        "fields": {
+          "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/fields"
+        }
+      },
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/recyclebin/15"
+    }
+  }
+}

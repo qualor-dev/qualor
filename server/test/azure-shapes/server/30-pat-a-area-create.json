@@ -1,0 +1,21 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 22,
+    "identifier": "c8a9b753-db7d-4d39-8065-fa6e0000684f",
+    "name": "probe30-20261125012528",
+    "structureType": "area",
+    "hasChildren": false,
+    "path": "\\probe-org\\Area\\probe30-20261125012528",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/classificationNodes/Areas/probe30-20261125012528"
+      },
+      "parent": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/classificationNodes/Areas"
+      }
+    },
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/classificationNodes/Areas/probe30-20261125012528"
+  }
+}

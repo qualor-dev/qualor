@@ -1,0 +1,13 @@
+{
+  "status": 404,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "VS402323: Work item type NoSuchType30 does not exist in project 828b9239-8828-4b4e-82e8-fa6e00000c8f or you do not have permission to access it.",
+    "typeName": "Microsoft.TeamFoundation.WorkItemTracking.Server.Metadata.WorkItemTypeNotFoundException, Microsoft.TeamFoundation.WorkItemTracking.Server",
+    "typeKey": "WorkItemTypeNotFoundException",
+    "errorCode": 0,
+    "eventId": 3200
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": 14,
+        "rev": 2,
+        "fields": {
+          "System.TeamProject": "probe-basic",
+          "System.WorkItemType": "Issue",
+          "System.State": "To Do",
+          "System.Tags": "probe30; qualor"
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/wit/workItems/14"
+      }
+    ]
+  }
+}

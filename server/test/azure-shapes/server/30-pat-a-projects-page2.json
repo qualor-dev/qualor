@@ -1,0 +1,20 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": "9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0",
+        "name": "probe-basic",
+        "description": "Qualor probe bench (Basic)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/9fe748f1-a77b-4b13-8b7d-fa6e0000f6a0",
+        "state": "wellFormed",
+        "revision": 16,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:37.693Z"
+      }
+    ]
+  },
+  "continuationToken": "2"
+}

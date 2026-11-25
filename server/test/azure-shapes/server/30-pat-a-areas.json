@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 6,
+    "identifier": "6c97be8e-1e2a-44db-85e2-fa6e0000ffd3",
+    "name": "probe-org",
+    "structureType": "area",
+    "hasChildren": false,
+    "path": "\\probe-org\\Area",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/classificationNodes/Areas"
+      }
+    },
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/classificationNodes/Areas"
+  }
+}

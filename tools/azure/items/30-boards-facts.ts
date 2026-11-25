@@ -271,6 +271,14 @@ export function tagOfLength(n: number, seed: string): string {
   return `${text.slice(0, n - 1)}z`;
 }
 
+/** The id of the tag called exactly `name` in a `wit/tags` answer; undefined when not listed. */
+export function tagIdOf(json: unknown, name: string): string | undefined {
+  const parsed = z
+    .object({ value: z.array(z.object({ id: z.string(), name: z.string() }).loose()) })
+    .safeParse(json);
+  return parsed.success ? parsed.data.value.find((t) => t.name === name)?.id : undefined;
+}
+
 /** The names of the types a `workitemtypecategories` answer lists under `Microsoft.HiddenCategory`. */
 export function hiddenTypes(json: unknown): string[] | null {
   const parsed = z
@@ -974,6 +982,12 @@ async function stepJ(env: Env, note: Note): Promise<void> {
         res = await ctx.bot.request('DELETE', path, undefined, { apiVersion: '7.0-preview.1' });
       }
       if (res.status >= 300 && res.status !== 404) {
+        // Server (IIS/HTTP.sys) refuses a URL segment over 260 characters with an HTML 400: the
+        // 400-character tag goes by its id instead.
+        const id = tagIdOf((await ctx.bot.request('GET', wit(env.agile, '/tags'))).json, tag);
+        if (id) res = await ctx.bot.request('DELETE', wit(env.agile, `/tags/${id}`));
+      }
+      if (res.status >= 300 && res.status !== 404) {
         ctx.log(`delete tag of ${tag.length} characters: ${describe(res)}`);
       }
     }
@@ -1055,6 +1069,41 @@ async function stepK(env: Env, note: Note): Promise<void> {
   );
 }
 
+/**
+ * l. (Server only) which api-versions the Boards routes take: the release versions on a plain
+ * route and on WIQL, and the comments route, a preview route, with and without its preview flag.
+ */
+async function stepL(env: Env, note: Note): Promise<void> {
+  const { ctx, agile } = env;
+  const bug = env.bug ?? (await plainItem(env, agile, 'Bug', 'api versions'));
+  const query = {
+    query: 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project',
+  };
+  const answers: Record<string, { status: number; typeKey: string; message: string }> = {};
+  const lines: string[] = [];
+  for (const v of ['7.0', '7.1', '7.2']) {
+    const projects = await ctx.bot.request('GET', '/_apis/projects?$top=1', undefined, {
+      apiVersion: v,
+    });
+    const q = await ctx.bot.request('POST', wit(agile, '/wiql?$top=1'), query, { apiVersion: v });
+    answers[`projects ${v}`] = errorFacts(projects.status, projects.json);
+    answers[`wiql ${v}`] = errorFacts(q.status, q.json);
+    lines.push(`api-version ${v}: projects ${describe(projects)}; wiql ${describe(q)}`);
+  }
+  for (const v of [COMMENTS_VERSION, '7.0-preview', '7.0', '7.1-preview.4']) {
+    const res = await ctx.bot.request(
+      'GET',
+      wit(agile, `/workItems/${bug.id}/comments`),
+      undefined,
+      { apiVersion: v },
+    );
+    answers[`comments ${v}`] = errorFacts(res.status, res.json);
+    lines.push(`comments api-version ${v}: ${describe(res)}`);
+  }
+  await rec(env, 'l-api-versions', answers);
+  for (const line of lines) note(line);
+}
+
 // ---------------------------------------------------------------------------------------------
 
 async function setup(ctx: ProbeContext): Promise<{ env: Env; projects: AzureResponse }> {
@@ -1087,10 +1136,10 @@ async function setup(ctx: ProbeContext): Promise<{ env: Env; projects: AzureResp
 }
 
 /**
- * Item 30 (sub-plan 8, Task 1): what Azure Boards support relies on, on Services, for the identity
- * `--auth` chose. Every sub-step records its answer and the next one runs whatever it found; every
- * work item and area node it makes is deleted at clean-up. Recordings carry `pat` or `sp` in their
- * names, so both runs keep theirs.
+ * Item 30 (sub-plan 8, Task 1; on Server sub-plan 9, with step l): what Azure Boards support
+ * relies on, for the identity `--auth` chose. Every sub-step records its answer and the next one
+ * runs whatever it found; every work item and area node it makes is deleted at clean-up.
+ * Recordings carry `pat` or `sp` in their names, so both runs keep theirs.
  */
 export const item: ProbeItem = {
   id: 30,
@@ -1110,6 +1159,10 @@ export const item: ProbeItem = {
       ['j', (note) => stepJ(env, note)],
       ['i', (note) => stepI(env, note)],
       ['k', (note) => stepK(env, note)],
+      // Server only: Services answers the release versions it lists; Server's list is its own.
+      ...(ctx.target === 'server'
+        ? [['l', (note: Note) => stepL(env, note)] as [string, (note: Note) => Promise<void>]]
+        : []),
     ];
     const lines: string[] = [
       `identity: ${env.who === 'pat' ? 'the PAT' : 'the service principal'}`,

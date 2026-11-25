@@ -15,6 +15,7 @@ import {
   reconcileWiql,
   renderingHtml,
   shapeOf,
+  tagIdOf,
   tagOfLength,
   tagsOf,
   trimLong,
@@ -228,5 +229,18 @@ describe('item 30 helpers', () => {
     expect(hiddenTypes(json)).toEqual(['Code Review Request', 'Shared Steps']);
     expect(hiddenTypes({ count: 0, value: [] })).toBeNull();
     expect(hiddenTypes('x')).toBeNull();
+  });
+
+  it('finds a tag id by its exact name', () => {
+    const json = {
+      count: 2,
+      value: [
+        { id: 'a1', name: 'probe30-a', url: 'u' },
+        { id: 'b2', name: 'probe30', url: 'u' },
+      ],
+    };
+    expect(tagIdOf(json, 'probe30')).toBe('b2');
+    expect(tagIdOf(json, 'probe3')).toBeUndefined();
+    expect(tagIdOf('x', 'probe30')).toBeUndefined();
   });
 });

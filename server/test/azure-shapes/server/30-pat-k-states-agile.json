@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 4,
+    "value": [
+      {
+        "name": "New",
+        "color": "b2b2b2",
+        "category": "Proposed"
+      },
+      {
+        "name": "Active",
+        "color": "007acc",
+        "category": "InProgress"
+      },
+      {
+        "name": "Resolved",
+        "color": "ff9d00",
+        "category": "Resolved"
+      },
+      {
+        "name": "Closed",
+        "color": "339933",
+        "category": "Completed"
+      }
+    ]
+  }
+}

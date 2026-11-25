@@ -1,0 +1,262 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 15,
+    "value": [
+      {
+        "name": "Bug Category",
+        "referenceName": "Microsoft.BugCategory",
+        "defaultWorkItemType": {
+          "name": "Bug",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Bug"
+        },
+        "workItemTypes": [
+          {
+            "name": "Bug",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Bug"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.BugCategory"
+      },
+      {
+        "name": "Epic Category",
+        "referenceName": "Microsoft.EpicCategory",
+        "defaultWorkItemType": {
+          "name": "Epic",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Epic"
+        },
+        "workItemTypes": [
+          {
+            "name": "Epic",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Epic"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.EpicCategory"
+      },
+      {
+        "name": "Feature Category",
+        "referenceName": "Microsoft.FeatureCategory",
+        "defaultWorkItemType": {
+          "name": "Feature",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Feature"
+        },
+        "workItemTypes": [
+          {
+            "name": "Feature",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Feature"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.FeatureCategory"
+      },
+      {
+        "name": "Requirement Category",
+        "referenceName": "Microsoft.RequirementCategory",
+        "defaultWorkItemType": {
+          "name": "Product Backlog Item",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.ProductBacklogItem"
+        },
+        "workItemTypes": [
+          {
+            "name": "Product Backlog Item",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.ProductBacklogItem"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.RequirementCategory"
+      },
+      {
+        "name": "Test Case Category",
+        "referenceName": "Microsoft.TestCaseCategory",
+        "defaultWorkItemType": {
+          "name": "Test Case",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestCase"
+        },
+        "workItemTypes": [
+          {
+            "name": "Test Case",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestCase"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.TestCaseCategory"
+      },
+      {
+        "name": "Shared Step Category",
+        "referenceName": "Microsoft.SharedStepCategory",
+        "defaultWorkItemType": {
+          "name": "Shared Steps",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedStep"
+        },
+        "workItemTypes": [
+          {
+            "name": "Shared Steps",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedStep"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.SharedStepCategory"
+      },
+      {
+        "name": "Shared Parameter Category",
+        "referenceName": "Microsoft.SharedParameterCategory",
+        "defaultWorkItemType": {
+          "name": "Shared Parameter",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedParameter"
+        },
+        "workItemTypes": [
+          {
+            "name": "Shared Parameter",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedParameter"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.SharedParameterCategory"
+      },
+      {
+        "name": "Code Review Request Category",
+        "referenceName": "Microsoft.CodeReviewRequestCategory",
+        "defaultWorkItemType": {
+          "name": "Code Review Request",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewRequest"
+        },
+        "workItemTypes": [
+          {
+            "name": "Code Review Request",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewRequest"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.CodeReviewRequestCategory"
+      },
+      {
+        "name": "Code Review Response Category",
+        "referenceName": "Microsoft.CodeReviewResponseCategory",
+        "defaultWorkItemType": {
+          "name": "Code Review Response",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewResponse"
+        },
+        "workItemTypes": [
+          {
+            "name": "Code Review Response",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewResponse"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.CodeReviewResponseCategory"
+      },
+      {
+        "name": "Feedback Request Category",
+        "referenceName": "Microsoft.FeedbackRequestCategory",
+        "defaultWorkItemType": {
+          "name": "Feedback Request",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackRequest"
+        },
+        "workItemTypes": [
+          {
+            "name": "Feedback Request",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackRequest"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.FeedbackRequestCategory"
+      },
+      {
+        "name": "Feedback Response Category",
+        "referenceName": "Microsoft.FeedbackResponseCategory",
+        "defaultWorkItemType": {
+          "name": "Feedback Response",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackResponse"
+        },
+        "workItemTypes": [
+          {
+            "name": "Feedback Response",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackResponse"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.FeedbackResponseCategory"
+      },
+      {
+        "name": "Test Plan Category",
+        "referenceName": "Microsoft.TestPlanCategory",
+        "defaultWorkItemType": {
+          "name": "Test Plan",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestPlan"
+        },
+        "workItemTypes": [
+          {
+            "name": "Test Plan",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestPlan"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.TestPlanCategory"
+      },
+      {
+        "name": "Test Suite Category",
+        "referenceName": "Microsoft.TestSuiteCategory",
+        "defaultWorkItemType": {
+          "name": "Test Suite",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestSuite"
+        },
+        "workItemTypes": [
+          {
+            "name": "Test Suite",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestSuite"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.TestSuiteCategory"
+      },
+      {
+        "name": "Task Category",
+        "referenceName": "Microsoft.TaskCategory",
+        "defaultWorkItemType": {
+          "name": "Task",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Task"
+        },
+        "workItemTypes": [
+          {
+            "name": "Task",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.Task"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.TaskCategory"
+      },
+      {
+        "name": "Hidden Types Category",
+        "referenceName": "Microsoft.HiddenCategory",
+        "defaultWorkItemType": {
+          "name": "Code Review Request",
+          "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewRequest"
+        },
+        "workItemTypes": [
+          {
+            "name": "Code Review Request",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewRequest"
+          },
+          {
+            "name": "Code Review Response",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.CodeReviewResponse"
+          },
+          {
+            "name": "Feedback Request",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackRequest"
+          },
+          {
+            "name": "Feedback Response",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.FeedbackResponse"
+          },
+          {
+            "name": "Shared Steps",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedStep"
+          },
+          {
+            "name": "Shared Parameter",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.SharedParameter"
+          },
+          {
+            "name": "Test Plan",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestPlan"
+          },
+          {
+            "name": "Test Suite",
+            "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypes/Microsoft.VSTS.WorkItemTypes.TestSuite"
+          }
+        ],
+        "url": "https://ado.example.invalid/DefaultCollection/6da678c1-da37-4eef-8915-fa6e000089d9/_apis/wit/workItemTypeCategories/Microsoft.HiddenCategory"
+      }
+    ]
+  }
+}

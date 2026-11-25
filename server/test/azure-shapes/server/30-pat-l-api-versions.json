@@ -1,0 +1,52 @@
+{
+  "projects 7.0": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "wiql 7.0": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "projects 7.1": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "wiql 7.1": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "projects 7.2": {
+    "status": 400,
+    "typeKey": "VssInvalidPreviewVersionException",
+    "message": "The requested version \"7.2\" of the resource is under preview. The -preview flag must be supplied in the api-version for such requests. For example: \"7.2-preview\""
+  },
+  "wiql 7.2": {
+    "status": 400,
+    "typeKey": "VssInvalidPreviewVersionException",
+    "message": "The requested version \"7.2\" of the resource is under preview. The -preview flag must be supplied in the api-version for such requests. For example: \"7.2-preview\""
+  },
+  "comments 7.0-preview.3": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "comments 7.0-preview": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  },
+  "comments 7.0": {
+    "status": 400,
+    "typeKey": "VssInvalidPreviewVersionException",
+    "message": "The requested version \"7.0\" of the resource is under preview. The -preview flag must be supplied in the api-version for such requests. For example: \"7.0-preview\""
+  },
+  "comments 7.1-preview.4": {
+    "status": 200,
+    "typeKey": "none",
+    "message": ""
+  }
+}
