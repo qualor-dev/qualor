@@ -390,19 +390,6 @@ function byKey(items: readonly AzureWorkItem[]): Map<string, AzureWorkItem> {
   return found;
 }
 
-/**
- * One Azure DevOps project's unanswered rows: one WIQL query from the oldest one's send minus a
- * minute, then one batch read of the ids (with the descriptions), matched by key.
- *
- * - Found → `created`.
- * - Not found and sent more than 10 minutes ago → `attempted_at` cleared (the create sends it
- *   again), in one statement that checks the row is still pending at the stamp read, so a row a
- *   create run took again and sent since is never reset ({@link releaseLinks}).
- * - The query refused (400, 403, 404) → every row `failed outcome_unknown`. The query full (200
- *   ids: older work items may be cut off), or an unreadable answer → the rows that would be sent
- *   again fail `outcome_unknown` instead: Qualor cannot tell, and never sends blindly.
- * - Younger rows not found wait for the next pass.
- */
 /** The rows read back (found), and of the stale ones not found those to send again or to fail. */
 function sortByFound(
   rows: readonly Unanswered[],
@@ -420,6 +407,19 @@ function sortByFound(
   return { found, resend, unknown };
 }
 
+/**
+ * One Azure DevOps project's unanswered rows: one WIQL query from the oldest one's send minus a
+ * minute, then one batch read of the ids (with the descriptions), matched by key.
+ *
+ * - Found → `created`.
+ * - Not found and sent more than 10 minutes ago → `attempted_at` cleared (the create sends it
+ *   again), in one statement that checks the row is still pending at the stamp read, so a row a
+ *   create run took again and sent since is never reset ({@link releaseLinks}).
+ * - The query refused (400, 403, 404) → every row `failed outcome_unknown`. The query full (200
+ *   ids: older work items may be cut off), or an unreadable answer → the rows that would be sent
+ *   again fail `outcome_unknown` instead: Qualor cannot tell, and never sends blindly.
+ * - Younger rows not found wait for the next pass.
+ */
 async function reconcileProject(
   pass: Pass,
   azureProjectId: string,
