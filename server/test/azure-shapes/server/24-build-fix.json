@@ -1,0 +1,144 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/Builds/39"
+      },
+      "web": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_build/results?buildId=39"
+      },
+      "sourceVersionDisplayUri": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/builds/39/sources"
+      },
+      "timeline": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/builds/39/Timeline"
+      },
+      "badge": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/status/26"
+      }
+    },
+    "properties": {},
+    "tags": [],
+    "validationResults": [],
+    "plans": [
+      {
+        "planId": "a3768e32-f184-4760-897b-fa6e00008071"
+      }
+    ],
+    "triggerInfo": {},
+    "id": 39,
+    "buildNumber": "20261125.1",
+    "status": "completed",
+    "result": "succeeded",
+    "queueTime": "2026-11-25T02:30:54.2058943Z",
+    "startTime": "2026-11-25T02:30:56.8716384Z",
+    "finishTime": "2026-11-25T02:31:38.7019869Z",
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/Builds/39",
+    "definition": {
+      "drafts": [],
+      "id": 26,
+      "name": "Qualor probe item 24 fix 20261125021914",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/Definitions/26?revision=1",
+      "uri": "vstfs:///Build/Definition/26",
+      "path": "\\",
+      "type": "build",
+      "queueStatus": "enabled",
+      "revision": 1,
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      }
+    },
+    "buildNumberRevision": 1,
+    "project": {
+      "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+      "name": "probe-org",
+      "description": "Qualor probe bench (Agile)",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+      "state": "wellFormed",
+      "revision": 8,
+      "visibility": "private",
+      "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+    },
+    "uri": "vstfs:///Build/Build/39",
+    "sourceBranch": "refs/heads/main",
+    "sourceVersion": "de829ab9183bb92a2b9156182f969268ce758538",
+    "queue": {
+      "id": 1,
+      "name": "Default",
+      "pool": {
+        "id": 1,
+        "name": "Default"
+      }
+    },
+    "priority": "normal",
+    "reason": "manual",
+    "requestedFor": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+      "descriptor": "win.<sid>"
+    },
+    "requestedBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+      "descriptor": "win.<sid>"
+    },
+    "lastChangedDate": "2026-11-25T02:31:38.883Z",
+    "lastChangedBy": {
+      "displayName": "Microsoft.TeamFoundation.System",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/000007f5-0000-8888-8000-000000000000",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/s2s.<secret>"
+        }
+      },
+      "id": "000007f5-0000-8888-8000-000000000000",
+      "uniqueName": "000007F5-0000-8888-8000-000000000000@00000000-0000-0000-0000-000000000000",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/s2s.<secret>",
+      "descriptor": "s2s.<secret>"
+    },
+    "orchestrationPlan": {
+      "planId": "a3768e32-f184-4760-897b-fa6e00008071"
+    },
+    "logs": {
+      "id": 0,
+      "type": "Container",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/build/builds/39/logs"
+    },
+    "repository": {
+      "id": "64452793-6e6b-47de-85c4-fa6e0000a4cc",
+      "type": "TfsGit",
+      "name": "probe-org-fix",
+      "url": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-fix",
+      "clean": null,
+      "checkoutSubmodules": false
+    },
+    "retainedByRelease": false,
+    "triggeredByBuild": null,
+    "appendCommitMessageToRunName": true
+  }
+}

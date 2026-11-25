@@ -1,0 +1,146 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "pullRequestThreadContext": {
+          "iterationContext": {
+            "firstComparingIteration": 1,
+            "secondComparingIteration": 1
+          },
+          "changeTrackingId": 2
+        },
+        "id": 92,
+        "publishedDate": "2026-11-25T02:20:57.5Z",
+        "lastUpdatedDate": "2026-11-25T02:20:57.5Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:issue 66da24a7-220c-4aba-8663-fa6e0000700a -->\n**High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186)\n\nUnexpected empty function ` 'emptyHandler' `.\n\n[View in Qualor](https://ado.example.invalid/projects/8d5b4ae3-0139-44f7-8246-fa6e000000b8/issues/66da24a7-220c-4aba-8663-fa6e0000700a)",
+            "publishedDate": "2026-11-25T02:20:57.5Z",
+            "lastUpdatedDate": "2026-11-25T02:20:57.5Z",
+            "lastContentUpdatedDate": "2026-11-25T02:20:57.5Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/92/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/92"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "active",
+        "threadContext": {
+          "filePath": "/probe/item-19-20261125021914.js",
+          "rightFileStart": {
+            "line": 2,
+            "offset": 1
+          },
+          "rightFileEnd": {
+            "line": 2,
+            "offset": 33
+          }
+        },
+        "properties": {
+          "Microsoft.TeamFoundation.Discussion.UniqueID": {
+            "$type": "System.String",
+            "$value": "5ef33d13aa1f488282aefa6e00005701"
+          }
+        },
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/92"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          }
+        }
+      },
+      {
+        "pullRequestThreadContext": null,
+        "id": 93,
+        "publishedDate": "2026-11-25T02:20:57.67Z",
+        "lastUpdatedDate": "2026-11-25T02:20:57.67Z",
+        "comments": [
+          {
+            "id": 1,
+            "parentCommentId": 0,
+            "author": {
+              "displayName": "Probe User",
+              "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+              "_links": {
+                "avatar": {
+                  "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+                }
+              },
+              "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+              "uniqueName": "",
+              "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+              "descriptor": "win.<sid>"
+            },
+            "content": "<!-- qualor:summary 8d5b4ae3-0139-44f7-8246-fa6e000000b8 -->\n### ❌ Qualor: quality gate failed\n\n**Qualor way** · analysis ` a471215b956c ` · **1 new issue** in this pull request\n\n| | Condition | Value | Required |\n|---|---|---|---|\n| ❌ | New issues | 1 | ≤ 0 |\n| ➖ | Coverage on new code | — | skipped: fewer than 20 new lines |\n| ➖ | Duplication on new code | — | skipped: fewer than 20 new lines |\n\n**By severity:** 🔴 1 high\n\n#### Most severe new issues\n\n1. 🔴 **High** · maintainability · [` sonarjs:S1186 `](https://sonarcloud.io/organizations/sonarsource/rules?open=javascript%3AS1186&rule_key=javascript%3AS1186) · [` probe/item-19-20261125021914.js:2 `](https://ado.example.invalid/projects/8d5b4ae3-0139-44f7-8246-fa6e000000b8/issues/66da24a7-220c-4aba-8663-fa6e0000700a)\\\n   Unexpected empty function ` 'emptyHandler' `.\n\n1 new issue is commented inline. · **[Open in Qualor →](https://ado.example.invalid/projects/8d5b4ae3-0139-44f7-8246-fa6e000000b8/branches/78a87d6f-f1b9-4aed-8a63-fa6e0000961d)**",
+            "publishedDate": "2026-11-25T02:20:57.67Z",
+            "lastUpdatedDate": "2026-11-25T02:20:57.67Z",
+            "lastContentUpdatedDate": "2026-11-25T02:20:57.67Z",
+            "commentType": "text",
+            "usersLiked": [],
+            "_links": {
+              "self": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/93/comments/1"
+              },
+              "repository": {
+                "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+              },
+              "threads": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/93"
+              },
+              "pullRequests": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/25"
+              }
+            }
+          }
+        ],
+        "status": "closed",
+        "threadContext": null,
+        "properties": null,
+        "identities": null,
+        "isDeleted": false,
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/threads/93"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          }
+        }
+      }
+    ],
+    "count": 2
+  }
+}

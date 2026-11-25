@@ -1,0 +1,43 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "iterationId": 2,
+        "id": 2,
+        "state": "succeeded",
+        "description": "Quality gate passed",
+        "context": {
+          "name": "ado.example.invalid",
+          "genre": "qualor"
+        },
+        "creationDate": "2026-11-25T02:22:46.7235785Z",
+        "updatedDate": "2026-11-25T02:22:46.7235785Z",
+        "createdBy": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "targetUrl": "https://ado.example.invalid/projects/8d5b4ae3-0139-44f7-8246-fa6e000000b8/branches/78a87d6f-f1b9-4aed-8a63-fa6e0000961d",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/25/iterations/2/statuses/2"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          }
+        }
+      }
+    ],
+    "count": 1
+  }
+}

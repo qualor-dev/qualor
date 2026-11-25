@@ -11,13 +11,16 @@ import {
   timeline,
 } from './18-ci.js';
 import {
+  BENCH_ORG,
+  benchProject,
+  benchScmUrl,
   benchUploadYaml,
   check,
   DOCKER_PATH,
   listThreads,
   needEnv,
+  qualorIdentityId,
   rec,
-  servicePrincipalId,
   threadStatusName,
   type Check,
   type Thr,
@@ -50,8 +53,6 @@ import {
 
 /** Ruling 12: the second repository of the bench project, kept between runs. */
 export const FIX_REPOSITORY = 'qualor-probe-fix';
-/** The Qualor project `seed-qualor.mjs --fixes` maps to it. */
-const FIX_PROJECT_KEY = 'bench-fix';
 export const FIX_DOCKER_PATH = '.azure-pipelines/qualor-fix-docker.yml';
 const PACKAGE = 'lodash';
 /** lodash 4.17.20: CVE-2021-23337 and the advisories published since (the fix's target is judged against them). */
@@ -665,26 +666,22 @@ export async function buildProblem(ctx: ProbeContext, buildId: number): Promise<
 export const item: ProbeItem = {
   id: 24,
   title:
-    'a dependency fix pull request on Azure DevOps Services: Qualor opens it from the fix pipeline, and a cancel closes it',
+    'a dependency fix pull request on Azure DevOps: Qualor opens it from the fix pipeline, and a cancel closes it',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 24 runs on the Services target only (the bench Qualor is mapped to it)',
-      );
-    }
+    // The bench Qualor's fix project and connection of the target (Server: bench-server-fix).
+    const bench = benchProject(ctx.target, 'fix');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
-    const fixToken = needEnv('AZURE_PROBE_QUALOR_FIX_TOKEN');
+    const fixToken = needEnv(bench.tokenEnv);
     const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const servicesUrl = needEnv('AZURE_PROBE_SERVICES_URL').replace(/\/+$/, '');
-    const projectKey = process.env['AZURE_PROBE_QUALOR_FIX_PROJECT_KEY'] ?? FIX_PROJECT_KEY;
+    const scmUrl = benchScmUrl(ctx.target);
+    const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
     const finish = () => done(ctx, checks, notes);
 
-    // The service principal's names join the redaction table before anything is recorded.
-    const spId = await servicePrincipalId(ctx);
+    // Qualor's identity's names (the service principal; Server: the PAT's owner) join the
+    // redaction table before anything is recorded.
+    const spId = await qualorIdentityId(ctx);
 
     // ---- The fix repository and its main (never the probe repository's main).
     const created = await ensureRepository(ctx, notes);
@@ -700,14 +697,14 @@ export const item: ProbeItem = {
         '/api/v0/organizations',
         z.object({ id: z.string(), key: z.string() }).loose(),
       )
-    ).find((o) => o.key === 'bench');
+    ).find((o) => o.key === BENCH_ORG);
     if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
     const connection = (
       await api.items(
         `/api/v0/scm-connections?organizationId=${org.id}`,
         z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
       )
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === servicesUrl);
+    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
     const project = (

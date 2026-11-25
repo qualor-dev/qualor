@@ -33,6 +33,7 @@ import {
   type ProbeContext,
   type ProbeItem,
   type Repo,
+  type TargetName,
 } from './common.js';
 import {
   authorizeDefinitions,
@@ -492,21 +493,78 @@ export function needEnv(key: string): string {
   return v;
 }
 
+/** The bench Qualor's organisation: one for both targets, with one Azure DevOps connection each. */
+export const BENCH_ORG = 'bench';
+
+/** The address of the bench Qualor's Azure DevOps connection of the target, without a trailing slash. */
+export function benchScmUrl(
+  target: TargetName,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const key = target === 'server' ? 'AZURE_PROBE_SERVER_URL' : 'AZURE_PROBE_SERVICES_URL';
+  const url = env[key];
+  if (!url) throw new Error(`${key} is not set`);
+  return url.replace(/\/+$/, '');
+}
+
+export type BenchProjectKind = 'main' | 'fix' | 'boards';
+const BENCH_PROJECT: Record<BenchProjectKind, { key: string; env: string }> = {
+  main: { key: 'bench', env: 'AZURE_PROBE_QUALOR' },
+  fix: { key: 'bench-fix', env: 'AZURE_PROBE_QUALOR_FIX' },
+  boards: { key: 'bench-boards', env: 'AZURE_PROBE_QUALOR_BOARDS' },
+};
+
+/**
+ * The bench Qualor project of a kind on the target (seed-qualor.mjs makes them): its key and the
+ * bench.env key of its analysis token. Server has projects of its own (`bench-server`,
+ * `bench-server-fix`, `bench-server-boards`; tokens `AZURE_PROBE_SERVER_QUALOR_*`): a pull
+ * request's branch in Qualor is named by its id, so a Server pull request must never land in a
+ * project that holds a Services one of the same number.
+ */
+export function benchProject(
+  target: TargetName,
+  kind: BenchProjectKind,
+  env: Record<string, string | undefined> = process.env,
+): { key: string; tokenEnv: string } {
+  const { key, env: prefix } = BENCH_PROJECT[kind];
+  const ownPrefix =
+    target === 'server' ? prefix.replace(/^AZURE_PROBE_/, 'AZURE_PROBE_SERVER_') : prefix;
+  const ownKey = target === 'server' ? key.replace(/^bench/, 'bench-server') : key;
+  return { key: env[`${ownPrefix}_PROJECT_KEY`] ?? ownKey, tokenEnv: `${ownPrefix}_TOKEN` };
+}
+
+/** Who Qualor acts as on the target, for the item's texts. */
+export const qualorIdentityName = (target: TargetName): string =>
+  target === 'server' ? "Qualor's PAT identity" : 'the service principal';
+
+/**
+ * The id of the identity Qualor acts as, whose names join the redaction table: the service
+ * principal on Services (the bench connection's credential); on Server the bench connection takes
+ * the main identity's PAT (`AZURE_PROBE_SERVER_PAT`), so Qualor's comments are the probe's own.
+ */
+export async function qualorIdentityId(ctx: ProbeContext): Promise<string> {
+  if (ctx.target !== 'server') return servicePrincipalId(ctx);
+  const res = ok(
+    await ctx.bot.request('GET', '/_apis/connectionData', undefined, {
+      apiVersion: '7.0-preview',
+    }),
+    "connectionData of Qualor's PAT identity",
+  );
+  const data = shape(ConnectionDataSchema, res.json, "connectionData (Qualor's PAT identity)");
+  addIdentity(ctx.redaction, data.authenticatedUser);
+  return data.authenticatedUser.id;
+}
+
 export const item: ProbeItem = {
   id: 19,
-  title: 'Qualor decorates a pull request on Azure DevOps Services: status, summary and a thread',
+  title: 'Qualor decorates a pull request on Azure DevOps: status, summary and a thread',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 19 runs on the Services target only (the bench Qualor is mapped to it)',
-      );
-    }
+    // The bench Qualor's project of the target (Server: its own, mapped to the Server's `probe`).
+    const bench = benchProject(ctx.target, 'main');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
-    const qualorToken = needEnv('AZURE_PROBE_QUALOR_TOKEN');
-    const projectKey = process.env['AZURE_PROBE_QUALOR_PROJECT_KEY'] ?? 'bench';
-    const spId = await servicePrincipalId(ctx);
+    const qualorToken = needEnv(bench.tokenEnv);
+    const projectKey = bench.key;
+    const spId = await qualorIdentityId(ctx);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
     if (!base) throw new Error('no head on the default branch');
@@ -599,8 +657,9 @@ export const item: ProbeItem = {
         scope: [{ repositoryId: repo.id, refName: target, matchKind: 'exact' }],
       },
     });
-    // As the guide has users add it: `qualor/<project key>`, with the service principal as the
-    // Authorized identity. The run proves that the policy still approves Qualor's own status.
+    // As the guide has users add it: `qualor/<project key>`, with Qualor's identity (the service
+    // principal; Server: its PAT's owner) as the Authorized identity. The run proves that the
+    // policy still approves Qualor's own status.
     const policySettings = statusPolicySettings(
       { projectKey, authorId: spId, repositoryId: repo.id, refName: target },
       `Qualor probe item 19 ${ctx.stamp}`,
@@ -655,7 +714,7 @@ export const item: ProbeItem = {
       // Qualor reads its own statuses by this id: the listing must carry the service principal's.
       const author = st1.status.createdBy?.id;
       notes.push(
-        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? "the service principal's id" : 'another id'}`,
+        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? `${qualorIdentityName(ctx.target)}'s id` : 'another id'}`,
       );
     }
     const verdict1 = await policyVerdict(ctx, pr1, statusPolicy.id, 'rejected');

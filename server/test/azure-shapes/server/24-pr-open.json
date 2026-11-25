@@ -1,0 +1,110 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "repository": {
+      "id": "64452793-6e6b-47de-85c4-fa6e0000a4cc",
+      "name": "probe-org-fix",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc",
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      },
+      "size": 0,
+      "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-fix",
+      "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe-org-fix",
+      "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-fix",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pullRequestId": 29,
+    "codeReviewId": 29,
+    "status": "active",
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "creationDate": "2026-11-25T02:31:34.3111404Z",
+    "title": "Bump lodash from 4.17.20 to 4.18.0",
+    "description": "| Vulnerability | Severity | Title |\n|---|---|---|\n| [` CVE-2020-28500 `](https://avd.aquasec.com/nvd/cve-2020-28500) | medium | ` nodejs-lodash: ReDoS via the toNumber, trim and trimEnd functions ` |\n| [` CVE-2021-23337 `](https://avd.aquasec.com/nvd/cve-2021-23337) | high | ` nodejs-lodash: command injection via template ` |\n| [` CVE-2025-13465 `](https://avd.aquasec.com/nvd/cve-2025-13465) | medium | ` lodash: prototype pollution in _.unset and _.omit functions ` |\n| [` CVE-2026-4800 `](https://avd.aquasec.com/nvd/cve-2026-4800) | high | ` lodash: lodash: Arbitrary code execution via untrusted input in template imports ` |\n\n**Versions:** ` 4.17.20 ` → ` 4.18.0 ` in ` package-lock.json `\n\n- ` package-lock.json `: direct\n\n**New in the lockfile:**\n- ` package-lock.json `: ` lodash@4.18.0 `\n\n[Vulnerabilities in Qualor](https://ado.example.invalid/projects/585f2324-79c3-47f6-8148-fa6e000045c7/vulnerabilities?view=vulnerability)\n\nQualor keeps this PR current and closes it when the vulnerability is gone. Push to this branch to take it over.",
+    "sourceRefName": "refs/heads/qualor/fix/js/lodash",
+    "targetRefName": "refs/heads/main",
+    "mergeStatus": "succeeded",
+    "isDraft": false,
+    "mergeId": "d84b7659-2186-4776-876a-fa6e0000a8ed",
+    "lastMergeSourceCommit": {
+      "commitId": "5a01af0061364811cff1fb769b29fb3a7d512bcd",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/5a01af0061364811cff1fb769b29fb3a7d512bcd"
+    },
+    "lastMergeTargetCommit": {
+      "commitId": "de829ab9183bb92a2b9156182f969268ce758538",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/de829ab9183bb92a2b9156182f969268ce758538"
+    },
+    "lastMergeCommit": {
+      "commitId": "bdcd707dec18e334ade3007da47ce96ded8551ff",
+      "author": {
+        "name": "Probe User",
+        "email": "Probe User",
+        "date": "2026-11-25T02:31:34Z"
+      },
+      "committer": {
+        "name": "Probe User",
+        "email": "Probe User",
+        "date": "2026-11-25T02:31:34Z"
+      },
+      "comment": "Merge pull request 29 from qualor/fix/js/lodash into main",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/bdcd707dec18e334ade3007da47ce96ded8551ff"
+    },
+    "reviewers": [],
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pullRequests/29",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pullRequests/29"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc"
+      },
+      "workItems": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pullRequests/29/workitems"
+      },
+      "sourceBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/refs/heads/qualor/fix/js/lodash"
+      },
+      "targetBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/refs/heads/main"
+      },
+      "statuses": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pullRequests/29/statuses"
+      },
+      "sourceCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/5a01af0061364811cff1fb769b29fb3a7d512bcd"
+      },
+      "targetCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/de829ab9183bb92a2b9156182f969268ce758538"
+      },
+      "createdBy": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6"
+      },
+      "iterations": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pullRequests/29/iterations"
+      }
+    },
+    "supportsIterations": true,
+    "artifactId": "vstfs:///Git/PullRequestId/828b9239-8828-4b4e-82e8-fa6e00000c8f%2f64452793-6e6b-47de-85c4-fa6e0000a4cc%2f29"
+  }
+}

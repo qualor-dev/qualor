@@ -5,6 +5,9 @@ import { redact } from '../record.js';
 import { CONNECTION_DATA_VERSION } from './01-identity.js';
 import { authorizeDefinitions, EXAMPLES } from './18-ci.js';
 import {
+  BENCH_ORG,
+  benchProject,
+  benchScmUrl,
   benchUploadYaml,
   buildAt,
   check,
@@ -15,8 +18,9 @@ import {
   markerKind,
   needEnv,
   ownThreads,
+  qualorIdentityId,
+  qualorIdentityName,
   rec,
-  servicePrincipalId,
   threadStatusName,
   type Check,
   type Thr,
@@ -428,20 +432,15 @@ async function waitForAnswer(
 export const item: ProbeItem = {
   id: 21,
   title:
-    'Qualor subscribes its service hooks, adds AI threads, answers a reply and a `qualor review` command on Azure DevOps Services',
+    'Qualor subscribes its service hooks, adds AI threads, answers a reply and a `qualor review` command on Azure DevOps',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 21 runs on the Services target only (the bench Qualor is mapped to it)',
-      );
-    }
+    // The bench Qualor's project and connection of the target (Server: its own).
+    const bench = benchProject(ctx.target, 'main');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
-    const qualorToken = needEnv('AZURE_PROBE_QUALOR_TOKEN');
+    const qualorToken = needEnv(bench.tokenEnv);
     const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const servicesUrl = needEnv('AZURE_PROBE_SERVICES_URL').replace(/\/+$/, '');
-    const projectKey = process.env['AZURE_PROBE_QUALOR_PROJECT_KEY'] ?? 'bench';
+    const scmUrl = benchScmUrl(ctx.target);
+    const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
 
@@ -460,7 +459,7 @@ export const item: ProbeItem = {
       );
     }
 
-    const spId = await servicePrincipalId(ctx);
+    const spId = await qualorIdentityId(ctx);
     const me = await whoAmI(ctx);
     addIdentity(ctx.redaction, me);
     const repo = await repoInfo(ctx);
@@ -473,14 +472,14 @@ export const item: ProbeItem = {
         '/api/v0/organizations',
         z.object({ id: z.string(), key: z.string() }).loose(),
       )
-    ).find((o) => o.key === 'bench');
+    ).find((o) => o.key === BENCH_ORG);
     if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
     const connection = (
       await api.items(
         `/api/v0/scm-connections?organizationId=${org.id}`,
         z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
       )
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === servicesUrl);
+    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
     // Qualor's own subscriptions go at clean-up, found by their address at that time (also when the call failed part-way).
@@ -708,7 +707,7 @@ export const item: ProbeItem = {
       if (answered) await rec(ctx, 'reply-thread', answerOf(answered.res));
       checks.push(
         check(
-          "Qualor's answer to the reply: a comment of the service principal with the reply marker, within 3 minutes",
+          `Qualor's answer to the reply: a comment of ${qualorIdentityName(ctx.target)} with the reply marker, within 3 minutes`,
           answered !== undefined,
           answered
             ? `answered in ${seconds} s`
@@ -717,7 +716,7 @@ export const item: ProbeItem = {
       );
       if (answered) {
         notes.push(
-          `answer author id ${answered.answer.author.id.toLowerCase() === spId.toLowerCase() ? 'equals' : 'differs from'} the service principal's identity id`,
+          `answer author id ${answered.answer.author.id.toLowerCase() === spId.toLowerCase() ? 'equals' : 'differs from'} ${qualorIdentityName(ctx.target)}'s identity id`,
         );
         notes.push(`reply to answer: ${seconds} s`);
         // Whether the answer rode the hook: the comment-event subscription's history shows a delivery after the reply.

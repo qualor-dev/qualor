@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { authorizeDefinitions, EXAMPLES } from './18-ci.js';
 import {
+  BENCH_ORG,
+  benchProject,
   benchUploadYaml,
   buildAt,
   check,
@@ -11,8 +13,8 @@ import {
   FINDING_LINE,
   listThreads,
   needEnv,
+  qualorIdentityId,
   rec,
-  servicePrincipalId,
   type Check,
   type Thr,
 } from './19-decoration.js';
@@ -211,19 +213,14 @@ async function aiRequest(api: QualorApi, id: string): Promise<AiRequestDto> {
 
 export const item: ProbeItem = {
   id: 25,
-  title: 'an AI fix suggestion posted on an Azure DevOps Services pull request',
+  title: 'an AI fix suggestion posted on an Azure DevOps pull request',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 25 runs on the Services target only (the bench Qualor is mapped to it)',
-      );
-    }
+    // The bench Qualor's project of the target (Server: its own, mapped to the Server's `probe`).
+    const bench = benchProject(ctx.target, 'main');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
-    const qualorToken = needEnv('AZURE_PROBE_QUALOR_TOKEN');
+    const qualorToken = needEnv(bench.tokenEnv);
     const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const projectKey = process.env['AZURE_PROBE_QUALOR_PROJECT_KEY'] ?? 'bench';
+    const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
 
@@ -236,7 +233,7 @@ export const item: ProbeItem = {
         '/api/v0/organizations',
         z.object({ id: z.string(), key: z.string() }).loose(),
       )
-    ).find((o) => o.key === 'bench');
+    ).find((o) => o.key === BENCH_ORG);
     if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
     const ai = shape(
       z.object({ enabled: z.boolean(), features: z.object({ fix: z.boolean() }).loose() }).loose(),
@@ -259,7 +256,7 @@ export const item: ProbeItem = {
     if (!project)
       throw new Error(`the bench Qualor has no project ${projectKey} (run seed-qualor.mjs)`);
 
-    const spId = await servicePrincipalId(ctx);
+    const spId = await qualorIdentityId(ctx);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
     if (!base) throw new Error('no head on the default branch');

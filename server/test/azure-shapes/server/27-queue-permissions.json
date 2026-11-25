@@ -1,0 +1,23 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "resource": {
+      "type": "queue",
+      "id": "1"
+    },
+    "pipelines": [
+      {
+        "id": 24,
+        "authorized": true,
+        "authorizedBy": {
+          "displayName": "Probe User",
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "descriptor": "win.<sid>"
+        },
+        "authorizedOn": "2026-11-25T02:26:19.95Z"
+      }
+    ]
+  }
+}

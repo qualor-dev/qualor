@@ -1,0 +1,85 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "commits": [
+      {
+        "treeId": "526dc3c569993313692ee2339be9ce20db738c09",
+        "commitId": "a0201f53020b3e688e74f8c71d8ff5c95cd06191",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-25T02:26:21Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-25T02:26:21Z"
+        },
+        "comment": "Qualor probe item 27: the bench's scanner image (qualor/scanner:azure-dev)",
+        "parents": ["fca93f264f6c5542eb0965183cd9c859e359a1a2"],
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/commits/a0201f53020b3e688e74f8c71d8ff5c95cd06191"
+      }
+    ],
+    "refUpdates": [
+      {
+        "repositoryId": "cf40aa27-814d-4d54-81c3-fa6e0000000b",
+        "name": "refs/heads/qualor/setup",
+        "oldObjectId": "fca93f264f6c5542eb0965183cd9c859e359a1a2",
+        "newObjectId": "a0201f53020b3e688e74f8c71d8ff5c95cd06191"
+      }
+    ],
+    "repository": {
+      "id": "cf40aa27-814d-4d54-81c3-fa6e0000000b",
+      "name": "probe-org-setup",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b",
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      },
+      "size": 317,
+      "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-setup",
+      "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe-org-setup",
+      "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-setup",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pushedBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "pushId": 147,
+    "date": "2026-11-25T02:26:21.7059608Z",
+    "url": "https://ado.example.invalid/DefaultCollection/probe-org/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pushes/147",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/probe-org/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pushes/147"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b"
+      },
+      "commits": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pushes/147/commits"
+      },
+      "pusher": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6"
+      },
+      "refs": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/refs/heads/qualor/setup"
+      }
+    }
+  }
+}

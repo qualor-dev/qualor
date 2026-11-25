@@ -1,0 +1,79 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "value": [
+      {
+        "configuration": {
+          "createdBy": {
+            "displayName": "Probe User",
+            "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+            "_links": {
+              "avatar": {
+                "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+              }
+            },
+            "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+            "uniqueName": "ado.example.invalid\\Probe User",
+            "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+            "descriptor": "win.<sid>"
+          },
+          "createdDate": "2026-11-25T02:27:54.1819693Z",
+          "isEnabled": true,
+          "isBlocking": false,
+          "isDeleted": false,
+          "settings": {
+            "buildDefinitionId": 24,
+            "queueOnSourceUpdateOnly": false,
+            "manualQueueOnly": false,
+            "displayName": "Qualor",
+            "validDuration": 0,
+            "scope": [
+              {
+                "refName": "refs/heads/main",
+                "matchKind": "Exact",
+                "repositoryId": "cf40aa27-814d-4d54-81c3-fa6e0000000b"
+              }
+            ]
+          },
+          "isEnterpriseManaged": false,
+          "_links": {
+            "self": {
+              "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/configurations/20"
+            },
+            "policyType": {
+              "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+            }
+          },
+          "revision": 1,
+          "id": 20,
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/configurations/20",
+          "type": {
+            "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+            "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+            "displayName": "Build"
+          }
+        },
+        "artifactId": "vstfs:///CodeReview/CodeReviewId/828b9239-8828-4b4e-82e8-fa6e00000c8f%2f28",
+        "evaluationId": "383ca1eb-58a5-419e-8aca-fa6e000049a9",
+        "startedDate": "2026-11-25T02:28:03.8816276Z",
+        "status": "queued",
+        "context": {
+          "lastMergeCommitId": "b85be6b2da5b12e0b0677ae4a96af896d8cb327a",
+          "lastMergeSourceCommitId": "2b85cbc5c2dc0029c10e31b26f663a5e34ecd09a",
+          "lastMergeTargetCommitId": "3b6a94bc80f6bef0361960a0b4c95a7eb2f003d7",
+          "buildId": 37,
+          "buildDefinitionId": 24,
+          "buildDefinitionName": "Qualor",
+          "buildIsNotCurrent": false,
+          "buildStartedUtc": "2026-11-25T02:28:03.1914884Z",
+          "isExpired": false,
+          "buildAfterMerge": false,
+          "wasAutoRequeued": false,
+          "buildOutputPreview": null
+        }
+      }
+    ],
+    "count": 1
+  }
+}

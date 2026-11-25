@@ -1,0 +1,85 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "commits": [
+      {
+        "treeId": "77ada7add5440b7dfdfe9d92105becc3bff73539",
+        "commitId": "de829ab9183bb92a2b9156182f969268ce758538",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-25T02:29:50Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-25T02:29:50Z"
+        },
+        "comment": "Qualor probe item 24: the vulnerable lodash and the bench pipelines",
+        "parents": [],
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/commits/de829ab9183bb92a2b9156182f969268ce758538"
+      }
+    ],
+    "refUpdates": [
+      {
+        "repositoryId": "64452793-6e6b-47de-85c4-fa6e0000a4cc",
+        "name": "refs/heads/main",
+        "oldObjectId": "0000000000000000000000000000000000000000",
+        "newObjectId": "de829ab9183bb92a2b9156182f969268ce758538"
+      }
+    ],
+    "repository": {
+      "id": "64452793-6e6b-47de-85c4-fa6e0000a4cc",
+      "name": "probe-org-fix",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc",
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      },
+      "size": 0,
+      "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-fix",
+      "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe-org-fix",
+      "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-fix",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pushedBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "pushId": 158,
+    "date": "2026-11-25T02:29:51.0993434Z",
+    "url": "https://ado.example.invalid/DefaultCollection/probe-org/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pushes/158",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/probe-org/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pushes/158"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc"
+      },
+      "commits": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/pushes/158/commits"
+      },
+      "pusher": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6"
+      },
+      "refs": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/64452793-6e6b-47de-85c4-fa6e0000a4cc/refs/heads/main"
+      }
+    }
+  }
+}

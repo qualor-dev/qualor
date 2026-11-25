@@ -2,7 +2,16 @@ import { z } from 'zod';
 import { azureStatusName } from '../../../server/src/scm/render';
 import type { AzureClient, AzureResponse } from '../client.js';
 import { BENCH_IMAGE_TAG } from './18-ci.js';
-import { check, needEnv, rec, servicePrincipalId, type Check } from './19-decoration.js';
+import {
+  BENCH_ORG,
+  benchScmUrl,
+  check,
+  needEnv,
+  qualorIdentityId,
+  qualorIdentityName,
+  rec,
+  type Check,
+} from './19-decoration.js';
 import { QualorApi } from './21-review.js';
 import { pushedCommit } from './22-fix-writes.js';
 import {
@@ -1183,25 +1192,21 @@ async function readRun(api: QualorApi, ctx: ProbeContext, id: string): Promise<S
 export const item: ProbeItem = {
   id: 27,
   title:
-    'a repository set up end to end on Azure DevOps Services: the setup pull request, the pipeline, the merge, the Build validation policy and a decorated pull request',
+    'a repository set up end to end on Azure DevOps: the setup pull request, the pipeline, the merge, the Build validation policy and a decorated pull request',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 27 runs on the Services target only (the bench Qualor is mapped to it)',
-      );
-    }
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
     const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const servicesUrl = needEnv('AZURE_PROBE_SERVICES_URL').replace(/\/+$/, '');
+    // The bench Qualor's connection of the target (Server: the collection, a PAT).
+    const scmUrl = benchScmUrl(ctx.target);
     const checks: Check[] = [];
     const notes: string[] = [];
     const finish = () => done(ctx, checks, notes);
 
-    // The service principal's names join the redaction table before anything is recorded: the
-    // setup's pull request, pipeline and policy are its.
-    const spId = await servicePrincipalId(ctx);
+    // Qualor's identity's names (the service principal; Server: the PAT's owner) join the
+    // redaction table before anything is recorded: the setup's pull request, pipeline and policy
+    // are its.
+    const spId = await qualorIdentityId(ctx);
+    const who = qualorIdentityName(ctx.target);
 
     // ---- The bench Qualor: organisation `bench`, its Azure connection, CI setup available.
     const api = new QualorApi(qualorUrl);
@@ -1211,11 +1216,11 @@ export const item: ProbeItem = {
         '/api/v0/organizations',
         z.object({ id: z.string(), key: z.string() }).loose(),
       )
-    ).find((o) => o.key === 'bench');
+    ).find((o) => o.key === BENCH_ORG);
     if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
     const connection = (
       await api.items(`/api/v0/scm-connections?organizationId=${org.id}`, ConnectionItem)
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === servicesUrl);
+    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
     if (!connection.ciSetup.available) {
@@ -1345,7 +1350,7 @@ export const item: ProbeItem = {
     const yaml = setupHead ? await fileText(ctx, repo.id, PIPELINE_PATH, setupHead) : null;
     checks.push(...judgeSetupPr(setupPr, changedFiles(changes.json), yaml));
     notes.push(
-      `setup pull request ${prId}: created by ${sameId(setupPr.createdBy?.id, spId) ? 'the service principal' : 'another identity'}; the run's ciUrl ${setupItem.ciUrl === `${repo.webUrl}/pullrequest/${prId}` ? 'is its web URL' : 'differs from its web URL'}; the file's image ${imageOf(yaml) ?? 'line missing'}`,
+      `setup pull request ${prId}: created by ${sameId(setupPr.createdBy?.id, spId) ? who : 'another identity'}; the run's ciUrl ${setupItem.ciUrl === `${repo.webUrl}/pullrequest/${prId}` ? 'is its web URL' : 'differs from its web URL'}; the file's image ${imageOf(yaml) ?? 'line missing'}`,
     );
 
     // ---- 4. The pipeline's variables, its queue, the pending policy.
@@ -1553,7 +1558,7 @@ export const item: ProbeItem = {
         "Qualor's status (genre qualor, the project key as its name) on the probe pull request",
         status !== undefined,
         status
-          ? `${status.status.state ?? '?'} on iteration ${status.iterationId}; author ${status.status.createdBy ? (sameId(status.status.createdBy.id, spId) ? 'the service principal' : 'another identity') : 'not listed'}`
+          ? `${status.status.state ?? '?'} on iteration ${status.iterationId}; author ${status.status.createdBy ? (sameId(status.status.createdBy.id, spId) ? who : 'another identity') : 'not listed'}`
           : `none within ${STATUS_WAIT_MS / 60000} min; ${await prBuildState(ctx, prBuild.b.list, probeId)}`,
       ),
     );

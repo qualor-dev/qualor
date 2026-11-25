@@ -4,7 +4,16 @@ import { hex32, type Report } from '@qualor/shared';
 import { z } from 'zod';
 import type { AzureResponse } from '../client.js';
 import { redact } from '../record.js';
-import { check, needEnv, rec, servicePrincipalId, type Check } from './19-decoration.js';
+import {
+  BENCH_ORG,
+  benchProject,
+  benchScmUrl,
+  check,
+  needEnv,
+  qualorIdentityId,
+  rec,
+  type Check,
+} from './19-decoration.js';
 import { QualorApi } from './21-review.js';
 import { problemText } from './27-onboarding.js';
 import { describeAnswer, escapeHtml, tagsOf, wiqlIds } from './30-boards-facts.js';
@@ -21,7 +30,7 @@ import {
 const PATCH_JSON = 'application/json-patch+json';
 const REPRO = 'Microsoft.VSTS.TCM.ReproSteps';
 const REPORT_CONTENT_TYPE = 'application/vnd.qualor.report+json';
-/** The bench Qualor's project of this item (seed-qualor.mjs --boards): no repository, its own token. */
+/** The bench Qualor's project of this item on Services (seed-qualor.mjs --boards; Server: `benchProject`): no repository, its own token. */
 export const BOARDS_PROJECT_KEY = 'bench-boards';
 /** The report's own analyzer and rule: an external engine, active in every built-in profile. */
 export const ENGINE = 'probe31';
@@ -189,14 +198,14 @@ export function targetState(
   )?.name;
 }
 
-/** Whether `url` is the work item's web page: `<organisation URL>/<project GUID>/_workitems/edit/<id>`. */
+/** Whether `url` is the work item's web page: `<organisation or collection URL>/<project GUID>/_workitems/edit/<id>`. */
 export function isWorkItemUrl(
   url: string | null | undefined,
-  servicesUrl: string,
+  scmUrl: string,
   azureProjectId: string,
   workItemId: number,
 ): boolean {
-  const want = `${servicesUrl.replace(/\/+$/, '')}/${azureProjectId}/_workitems/edit/${workItemId}`;
+  const want = `${scmUrl.replace(/\/+$/, '')}/${azureProjectId}/_workitems/edit/${workItemId}`;
   return typeof url === 'string' && url.toLowerCase() === want.toLowerCase();
 }
 
@@ -373,27 +382,22 @@ async function sweep(ctx: ProbeContext, projectId: string): Promise<number[]> {
 export const item: ProbeItem = {
   id: 31,
   title:
-    'Azure Boards end to end on Azure DevOps Services: the bench Qualor maps a project, creates a work item for an issue, reads its state, and the link is dismissed',
+    'Azure Boards end to end on Azure DevOps: the bench Qualor maps a project, creates a work item for an issue, reads its state, and the link is dismissed',
   async run(ctx) {
-    if (ctx.target !== 'services') {
-      return result(
-        ctx,
-        'no',
-        'item 31 runs on the Services target only (the bench Qualor is connected to it)',
-      );
-    }
+    // The bench Qualor's boards project and connection of the target (Server: bench-server-boards).
+    const bench = benchProject(ctx.target, 'boards');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL').replace(/\/+$/, '');
     const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const servicesUrl = needEnv('AZURE_PROBE_SERVICES_URL').replace(/\/+$/, '');
-    const boardsToken = needEnv('AZURE_PROBE_QUALOR_BOARDS_TOKEN');
-    const projectKey = process.env['AZURE_PROBE_QUALOR_BOARDS_PROJECT_KEY'] ?? BOARDS_PROJECT_KEY;
+    const scmUrl = benchScmUrl(ctx.target);
+    const boardsToken = needEnv(bench.tokenEnv);
+    const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
     const finish = () => done(ctx, checks, notes, projectKey);
 
-    // The work item is Qualor's, made as the service principal: its names join the redaction
-    // table before anything is recorded.
-    await servicePrincipalId(ctx);
+    // The work item is Qualor's, made as its identity (the service principal; Server: the PAT's
+    // owner): its names join the redaction table before anything is recorded.
+    await qualorIdentityId(ctx);
 
     // ---- The bench Qualor: organisation `bench`, its Azure connection, the item's project.
     const api = new QualorApi(qualorUrl);
@@ -403,14 +407,14 @@ export const item: ProbeItem = {
         '/api/v0/organizations',
         z.object({ id: z.string(), key: z.string() }).loose(),
       )
-    ).find((o) => o.key === 'bench');
+    ).find((o) => o.key === BENCH_ORG);
     if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
     const connection = (
       await api.items(
         `/api/v0/scm-connections?organizationId=${org.id}`,
         z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
       )
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === servicesUrl);
+    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
     const project = (
@@ -605,10 +609,9 @@ export const item: ProbeItem = {
         'Qualor creates the work item within 3 minutes: the link is created, with the work item id and its web URL',
         createdLink?.state === 'created' &&
           madeId !== undefined &&
-          isWorkItemUrl(createdLink.url, servicesUrl, azureProject.id, madeId),
+          isWorkItemUrl(createdLink.url, scmUrl, azureProject.id, madeId),
         `${linkText(createdLink)}${settled ? ` after ${seconds(requestedAt)} s` : ` after ${CREATE_WAIT_MS / 60000} minutes`}; url ${
-          madeId !== undefined &&
-          isWorkItemUrl(createdLink?.url, servicesUrl, azureProject.id, madeId)
+          madeId !== undefined && isWorkItemUrl(createdLink?.url, scmUrl, azureProject.id, madeId)
             ? "is the work item's web page"
             : createdLink?.url
               ? 'is another address'

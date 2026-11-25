@@ -4,10 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { buildRedactionTable } from './common.js';
 import {
   benchDotnetDockerYaml,
+  benchProject,
+  benchScmUrl,
   benchDotnetTaskYaml,
   benchUploadYaml,
   forbiddenIn,
   markerKind,
+  qualorIdentityName,
   statusPolicySettings,
   threadStatusName,
 } from './19-decoration.js';
@@ -127,5 +130,68 @@ describe('item 19 readers', () => {
     });
     expect(table.hosts).toContain('qualor.16.192.106.23.sslip.io');
     expect(table.secrets).toContain('qlr_secret_value_123456');
+  });
+});
+
+describe('the bench Qualor per target', () => {
+  it('Services keeps its projects and token keys', () => {
+    expect(benchProject('services', 'main', {})).toEqual({
+      key: 'bench',
+      tokenEnv: 'AZURE_PROBE_QUALOR_TOKEN',
+    });
+    expect(benchProject('services', 'fix', {})).toEqual({
+      key: 'bench-fix',
+      tokenEnv: 'AZURE_PROBE_QUALOR_FIX_TOKEN',
+    });
+    expect(benchProject('services', 'boards', {})).toEqual({
+      key: 'bench-boards',
+      tokenEnv: 'AZURE_PROBE_QUALOR_BOARDS_TOKEN',
+    });
+    expect(
+      benchProject('services', 'fix', { AZURE_PROBE_QUALOR_FIX_PROJECT_KEY: 'other-fix' }).key,
+    ).toBe('other-fix');
+  });
+
+  it('Server has projects and token keys of its own', () => {
+    expect(benchProject('server', 'main', {})).toEqual({
+      key: 'bench-server',
+      tokenEnv: 'AZURE_PROBE_SERVER_QUALOR_TOKEN',
+    });
+    expect(benchProject('server', 'fix', {})).toEqual({
+      key: 'bench-server-fix',
+      tokenEnv: 'AZURE_PROBE_SERVER_QUALOR_FIX_TOKEN',
+    });
+    expect(benchProject('server', 'boards', {})).toEqual({
+      key: 'bench-server-boards',
+      tokenEnv: 'AZURE_PROBE_SERVER_QUALOR_BOARDS_TOKEN',
+    });
+    // A Services key in the environment never names a Server project.
+    expect(benchProject('server', 'main', { AZURE_PROBE_QUALOR_PROJECT_KEY: 'bench' }).key).toBe(
+      'bench-server',
+    );
+  });
+
+  it("the Server tokens are redacted, the projects' keys are not", () => {
+    const table = buildRedactionTable({
+      AZURE_PROBE_SERVER_QUALOR_TOKEN: 'qlr_server_secret_123456',
+      AZURE_PROBE_SERVER_QUALOR_PROJECT_KEY: 'bench-server',
+    });
+    expect(table.secrets).toContain('qlr_server_secret_123456');
+    expect(table.secrets).not.toContain('bench-server');
+  });
+
+  it("the connection's address of each target, without a trailing slash", () => {
+    const env = {
+      AZURE_PROBE_SERVICES_URL: 'https://dev.azure.com/acme/',
+      AZURE_PROBE_SERVER_URL: 'https://ado.example.invalid/DefaultCollection/',
+    };
+    expect(benchScmUrl('services', env)).toBe('https://dev.azure.com/acme');
+    expect(benchScmUrl('server', env)).toBe('https://ado.example.invalid/DefaultCollection');
+    expect(() => benchScmUrl('server', {})).toThrow(/AZURE_PROBE_SERVER_URL/);
+  });
+
+  it("names Qualor's identity per target", () => {
+    expect(qualorIdentityName('services')).toBe('the service principal');
+    expect(qualorIdentityName('server')).toBe("Qualor's PAT identity");
   });
 });

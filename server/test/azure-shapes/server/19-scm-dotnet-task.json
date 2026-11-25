@@ -1,0 +1,16 @@
+{
+  "provider": "azure",
+  "revision": "d50fadc2ebffcce3b0c1393afc90ff66bfb5a96a",
+  "branch": "probe/19-20261125021914-dotnet",
+  "mergeRequest": {
+    "id": "26",
+    "targetBranch": "probe/19-20261125021914-dotnet-target",
+    "sourceBranch": "probe/19-20261125021914-dotnet"
+  },
+  "azure": {
+    "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+    "repositoryId": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+    "buildId": "33",
+    "checkout": "head"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 17,
+    "rev": 2,
+    "fields": {
+      "System.AreaPath": "probe-org",
+      "System.TeamProject": "probe-org",
+      "System.IterationPath": "probe-org",
+      "System.WorkItemType": "Bug",
+      "System.State": "Active",
+      "System.Reason": "Approved",
+      "System.CreatedDate": "2026-11-25T02:32:01.757Z",
+      "System.CreatedBy": {
+        "displayName": "Probe User",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "_links": {
+          "avatar": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+          }
+        },
+        "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "uniqueName": "ado.example.invalid\\Probe User",
+        "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+        "descriptor": "win.<sid>"
+      },
+      "System.ChangedDate": "2026-11-25T02:32:06.363Z",
+      "System.ChangedBy": {
+        "displayName": "Probe User",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "_links": {
+          "avatar": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+          }
+        },
+        "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "uniqueName": "ado.example.invalid\\Probe User",
+        "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+        "descriptor": "win.<sid>"
+      },
+      "System.CommentCount": 0,
+      "System.Title": "Qualor probe item 31: <script>alert(\"31\")</script> & <b>'bold'</b> <img src=x onerror=alert(31)>",
+      "Microsoft.VSTS.Common.StateChangeDate": "2026-11-25T02:32:06.363Z",
+      "Microsoft.VSTS.Common.ActivatedDate": "2026-11-25T02:32:06.363Z",
+      "Microsoft.VSTS.Common.ActivatedBy": {
+        "displayName": "Probe User",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "_links": {
+          "avatar": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+          }
+        },
+        "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+        "uniqueName": "ado.example.invalid\\Probe User",
+        "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+        "descriptor": "win.<sid>"
+      },
+      "Microsoft.VSTS.Common.Priority": 2,
+      "Microsoft.VSTS.Common.Severity": "3 - Medium",
+      "Microsoft.VSTS.Common.ValueArea": "Business",
+      "System.Description": "<h3>Qualor probe item 31: markup in a finding </h3>\n<pre>Qualor probe item 31: &lt;script&gt;alert(&quot;31&quot;)&lt;/script&gt; &amp; &lt;b&gt;'bold'&lt;/b&gt; &lt;img src=x onerror=alert(31)&gt;</pre>\n<p>Project: <code>Bench Server boards</code> (<code>ado.example.invalid-boards</code>) </p>\n<p>Branch: <code>main</code> </p>\n<p>File: <code>src/probe31.ts:3</code> </p>\n<p>Rule: <code>probe31:markup</code>, high, <code>security</code> </p>\n<p>First seen: 2026-11-25 </p>\n<p><a href=\"https://ado.example.invalid/projects/5806e176-564c-40a2-893e-fa6e00009b24/issues/aab6761e-375a-4410-8420-fa6e0000fe80\">Open in Qualor</a> </p>\n<p>Qualor reference: qualor-033061cde45f405081e7fa6e00007317-1 </p>",
+      "Microsoft.VSTS.TCM.ReproSteps": "<h3>Qualor probe item 31: markup in a finding </h3>\n<pre>Qualor probe item 31: &lt;script&gt;alert(&quot;31&quot;)&lt;/script&gt; &amp; &lt;b&gt;'bold'&lt;/b&gt; &lt;img src=x onerror=alert(31)&gt;</pre>\n<p>Project: <code>Bench Server boards</code> (<code>ado.example.invalid-boards</code>) </p>\n<p>Branch: <code>main</code> </p>\n<p>File: <code>src/probe31.ts:3</code> </p>\n<p>Rule: <code>probe31:markup</code>, high, <code>security</code> </p>\n<p>First seen: 2026-11-25 </p>\n<p><a href=\"https://ado.example.invalid/projects/5806e176-564c-40a2-893e-fa6e00009b24/issues/aab6761e-375a-4410-8420-fa6e0000fe80\">Open in Qualor</a> </p>\n<p>Qualor reference: qualor-033061cde45f405081e7fa6e00007317-1 </p>",
+      "System.Tags": "probe31; qualor"
+    },
+    "relations": [
+      {
+        "rel": "Hyperlink",
+        "url": "https://ado.example.invalid/projects/5806e176-564c-40a2-893e-fa6e00009b24/issues/aab6761e-375a-4410-8420-fa6e0000fe80",
+        "attributes": {
+          "authorizedDate": "2026-11-25T02:32:01.757Z",
+          "id": 7,
+          "resourceCreatedDate": "2026-11-25T02:32:01.757Z",
+          "resourceModifiedDate": "2026-11-25T02:32:01.757Z",
+          "revisedDate": "9999-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/17"
+      },
+      "workItemUpdates": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/17/updates"
+      },
+      "workItemRevisions": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/17/revisions"
+      },
+      "workItemComments": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/17/comments"
+      },
+      "html": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_workitems/edit/17"
+      },
+      "workItemType": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItemTypes/Bug"
+      },
+      "fields": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/fields"
+      }
+    },
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/wit/workItems/17"
+  }
+}

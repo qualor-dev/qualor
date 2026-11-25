@@ -1,0 +1,113 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "repository": {
+      "id": "cf40aa27-814d-4d54-81c3-fa6e0000000b",
+      "name": "probe-org-setup",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b",
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      },
+      "size": 317,
+      "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-setup",
+      "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe-org-setup",
+      "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe-org-setup",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pullRequestId": 27,
+    "codeReviewId": 27,
+    "status": "active",
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "creationDate": "2026-11-25T02:26:20.106407Z",
+    "title": "Add Qualor code analysis",
+    "description": "Qualor analyses every pull request and every push to the default branch, and reports the result there.\nOn each tag, it records a version: the release's dependency list.\nThe analyses go to the Qualor project `probe-org/probe-org-setup-2`.\n\nThe pipeline file ` .azure-pipelines/qualor.yml ` runs the Qualor scanner image ` qualor/scanner:0.16.0 `.\nQualor creates the pipeline `Qualor` from it. The token is its secret variable `QUALOR_TOKEN` and the server address its variable `QUALOR_URL`; neither is in any file.\nThe pipeline runs on the agent pool ` Default `. It needs a Linux agent with Docker, and the agent pool must be authorised for the pipeline `Qualor`. The agents must be able to pull the image from Docker Hub.\nAfter the first analysis of the default branch, Qualor adds the Build validation policy that runs the pipeline on every pull request into that branch.\nTo remove it, delete ` .azure-pipelines/qualor.yml `, the pipeline `Qualor` (its secret goes with it) and the Build validation policy.",
+    "sourceRefName": "refs/heads/qualor/setup",
+    "targetRefName": "refs/heads/main",
+    "mergeStatus": "queued",
+    "isDraft": false,
+    "mergeId": "87fc9267-c62b-41c7-8abe-fa6e0000c146",
+    "lastMergeSourceCommit": {
+      "commitId": "a0201f53020b3e688e74f8c71d8ff5c95cd06191",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/commits/a0201f53020b3e688e74f8c71d8ff5c95cd06191"
+    },
+    "lastMergeTargetCommit": {
+      "commitId": "335d4cb4708a1f4245bbf949df78f51ea527158c",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/commits/335d4cb4708a1f4245bbf949df78f51ea527158c"
+    },
+    "reviewers": [],
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pullRequests/27",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pullRequests/27"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b"
+      },
+      "workItems": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pullRequests/27/workitems"
+      },
+      "sourceBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/refs/heads/qualor/setup"
+      },
+      "targetBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/refs/heads/main"
+      },
+      "statuses": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pullRequests/27/statuses"
+      },
+      "sourceCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/commits/a0201f53020b3e688e74f8c71d8ff5c95cd06191"
+      },
+      "targetCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/commits/335d4cb4708a1f4245bbf949df78f51ea527158c"
+      },
+      "createdBy": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6"
+      },
+      "iterations": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/cf40aa27-814d-4d54-81c3-fa6e0000000b/pullRequests/27/iterations"
+      }
+    },
+    "completionOptions": {
+      "deleteSourceBranch": true,
+      "mergeStrategy": "noFastForward"
+    },
+    "supportsIterations": true,
+    "completionQueueTime": "2026-11-25T02:26:25.1252517Z",
+    "closedBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "artifactId": "vstfs:///Git/PullRequestId/828b9239-8828-4b4e-82e8-fa6e00000c8f%2fcf40aa27-814d-4d54-81c3-fa6e0000000b%2f27"
+  }
+}
