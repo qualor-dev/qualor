@@ -6,13 +6,6 @@ import { azureProblemText } from '../settings/azure-text';
  * DevOps' own reason (cut to 500 characters by the server), shown as text after a fixed lead.
  */
 
-/**
- * The server's `field_refused` message when Azure DevOps gave no words of its own
- * (server/src/boards/create.ts BOARDS_FAILURE_TEXT): shown in the UI's own words instead.
- */
-const FIELD_REFUSED_STAND_IN =
-  'Azure DevOps refused a field of the work item. Check the mapping of the project.';
-
 /** Why a work item could not be created, by the code of the link's failure. */
 function failureCodeText(code: string): string {
   switch (code) {
@@ -40,11 +33,12 @@ function failureCodeText(code: string): string {
 /**
  * A link's failure: its own text per code. `field_refused` shows the server's message, Azure
  * DevOps' own reason for refusing a field, after a fixed lead, as the mapping panel frames them:
- * the one place its words reach a finding.
+ * the one place its words reach a finding. An empty message (Azure DevOps gave none) shows the
+ * fixed text alone.
  */
 export function boardsFailureText(failure: { code: string; message: string }): string {
   if (failure.code !== 'field_refused') return failureCodeText(failure.code);
-  if (failure.message === '' || failure.message === FIELD_REFUSED_STAND_IN) {
+  if (failure.message.trim() === '') {
     return $localize`:@@boards.failure.fieldRefusedPlain:Azure DevOps refused a field of the work item. Check the mapping of the project.`;
   }
   const lead = $localize`:@@boards.failure.fieldRefused:Azure DevOps refused the work item. It said:`;

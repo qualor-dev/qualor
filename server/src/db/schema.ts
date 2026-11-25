@@ -89,7 +89,10 @@ export const BOARDS_STATE_CATEGORIES = [
   'removed',
 ] as const;
 export type BoardsStateCategory = (typeof BOARDS_STATE_CATEGORIES)[number];
-/** Why a Boards link could not be created: a code and its fixed text (Azure's words for field_refused). */
+/**
+ * Why a Boards link could not be created: a code and its fixed text (Azure's words for
+ * field_refused, empty when it gave none).
+ */
 export interface BoardsFailure {
   code: string;
   message: string;

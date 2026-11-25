@@ -358,7 +358,7 @@ const NOT_WRITTEN = [
   'docs/guide/sbom-upload.md',
   // The review job runs the released scanner: raised in a commit of its own once it is published.
   '.github/workflows/ci.yml',
-  // Quotes: release history, test fixtures, recorded Azure DevOps answers, a comment.
+  // Quotes: release history, test fixtures, a comment.
   'CHANGELOG.md',
   'cli/test/gitlab-component.test.ts',
   'integrations/azure-devops/extension/tasks/qualor/src/plan.test.ts',
@@ -366,16 +366,15 @@ const NOT_WRITTEN = [
   'server/src/onboarding/azure-pipeline.test.ts',
   'server/src/onboarding/ci-setup.test.ts',
   'server/src/vulnerabilities/export/round-trip.db.test.ts',
-  'server/test/azure-shapes/services/27-pr-complete.json',
-  'server/test/azure-shapes/services/27-setup-pr.json',
   'tools/azure/items/27-onboarding.ts',
   'tools/azure/items/onboarding.test.ts',
   'tools/deploy/sources.test.ts',
   'tools/release/publish.ts',
   'ui/src/app/project/dependencies/dependencies.page.spec.ts',
 ];
+// Recorded Azure DevOps answers quote the version a bench run had: data, not version files.
 const NOT_SCANNED =
-  /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|gradle\.lockfile|go\.sum)$|^deploy\/scanner\/licenses\//;
+  /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock|gradle\.lockfile|go\.sum)$|^deploy\/scanner\/licenses\/|^server\/test\/azure-shapes\//;
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** The version itself, or its minor line as an image tag, a task's imageTag or a component ref. */

@@ -55,7 +55,10 @@ export const boardsLinkSchema = z.object({
         description:
           'field_refused, permission_missing, not_found, limit_reached, not_mapped, finding_gone, outcome_unknown or type_unsupported; note_refused on a created link whose note Azure DevOps refused (it is not sent again)',
       }),
-      /** A fixed text; for `field_refused`, Azure DevOps' own words (at most 500 characters). */
+      /**
+       * A fixed text; for `field_refused`, Azure DevOps' own words (at most 500 characters), empty
+       * when it gave none.
+       */
       message: z.string(),
     })
     .nullable(),

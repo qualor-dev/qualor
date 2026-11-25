@@ -62,11 +62,11 @@ export type BoardsFailureCode =
   | 'note_refused';
 
 /**
- * The fixed texts of the failures. `field_refused` carries Azure DevOps' own words instead (cut
- * to 500 characters) whenever the refusal has any: the one place they are stored.
+ * The fixed texts of the failures. `field_refused` has none: it carries Azure DevOps' own words
+ * (cut to 500 characters), the one place they are stored, or an empty message when the refusal had
+ * none, so a reader tells the two apart by structure, never by wording.
  */
-export const BOARDS_FAILURE_TEXT: Record<BoardsFailureCode, string> = {
-  field_refused: 'Azure DevOps refused a field of the work item. Check the mapping of the project.',
+export const BOARDS_FAILURE_TEXT: Record<Exclude<BoardsFailureCode, 'field_refused'>, string> = {
   permission_missing:
     'The identity of the Azure DevOps connection may not create work items in this project or area (HTTP 403).',
   not_found:
@@ -96,7 +96,10 @@ export interface BoardsCreateOutcome {
 /** The type lists of a run (or a pass), by Azure DevOps project id: read once each. */
 export type WorkItemTypeCache = Map<string, AzureWorkItemType[]>;
 
-/** A failure a row records: its code, and its text (Azure's words for `field_refused`). */
+/**
+ * A failure a row records: its code, and its text (for `field_refused`, Azure's words, empty when
+ * it gave none).
+ */
 export interface BoardsFailure {
   code: BoardsFailureCode;
   message: string;
@@ -120,7 +123,7 @@ interface Ready {
   ops: AzureJsonPatch[];
 }
 
-const fixed = (code: BoardsFailureCode): BoardsFailure => ({
+const fixed = (code: Exclude<BoardsFailureCode, 'field_refused'>): BoardsFailure => ({
   code,
   message: BOARDS_FAILURE_TEXT[code],
 });
@@ -155,7 +158,7 @@ export function stateCategoryOf(
 /**
  * The failure a refused create records on its row, or null when `err` is not a refusal of the
  * row: 400 and the other refusals (the long-text 500 included) → `field_refused` with Azure's
- * words; 403 → `permission_missing`; 404 → `type_unsupported` for a type the project no longer
+ * words, or an empty message without any; 403 → `permission_missing`; 404 → `type_unsupported` for a type the project no longer
  * has, else `not_found`; 413 → `limit_reached`; a type name the client refuses to send →
  * `type_unsupported`.
  */
@@ -170,9 +173,10 @@ export function createFailureOf(err: unknown): BoardsFailure | null {
       if (err.reason === 'invalid_input') return fixed('type_unsupported');
       if (err.reason !== 'http') return null;
       if (err.status === 413) return fixed('limit_reached');
-      return err.azureMessage
-        ? { code: 'field_refused', message: cutText(err.azureMessage, AZURE_WORDS_MAX) }
-        : fixed('field_refused');
+      return {
+        code: 'field_refused',
+        message: err.azureMessage?.trim() ? cutText(err.azureMessage, AZURE_WORDS_MAX) : '',
+      };
     default:
       return null;
   }

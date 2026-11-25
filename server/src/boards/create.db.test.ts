@@ -360,7 +360,7 @@ describe('the Boards create job (design §7.8, plan Task 6)', () => {
     expect((await rows()).filter((r) => r.state === 'pending')).toHaveLength(0);
   });
 
-  it("a 400 → field_refused with Azure's words cut to 500; 403, 404 and the long text too", async () => {
+  it("a 400 → field_refused with Azure's words cut to 500, an empty message without any; 403, 404 and the long text too", async () => {
     const words = `TF401320: Rule Error for field Team. ${'x'.repeat(600)}`;
     const [refused] = await pending([await issue('refused')]);
     fake.inject('POST', CREATE_PATH, refusedCreate(words));
@@ -393,6 +393,12 @@ describe('the Boards create job (design §7.8, plan Task 6)', () => {
         recordedAnswer('services', '30-pat-e-big-description'),
         'field_refused',
         'TF401262: Value of long text field System.Description exceeds the maximum allowed length of 1048576.',
+      ],
+      // No words of Azure DevOps': the message stays empty, never a stand-in text.
+      [
+        { status: 400, headers: { 'content-type': 'application/json' }, body: '{}' },
+        'field_refused',
+        '',
       ],
     ];
     for (const [answer, code, message] of cases) {
