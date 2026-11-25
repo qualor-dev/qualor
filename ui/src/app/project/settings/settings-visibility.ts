@@ -1,7 +1,12 @@
 import { can } from '../../auth/permissions';
 
-/** The project permissions that open the Settings tab (the organisation's webhooks one besides). */
+/**
+ * The project permissions that open the Settings tab (the organisation's webhooks one besides).
+ * `project.read` shows the Cleanup panel, read-only: whoever reads a project sees which of its
+ * branches and merge requests Qualor deletes (issue #38).
+ */
 export const SETTINGS_PERMISSIONS = [
+  'project.read',
   'project.settings',
   'project.tokens.manage',
   'project.delete',

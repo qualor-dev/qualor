@@ -184,16 +184,33 @@ describe('ProjectSettingsPage', () => {
     expect(texts(root, 'nav.settings-index a')).not.toContain('Azure Boards');
   });
 
-  it('shows only Webhooks to a caller who holds org.webhooks.manage and no project setting', async () => {
+  it('shows the Cleanup panel and Webhooks to a caller who holds org.webhooks.manage and no project setting', async () => {
     setup({ projectPermissions: ['project.read'], orgRole: 'admin' });
     const { root, navigate } = await render();
-    expect(texts(root, '.card.panel > .panel-head h2')).toEqual(['Webhooks']);
-    expect(root.querySelector('.card.panel')?.id).toBe('webhooks');
+    expect(texts(root, '.card.panel > .panel-head h2')).toEqual(['Cleanup', 'Webhooks']);
+    expect([...root.querySelectorAll('.card.panel')].map((p) => p.id)).toEqual([
+      'cleanup',
+      'webhooks',
+    ]);
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it('redirects a caller without any settings permission to the overview', async () => {
-    setup({ projectPermissions: ['project.read'], orgRole: 'member' });
+  it('shows a reader only the Cleanup panel, read-only: which of their branches and merge requests go (issue #38)', async () => {
+    const server = setup({ projectPermissions: ['project.read'], orgRole: 'member' });
+    const { root, navigate } = await render();
+    expect(texts(root, '.card.panel h2')).toEqual(['Cleanup']);
+    expect(texts(root, 'nav.settings-index a')).toEqual(['Cleanup']);
+    expect(server.requestsTo('GET', `/api/v0/projects/${PROJECT}/cleanup`)).toHaveLength(1);
+    expect(root.querySelector<HTMLSelectElement>('#cleanup-branches')?.disabled).toBe(true);
+    expect(root.querySelector<HTMLSelectElement>('#cleanup-merge-requests')?.disabled).toBe(true);
+    expect(root.querySelector('#cleanup-keep')).toBeNull();
+    expect(texts(root, '#cleanup button')).not.toContain('Save');
+    expect(root.textContent).toContain('Only project admins change these settings.');
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('redirects a caller without any project permission to the overview', async () => {
+    setup({ projectPermissions: [], orgRole: 'member' });
     const { root, navigate } = await render();
     expect(navigate).toHaveBeenCalledWith(['/projects', PROJECT], { replaceUrl: true });
     expect(root.querySelector('.card.panel')).toBeNull();

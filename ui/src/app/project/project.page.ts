@@ -77,8 +77,8 @@ export class ProjectPage {
     return project !== null && this.session.orgCan(project.organizationId, 'org.members.read');
   });
   /**
-   * The Settings tab: for whoever holds a project setting permission, or the organisation's
-   * `org.webhooks.manage` (the Webhooks panel).
+   * The Settings tab: for whoever reads the project (the Cleanup panel, read-only), holds a project
+   * setting permission, or the organisation's `org.webhooks.manage` (the Webhooks panel).
    */
   protected readonly showSettings = computed(() => {
     const p = this.current();

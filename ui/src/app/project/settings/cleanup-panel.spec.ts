@@ -135,7 +135,7 @@ describe('CleanupPanel', () => {
     const lines = [...kept.querySelectorAll('.kept-list > li')];
     expect(lines.map((l) => l.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
       'trunk the main branch',
-      'release/* hotfix/* branches that vulnerability monitoring tracks',
+      'release/* hotfix/* branches matching the vulnerability-monitoring branch patterns, even while monitoring is off',
     ]);
   });
 

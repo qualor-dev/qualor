@@ -379,8 +379,13 @@ describe('ProjectPage', () => {
       expect(tabs(await render(ID))).toContain('Settings');
     });
 
-    it('is no tab for a viewer', async () => {
+    it('is a tab for a viewer, who reads the cleanup rules there (issue #38)', async () => {
       asRole('member', ['project.read']);
+      expect(tabs(await render(ID))).toContain('Settings');
+    });
+
+    it('is no tab without any project permission', async () => {
+      asRole('member', []);
       expect(tabs(await render(ID))).not.toContain('Settings');
     });
   });

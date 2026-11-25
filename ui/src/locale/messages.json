@@ -1250,7 +1250,7 @@
     "cleanup.keptLabel": "Always kept",
     "cleanup.keptHint": "Qualor never deletes these branches.",
     "cleanup.keptMain": "the main branch",
-    "cleanup.keptTracked": "branches that vulnerability monitoring tracks",
+    "cleanup.keptTracked": "branches matching the vulnerability-monitoring branch patterns, even while monitoring is off",
     "cleanup.keepLabel": "Also keep branches matching",
     "cleanup.keepHint": " Up to 20 patterns, such as release/*. Press Enter after each one. ",
     "cleanup.keepNone": "No pattern.",

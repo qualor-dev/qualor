@@ -85,6 +85,8 @@ export class ProjectSettingsPage {
     if (!p) return null;
     return {
       settings: can(p.permissions, 'project.settings'),
+      // Issue #38: every reader sees the cleanup rules, read-only without project.settings.
+      cleanup: can(p.permissions, 'project.read'),
       tokens: can(p.permissions, 'project.tokens.manage'),
       delete: can(p.permissions, 'project.delete'),
       webhooks: this.session.orgCan(p.organizationId, 'org.webhooks.manage'),

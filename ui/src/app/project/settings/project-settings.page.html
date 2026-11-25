@@ -75,6 +75,8 @@
           i18n="@@project.settings.ai"
           >AI</a
         >
+      }
+      @if (s.cleanup) {
         <a
           [routerLink]="[]"
           fragment="cleanup"
@@ -141,6 +143,10 @@
           />
           <q-project-fixes-panel [project]="p" />
           <q-project-ai-panel [project]="p" (saved)="store.reload()" />
+        }
+      }
+      @if (s.cleanup) {
+        @if (project(); as p) {
           <q-cleanup-panel [project]="p" />
         }
       }
