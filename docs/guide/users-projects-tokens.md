@@ -212,8 +212,8 @@ A project's **Settings** tab has these panels, and shows each person only the on
 |---|---|---|
 | **New code** | how new code is defined on the main branch ([Quality gates](./quality-gates.md#new-code)) | Project admin, Organization admin |
 | **Quality gate and profiles** | the project's **Quality gate** (without a choice the organisation's default applies) and the **Quality profile per language** | Project admin, Organization admin |
-| **Main branch** | the name of the main branch. Analyses of the previous main branch stay on that branch, and new code on the new one starts from its own analyses | Project admin, Organization admin |
-| **Cleanup** | when Qualor deletes branches and merge requests that nobody analyses any more ([below](#clean-up-old-branches-and-merge-requests)) | Project admin, Organization admin |
+| **Main branch** | the name of the main branch. Analyses of the previous main branch stay on that branch, and new code on the new one starts from its own analyses. The previous main branch then follows the cleanup like any branch: add it to the keep patterns to keep its history | Project admin, Organization admin |
+| **Cleanup** | when Qualor deletes branches and merge requests that nobody analyses any more ([below](#clean-up-old-branches-and-merge-requests)) | everyone who reads the project; only Project admin and Organization admin change it |
 | **Analysis tokens** | create and revoke the project's analysis tokens ([below](#project-analysis-tokens)) | Project admin, Organization admin |
 | **Webhooks** | webhooks that fire for this project only ([Webhooks](./webhooks-and-api.md#webhooks)) | Organization admin |
 | **Danger zone** | **Delete project** | Organization admin |
@@ -253,20 +253,31 @@ off by default, so the branch list keeps growing until you turn it on.
 | **Settings → Cleanup** | instance admin | the server default: **Branches not analysed for** and **Merge requests not analysed for**, each off, 30, 60, 90, 180 or 365 days |
 | **Project → Settings → Cleanup** | Project admin, Organization admin | per project, for branches and merge requests separately: the server default, off, or a number of days |
 
-A project also lists **branches to keep**: up to 20 patterns, written like the branch patterns of
-[vulnerability monitoring](./releases.md#the-settings-panel).
+A project also has **Also keep branches matching**: up to 20 patterns, written like the branch
+patterns of [vulnerability monitoring](./releases.md#the-settings-panel). Keep patterns never apply
+to merge requests.
 
-Qualor always keeps:
+Qualor never deletes:
 
 - the main branch,
-- the branches that match the project's vulnerability-monitoring branch patterns,
-- the branches that match its keep patterns.
+- a branch that matches the project's vulnerability-monitoring branch patterns, even while
+  monitoring is off,
+- a branch that matches its keep patterns,
+- a branch a project version takes its inventory from,
+- a branch with an issue linked to a Jira issue or an Azure Boards work item,
+- a merge request while its AI review, or Qualor's answer to a note on it, waits or runs.
 
-The daily housekeeping job does the deleting ([Retention](./install-server.md#retention)). A merge
-request counts as inactive by its last analysis only, merged or closed or not.
+A branch that merge requests target but that is no longer analysed itself, such as `release/1.x`,
+is deleted like any inactive branch. Add it to the keep patterns.
+
+The daily housekeeping job does the deleting ([Retention](./install-server.md#retention)). It
+skips a project while an analysis of it waits or runs, and tries it again at the end of the run
+or the next day. A merge request counts as inactive by its last analysis only, merged or closed or
+not.
 
 A deleted branch or merge request takes its analyses, issues and measures with it. They cannot be
-recovered. The branch or merge request comes back when a new analysis is uploaded for it.
+recovered. A new analysis brings it back as a new, empty one: old links show "not found", and
+triage (false positives, accepted issues) starts again from the reference branch.
 
 Branches and merge requests that never had an analysis keep their 30-day retention, whatever these
 settings say.

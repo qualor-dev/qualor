@@ -605,7 +605,7 @@ A daily housekeeping job deletes old data:
 | [AI review](./ai-review.md) snapshots (copies of a merge request's repository) | until a newer analysis of the merge request replaces them, the merge request is merged or closed (within an hour), or AI review stops covering the project; 14 days at most; one the server refused, 1 day ([How long copies live](./ai-review.md#how-long-copies-live)) |
 | Qualor's answers to replies and commands in merge requests (who wrote the note, what came of it, the answer, the tokens) | 90 days after they are finished, and with their merge request or project ([What Qualor keeps](./ai-review.md#what-qualor-keeps)) |
 | audit log events (enterprise, `audit-log`) | 365 days by default, 30 days to 100 years (**Settings → Audit settings**; [Roles and the audit log](./roles-and-audit.md#retention)) |
-| analyses and measures | forever |
+| analyses and measures | as long as their branch or merge request: a manual delete takes them, and so does the cleanup when it is on ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests)) |
 
 ## Trivy's vulnerability database
 

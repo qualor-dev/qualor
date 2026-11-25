@@ -32,13 +32,14 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 | Create, retry and unlink Azure Boards work items (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 | Allow [fix merge requests](./fix-merge-requests.md) on a GitLab, GitHub or Azure DevOps connection (part of managing connections) | ✓ | | | |
 | Turn fix merge requests on for a project and set their automatic mode (part of changing project settings) | ✓ | ✓ | | |
+| See when a project's inactive branches and merge requests are deleted (**Project → Settings → Cleanup**, read-only) | ✓ | ✓ | ✓ | ✓ |
 | Set when a project's inactive branches and merge requests are deleted, and its branches to keep ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests); part of changing project settings) | ✓ | ✓ | | |
-| Set the server's default for that cleanup (**Settings → Cleanup**) | instance admins only | | | |
 | Request, retry and cancel a fix merge request (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 
 - In the API the roles are `admin` (Organization admin), `project_admin`, `member` (Maintainer)
   and `viewer`.
 - **Instance admins** have every permission in every organisation, whatever their memberships.
+- Only instance admins set the server's default for the cleanup (**Settings → Cleanup**).
 - A role granted **in an organisation** applies to every project in it. A role granted **on a
   single project** (**Project → Access**) applies to that project only; Organization admin cannot
   be granted there.
