@@ -1278,7 +1278,7 @@
     "projectDelete.confirm": " Delete project ",
     "projectDelete.done": "Project {$name} deleted.",
     "project.settings.fixes": "Fix MRs",
-    "fix.panel.intro": " Qualor can open a merge request that bumps a vulnerable dependency to a fixed version. On GitHub, an MR is a pull request. ",
+    "fix.panel.intro": " Qualor can open a merge request that bumps a vulnerable dependency to a fixed version. On GitHub and Azure DevOps, an MR is a pull request. ",
     "fix.panel.retry": " Try again ",
     "fix.panel.enabled": "Enabled",
     "fix.panel.counts": "{$INTERPOLATION} open, {$INTERPOLATION_1} of {$INTERPOLATION_2} in progress",
