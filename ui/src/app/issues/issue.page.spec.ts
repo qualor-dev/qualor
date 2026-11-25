@@ -1137,6 +1137,57 @@ describe('IssuePage', () => {
       expect(buttonIn(root, 'Create Jira issue')).toBeDefined();
       expect(root.querySelector('q-boards-link')).toBeNull();
     });
+
+    it('offers Jira in a Jira project for a finding whose work item was never made', async () => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      server.on('GET', '/api/v0/projects/p1/boards', {
+        body: boardsProjectSettings({ mapped: false }),
+      });
+      const neverMade = pendingBoardsLink({
+        state: 'failed',
+        failure: { code: 'not_mapped', message: 'The project had no Azure Boards mapping.' },
+      });
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ boards: neverMade, jiraLinkable: true }),
+      });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Jira']);
+      expect(buttonIn(root, 'Create Jira issue')).toBeDefined();
+      expect(root.querySelector('q-boards-link')).toBeNull();
+    });
+
+    it('keeps the Boards card of a work item that may exist (outcome_unknown) in a Jira project', async () => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      server.on('GET', '/api/v0/projects/p1/boards', {
+        body: boardsProjectSettings({ mapped: false }),
+      });
+      const unknown = pendingBoardsLink({
+        state: 'failed',
+        failure: { code: 'outcome_unknown', message: 'Qualor could not tell.' },
+      });
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ boards: unknown }) });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Azure Boards']);
+      expect(root.querySelector('q-jira-link')).toBeNull();
+    });
+
+    it('offers a work item in a Boards project for a finding whose Jira issue was never made', async () => {
+      const neverMade = jiraLink({
+        state: 'failed',
+        key: null,
+        url: null,
+        status: null,
+        statusCheckedAt: null,
+        failure: { code: 'not_mapped', message: 'The project is not mapped to a Jira project.' },
+      });
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ jira: neverMade, boardsLinkable: true }),
+      });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Azure Boards']);
+      expect(buttonIn(root, 'Create work item')).toBeDefined();
+      expect(root.querySelector('q-jira-link')).toBeNull();
+    });
   });
 
   describe('the Fix card', () => {

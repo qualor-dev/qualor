@@ -91,7 +91,8 @@ export function readSnippet(raw: unknown): Snippet | null {
  *   again every 3 s, at most 40 times (R22). An issue with an Azure Boards link, or of a project
  *   mapped to Boards, shows the "Azure Boards" card in its place (one tracker per finding), read
  *   again the same way while its work item is pending. An issue with neither link shows neither
- *   card until the project's Boards state is read (or failed to be).
+ *   card until the project's Boards state is read (or failed to be). A link that failed before its
+ *   issue or work item was made counts as none (`findingTracker`).
  * - A Trivy issue of main also gets a "Fix MR" card after it: the fix MR of its package, read
  *   again the same way while it waits, is prepared or is rebuilt.
  */

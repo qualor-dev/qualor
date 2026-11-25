@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { azureConnection } from '../../test/azure-pending';
 import { createFakeJira, type FakeJira } from '../../test/fake-jira';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { mainBranchId } from '../../test/issues';
@@ -8,6 +9,7 @@ import { seedCheck, seedTargetRow } from '../../test/vulnerabilities';
 import type { Db } from '../db/client';
 import {
   auditEvents,
+  boardsLinks,
   branches,
   jiraConnections,
   jiraLinks,
@@ -15,6 +17,7 @@ import {
   projectJiraSettings,
   projectVersions,
   projectVulnerabilitySettings,
+  scmConnections,
   targetVulnerabilities,
   users,
   vulnerabilityDecisions,
@@ -196,6 +199,8 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
   });
   afterEach(async () => {
     await db().delete(jiraConnections);
+    // An Azure DevOps connection a test made, with its Boards links.
+    await db().delete(scmConnections);
     await db().delete(jobs).where(eq(jobs.queue, JIRA_QUEUE));
     await db().delete(targetVulnerabilities);
     await db().delete(vulnerabilityTargetChecks);
@@ -286,7 +291,7 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
       await qualifyingPairs(
         db(),
         { ...asSaved, autoMinSeverity: 'medium' },
-        { exploited: false, limit: AUTO_PER_PASS },
+        { exploited: false, limit: AUTO_PER_PASS, tracker: 'jira' },
       ),
     ).toHaveLength(5);
 
@@ -328,6 +333,39 @@ describe('the automatic Jira rule (spec §6.6, §11.10, §11.11)', () => {
     expect(await auto()).toBe(1);
     expect(await linkedKeys()).toHaveLength(states.length + 1);
     expect(await linkedKeys()).toContain(keyOf(unlinked));
+  });
+
+  it('a pair whose Azure Boards link failed before its work item was made qualifies; outcome_unknown, a work item or a dismissal keeps the rule away', async () => {
+    await rule({ minSeverity: 'high' });
+    const azure = await azureConnection(db(), {
+      organizationId: h.organizationId,
+      baseUrl: 'https://dev.azure.com/jauto-boards',
+      secretKey: h.ctx.config.secretKey,
+    });
+    const inBoards = async (over: Partial<typeof boardsLinks.$inferInsert>) => {
+      const pair = await seedPair({ firstSeenAt: () => after(MINUTE) });
+      await db()
+        .insert(boardsLinks)
+        .values({
+          projectId,
+          connectionId: azure.id,
+          azureProjectId: '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c',
+          kind: 'vulnerability',
+          ...pair,
+          state: 'failed',
+          origin: 'manual',
+          ...over,
+        });
+      return pair;
+    };
+    const neverMade = await inBoards({ failure: { code: 'type_unsupported', message: 'x' } });
+    await inBoards({ failure: { code: 'outcome_unknown', message: 'x' } });
+    await inBoards({ failure: { code: 'field_refused', message: 'x' }, workItemId: 4 });
+    await inBoards({ state: 'dismissed' });
+
+    expect(await auto()).toBe(1);
+    expect(await linkedKeys()).toEqual([keyOf(neverMade)]);
+    expect(await auto()).toBe(0);
   });
 
   it('unknown never qualifies by severity', async () => {

@@ -15,7 +15,13 @@ import { idParams, noNul } from '../http/schemas';
 import { transitionComment } from '../issues/comment';
 import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
 import { setLockTimeout, TRANSITION_LOCK_TIMEOUT_MS } from '../issues/transitions';
-import { jiraLinkSchema, linksForPairs, pairKey, pairPresence } from '../jira/links';
+import {
+  blocksOtherTracker,
+  jiraLinkSchema,
+  linksForPairs,
+  pairKey,
+  pairPresence,
+} from '../jira/links';
 import { projectForUser } from '../projects/access';
 import {
   DECISION_STATUSES,
@@ -165,14 +171,17 @@ const itemSchema = z.object({
   /**
    * Ruling T6d: whether a Jira issue may be requested for the pair: it has a row on a tracked
    * target, or a non-closed Trivy issue of main or a tracked branch (not only an untracked target),
-   * and no Azure Boards link in any state (Azure DevOps plan Ruling 9: one tracker per finding).
+   * and no Azure Boards link in any state, dismissed included, except a failed one without a work
+   * item whose failure is not `outcome_unknown` (Azure DevOps plan Ruling 9: one tracker per
+   * finding).
    */
   jiraLinkable: z.boolean(),
   /** Azure DevOps design §7.8: the pair's Azure Boards link while one exists that is not dismissed. */
   boards: boardsLinkSchema.nullable(),
   /**
    * Whether a work item may be requested for the pair: as T6d, while the project has an Azure
-   * Boards mapping and the pair has no Jira link in any state (Ruling 9).
+   * Boards mapping and the pair has no Jira link in any state, except a failed one without a Jira
+   * issue whose failure is not `outcome_unknown` (Ruling 9).
    */
   boardsLinkable: z.boolean(),
   /**
@@ -346,7 +355,8 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         { priority },
       );
       // One batched lookup each for the page, never a query per item. Dismissed links are read
-      // too: a row of either tracker, in any state, keeps the other one's create away (Ruling 9).
+      // too: a row of either tracker keeps the other one's create away, unless it failed before
+      // its issue or work item was made (Ruling 9, `blocksOtherTracker`).
       const links = await linksForPairs(deps.db, project.id, page.items, { dismissed: true });
       const boards = await boardsLinksForPairs(deps.db, project.id, page.items, {
         dismissed: true,
@@ -360,12 +370,19 @@ export const vulnerabilityRoutes: FastifyPluginAsyncZod<{
         items: page.items.map((item) => {
           const key = pairKey(item.packageName, item.vulnerabilityId);
           const linkable = presence.linkable.has(key);
+          const jiraLink = links.get(key);
+          const boardsLink = boards.get(key);
           return {
             ...item,
-            jira: liveLink(links.get(key)),
-            jiraLinkable: linkable && !boards.has(key),
-            boards: liveLink(boards.get(key)),
-            boardsLinkable: mapped && linkable && !links.has(key),
+            jira: liveLink(jiraLink),
+            jiraLinkable:
+              linkable &&
+              !(boardsLink !== undefined && blocksOtherTracker(boardsLink, boardsLink.workItemId)),
+            boards: liveLink(boardsLink),
+            boardsLinkable:
+              mapped &&
+              linkable &&
+              !(jiraLink !== undefined && blocksOtherTracker(jiraLink, jiraLink.key)),
             fix: fixes.get(key)?.fix ?? null,
             fixable: fixes.get(key)?.fixable ?? false,
           };

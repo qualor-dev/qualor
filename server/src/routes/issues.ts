@@ -43,6 +43,7 @@ import { transitionIssues, USER_STATUSES } from '../issues/transitions';
 import { boardsLinkSchema, boardsLinksForIssues, liveLink, type BoardsLink } from '../boards/links';
 import { boardsMappingOf } from '../boards/mapping';
 import {
+  blocksOtherTracker,
   isPairIssue,
   issueLinkable,
   jiraLinkSchema,
@@ -108,7 +109,8 @@ export const issueSchema = z.object({
   /**
    * R6: whether a Jira issue may be requested for it: a code issue of the main branch, or a Trivy
    * issue of main or a tracked branch, that is not closed, and that has no Azure Boards link in
-   * any state (Azure DevOps plan Ruling 9: one tracker per finding).
+   * any state, dismissed included, except a failed one without a work item whose failure is not
+   * `outcome_unknown` (Azure DevOps plan Ruling 9: one tracker per finding).
    */
   jiraLinkable: z.boolean(),
   /**
@@ -118,7 +120,8 @@ export const issueSchema = z.object({
   boards: boardsLinkSchema.nullable(),
   /**
    * Whether a work item may be requested for it: as R6, while the project has an Azure Boards
-   * mapping and the finding has no Jira link in any state (Ruling 9).
+   * mapping and the finding has no Jira link in any state, except a failed one without a Jira issue
+   * whose failure is not `outcome_unknown` (Ruling 9).
    */
   boardsLinkable: z.boolean(),
   /**
@@ -374,8 +377,9 @@ export const issueRoutes: FastifyPluginAsyncZod<{
   /**
    * The Jira and Azure Boards links of issues of one branch, in one batched lookup per tracker
    * (spec §6.8), and R6. A Trivy issue is looked up by its pair only on main or a tracked branch,
-   * so a merge request's embeds nothing. Dismissed rows are read too: a row of either tracker, in
-   * any state, keeps the other one's create away (Azure DevOps plan Ruling 9).
+   * so a merge request's embeds nothing. Dismissed rows are read too: a row of either tracker keeps
+   * the other one's create away, unless it failed before its issue or work item was made (Azure
+   * DevOps plan Ruling 9, `blocksOtherTracker`).
    */
   const trackersOf = async (
     projectId: string,
@@ -395,12 +399,21 @@ export const issueRoutes: FastifyPluginAsyncZod<{
       rows.filter((row) => issueLinkable(row, branch, settings)).map((row) => row.id),
     );
     const mapped = linkable.size > 0 && (await boardsMappingOf(deps.db, projectId)) !== null;
-    return (row) => ({
-      jira: liveLink(jira.get(row.id)),
-      jiraLinkable: linkable.has(row.id) && !boards.has(row.id),
-      boards: liveLink(boards.get(row.id)),
-      boardsLinkable: mapped && linkable.has(row.id) && !jira.has(row.id),
-    });
+    return (row) => {
+      const jiraLink = jira.get(row.id);
+      const boardsLink = boards.get(row.id);
+      return {
+        jira: liveLink(jiraLink),
+        jiraLinkable:
+          linkable.has(row.id) &&
+          !(boardsLink !== undefined && blocksOtherTracker(boardsLink, boardsLink.workItemId)),
+        boards: liveLink(boardsLink),
+        boardsLinkable:
+          mapped &&
+          linkable.has(row.id) &&
+          !(jiraLink !== undefined && blocksOtherTracker(jiraLink, jiraLink.key)),
+      };
+    };
   };
 
   /**

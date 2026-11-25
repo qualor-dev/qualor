@@ -483,6 +483,117 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design Â§7.8,
     ).toEqual([]);
   });
 
+  it("a finding whose other tracker's link failed before its item was made may go to this one; outcome_unknown, an item or a dismissal keeps it there", async () => {
+    type Detail = Trackers & { id: string };
+    const detail = (id: string) => get<Detail>(`/issues/${id}`);
+    type VulnItem = Trackers & { packageName: string };
+    const vuln = async (packageName: string) =>
+      (
+        await get<{ items: VulnItem[] }>(`/projects/${projectId}/vulnerabilities?pageSize=100`)
+      ).items.find((v) => v.packageName === packageName);
+
+    // Boards side: the Jira rows.
+    const inJira = async (over: Partial<typeof jiraLinks.$inferInsert>) => {
+      const issueId = await code(main);
+      await seedJiraLink(db(), {
+        projectId,
+        connectionId: jiraConnectionId,
+        kind: 'issue',
+        issueId,
+        state: 'failed',
+        ...over,
+      });
+      return issueId;
+    };
+    const jiraNeverMade = await inJira({ failure: { code: 'not_found', message: 'x' } });
+    const jiraUnknown = await inJira({ failure: { code: 'outcome_unknown', message: 'x' } });
+    const jiraMade = await inJira({
+      failure: { code: 'field_refused', message: 'x' },
+      jiraIssueId: '10009',
+      jiraKey: 'QUAL-9',
+    });
+    const jiraDismissed = await inJira({ state: 'dismissed' });
+    const jiraPkg = freshPackage();
+    await seedTargetRow(db(), {
+      projectId,
+      branchId: main,
+      packageName: jiraPkg,
+      vulnerabilityId: CVE,
+    });
+    await seedJiraLink(db(), {
+      projectId,
+      connectionId: jiraConnectionId,
+      packageName: jiraPkg,
+      vulnerabilityId: CVE,
+      state: 'failed',
+      failure: { code: 'not_mapped', message: 'x' },
+    });
+
+    expect(await detail(jiraNeverMade)).toMatchObject({
+      jira: { state: 'failed' },
+      boardsLinkable: true,
+    });
+    for (const id of [jiraUnknown, jiraMade, jiraDismissed]) {
+      expect((await detail(id)).boardsLinkable, id).toBe(false);
+    }
+    expect(await vuln(jiraPkg)).toMatchObject({ jira: { state: 'failed' }, boardsLinkable: true });
+    const boardsAnswer = await items({
+      issueIds: [jiraNeverMade, jiraUnknown, jiraMade, jiraDismissed],
+    });
+    expect(boardsAnswer.map((i) => [i.issueId, i.skipped, i.link?.state ?? null])).toEqual([
+      [jiraNeverMade, null, 'pending'],
+      [jiraUnknown, 'ALREADY_LINKED', null],
+      [jiraMade, 'ALREADY_LINKED', null],
+      [jiraDismissed, 'ALREADY_LINKED', null],
+    ]);
+    const [pair] = await items({
+      vulnerabilities: [{ packageName: jiraPkg, vulnerabilityId: CVE }],
+    });
+    expect(pair).toMatchObject({ skipped: null, link: { state: 'pending' } });
+    // A pending work item holds the finding now: Jira offers nothing more.
+    expect(await detail(jiraNeverMade)).toMatchObject({
+      boards: { state: 'pending' },
+      jiraLinkable: false,
+    });
+
+    // Jira side: the Boards rows.
+    await unmapBoards();
+    await mapJira(h, projectId);
+    const inBoards = async (over: Partial<typeof boardsLinks.$inferInsert>) => {
+      const issueId = await code(main);
+      await seedBoardsLink({ state: 'failed', ...over, issueId });
+      return issueId;
+    };
+    const neverMade = await inBoards({ failure: { code: 'type_unsupported', message: 'x' } });
+    const unknown = await inBoards({ failure: { code: 'outcome_unknown', message: 'x' } });
+    const made = await inBoards({
+      failure: { code: 'field_refused', message: 'x' },
+      workItemId: 12,
+    });
+    const dismissed = await inBoards({ state: 'dismissed' });
+    expect(await detail(neverMade)).toMatchObject({
+      boards: { state: 'failed' },
+      jiraLinkable: true,
+    });
+    for (const id of [unknown, made, dismissed]) {
+      expect((await detail(id)).jiraLinkable, id).toBe(false);
+    }
+    const res = await postJira({ issueIds: [neverMade, unknown, made, dismissed] });
+    expect(res.statusCode, res.body).toBe(202);
+    expect(
+      (res.json() as { items: Item[] }).items.map((i) => [
+        i.issueId,
+        i.skipped,
+        i.link?.state ?? null,
+      ]),
+    ).toEqual([
+      [neverMade, null, 'pending'],
+      [unknown, 'ALREADY_LINKED', null],
+      [made, 'ALREADY_LINKED', null],
+      [dismissed, 'ALREADY_LINKED', null],
+    ]);
+  });
+
   it('re-arms a failed or dismissed row onto the mapping connection and project; a created row is already linked', async () => {
     const old = await azureConnection(db(), {
       organizationId: h.organizationId,

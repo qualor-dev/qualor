@@ -130,6 +130,33 @@ export function issueLinkable(
   });
 }
 
+/**
+ * Azure DevOps plan Ruling 9, narrowed by the final review (FW3): one tracker per finding. A link
+ * row of one tracker keeps the other tracker's create away from its finding, in any state, unless
+ * it is `failed` without an issue or work item (`item`: the Jira issue's id or key, the work item's
+ * id) for a reason other than `outcome_unknown`, which may have made one. A dismissed row keeps it
+ * away too.
+ */
+export function blocksOtherTracker(
+  link: { state: string; failure: { code: string } | null },
+  item: string | number | null,
+): boolean {
+  return link.state !== 'failed' || item !== null || link.failure?.code === 'outcome_unknown';
+}
+
+/**
+ * {@link blocksOtherTracker} in SQL, on the link row `alias` (of `jira_links` or `boards_links`)
+ * and its issue or work item id column.
+ */
+export function blocksOtherTrackerSql(
+  alias: string,
+  itemColumn: 'jira_issue_id' | 'work_item_id',
+): SQL {
+  const row = sql.raw(alias);
+  return sql`(${row}.state <> 'failed' OR ${sql.raw(`${alias}.${itemColumn}`)} IS NOT NULL
+    OR coalesce(${row}.failure ->> 'code' = 'outcome_unknown', false))`;
+}
+
 /** What a link is about: a code issue, or a vulnerability of the project. */
 export type LinkTarget =
   | { kind: 'issue'; issueId: string }
@@ -220,8 +247,8 @@ export interface IssueLinkLookup {
 
 /**
  * The links of issues of the project, by issue id, without the dismissed ones (spec §6.8) unless
- * `dismissed` (Azure DevOps plan Ruling 9: a row in any state keeps the finding out of Azure
- * Boards). An issue with a `vulnerabilityId` (the Trivy rule's `engine_rule_id`) and a package is
+ * `dismissed` (Azure DevOps plan Ruling 9: a row keeps the finding out of Azure Boards as
+ * {@link blocksOtherTracker} says). An issue with a `vulnerabilityId` (the Trivy rule's `engine_rule_id`) and a package is
  * looked up by its pair, any other by its id. Callers pass a Trivy issue's pair only when its
  * branch is main or tracked, so a merge request's Trivy issue embeds nothing; a closed issue still
  * shows its link.

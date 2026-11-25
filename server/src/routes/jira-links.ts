@@ -14,6 +14,7 @@ import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit
 import { jiraLinkFor } from '../jira/access';
 import { enqueueJiraCreate } from '../jira/jobs';
 import {
+  blocksOtherTracker,
   insertPendingLinks,
   isPairIssue,
   issueLinkable,
@@ -148,21 +149,23 @@ export async function pairTargets(
 }
 
 /**
- * Azure DevOps plan Ruling 9: one tracker per finding. Each finding `linkedElsewhere` returns a row
- * of (the other tracker's link rows of the targets, in any state, by `targetKey`) is
+ * Azure DevOps plan Ruling 9: one tracker per finding. Each finding with a row `linkedElsewhere`
+ * returns (the other tracker's link rows of the targets, dismissed ones too, by `targetKey`) that
+ * `blocks` (`blocksOtherTracker`: any row but a failed one without an issue or work item) is
  * ALREADY_LINKED with no link of this tracker.
  */
-export async function withoutOtherTracker(
+export async function withoutOtherTracker<R>(
   resolved: readonly Resolved[],
-  linkedElsewhere: (targets: LinkTarget[]) => Promise<ReadonlyMap<string, unknown>>,
+  linkedElsewhere: (targets: LinkTarget[]) => Promise<ReadonlyMap<string, R>>,
+  blocks: (row: R) => boolean,
 ): Promise<Resolved[]> {
   const targets = resolved.flatMap((r) => ('target' in r ? [r.target] : []));
-  const other = targets.length === 0 ? new Map<string, unknown>() : await linkedElsewhere(targets);
-  return resolved.map((r) =>
-    'target' in r && other.has(targetKey(r.target))
-      ? { item: r.item, skipped: 'ALREADY_LINKED' }
-      : r,
-  );
+  const other = targets.length === 0 ? new Map<string, R>() : await linkedElsewhere(targets);
+  return resolved.map((r): Resolved => {
+    if (!('target' in r)) return r;
+    const row = other.get(targetKey(r.target));
+    return row !== undefined && blocks(row) ? { item: r.item, skipped: 'ALREADY_LINKED' } : r;
+  });
 }
 
 /** R9: 409 for a row Retry does not take back to pending. */
@@ -241,12 +244,14 @@ export const jiraLinkRoutes: FastifyPluginAsyncZod<{
         ]);
       }
       const { connection } = await linkPreconditions(deps.db, project);
-      // Azure DevOps plan Ruling 9: a finding with an Azure Boards link row stays in Boards.
+      // Azure DevOps plan Ruling 9: a finding with an Azure Boards link row stays in Boards, unless
+      // the row failed before a work item was made.
       const resolved = await withoutOtherTracker(
         issueIds !== undefined
           ? await issueTargets(deps.db, project.id, issueIds)
           : await pairTargets(deps.db, project.id, vulnerabilities ?? []),
         (targets) => boardsLinkRowsOf(deps.db, project.id, targets),
+        (row) => blocksOtherTracker(row, row.workItemId),
       );
 
       // One link per finding (R21): the first item of a finding claims it, the later ones answer

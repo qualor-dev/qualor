@@ -244,15 +244,96 @@ describe('the automatic Boards rule (design §7.8, plan Task 7)', () => {
 
     // Jira's rule asks the same: a pair with a Boards link row (any state) is not Jira's either.
     const asJira = { projectId, autoMinSeverity: 'high' as const, autoSince: SINCE };
-    expect(await qualifyingPairs(db(), asJira, { exploited: false, limit: AUTO_PER_PASS })).toEqual(
-      [],
-    );
+    expect(
+      await qualifyingPairs(db(), asJira, {
+        exploited: false,
+        limit: AUTO_PER_PASS,
+        tracker: 'jira',
+      }),
+    ).toEqual([]);
     await db().delete(boardsLinks);
     expect(
-      (await qualifyingPairs(db(), asJira, { exploited: false, limit: AUTO_PER_PASS }))
+      (
+        await qualifyingPairs(db(), asJira, {
+          exploited: false,
+          limit: AUTO_PER_PASS,
+          tracker: 'jira',
+        })
+      )
         .map(keyOf)
         .sort(),
     ).toEqual([dismissed!, free!].map(keyOf).sort());
+  });
+
+  it('takes a pair whose Jira link failed before its issue was made; outcome_unknown, an issue or a dismissal keeps the rule away', async () => {
+    await rule({ minSeverity: 'high' });
+    const [neverMade, unknown, made, dismissed] = await seedPairs(4, {
+      firstSeenAt: (i) => after((i + 1) * MINUTE),
+    });
+    const jiraConnectionId = await connectJira(h, jira);
+    const failedInJira = (pair: Pair, over: object) =>
+      seedJiraLink(db(), {
+        projectId,
+        connectionId: jiraConnectionId,
+        ...pair,
+        state: 'failed',
+        ...over,
+      });
+    await failedInJira(neverMade!, { failure: { code: 'not_mapped', message: 'x' } });
+    await failedInJira(unknown!, { failure: { code: 'outcome_unknown', message: 'x' } });
+    await failedInJira(made!, {
+      failure: { code: 'field_refused', message: 'x' },
+      jiraIssueId: '10001',
+      jiraKey: 'QUAL-1',
+    });
+    await failedInJira(dismissed!, { state: 'dismissed' });
+
+    expect(await auto()).toBe(1);
+    expect(await linkedKeys()).toEqual([keyOf(neverMade!)]);
+    // Its own rows keep it away in any state: the failed one it just made pending too.
+    expect(await auto()).toBe(0);
+  });
+
+  it("Jira's rule takes a pair whose Boards link failed before its work item was made; outcome_unknown, a work item or a dismissal keeps it away", async () => {
+    const [neverMade, unknown, made, dismissed] = await seedPairs(4, {
+      firstSeenAt: (i) => after((i + 1) * MINUTE),
+    });
+    const failedInBoards = async (pair: Pair, over: Partial<typeof boardsLinks.$inferInsert>) => {
+      const [row] = await insertPendingBoardsLinks(
+        db(),
+        { projectId, connectionId, azureProjectId: payments.id, userId: adminId },
+        [{ kind: 'vulnerability', ...pair }],
+      );
+      await db()
+        .update(boardsLinks)
+        .set({ state: 'failed', ...over })
+        .where(eq(boardsLinks.id, row!.id));
+    };
+    await failedInBoards(neverMade!, { failure: { code: 'type_unsupported', message: 'x' } });
+    await failedInBoards(unknown!, { failure: { code: 'outcome_unknown', message: 'x' } });
+    await failedInBoards(made!, {
+      failure: { code: 'field_refused', message: 'x' },
+      workItemId: 4,
+    });
+    await failedInBoards(dismissed!, { state: 'dismissed' });
+    const asJira = { projectId, autoMinSeverity: 'high' as const, autoSince: SINCE };
+    expect(
+      (
+        await qualifyingPairs(db(), asJira, {
+          exploited: false,
+          limit: AUTO_PER_PASS,
+          tracker: 'jira',
+        })
+      ).map(keyOf),
+    ).toEqual([keyOf(neverMade!)]);
+    // Asked as Boards, its own failed row keeps the pair away.
+    expect(
+      await qualifyingPairs(db(), asJira, {
+        exploited: false,
+        limit: AUTO_PER_PASS,
+        tracker: 'boards',
+      }),
+    ).toEqual([]);
   });
 
   it("the cap counts across the connection's mapped projects: two projects of 30 make 50, then 10", async () => {

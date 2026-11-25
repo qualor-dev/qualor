@@ -8,8 +8,9 @@ import type { BoardsRunContext } from './run';
 
 /*
  * Azure DevOps design §7.8: Jira's automatic rule (jira/auto-rule.ts, spec §6.6) for Azure Boards.
- * Which pairs qualify is Jira's `qualifyingPairs` itself, which skips a pair with a link row of
- * either tracker in any state; only the mappings and the rows written are Boards'.
+ * Which pairs qualify is Jira's `qualifyingPairs` itself, asked as Boards: it skips a pair with a
+ * Boards link row in any state, or with a Jira one unless that failed before a Jira issue was made
+ * (`blocksOtherTracker`); only the mappings and the rows written are Boards'.
  */
 
 /**
@@ -72,7 +73,7 @@ function linkProject(
     if (!mapping || mapping.connectionId !== connection.id) return 0;
     const exploited = options.priority && mapping.autoExploited;
     const targets: LinkTarget[] = (
-      await qualifyingPairs(tx, mapping, { exploited, limit: options.limit })
+      await qualifyingPairs(tx, mapping, { exploited, limit: options.limit, tracker: 'boards' })
     )
       .map((p) => ({ kind: 'vulnerability' as const, ...p }))
       .sort((a, b) =>

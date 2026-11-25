@@ -26,6 +26,7 @@ import { conflict, validationFailed } from '../http/problem';
 import { idParams, noContent } from '../http/schemas';
 import { issueChangeCharge, type ChargeIssueChanges } from '../issues/rate-limit';
 import {
+  blocksOtherTracker,
   linkRowsOf,
   REARMABLE_STATES,
   RETRYABLE_STATES,
@@ -94,8 +95,8 @@ async function requireLinkable(
  * and dismissing one (`issue.triage`), as the Jira link routes. Each link made or re-armed costs
  * its user one issue change (ruling G7). A request, and a retry while the project is mapped,
  * re-arm a link onto the mapping's connection and Azure DevOps project, so a project mapped again
- * creates there. A finding with a Jira link row, in any state, gets no work
- * item (plan Ruling 9).
+ * creates there. A finding with a Jira link row gets no work item (plan Ruling 9), unless the row
+ * failed before a Jira issue was made (`blocksOtherTracker`).
  */
 export const boardsLinkRoutes: FastifyPluginAsyncZod<{
   deps: RouteDeps;
@@ -120,7 +121,7 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
       schema: {
         tags: ['boards'],
         summary:
-          "Request Azure Boards work items for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link on the mapping's connection. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link (with no link when the finding has a Jira link, in any state)",
+          "Request Azure Boards work items for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link on the mapping's connection. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link (with no link when the finding has a Jira link in any state, dismissed included, except a failed one without a Jira issue whose failure is not outcome_unknown)",
         params: idParams,
         body: linkBody,
         response: { 202: z.object({ items: z.array(linkItem) }) },
@@ -141,12 +142,14 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
         ]);
       }
       const { connection, mapping } = await boardsLinkPreconditions(deps.db, project);
-      // Plan Ruling 9: a finding with a Jira link row, in any state, stays in Jira.
+      // Plan Ruling 9: a finding with a Jira link row stays in Jira, unless the row failed before a
+      // Jira issue was made.
       const resolved = await withoutOtherTracker(
         issueIds !== undefined
           ? await issueTargets(deps.db, project.id, issueIds)
           : await pairTargets(deps.db, project.id, vulnerabilities ?? []),
         (targets) => linkRowsOf(deps.db, project.id, targets),
+        (row) => blocksOtherTracker(row, row.jiraIssueId),
       );
 
       // One link per finding: the first item of a finding claims it, the later ones answer with

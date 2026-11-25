@@ -83,18 +83,39 @@ export class BoardsProjectState {
   }
 }
 
+/** What {@link findingTracker} reads of a link: its state, failure and item. */
+interface TrackerLink {
+  state: string;
+  failure: { code: string } | null;
+}
+
+/**
+ * Whether a link holds its finding for its tracker, as the server's `blocksOtherTracker`: any link
+ * but a failed one whose issue or work item (`item`) was never made, for a reason other than
+ * `outcome_unknown` (which may have made one).
+ */
+function holds(link: TrackerLink, item: string | number | null): boolean {
+  return link.state !== 'failed' || item !== null || link.failure?.code === 'outcome_unknown';
+}
+
 /**
  * Which tracker a finding shows, one per finding (Ruling 9):
- * - its Jira link, when it has one;
- * - its Azure Boards link, or Boards when the project is mapped to Boards;
+ * - its Jira link, when it has one that holds the finding;
+ * - its Azure Boards link that holds it, or Boards when the project is mapped to Boards;
  * - Jira as before once the Boards state is known not to be mapped, or could not be read;
  * - neither while the Boards state is still unread, so no Jira action flashes on a Boards project.
+ * A link that failed before its issue or work item was made holds nothing: the finding may go to
+ * the project's tracker, and shows that link only while it is that tracker's.
  */
 export function findingTracker(
-  finding: { jira: object | null; boards: object | null },
+  finding: {
+    jira: (TrackerLink & { key: string | null }) | null;
+    boards: (TrackerLink & { workItemId: number | null }) | null;
+  },
   project: BoardsProjectView,
 ): 'jira' | 'boards' | null {
-  if (finding.jira !== null) return 'jira';
-  if (finding.boards !== null || project.mapped) return 'boards';
+  const { jira, boards } = finding;
+  if (jira !== null && holds(jira, jira.key)) return 'jira';
+  if ((boards !== null && holds(boards, boards.workItemId)) || project.mapped) return 'boards';
   return project.settled ? 'jira' : null;
 }

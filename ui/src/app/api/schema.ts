@@ -20166,7 +20166,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Request Azure Boards work items for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link on the mapping's connection. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link (with no link when the finding has a Jira link, in any state) */
+        /** Request Azure Boards work items for findings: exactly one of `issueIds` (1-500) or `vulnerabilities` (1-100). Each new finding, or one whose link was dismissed, failed or missing, gets a pending link on the mapping's connection. Items answer in request order: a Trivy issue under its `issueId` with its vulnerability link; NOT_FOUND, NOT_ELIGIBLE, or ALREADY_LINKED with the existing link (with no link when the finding has a Jira link in any state, dismissed included, except a failed one without a Jira issue whose failure is not outcome_unknown) */
         post: {
             parameters: {
                 query?: never;

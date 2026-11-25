@@ -608,7 +608,8 @@ mapping first.
 
 A finding has one tracker too. A finding with a Jira issue gets no work item, and a finding with a
 work item gets no Jira issue, also after the project switched. The automatic rule skips such
-findings. Existing links of the old tracker keep syncing.
+findings. A finding whose work item or issue was never created can be sent to the other tracker.
+Existing links of the old tracker keep syncing.
 
 ### Permissions
 
