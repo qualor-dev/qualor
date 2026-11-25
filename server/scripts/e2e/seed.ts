@@ -2,12 +2,13 @@ import { generateKeyPairSync } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { type DependencyEntry, hex32, type Report } from '@qualor/shared';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import pg from 'pg';
 import { createDatabase } from '../../src/db/client';
 import {
   branches,
   issues,
+  measures,
   projects,
   projectVersions,
   reviewFindings,
@@ -1381,7 +1382,7 @@ export async function seedVulnerabilities(databaseUrl: string): Promise<void> {
     const paymentsId = await projectOf('acme/payments-api');
     const legacyId = await projectOf('acme/legacy-billing');
     const [main] = await db
-      .select({ id: branches.id })
+      .select({ id: branches.id, lastAnalysisId: branches.lastAnalysisId })
       .from(branches)
       .where(and(eq(branches.projectId, paymentsId), eq(branches.isMain, true)));
     if (!main) throw new Error('Payments API has no main branch');
@@ -1521,6 +1522,20 @@ export async function seedVulnerabilities(databaseUrl: string): Promise<void> {
         status: 'open',
         firstSeenAt: sql`now()`,
       });
+      // An ingested scan counts its Trivy issue in the analysis measures, so the Issues tab and the
+      // overview agree with the list: one more issue, blocker and security issue on main.
+      if (main.lastAnalysisId) {
+        await tx
+          .update(measures)
+          .set({ value: sql`${measures.value} + 1` })
+          .where(
+            and(
+              eq(measures.analysisId, main.lastAnalysisId),
+              eq(measures.scope, 'overall'),
+              inArray(measures.metricKey, ['issues', 'blocker_issues', 'security_issues']),
+            ),
+          );
+      }
     });
   } finally {
     await database.close();
