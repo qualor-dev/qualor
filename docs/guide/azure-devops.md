@@ -633,6 +633,7 @@ check it and resumes when the call succeeds.
 |---|---|---|
 | "The credential may not create work items in the mapped area path of Azure DevOps." | Azure DevOps refused the create (HTTP 403) | give the identity the rights in [What Boards needs](#what-boards-needs), then **Retry** |
 | "Azure DevOps refused the work item. It said: …" | Azure DevOps refused a field, such as a required one or a rule | fix it in Azure DevOps or in the mapping, then **Retry** |
+| "Azure DevOps refused a field of the work item. Check the mapping of the project." | the same, when Azure DevOps gave no reason | check the mapping's type, paths and tags, then **Retry** |
 | "The mapped work item type no longer exists or needs fields Qualor does not set. Map the project again." | the type was removed, or gained a required field | [map the project](#map-a-project-to-azure-boards) with a type that works, then **Retry** |
 | "Azure DevOps did not find the project, or the credential cannot see it." | the Azure DevOps project is gone, or the identity cannot see it | map the project again, or add the identity to the Azure DevOps project |
 | "Azure DevOps refused the work item as too large." | Azure DevOps refused the request as too large | ask the Azure DevOps administrator about the limit |

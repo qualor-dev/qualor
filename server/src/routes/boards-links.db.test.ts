@@ -80,7 +80,7 @@ function captureQueries(pool: Pool): string[] {
   return seen;
 }
 
-describe('Azure Boards links: request, retry, dismiss, embedded (design Â§7.8, plan Ruling 9)', () => {
+describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, plan Ruling 9)', () => {
   let h: IngestHarness;
   let jira: FakeJira;
   let untrust: () => void;
