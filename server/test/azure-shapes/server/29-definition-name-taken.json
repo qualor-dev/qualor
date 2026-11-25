@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "contentType": "application/json; charset=utf-8",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "Build pipeline Qualor probe item 29 20261125013202 already exists for project probe-org.",
+    "typeName": "Microsoft.TeamFoundation.Build.WebApi.DefinitionExistsException, Microsoft.TeamFoundation.Build2.WebApi",
+    "typeKey": "DefinitionExistsException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}
