@@ -448,8 +448,10 @@ async function observe(
     `${noProject}/items?path=${encodeURIComponent(file)}&versionDescriptor.version=${commit}&versionDescriptor.versionType=commit&includeContent=true&$format=json`,
   );
   const content = (items.json as { content?: unknown } | null)?.content;
+  const contentText =
+    typeof content === 'string' ? `present (${content.length} characters)` : 'absent';
   notes.push(
-    `items with $format=json and includeContent: HTTP ${items.status}, content ${typeof content === 'string' ? `present (${content.length} characters)` : 'absent'}`,
+    `items with $format=json and includeContent: HTTP ${items.status}, content ${contentText}`,
   );
   const changes = await ctx.bot.request(
     'GET',
@@ -581,6 +583,456 @@ async function weakerIdentityId(
   return data.authenticatedUser.id;
 }
 
+/** What every phase of the flow reads, and the checks and notes it adds to. */
+interface Flow {
+  ctx: ProbeContext;
+  repo: Repo;
+  base: string;
+  spId: string;
+  queueId: number;
+  extensionInstalled: boolean;
+  extensionWhy: string;
+  projectKey: string;
+  qualorUrl: string;
+  qualorToken: string;
+  checks: Check[];
+  notes: string[];
+  /** The .NET forms' runs, set by the definitions phase. */
+  runs: Run[];
+}
+
+/** The main flow's pull request and what it was made with. */
+interface Opened {
+  prId: number;
+  pr1: Pr;
+  head1: string;
+  branch: string;
+  findingFile: string;
+  statusName: string;
+  statusLabel: string;
+  statusPolicyId: number;
+  buildPolicyId: number;
+}
+
+type StatusHit = NonNullable<Awaited<ReturnType<typeof waitStatus>>>;
+
+/** Qualor's threads on the pull request after the analysis: the summary and the issue thread. */
+interface Own {
+  summary: Thr | undefined;
+  issue: Thr | undefined;
+}
+
+/** The .NET forms of a run: none for a weaker identity (dry runs, no Qualor), else docker and maybe task. */
+function dotnetFormsOf(flow: Flow): Form[] {
+  if (flow.ctx.qualorAs) return [];
+  return flow.extensionInstalled ? ['docker', 'task'] : ['docker'];
+}
+
+/** The definitions: the main flow (uploads to the bench Qualor) and the .NET forms (dry runs). */
+async function createDefinitions(flow: Flow): Promise<{ id: number; yaml: string }> {
+  const { ctx, repo, queueId } = flow;
+  const mainYaml = benchUploadYaml(
+    readFileSync(fileURLToPath(new URL('qualor-docker.yml', EXAMPLES)), 'utf8'),
+  );
+  const defMain = await createDefinition(ctx, {
+    name: `Qualor probe item 19 decoration ${ctx.stamp}`,
+    path: '\\',
+    type: 'build',
+    queue: { id: queueId },
+    process: { type: 2, yamlFilename: DOCKER_PATH },
+    repository: {
+      id: repo.id,
+      name: repo.name,
+      type: 'TfsGit',
+      defaultBranch: 'refs/heads/main',
+    },
+    variables: {
+      QUALOR_URL: { value: flow.qualorUrl, allowOverride: false },
+      QUALOR_PROJECT_KEY: { value: flow.projectKey, allowOverride: false },
+      QUALOR_TOKEN: { value: flow.qualorToken, isSecret: true, allowOverride: false },
+    },
+  });
+  const dummy = ['qlr', 'bench', randomBytes(12).toString('hex')].join('_');
+  // A weaker Qualor identity changes nothing of the .NET forms (dry runs, no Qualor): they are left out then.
+  for (const form of dotnetFormsOf(flow)) {
+    const def = await createDefinition(ctx, {
+      name: `Qualor probe item 19 dotnet ${form} ${ctx.stamp}`,
+      path: '\\',
+      type: 'build',
+      queue: { id: queueId },
+      process: { type: 2, yamlFilename: DOTNET_PATHS[form] },
+      repository: {
+        id: repo.id,
+        name: repo.name,
+        type: 'TfsGit',
+        defaultBranch: 'refs/heads/main',
+      },
+      variables: {
+        QUALOR_URL: { value: 'https://qualor.invalid', allowOverride: false },
+        QUALOR_TOKEN: { value: dummy, isSecret: true, allowOverride: false },
+      },
+    });
+    flow.runs.push({
+      form,
+      label: `dotnet-${form}`,
+      scanStep: form === 'docker' ? 'Qualor end' : 'Qualor scan',
+      definitionId: def.id,
+      policyId: 0,
+    });
+  }
+  const authorized = await authorizeDefinitions(ctx, queueId, [
+    defMain.id,
+    ...flow.runs.map((r) => r.definitionId),
+  ]);
+  flow.notes.push(authorized);
+  return { id: defMain.id, yaml: mainYaml };
+}
+
+/** The main flow: a pull request with one finding, the build and status policies on its target. */
+async function openPullRequest(flow: Flow, defMain: { id: number; yaml: string }): Promise<Opened> {
+  const { ctx, repo } = flow;
+  const target = await createBranchAt(ctx, `probe/19-${ctx.stamp}-target`, flow.base);
+  const findingFile = `/probe/item-19-${ctx.stamp}.js`;
+  const findingContent = `// Qualor probe item 19 (${ctx.stamp})\n${FINDING_TEXT}\n}\n`;
+  const branch = `probe/19-${ctx.stamp}`;
+  const pushed = await pushFiles(
+    ctx,
+    branch,
+    [
+      { path: `/${DOCKER_PATH}`, content: defMain.yaml },
+      { path: findingFile, content: findingContent },
+    ],
+    { base: flow.base },
+  );
+  const buildPolicy = await createPolicy(ctx, {
+    isEnabled: true,
+    isBlocking: true,
+    type: { id: BUILD_POLICY },
+    settings: {
+      buildDefinitionId: defMain.id,
+      queueOnSourceUpdateOnly: false,
+      manualQueueOnly: false,
+      displayName: `Qualor probe item 19 build ${ctx.stamp}`,
+      validDuration: 0,
+      scope: [{ repositoryId: repo.id, refName: target, matchKind: 'exact' }],
+    },
+  });
+  // As the guide has users add it: `qualor/<project key>`, with Qualor's identity (the service
+  // principal; Server: its PAT's owner) as the Authorized identity. The run proves that the
+  // policy still approves Qualor's own status.
+  const policySettings = statusPolicySettings(
+    { projectKey: flow.projectKey, authorId: flow.spId, repositoryId: repo.id, refName: target },
+    `Qualor probe item 19 ${ctx.stamp}`,
+  );
+  const statusPolicy = await createPolicy(ctx, {
+    isEnabled: true,
+    isBlocking: true,
+    type: { id: STATUS_POLICY },
+    settings: policySettings,
+  });
+  const created = await createPr(ctx, pushed.refName, { targetRefName: target });
+  const prId = created.pr.pullRequestId;
+  const { pr: pr1 } = await prWithMerge(ctx, prId);
+  ctx.log(
+    `pull request ${prId}: build, then Qualor's decoration (up to ${DECORATION_WAIT_MS / 60000} min)`,
+  );
+  return {
+    prId,
+    pr1,
+    head1: (pr1.lastMergeSourceCommit?.commitId ?? pushed.commitId).toLowerCase(),
+    branch,
+    findingFile,
+    statusName: policySettings.statusName,
+    statusLabel: `${policySettings.statusGenre}/${policySettings.statusName}`,
+    statusPolicyId: statusPolicy.id,
+    buildPolicyId: buildPolicy.id,
+  };
+}
+
+/** The first build: queued, completed, its logs read. False when the flow cannot go on. */
+async function firstBuild(flow: Flow, defMain: { id: number }): Promise<boolean> {
+  const { ctx, checks, notes } = flow;
+  const build1 = await buildAt(ctx, defMain.id, []);
+  if (!build1) {
+    checks.push(check('first build queued', false, 'none within 3 minutes'));
+    return false;
+  }
+  const done1 = await waitBuild(ctx, build1.id, { timeoutMs: 30 * 60_000 });
+  await rec(ctx, 'build-first', answerOf(done1.res));
+  // The gate fails on the finding: the scan exits with the verdict, so a failed build is expected here.
+  notes.push(
+    `first build ${build1.id}: ${done1.build.status} ${done1.build.result ?? '?'} (the failed gate is the scan's exit code)`,
+  );
+  if (done1.build.status !== 'completed') {
+    checks.push(check('first build completed', false, done1.build.status));
+    return false;
+  }
+  const logs1 = await buildLogs(ctx, build1.id);
+  notes.push(`first build logs: ${logs1.size} log(s)`);
+  return true;
+}
+
+/** Who made the status, as the notes name it: the service principal by its id. */
+function statusAuthorText(flow: Flow, author: string | undefined): string {
+  if (author === undefined) return 'absent';
+  if (author.toLowerCase() !== flow.spId.toLowerCase()) return 'another id';
+  return `${qualorIdentityName(flow.ctx.target, flow.ctx.qualorAs?.identity)}'s id`;
+}
+
+/** Qualor's failed status on the analysed iteration, and the Status check policy that rejects on it. */
+async function firstStatus(flow: Flow, opened: Opened): Promise<StatusHit | undefined> {
+  const { ctx, checks, notes, repo } = flow;
+  const st1 = await waitStatus(ctx, repo, opened.prId, opened.head1, opened.statusName, 'failed');
+  checks.push(
+    check(
+      `iteration status ${opened.statusLabel} failed on the analysed iteration`,
+      st1 !== undefined,
+      st1
+        ? `iteration ${st1.iteration.id}, ${st1.status.description ?? ''}`.slice(0, 160)
+        : 'no such status within the wait',
+    ),
+  );
+  if (st1) {
+    await rec(ctx, 'iteration-statuses-first', answerOf(st1.res));
+    notes.push(`status target ${st1.status.targetUrl ? 'set' : 'absent'}`);
+    // Qualor reads its own statuses by this id: the listing must carry the service principal's.
+    notes.push(`status author in the listing: ${statusAuthorText(flow, st1.status.createdBy?.id)}`);
+  }
+  const verdict1 = await policyVerdict(ctx, opened.pr1, opened.statusPolicyId, 'rejected');
+  checks.push(
+    check(
+      'Status check policy rejected',
+      verdict1 !== undefined,
+      verdict1?.status ?? 'not rejected within 3 minutes',
+    ),
+  );
+  if (verdict1) await rec(ctx, 'evaluations-first', answerOf(verdict1.res));
+  return st1;
+}
+
+/** The checks on the summary thread and the issue thread of the first analysis. */
+function checkFirstThreads(flow: Flow, opened: Opened, own: Own, counts: number[]): void {
+  const [summaries, issues] = counts;
+  const { summary, issue } = own;
+  const lineLength = FINDING_TEXT.length;
+  const start = issue?.threadContext?.rightFileStart;
+  const end = issue?.threadContext?.rightFileEnd;
+  flow.checks.push(
+    check(
+      'one closed summary thread with the marker, on the pull request as a whole',
+      summaries === 1 &&
+        threadStatusName(summary?.status) === 'closed' &&
+        !summary?.threadContext?.filePath,
+      `${summaries} summary thread(s), status ${threadStatusName(summary?.status)}`,
+    ),
+  );
+  const anchor = issue
+    ? `${threadStatusName(issue.status)} ${issue.threadContext?.filePath ?? 'no file'} ${start?.line ?? '?'}:${start?.offset ?? '?'}-${end?.line ?? '?'}:${end?.offset ?? '?'} (expected ${opened.findingFile} ${FINDING_LINE}:1-${FINDING_LINE}:${lineLength + 1})`
+    : 'none';
+  flow.checks.push(
+    check(
+      'one active thread with the issue marker on the added line, anchored on the whole line',
+      issues === 1 &&
+        threadStatusName(issue?.status) === 'active' &&
+        issue?.threadContext?.filePath === opened.findingFile &&
+        start?.line === FINDING_LINE &&
+        start.offset === 1 &&
+        end?.line === FINDING_LINE &&
+        end.offset === lineLength + 1,
+      `${issues} issue thread(s); ${anchor}`,
+    ),
+  );
+}
+
+/** Qualor's threads after the first analysis: checked, observed, and handed on for the fix. */
+async function firstThreads(flow: Flow, opened: Opened, st1: StatusHit | undefined): Promise<Own> {
+  const { ctx, repo, spId, notes } = flow;
+  // Threads: Qualor writes the inline threads before the summary, so a summary means the job ended.
+  const t1 = await waitFor(
+    async () => {
+      const got = await listThreads(ctx, repo, opened.prId);
+      return ownThreads(got.threads, spId, 'summary').length > 0 ? got : undefined;
+    },
+    { timeoutMs: DECORATION_WAIT_MS, intervalMs: 10_000 },
+  );
+  const summaries1 = t1 ? ownThreads(t1.threads, spId, 'summary') : [];
+  const issues1 = t1 ? ownThreads(t1.threads, spId, 'issue') : [];
+  const own: Own = { summary: summaries1[0], issue: issues1[0] };
+  checkFirstThreads(flow, opened, own, [summaries1.length, issues1.length]);
+  if (t1) await rec(ctx, 'threads-first', answerOf(t1.res));
+  if (st1) {
+    notes.push(
+      ...(await observe(
+        ctx,
+        repo,
+        opened.prId,
+        st1.iteration.id,
+        opened.head1,
+        opened.findingFile,
+        own.issue,
+      )),
+    );
+  } else {
+    notes.push('observations skipped: no analysed iteration');
+  }
+  return own;
+}
+
+/** The fix: a commit that removes the finding, and its build. Undefined when no build was queued. */
+async function fixBuild(flow: Flow, defMain: { id: number }, opened: Opened) {
+  const { ctx, checks } = flow;
+  const fixCommit = (
+    await pushEdit(
+      ctx,
+      opened.branch,
+      opened.findingFile,
+      `// Qualor probe item 19 (${ctx.stamp})\n${FIXED_TEXT}`,
+    )
+  ).toLowerCase();
+  // The merge commit Azure makes for the fix commit: wait until the pull request has it, then take the build of
+  // exactly that commit (or of the fix commit itself), never another build of the pull request.
+  const merged2 = await waitFor(
+    async () => {
+      const got = await getPr(ctx, opened.prId);
+      return got.pr.lastMergeSourceCommit?.commitId.toLowerCase() === fixCommit &&
+        got.pr.lastMergeCommit
+        ? got
+        : undefined;
+    },
+    { timeoutMs: 180_000, intervalMs: 3000 },
+  );
+  const build2 = await buildAt(ctx, defMain.id, [
+    fixCommit,
+    ...(merged2?.pr.lastMergeCommit ? [merged2.pr.lastMergeCommit.commitId.toLowerCase()] : []),
+  ]);
+  if (!build2) {
+    checks.push(
+      check('a build of the fixing commit queued by the push', false, 'none within 3 minutes'),
+    );
+    return undefined;
+  }
+  const done2 = await waitBuild(ctx, build2.id, { timeoutMs: 30 * 60_000 });
+  await rec(ctx, 'build-fixed', answerOf(done2.res));
+  checks.push(
+    check(
+      'second build succeeded (the gate passes, the scan uploads)',
+      done2.build.result === 'succeeded',
+      `${done2.build.status} ${done2.build.result ?? '?'}`,
+    ),
+  );
+  return { fixCommit };
+}
+
+/** Qualor's succeeded status on the new iteration and the policy approving it; the new head. */
+async function secondStatus(
+  flow: Flow,
+  opened: Opened,
+  second: { fixCommit: string; st1: StatusHit | undefined },
+): Promise<string> {
+  const { ctx, checks, notes, repo } = flow;
+  const { prId } = opened;
+  const { pr: pr2 } = await prWithMerge(ctx, prId);
+  const head2 = (pr2.lastMergeSourceCommit?.commitId ?? second.fixCommit).toLowerCase();
+  const st2 = await waitStatus(ctx, repo, prId, head2, opened.statusName, 'succeeded');
+  checks.push(
+    check(
+      `iteration status ${opened.statusLabel} succeeded on the new iteration`,
+      st2 !== undefined && st2.iteration.id !== second.st1?.iteration.id,
+      st2 ? `iteration ${st2.iteration.id}` : 'no such status within the wait',
+    ),
+  );
+  if (st2) await rec(ctx, 'iteration-statuses-fixed', answerOf(st2.res));
+  const verdict2 = await policyVerdict(ctx, pr2, opened.statusPolicyId, 'approved');
+  checks.push(
+    check(
+      'Status check policy approved',
+      verdict2 !== undefined,
+      verdict2?.status ?? 'not approved within 3 minutes',
+    ),
+  );
+  if (verdict2) await rec(ctx, 'evaluations-fixed', answerOf(verdict2.res));
+  notes.push(
+    `build policy ${opened.buildPolicyId} and status policy ${opened.statusPolicyId} evaluated`,
+  );
+  return head2;
+}
+
+/** The issue thread is fixed with Qualor's fixed comment, and the summary is edited in place. */
+async function secondThreads(
+  flow: Flow,
+  opened: Opened,
+  second: { head2: string; first: { issue: Thr; summary: Thr } },
+): Promise<void> {
+  const { ctx, checks, repo, spId } = flow;
+  const { head2, first } = second;
+  const t2 = await waitFor(
+    async () => {
+      const got = await listThreads(ctx, repo, opened.prId);
+      const own = ownThreads(got.threads, spId, 'issue')[0];
+      return own && threadStatusName(own.status) === 'fixed' ? got : undefined;
+    },
+    { timeoutMs: DECORATION_WAIT_MS, intervalMs: 10_000 },
+  );
+  const got2 = t2 ?? (await listThreads(ctx, repo, opened.prId));
+  const issue2 = ownThreads(got2.threads, spId, 'issue').find((t) => t.id === first.issue.id);
+  const lastOfIssue = issue2?.comments.filter((c) => c.isDeleted !== true).at(-1);
+  const fixedLine = (lastOfIssue?.content ?? '').split(/\r?\n/, 1)[0] ?? '';
+  checks.push(
+    check(
+      "the issue thread is fixed, and its last comment is Qualor's fixed comment",
+      issue2 !== undefined &&
+        threadStatusName(issue2.status) === 'fixed' &&
+        lastOfIssue?.author.id === spId &&
+        markerKind(lastOfIssue.content) === 'fixed' &&
+        fixedLine.includes(head2) &&
+        new RegExp(`no longer open in the analysis of \` ?${head2.slice(0, 7)} ?\``).test(
+          lastOfIssue.content ?? '',
+        ),
+      `${issue2 ? threadStatusName(issue2.status) : 'thread missing'}; last comment ${markerKind(lastOfIssue?.content) ?? 'not a Qualor marker'}`,
+    ),
+  );
+  const summaries2 = ownThreads(got2.threads, spId, 'summary');
+  const summary2 = summaries2[0];
+  const sameText = summary2?.comments[0]?.content === first.summary.comments[0]?.content;
+  checks.push(
+    check(
+      'the summary is edited in place: same thread, same comment, new text',
+      summaries2.length === 1 &&
+        summary2?.id === first.summary.id &&
+        summary2.comments[0]?.id === first.summary.comments[0]?.id &&
+        !sameText,
+      `${summaries2.length} summary thread(s); same thread ${summary2?.id === first.summary.id}; text changed ${!sameText}`,
+    ),
+  );
+  await rec(ctx, 'threads-fixed', answerOf(got2.res));
+}
+
+/** Everything after the first analysis: the fix, its build, the status and the threads. */
+async function fixAndRecheck(
+  flow: Flow,
+  defMain: { id: number },
+  opened: Opened,
+  first: { st1: StatusHit | undefined; issue: Thr; summary: Thr },
+): Promise<void> {
+  const fixed = await fixBuild(flow, defMain, opened);
+  if (!fixed) return;
+  const head2 = await secondStatus(flow, opened, { fixCommit: fixed.fixCommit, st1: first.st1 });
+  await secondThreads(flow, opened, { head2, first });
+}
+
+function finishOf(flow: Flow, prId: number) {
+  return finish({
+    ctx: flow.ctx,
+    checks: flow.checks,
+    notes: flow.notes,
+    prId,
+    runs: flow.runs,
+    extensionWhy: flow.extensionWhy,
+    repo: flow.repo,
+    base: flow.base,
+  });
+}
+
 export const item: ProbeItem = {
   id: 19,
   title: 'Qualor decorates a pull request on Azure DevOps: status, summary and a thread',
@@ -589,336 +1041,58 @@ export const item: ProbeItem = {
     const bench = benchProject(ctx.target, 'main');
     const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
     const qualorToken = needEnv(bench.tokenEnv);
-    const projectKey = bench.key;
     const spId = await qualorIdentityId(ctx);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
     if (!base) throw new Error('no head on the default branch');
     const ext = await extensionInstalled(ctx);
     const queueId = await defaultQueueId(ctx);
-    const checks: Check[] = [];
-    const notes: string[] = [];
-
-    // ---- Definitions: the main flow (uploads to the bench Qualor) and the .NET forms (dry runs).
-    const mainYaml = benchUploadYaml(
-      readFileSync(fileURLToPath(new URL('qualor-docker.yml', EXAMPLES)), 'utf8'),
-    );
-    const defMain = await createDefinition(ctx, {
-      name: `Qualor probe item 19 decoration ${ctx.stamp}`,
-      path: '\\',
-      type: 'build',
-      queue: { id: queueId },
-      process: { type: 2, yamlFilename: DOCKER_PATH },
-      repository: {
-        id: repo.id,
-        name: repo.name,
-        type: 'TfsGit',
-        defaultBranch: 'refs/heads/main',
-      },
-      variables: {
-        QUALOR_URL: { value: qualorUrl, allowOverride: false },
-        QUALOR_PROJECT_KEY: { value: projectKey, allowOverride: false },
-        QUALOR_TOKEN: { value: qualorToken, isSecret: true, allowOverride: false },
-      },
-    });
-    const dummy = ['qlr', 'bench', randomBytes(12).toString('hex')].join('_');
-    // A weaker Qualor identity changes nothing of the .NET forms (dry runs, no Qualor): they are left out then.
-    const dotnetForms: Form[] = ctx.qualorAs ? [] : ext.installed ? ['docker', 'task'] : ['docker'];
-    const dotnetRuns: Run[] = [];
-    for (const form of dotnetForms) {
-      const def = await createDefinition(ctx, {
-        name: `Qualor probe item 19 dotnet ${form} ${ctx.stamp}`,
-        path: '\\',
-        type: 'build',
-        queue: { id: queueId },
-        process: { type: 2, yamlFilename: DOTNET_PATHS[form] },
-        repository: {
-          id: repo.id,
-          name: repo.name,
-          type: 'TfsGit',
-          defaultBranch: 'refs/heads/main',
-        },
-        variables: {
-          QUALOR_URL: { value: 'https://qualor.invalid', allowOverride: false },
-          QUALOR_TOKEN: { value: dummy, isSecret: true, allowOverride: false },
-        },
-      });
-      dotnetRuns.push({
-        form,
-        label: `dotnet-${form}`,
-        scanStep: form === 'docker' ? 'Qualor end' : 'Qualor scan',
-        definitionId: def.id,
-        policyId: 0,
-      });
-    }
-    const authorized = await authorizeDefinitions(ctx, queueId, [
-      defMain.id,
-      ...dotnetRuns.map((r) => r.definitionId),
-    ]);
-    notes.push(authorized);
-
-    // ---- Main flow: a pull request with one finding.
-    const target = await createBranchAt(ctx, `probe/19-${ctx.stamp}-target`, base);
-    const findingFile = `/probe/item-19-${ctx.stamp}.js`;
-    const findingContent = `// Qualor probe item 19 (${ctx.stamp})\n${FINDING_TEXT}\n}\n`;
-    const branch = `probe/19-${ctx.stamp}`;
-    const pushed = await pushFiles(
+    const flow: Flow = {
       ctx,
-      branch,
-      [
-        { path: `/${DOCKER_PATH}`, content: mainYaml },
-        { path: findingFile, content: findingContent },
-      ],
-      { base },
-    );
-    const buildPolicy = await createPolicy(ctx, {
-      isEnabled: true,
-      isBlocking: true,
-      type: { id: BUILD_POLICY },
-      settings: {
-        buildDefinitionId: defMain.id,
-        queueOnSourceUpdateOnly: false,
-        manualQueueOnly: false,
-        displayName: `Qualor probe item 19 build ${ctx.stamp}`,
-        validDuration: 0,
-        scope: [{ repositoryId: repo.id, refName: target, matchKind: 'exact' }],
-      },
-    });
-    // As the guide has users add it: `qualor/<project key>`, with Qualor's identity (the service
-    // principal; Server: its PAT's owner) as the Authorized identity. The run proves that the
-    // policy still approves Qualor's own status.
-    const policySettings = statusPolicySettings(
-      { projectKey, authorId: spId, repositoryId: repo.id, refName: target },
-      `Qualor probe item 19 ${ctx.stamp}`,
-    );
-    const statusName = policySettings.statusName;
-    const statusLabel = `${policySettings.statusGenre}/${statusName}`;
-    const statusPolicy = await createPolicy(ctx, {
-      isEnabled: true,
-      isBlocking: true,
-      type: { id: STATUS_POLICY },
-      settings: policySettings,
-    });
-    const created = await createPr(ctx, pushed.refName, { targetRefName: target });
-    const prId = created.pr.pullRequestId;
-    const { pr: pr1 } = await prWithMerge(ctx, prId);
-    const head1 = (pr1.lastMergeSourceCommit?.commitId ?? pushed.commitId).toLowerCase();
-    ctx.log(
-      `pull request ${prId}: build, then Qualor's decoration (up to ${DECORATION_WAIT_MS / 60000} min)`,
-    );
+      repo,
+      base,
+      spId,
+      queueId,
+      extensionInstalled: ext.installed,
+      extensionWhy: ext.why,
+      projectKey: bench.key,
+      qualorUrl,
+      qualorToken,
+      checks: [],
+      notes: [],
+      runs: [],
+    };
 
-    const build1 = await buildAt(ctx, defMain.id, []);
-    if (!build1) {
-      checks.push(check('first build queued', false, 'none within 3 minutes'));
-      return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
+    const defMain = await createDefinitions(flow);
+    const opened = await openPullRequest(flow, defMain);
+    if (!(await firstBuild(flow, defMain))) return finishOf(flow, opened.prId);
+    const st1 = await firstStatus(flow, opened);
+    const own = await firstThreads(flow, opened, st1);
+    if (own.issue && own.summary) {
+      await fixAndRecheck(flow, defMain, opened, { st1, issue: own.issue, summary: own.summary });
     }
-    const done1 = await waitBuild(ctx, build1.id, { timeoutMs: 30 * 60_000 });
-    await rec(ctx, 'build-first', answerOf(done1.res));
-    // The gate fails on the finding: the scan exits with the verdict, so a failed build is expected here.
-    notes.push(
-      `first build ${build1.id}: ${done1.build.status} ${done1.build.result ?? '?'} (the failed gate is the scan's exit code)`,
-    );
-    if (done1.build.status !== 'completed') {
-      checks.push(check('first build completed', false, done1.build.status));
-      return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
-    }
-    const logs1 = await buildLogs(ctx, build1.id);
-    notes.push(`first build logs: ${logs1.size} log(s)`);
-
-    const st1 = await waitStatus(ctx, repo, prId, head1, statusName, 'failed');
-    checks.push(
-      check(
-        `iteration status ${statusLabel} failed on the analysed iteration`,
-        st1 !== undefined,
-        st1
-          ? `iteration ${st1.iteration.id}, ${st1.status.description ?? ''}`.slice(0, 160)
-          : 'no such status within the wait',
-      ),
-    );
-    if (st1) {
-      await rec(ctx, 'iteration-statuses-first', answerOf(st1.res));
-      notes.push(`status target ${st1.status.targetUrl ? 'set' : 'absent'}`);
-      // Qualor reads its own statuses by this id: the listing must carry the service principal's.
-      const author = st1.status.createdBy?.id;
-      notes.push(
-        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? `${qualorIdentityName(ctx.target, ctx.qualorAs?.identity)}'s id` : 'another id'}`,
-      );
-    }
-    const verdict1 = await policyVerdict(ctx, pr1, statusPolicy.id, 'rejected');
-    checks.push(
-      check(
-        'Status check policy rejected',
-        verdict1 !== undefined,
-        verdict1?.status ?? 'not rejected within 3 minutes',
-      ),
-    );
-    if (verdict1) await rec(ctx, 'evaluations-first', answerOf(verdict1.res));
-
-    // Threads: Qualor writes the inline threads before the summary, so a summary means the job ended.
-    const t1 = await waitFor(
-      async () => {
-        const got = await listThreads(ctx, repo, prId);
-        return ownThreads(got.threads, spId, 'summary').length > 0 ? got : undefined;
-      },
-      { timeoutMs: DECORATION_WAIT_MS, intervalMs: 10_000 },
-    );
-    const summaries1 = t1 ? ownThreads(t1.threads, spId, 'summary') : [];
-    const issues1 = t1 ? ownThreads(t1.threads, spId, 'issue') : [];
-    const summary1 = summaries1[0];
-    checks.push(
-      check(
-        'one closed summary thread with the marker, on the pull request as a whole',
-        summaries1.length === 1 &&
-          threadStatusName(summary1?.status) === 'closed' &&
-          !summary1?.threadContext?.filePath,
-        `${summaries1.length} summary thread(s), status ${threadStatusName(summary1?.status)}`,
-      ),
-    );
-    const issue1 = issues1[0];
-    const lineLength = FINDING_TEXT.length;
-    const start = issue1?.threadContext?.rightFileStart;
-    const end = issue1?.threadContext?.rightFileEnd;
-    checks.push(
-      check(
-        'one active thread with the issue marker on the added line, anchored on the whole line',
-        issues1.length === 1 &&
-          threadStatusName(issue1?.status) === 'active' &&
-          issue1?.threadContext?.filePath === findingFile &&
-          start?.line === FINDING_LINE &&
-          start.offset === 1 &&
-          end?.line === FINDING_LINE &&
-          end.offset === lineLength + 1,
-        `${issues1.length} issue thread(s); ${issue1 ? `${threadStatusName(issue1.status)} ${issue1.threadContext?.filePath ?? 'no file'} ${start?.line ?? '?'}:${start?.offset ?? '?'}-${end?.line ?? '?'}:${end?.offset ?? '?'} (expected ${findingFile} ${FINDING_LINE}:1-${FINDING_LINE}:${lineLength + 1})` : 'none'}`,
-      ),
-    );
-    if (t1) await rec(ctx, 'threads-first', answerOf(t1.res));
-    if (st1) {
-      notes.push(...(await observe(ctx, repo, prId, st1.iteration.id, head1, findingFile, issue1)));
-    } else {
-      notes.push('observations skipped: no analysed iteration');
-    }
-    if (!issue1 || !summary1)
-      return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
-
-    // ---- The fix: a commit that removes the finding.
-    const fixCommit = (
-      await pushEdit(
-        ctx,
-        branch,
-        findingFile,
-        `// Qualor probe item 19 (${ctx.stamp})\n${FIXED_TEXT}`,
-      )
-    ).toLowerCase();
-    // The merge commit Azure makes for the fix commit: wait until the pull request has it, then take the build of
-    // exactly that commit (or of the fix commit itself), never another build of the pull request.
-    const merged2 = await waitFor(
-      async () => {
-        const got = await getPr(ctx, prId);
-        return got.pr.lastMergeSourceCommit?.commitId.toLowerCase() === fixCommit &&
-          got.pr.lastMergeCommit
-          ? got
-          : undefined;
-      },
-      { timeoutMs: 180_000, intervalMs: 3000 },
-    );
-    const build2 = await buildAt(ctx, defMain.id, [
-      fixCommit,
-      ...(merged2?.pr.lastMergeCommit ? [merged2.pr.lastMergeCommit.commitId.toLowerCase()] : []),
-    ]);
-    if (!build2) {
-      checks.push(
-        check('a build of the fixing commit queued by the push', false, 'none within 3 minutes'),
-      );
-      return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
-    }
-    const done2 = await waitBuild(ctx, build2.id, { timeoutMs: 30 * 60_000 });
-    await rec(ctx, 'build-fixed', answerOf(done2.res));
-    checks.push(
-      check(
-        'second build succeeded (the gate passes, the scan uploads)',
-        done2.build.result === 'succeeded',
-        `${done2.build.status} ${done2.build.result ?? '?'}`,
-      ),
-    );
-    const { pr: pr2 } = await prWithMerge(ctx, prId);
-    const head2 = (pr2.lastMergeSourceCommit?.commitId ?? fixCommit).toLowerCase();
-    const st2 = await waitStatus(ctx, repo, prId, head2, statusName, 'succeeded');
-    checks.push(
-      check(
-        `iteration status ${statusLabel} succeeded on the new iteration`,
-        st2 !== undefined && st2.iteration.id !== st1?.iteration.id,
-        st2 ? `iteration ${st2.iteration.id}` : 'no such status within the wait',
-      ),
-    );
-    if (st2) await rec(ctx, 'iteration-statuses-fixed', answerOf(st2.res));
-    const verdict2 = await policyVerdict(ctx, pr2, statusPolicy.id, 'approved');
-    checks.push(
-      check(
-        'Status check policy approved',
-        verdict2 !== undefined,
-        verdict2?.status ?? 'not approved within 3 minutes',
-      ),
-    );
-    if (verdict2) await rec(ctx, 'evaluations-fixed', answerOf(verdict2.res));
-    notes.push(`build policy ${buildPolicy.id} and status policy ${statusPolicy.id} evaluated`);
-
-    const t2 = await waitFor(
-      async () => {
-        const got = await listThreads(ctx, repo, prId);
-        const own = ownThreads(got.threads, spId, 'issue')[0];
-        return own && threadStatusName(own.status) === 'fixed' ? got : undefined;
-      },
-      { timeoutMs: DECORATION_WAIT_MS, intervalMs: 10_000 },
-    );
-    const got2 = t2 ?? (await listThreads(ctx, repo, prId));
-    const issue2 = ownThreads(got2.threads, spId, 'issue').find((t) => t.id === issue1.id);
-    const lastOfIssue = issue2?.comments.filter((c) => c.isDeleted !== true).at(-1);
-    const fixedLine = (lastOfIssue?.content ?? '').split(/\r?\n/, 1)[0] ?? '';
-    checks.push(
-      check(
-        "the issue thread is fixed, and its last comment is Qualor's fixed comment",
-        issue2 !== undefined &&
-          threadStatusName(issue2.status) === 'fixed' &&
-          lastOfIssue?.author.id === spId &&
-          markerKind(lastOfIssue.content) === 'fixed' &&
-          fixedLine.includes(head2) &&
-          new RegExp(`no longer open in the analysis of \` ?${head2.slice(0, 7)} ?\``).test(
-            lastOfIssue.content ?? '',
-          ),
-        `${issue2 ? threadStatusName(issue2.status) : 'thread missing'}; last comment ${markerKind(lastOfIssue?.content) ?? 'not a Qualor marker'}`,
-      ),
-    );
-    const summaries2 = ownThreads(got2.threads, spId, 'summary');
-    const summary2 = summaries2[0];
-    checks.push(
-      check(
-        'the summary is edited in place: same thread, same comment, new text',
-        summaries2.length === 1 &&
-          summary2?.id === summary1.id &&
-          summary2.comments[0]?.id === summary1.comments[0]?.id &&
-          summary2.comments[0]?.content !== summary1.comments[0]?.content,
-        `${summaries2.length} summary thread(s); same thread ${summary2?.id === summary1.id}; text changed ${summary2?.comments[0]?.content !== summary1.comments[0]?.content}`,
-      ),
-    );
-    await rec(ctx, 'threads-fixed', answerOf(got2.res));
-    return finish(ctx, checks, notes, prId, dotnetRuns, ext.why, repo, base);
+    return finishOf(flow, opened.prId);
   },
 };
+
+/** The arguments of {@link finish}: the flow's state at the point where it ended. */
+interface FinishArgs {
+  ctx: ProbeContext;
+  checks: Check[];
+  notes: string[];
+  prId: number;
+  runs: Run[];
+  extensionWhy: string;
+  repo: Repo;
+  base: string;
+}
 
 /**
  * The .NET forms (dry runs on fixtures/csharp-basic) when the main flow got that far, then the verdict.
  * The main flow's own failures do not stop the .NET forms; they stop only when nothing was decorated.
  */
-async function finish(
-  ctx: ProbeContext,
-  checks: Check[],
-  notes: string[],
-  prId: number,
-  runs: Run[],
-  extensionWhy: string,
-  repo: Repo,
-  base: string,
-) {
+async function finish(args: FinishArgs) {
+  const { ctx, checks, notes, prId, runs, extensionWhy, repo, base } = args;
   if (ctx.qualorAs) {
     // A weaker identity: each step as it went, the identity's own calls of Qualor's writes, and
     // what the bench Qualor recorded of the connection.

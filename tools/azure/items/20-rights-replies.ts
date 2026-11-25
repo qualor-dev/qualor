@@ -140,6 +140,58 @@ async function aclOf(ctx: ProbeContext, descriptor: string, label: string) {
   };
 }
 
+type AddCheck = (what: string, pass: boolean, got: string) => void;
+
+/** The identities lookups: each answers 200 with a descriptor in the ACL form; returns them by key. */
+async function lookupDescriptors(
+  ctx: ProbeContext,
+  lookups: [string, string, AzureClient, string, string][],
+  add: AddCheck,
+): Promise<Record<string, string>> {
+  const descriptors: Record<string, string> = {};
+  for (const [call, label, client, id, key] of lookups) {
+    const res = await client.request('GET', `/_apis/identities?identityIds=${id}`, undefined, {
+      apiVersion: IDENTITIES_VERSION,
+    });
+    learnIdentities(ctx.redaction, res.json);
+    await ctx.record(`identities-${call}`, answerOf(res));
+    const parsed = z.object({ value: z.array(IdentitySchema) }).safeParse(res.json);
+    const d = parsed.success ? parsed.data.value[0]?.descriptor : undefined;
+    const form = d ? `${d.split(';')[0]};…` : 'absent';
+    add(
+      `identities lookup (${label}) answers 200 with an identity descriptor in the ACL form`,
+      res.status === 200 && d !== undefined && isIdentityDescriptor(d),
+      `HTTP ${res.status}, descriptor form ${form}`,
+    );
+    if (d) descriptors[key] = d;
+  }
+  return descriptors;
+}
+
+/** The ACL with each looked-up descriptor: bit 4 (Contribute) of effectiveAllow. */
+async function checkAcls(
+  ctx: ProbeContext,
+  descriptors: Record<string, string>,
+  add: AddCheck,
+): Promise<void> {
+  for (const [label, key] of [
+    ['pat-user', 'user'],
+    ['service-principal', 'sp'],
+  ] as const) {
+    const d = descriptors[key];
+    if (!d) {
+      add(`the ACL with the ${label}'s looked-up descriptor has bit 4`, false, 'no descriptor');
+      continue;
+    }
+    const acl = await aclOf(ctx, d, label);
+    add(
+      `the ACL with the ${label}'s looked-up descriptor has bit 4 in effectiveAllow`,
+      acl.effective !== undefined && (acl.effective & CONTRIBUTE) !== 0,
+      `entry ${acl.entry ? 'found' : 'missing'}, allow ${String(acl.allow)}, effectiveAllow ${String(acl.effective)}`,
+    );
+  }
+}
+
 export const item: ProbeItem = {
   id: 20,
   title:
@@ -228,40 +280,10 @@ export const item: ProbeItem = {
       ['service-principal', 'service principal by PAT', patIds, spMe.id, 'sp'],
       ['service-principal-self', 'service principal by its own token', spIds, spMe.id, 'sp-self'],
     ];
-    const descriptors: Record<string, string> = {};
-    for (const [call, label, client, id, key] of lookups) {
-      const res = await client.request('GET', `/_apis/identities?identityIds=${id}`, undefined, {
-        apiVersion: IDENTITIES_VERSION,
-      });
-      learnIdentities(ctx.redaction, res.json);
-      await ctx.record(`identities-${call}`, answerOf(res));
-      const parsed = z.object({ value: z.array(IdentitySchema) }).safeParse(res.json);
-      const d = parsed.success ? parsed.data.value[0]?.descriptor : undefined;
-      add(
-        `identities lookup (${label}) answers 200 with an identity descriptor in the ACL form`,
-        res.status === 200 && d !== undefined && isIdentityDescriptor(d),
-        `HTTP ${res.status}, descriptor form ${d ? `${d.split(';')[0]};…` : 'absent'}`,
-      );
-      if (d) descriptors[key] = d;
-    }
+    const descriptors = await lookupDescriptors(ctx, lookups, add);
 
     // The ACL with each looked-up descriptor: bit 4 (Contribute) of effectiveAllow.
-    for (const [label, key] of [
-      ['pat-user', 'user'],
-      ['service-principal', 'sp'],
-    ] as const) {
-      const d = descriptors[key];
-      if (!d) {
-        add(`the ACL with the ${label}'s looked-up descriptor has bit 4`, false, 'no descriptor');
-        continue;
-      }
-      const acl = await aclOf(ctx, d, label);
-      add(
-        `the ACL with the ${label}'s looked-up descriptor has bit 4 in effectiveAllow`,
-        acl.effective !== undefined && (acl.effective & CONTRIBUTE) !== 0,
-        `entry ${acl.entry ? 'found' : 'missing'}, allow ${String(acl.allow)}, effectiveAllow ${String(acl.effective)}`,
-      );
-    }
+    await checkAcls(ctx, descriptors, add);
 
     // Service hooks subscriptions: GET only.
     const subs = ok(

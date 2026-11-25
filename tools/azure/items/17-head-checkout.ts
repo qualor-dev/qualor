@@ -25,6 +25,7 @@ import {
   shape,
   waitBuild,
   waitFor,
+  type Pr,
   type ProbeContext,
   type ProbeItem,
 } from './common.js';
@@ -89,6 +90,88 @@ async function policyBuild(ctx: ProbeContext, definitionId: number) {
   );
 }
 
+/** Requeues the policy's evaluation once; undefined when the policy has no evaluation yet. */
+async function requeuePolicy(
+  ctx: ProbeContext,
+  pr: Pr,
+  policyId: number,
+  definitionId: number,
+): Promise<{ queued: Awaited<ReturnType<typeof policyBuild>> } | undefined> {
+  const { list } = await evaluations(ctx, pr);
+  const ev = list.value.find((e) => e.configuration.id === policyId);
+  if (!ev) return undefined;
+  await ctx.bot.request(
+    'PATCH',
+    `/${ctx.project}/_apis/policy/evaluations/${ev.evaluationId}`,
+    undefined,
+    {
+      apiVersion: '7.0-preview.1',
+    },
+  );
+  return { queued: await policyBuild(ctx, definitionId) };
+}
+
+/** The printed values and the parents of the first log that printed BUILD_SOURCEVERSION. */
+async function readPrinted(
+  ctx: ProbeContext,
+  logs: Map<number, string[]>,
+): Promise<{ values: Record<string, string>; parents: string[] }> {
+  let values: Record<string, string> = {};
+  let parents: string[] = [];
+  for (const [logId, lines] of logs) {
+    const found = printedValues(lines, NAMES);
+    if (found['BUILD_SOURCEVERSION'] && values['BUILD_SOURCEVERSION'] === undefined) {
+      values = found;
+      parents = parentsOf(lines);
+      // Only the printed lines and the cat-file block: the rest names the agent's machine.
+      const kept = keptLogLines(lines, NAMES, ['--- git cat-file -p HEAD', '--- end']);
+      await ctx.record('build-log', { logId, lines: kept });
+    }
+  }
+  return { values, parents };
+}
+
+interface HeadDetail {
+  buildId: number;
+  how: string;
+  authorized: string;
+  build: { result?: string | null; reason?: string | null; sourceBranch?: string | null };
+  values: Record<string, string>;
+  parents: string[];
+  head: string | undefined;
+  merge: string | undefined;
+  secondIsHead: boolean;
+  checkedOut: boolean;
+}
+
+function sourceCommitText(sourceCommit: string | undefined, head: string | undefined): string {
+  if (sourceCommit === undefined || sourceCommit === 'unset') return 'not set on this target';
+  if (sourceCommit === head) return 'set, = the PR head';
+  return `set, = ${sourceCommit} (head ${head ?? '?'})`;
+}
+
+function headDetail(d: HeadDetail): string {
+  const { values, parents, head, merge } = d;
+  const version = values['BUILD_SOURCEVERSION'];
+  const versionText =
+    version === merge
+      ? 'is the merge commit (lastMergeCommit)'
+      : `= ${version ?? 'not printed'} (lastMergeCommit ${merge ?? '?'})`;
+  const secondText = d.secondIsHead
+    ? 'is the PR head (lastMergeSourceCommit)'
+    : `is not the head (${parents[1] ?? 'none'} vs ${head ?? '?'})`;
+  const checkedText = d.checkedOut
+    ? 'checked out the PR head'
+    : `CHECKED_OUT ${values['CHECKED_OUT'] ?? 'not printed'}`;
+  return [
+    `build ${d.buildId}: ${d.how}; result ${d.build.result ?? 'none'}, reason ${d.build.reason ?? '?'}, sourceBranch ${d.build.sourceBranch ?? '?'}; ${d.authorized}`,
+    `BUILD_SOURCEVERSION ${versionText}`,
+    `SYSTEM_PULLREQUEST_SOURCECOMMITID: ${sourceCommitText(values['SYSTEM_PULLREQUEST_SOURCECOMMITID'], head)}`,
+    `git cat-file -p HEAD: ${parents.length} parent(s); second parent ${secondText}`,
+    `git checkout --detach HEAD^2 with fetchDepth 0: ${checkedText}`,
+  ].join('\n\n');
+}
+
 export const item: ProbeItem = {
   id: 17,
   title: "a pull request build checks out the PR head as the merge commit's second parent",
@@ -142,19 +225,9 @@ export const item: ProbeItem = {
     let queued = await policyBuild(ctx, def.id);
     let how = 'queued by the Build validation policy';
     if (!queued) {
-      // Requeue the policy's evaluation once.
-      const { list } = await evaluations(ctx, pr);
-      const ev = list.value.find((e) => e.configuration.id === policy.id);
-      if (ev) {
-        await ctx.bot.request(
-          'PATCH',
-          `/${ctx.project}/_apis/policy/evaluations/${ev.evaluationId}`,
-          undefined,
-          {
-            apiVersion: '7.0-preview.1',
-          },
-        );
-        queued = await policyBuild(ctx, def.id);
+      const requeued = await requeuePolicy(ctx, pr, policy.id, def.id);
+      if (requeued) {
+        queued = requeued.queued;
         how = 'queued by a requeue of the policy evaluation';
       }
     }
@@ -176,30 +249,23 @@ export const item: ProbeItem = {
     const evals = await evaluations(ctx, pr);
     await ctx.record('evaluations', answerOf(evals.res));
 
-    let values: Record<string, string> = {};
-    let parents: string[] = [];
-    for (const [logId, lines] of logs) {
-      const found = printedValues(lines, NAMES);
-      if (found['BUILD_SOURCEVERSION'] && values['BUILD_SOURCEVERSION'] === undefined) {
-        values = found;
-        parents = parentsOf(lines);
-        // Only the printed lines and the cat-file block: the rest names the agent's machine.
-        const kept = keptLogLines(lines, NAMES, ['--- git cat-file -p HEAD', '--- end']);
-        await ctx.record('build-log', { logId, lines: kept });
-      }
-    }
+    const { values, parents } = await readPrinted(ctx, logs);
     const head = pr.lastMergeSourceCommit?.commitId;
     const merge = pr.lastMergeCommit?.commitId;
     const secondIsHead = parents.length === 2 && parents[1] === head;
     const checkedOut = values['CHECKED_OUT'] === head;
-    const sourceCommit = values['SYSTEM_PULLREQUEST_SOURCECOMMITID'];
-    const detail = [
-      `build ${queued.id}: ${how}; result ${done.build.result ?? 'none'}, reason ${done.build.reason ?? '?'}, sourceBranch ${done.build.sourceBranch ?? '?'}; ${authorized}`,
-      `BUILD_SOURCEVERSION ${values['BUILD_SOURCEVERSION'] === merge ? 'is the merge commit (lastMergeCommit)' : `= ${values['BUILD_SOURCEVERSION'] ?? 'not printed'} (lastMergeCommit ${merge ?? '?'})`}`,
-      `SYSTEM_PULLREQUEST_SOURCECOMMITID: ${sourceCommit === undefined || sourceCommit === 'unset' ? 'not set on this target' : sourceCommit === head ? 'set, = the PR head' : `set, = ${sourceCommit} (head ${head ?? '?'})`}`,
-      `git cat-file -p HEAD: ${parents.length} parent(s); second parent ${secondIsHead ? 'is the PR head (lastMergeSourceCommit)' : `is not the head (${parents[1] ?? 'none'} vs ${head ?? '?'})`}`,
-      `git checkout --detach HEAD^2 with fetchDepth 0: ${checkedOut ? 'checked out the PR head' : `CHECKED_OUT ${values['CHECKED_OUT'] ?? 'not printed'}`}`,
-    ].join('\n\n');
+    const detail = headDetail({
+      buildId: queued.id,
+      how,
+      authorized,
+      build: done.build,
+      values,
+      parents,
+      head,
+      merge,
+      secondIsHead,
+      checkedOut,
+    });
     return result(ctx, secondIsHead && checkedOut ? 'yes' : 'no', detail);
   },
 };

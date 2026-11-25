@@ -69,16 +69,19 @@ async function ensureResultsFile(file: string): Promise<void> {
 const manualLine = (m: ManualPr): string =>
   m.id === undefined ? `Manual branch: ${m.branch}` : `Manual PR: ${m.id} (${m.branch})`;
 
-async function appendResult(
-  file: string,
-  target: string,
-  item: { id: number; title: string },
-  res: ProbeResult,
-  stamp: string,
-  cleanupFailures: string[],
-  manual: ManualPr | undefined,
-  identity?: WeakerIdentity,
-): Promise<void> {
+interface ResultSection {
+  file: string;
+  target: string;
+  item: { id: number; title: string };
+  res: ProbeResult;
+  stamp: string;
+  cleanupFailures: string[];
+  manual: ManualPr | undefined;
+  identity?: WeakerIdentity | undefined;
+}
+
+async function appendResult(section: ResultSection): Promise<void> {
+  const { file, target, item, res, stamp, cleanupFailures, manual, identity } = section;
   await ensureResultsFile(file);
   const lines = [
     '',
@@ -94,12 +97,11 @@ async function appendResult(
   ];
   if (res.links?.length) lines.push(`Open: ${res.links.join(' ')}`, '');
   if (manual) lines.push(manualLine(manual), '');
-  lines.push(
-    `Recordings: ${res.recordings.length ? res.recordings.map((r) => `\`${r}\``).join(', ') : 'none'}`,
-    '',
-    `Clean-up: ${cleanupFailures.length ? `FAILED — ${cleanupFailures.join('; ')}` : 'done'}`,
-    '',
-  );
+  const recordings = res.recordings.length
+    ? res.recordings.map((r) => `\`${r}\``).join(', ')
+    : 'none';
+  const cleanedUp = cleanupFailures.length ? `FAILED — ${cleanupFailures.join('; ')}` : 'done';
+  lines.push(`Recordings: ${recordings}`, '', `Clean-up: ${cleanedUp}`, '');
   await appendFile(file, lines.join('\n'), 'utf8');
 }
 
@@ -271,28 +273,117 @@ async function cleanupManual(ctx: ProbeContext, file: string, say: (s: string) =
   return lines.some((l) => l.includes('FAILED'));
 }
 
-async function main(): Promise<void> {
-  loadEnvFiles();
-  const args = parseArgs(process.argv.slice(2));
-  const file = requiredEnv('AZURE_PROBE_RESULTS_FILE');
-  requiredEnv('AZURE_PROBE_ID_SALT');
-  const target = loadTarget(args.target, args.auth ? { auth: args.auth } : {});
-  const items = args.items
-    ? args.items.map((id) => {
-        const found = ITEMS.find((i) => i.id === id);
-        if (!found) throw new Error(`no probe item ${id}`);
-        return found;
-      })
-    : ITEMS;
+type Args = ReturnType<typeof parseArgs>;
+
+function itemsToRun(args: Args): typeof ITEMS {
+  if (!args.items) return ITEMS;
+  return args.items.map((id) => {
+    const found = ITEMS.find((i) => i.id === id);
+    if (!found) throw new Error(`no probe item ${id}`);
+    return found;
+  });
+}
+
+/** The connection identity Qualor acts as (`--qualor-identity`), with its names in the redaction table. */
+async function addQualorIdentity(
+  clients: Clients,
+  args: Args,
+  identity: NonNullable<Args['qualorIdentity']>,
+  redaction: ReturnType<typeof buildRedactionTable>,
+): Promise<void> {
+  const qualorClient = clients.client(qualorIdentityAuth(args.target, identity));
+  clients.qualorAs = { identity, client: qualorClient };
+  console.log(`Qualor's connection identity: ${identity} (the items record its refusals)`);
+  // Its names join the redaction table; a minimal PAT may not read connectionData (its owner is the
+  // main PAT's, whose names are in the table already).
+  const who = await qualorClient.request('GET', '/_apis/connectionData', undefined, {
+    apiVersion: '7.0-preview',
+  });
+  const data = ConnectionDataSchema.safeParse(who.json);
+  if (who.status < 300 && data.success) addIdentity(redaction, data.data.authenticatedUser);
+  else console.log(`  (connectionData for the ${identity} identity: HTTP ${who.status})`);
+}
+
+/** What a second Ctrl+C says and writes before the exit: what the current item leaves behind. */
+function quitNow(
+  current: { ctx: ProbeContext; item: { id: number; title: string } } | undefined,
+  file: string,
+  args: Args,
+  stamp: string,
+  say: (line: string) => string,
+): never {
+  const left = current ? current.ctx.cleanup.pending().map(say) : [];
+  console.log(`\nquitting now; left behind: ${left.length ? left.join('; ') : 'nothing known'}`);
+  if (current) {
+    const manual = current.ctx.manualPr;
+    if (manual) console.log(`  also left open: ${manualLine(manual)}`);
+    try {
+      appendQuitSync(file, args.target, current.item, stamp, left, manual);
+    } catch (err) {
+      console.log(`  could not write the results file: ${(err as Error).message}`);
+    }
+  }
+  process.exit(130);
+}
+
+/**
+ * Runs one item; an interruption is no answer and no failure, any other throw makes it answer no
+ * with the issue (`failed` is then true).
+ */
+async function runItem(
+  ctx: ProbeContext,
+  item: (typeof ITEMS)[number],
+  args: Args,
+): Promise<{ res: ProbeResult; failed: boolean }> {
+  try {
+    const res =
+      args.verifyApply === undefined
+        ? await item.run(ctx)
+        : await verifyApply(ctx, args.verifyApply);
+    return { res, failed: false };
+  } catch (err) {
+    const e = err as Error;
+    if (err instanceof InterruptedError) {
+      // Stopped by Ctrl+C: no answer, and not a failure of the item.
+      return {
+        res: { answer: 'interrupted', detail: e.message, recordings: [...ctx.recordings] },
+        failed: false,
+      };
+    }
+    // A failed call or an unexpected shape: the item answers no, with the issue.
+    return {
+      res: { answer: 'no', detail: `${e.name}: ${e.message}`, recordings: [...ctx.recordings] },
+      failed: true,
+    };
+  }
+}
+
+/** Shared state the item changed must read as before once its clean-up has run. */
+async function verifyAfterCleanup(
+  ctx: ProbeContext,
+  first: ProbeResult,
+): Promise<{ res: ProbeResult; verdicts: string[] }> {
+  let res = first;
+  const verdicts: string[] = [];
+  const fail = (r: ProbeResult): ProbeResult =>
+    r.answer === 'interrupted' ? r : { ...r, answer: 'no' };
+  for (const v of ctx.verifications) {
+    try {
+      const verdict = await v.check();
+      verdicts.push(`after clean-up, ${verdict.text}`);
+      if (!verdict.ok) res = fail(res);
+    } catch (err) {
+      verdicts.push(`after clean-up, ${v.label} could not be checked: ${(err as Error).message}`);
+      res = fail(res);
+    }
+  }
+  return { res, verdicts };
+}
+
+function clientsFor(target: ReturnType<typeof loadTarget>): Clients {
   const caOpts = target.caPem ? { caPem: target.caPem } : {};
   const client = (auth: AzureAuth): AzureClient => new AzureClient(target.baseUrl, auth, caOpts);
-  const stamp = stampOf(new Date());
-
-  // Before the first write: which organisation this run acts on.
-  console.log(`Target ${args.target}: ${target.baseUrl} (main identity: ${target.auth.kind})`);
-
-  const redaction = buildRedactionTable(process.env);
-  const clients: Clients = {
+  return {
     target,
     client,
     bot: client(target.auth),
@@ -300,23 +391,37 @@ async function main(): Promise<void> {
     ...(target.readerAuth ? { reader: client(target.readerAuth) } : {}),
     ...(target.adminAuth ? { admin: client(target.adminAuth) } : {}),
   };
+}
+
+/** What the console says about a finished item. */
+function reportItem(
+  ctx: ProbeContext,
+  item: { id: number; title: string },
+  res: ProbeResult,
+  cleanupFailures: string[],
+): void {
+  console.log(`item ${item.id}: ${item.title}\n  answer: ${res.answer}\n  ${res.detail}`);
+  for (const link of res.links ?? []) console.log(`  open: ${link}`);
+  if (ctx.manualPr) console.log(`  left open for a visual check: ${manualLine(ctx.manualPr)}`);
+  if (cleanupFailures.length) console.log(`  clean-up FAILED: ${cleanupFailures.join('; ')}`);
+}
+
+async function main(): Promise<void> {
+  loadEnvFiles();
+  const args = parseArgs(process.argv.slice(2));
+  const file = requiredEnv('AZURE_PROBE_RESULTS_FILE');
+  requiredEnv('AZURE_PROBE_ID_SALT');
+  const target = loadTarget(args.target, args.auth ? { auth: args.auth } : {});
+  const items = itemsToRun(args);
+  const stamp = stampOf(new Date());
+
+  // Before the first write: which organisation this run acts on.
+  console.log(`Target ${args.target}: ${target.baseUrl} (main identity: ${target.auth.kind})`);
+
+  const redaction = buildRedactionTable(process.env);
+  const clients = clientsFor(target);
   await learnIdentities(clients, redaction);
-  if (args.qualorIdentity) {
-    const qualorClient = client(qualorIdentityAuth(args.target, args.qualorIdentity));
-    clients.qualorAs = { identity: args.qualorIdentity, client: qualorClient };
-    console.log(
-      `Qualor's connection identity: ${args.qualorIdentity} (the items record its refusals)`,
-    );
-    // Its names join the redaction table; a minimal PAT may not read connectionData (its owner is the
-    // main PAT's, whose names are in the table already).
-    const who = await qualorClient.request('GET', '/_apis/connectionData', undefined, {
-      apiVersion: '7.0-preview',
-    });
-    const data = ConnectionDataSchema.safeParse(who.json);
-    if (who.status < 300 && data.success) addIdentity(redaction, data.data.authenticatedUser);
-    else
-      console.log(`  (connectionData for the ${args.qualorIdentity} identity: HTTP ${who.status})`);
-  }
+  if (args.qualorIdentity) await addQualorIdentity(clients, args, args.qualorIdentity, redaction);
   const say = (line: string): string => String(redact(line, redaction));
 
   if (args.cleanupManual) {
@@ -330,22 +435,7 @@ async function main(): Promise<void> {
   // once, after saying (and writing) what that leaves behind.
   let current: { ctx: ProbeContext; item: { id: number; title: string } } | undefined;
   process.on('SIGINT', () => {
-    if (stop.requested) {
-      const left = current ? current.ctx.cleanup.pending().map(say) : [];
-      console.log(
-        `\nquitting now; left behind: ${left.length ? left.join('; ') : 'nothing known'}`,
-      );
-      if (current) {
-        const manual = current.ctx.manualPr;
-        if (manual) console.log(`  also left open: ${manualLine(manual)}`);
-        try {
-          appendQuitSync(file, args.target, current.item, stamp, left, manual);
-        } catch (err) {
-          console.log(`  could not write the results file: ${(err as Error).message}`);
-        }
-      }
-      process.exit(130);
-    }
+    if (stop.requested) quitNow(current, file, args, stamp, say);
     stop.requested = true;
     console.log(
       '\ninterrupted: the current item stops and cleans up (Ctrl+C again to quit at once)',
@@ -358,56 +448,25 @@ async function main(): Promise<void> {
     const ctx = contextFor(clients, args, redaction, stamp, item.id, say);
     current = { ctx, item };
     console.log(`item ${item.id}: ${item.title} …`);
-    let res: ProbeResult;
-    try {
-      res =
-        args.verifyApply === undefined
-          ? await item.run(ctx)
-          : await verifyApply(ctx, args.verifyApply);
-    } catch (err) {
-      const e = err as Error;
-      if (err instanceof InterruptedError) {
-        // Stopped by Ctrl+C: no answer, and not a failure of the item.
-        res = { answer: 'interrupted', detail: e.message, recordings: [...ctx.recordings] };
-      } else {
-        // A failed call or an unexpected shape: the item answers no, with the issue.
-        res = { answer: 'no', detail: `${e.name}: ${e.message}`, recordings: [...ctx.recordings] };
-        failures++;
-      }
-    }
+    const ran = await runItem(ctx, item, args);
+    if (ran.failed) failures++;
     const cleanupFailures = (await ctx.cleanup.run()).map(say);
-    // Shared state the item changed must read as before once its clean-up has run.
-    const verdicts: string[] = [];
-    const fail = (r: ProbeResult): ProbeResult =>
-      r.answer === 'interrupted' ? r : { ...r, answer: 'no' };
-    for (const v of ctx.verifications) {
-      try {
-        const verdict = await v.check();
-        verdicts.push(`after clean-up, ${verdict.text}`);
-        if (!verdict.ok) res = fail(res);
-      } catch (err) {
-        verdicts.push(`after clean-up, ${v.label} could not be checked: ${(err as Error).message}`);
-        res = fail(res);
-      }
-    }
+    const checked = await verifyAfterCleanup(ctx, ran.res);
     current = undefined;
-    const detail = [res.detail, ...verdicts].join('\n\n');
-    res = { ...res, detail: say(detail) };
+    const detail = [checked.res.detail, ...checked.verdicts].join('\n\n');
+    const res = { ...checked.res, detail: say(detail) };
     if (cleanupFailures.length) failures++;
-    console.log(`item ${item.id}: ${item.title}\n  answer: ${res.answer}\n  ${res.detail}`);
-    for (const link of res.links ?? []) console.log(`  open: ${link}`);
-    if (ctx.manualPr) console.log(`  left open for a visual check: ${manualLine(ctx.manualPr)}`);
-    if (cleanupFailures.length) console.log(`  clean-up FAILED: ${cleanupFailures.join('; ')}`);
-    await appendResult(
+    reportItem(ctx, item, res, cleanupFailures);
+    await appendResult({
       file,
-      args.target,
+      target: args.target,
       item,
       res,
       stamp,
       cleanupFailures,
-      ctx.manualPr,
-      args.qualorIdentity,
-    );
+      manual: ctx.manualPr,
+      identity: args.qualorIdentity,
+    });
   }
   console.log(`results appended to ${file}`);
   if (stop.requested) {

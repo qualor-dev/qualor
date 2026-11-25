@@ -79,6 +79,22 @@ export function rawRequest(
 const MAX_WAIT_S = 30;
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** The answer's body: JSON when it parses, else the text itself, null when empty. */
+function jsonOrText(text: string): unknown {
+  if (text.length === 0) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+/** The request body as sent: a string as it is, anything else as JSON, nothing as nothing. */
+function bodyText(body: unknown): string | undefined {
+  if (body === undefined) return undefined;
+  return typeof body === 'string' ? body : JSON.stringify(body);
+}
+
 export class AzureClient {
   private notBefore = 0;
   private bearer: { token: string; expiresAt: number } | undefined;
@@ -91,7 +107,8 @@ export class AzureClient {
 
   private async authorization(): Promise<string> {
     if (this.auth.kind === 'pat') {
-      return `Basic ${Buffer.from(`:${this.auth.pat}`).toString('base64')}`;
+      const credential = Buffer.from(`:${this.auth.pat}`).toString('base64');
+      return `Basic ${credential}`;
     }
     if (!this.bearer || this.bearer.expiresAt - 60_000 <= Date.now()) {
       const entraOpts = this.opts.fetch ? { fetch: this.opts.fetch } : {};
@@ -122,8 +139,7 @@ export class AzureClient {
     if (!url.searchParams.has('api-version')) {
       url.searchParams.set('api-version', opts.apiVersion ?? '7.0');
     }
-    const payload =
-      body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
+    const payload = bodyText(body);
     const headers: Record<string, string> = {
       authorization: await this.authorization(),
       accept: 'application/json',
@@ -153,14 +169,6 @@ export class AzureClient {
         `HTTP ${raw.status} answered with HTML for ${method} ${path}`,
       );
     }
-    let json: unknown = null;
-    if (raw.text.length > 0) {
-      try {
-        json = JSON.parse(raw.text);
-      } catch {
-        json = raw.text;
-      }
-    }
-    return { status: raw.status, headers: raw.headers, json };
+    return { status: raw.status, headers: raw.headers, json: jsonOrText(raw.text) };
   }
 }

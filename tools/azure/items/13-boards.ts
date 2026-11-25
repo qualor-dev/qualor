@@ -95,12 +95,8 @@ async function oneProcess(ctx: ProbeContext, p: Process): Promise<{ ok: boolean;
   const required = type.fields.filter((f) => f.alwaysRequired).map((f) => f.referenceName);
   const hasRepro = type.fields.some((f) => f.referenceName === REPRO);
   const form = type.xmlForm;
-  const descriptionOnForm =
-    form === undefined
-      ? 'unknown (no xmlForm)'
-      : form.includes('System.Description')
-        ? 'yes'
-        : 'no';
+  let descriptionOnForm = 'unknown (no xmlForm)';
+  if (form !== undefined) descriptionOnForm = form.includes('System.Description') ? 'yes' : 'no';
 
   const patch = [
     { op: 'add', path: '/fields/System.Title', value: `Qualor probe item 13 (${ctx.stamp})` },
@@ -202,13 +198,19 @@ async function oneProcess(ctx: ProbeContext, p: Process): Promise<{ ok: boolean;
   const failedChecks = Object.entries(checks)
     .filter(([, v]) => !v)
     .map(([k]) => k);
+  const noteText = noteAsComment
+    ? 'reads back as a comment (7.0-preview.3)'
+    : `not among the comments (HTTP ${commentsRes.status})`;
+  const batchText = failedChecks.length
+    ? `misses ${failedChecks.join(', ')}`
+    : 'reads back title, description, repro steps, tag and link';
   return {
     ok: all,
     text:
       `${p.label} (${p.project}, ${p.type} ${created.id}): always required ${required.join(', ') || 'none'}; ` +
       `Repro Steps ${hasRepro ? 'on the type' : 'not on the type'}; System.Description on the form: ${descriptionOnForm}; ` +
-      `History note ${noteAsComment ? 'reads back as a comment (7.0-preview.3)' : `not among the comments (HTTP ${commentsRes.status})`}; ` +
-      `WIQL ${found ? 'finds it' : 'does not find it'}; workitemsbatch ${failedChecks.length ? `misses ${failedChecks.join(', ')}` : 'reads back title, description, repro steps, tag and link'}`,
+      `History note ${noteText}; ` +
+      `WIQL ${found ? 'finds it' : 'does not find it'}; workitemsbatch ${batchText}`,
   };
 }
 
@@ -233,7 +235,9 @@ export const item: ProbeItem = {
         lines.push(`${p.label}: ${(err as Error).name}: ${(err as Error).message}`);
       }
     }
-    const answer = passed === processes.length ? 'yes' : passed > 0 ? 'partly' : 'no';
+    let answer: 'yes' | 'partly' | 'no' = 'no';
+    if (passed === processes.length) answer = 'yes';
+    else if (passed > 0) answer = 'partly';
     return result(ctx, answer, lines.join('\n\n'));
   },
 };

@@ -334,12 +334,12 @@ async function dismissLink(api: QualorApi, id: string): Promise<void> {
   if (res.status !== 204) throw new Error(`dismiss: HTTP ${res.status} ${problemText(res.json)}`);
 }
 
-const linkText = (l: BoardsLink | null): string =>
-  l === null
-    ? 'no link'
-    : `${l.state}${l.workItemId === null ? '' : ` work item ${l.workItemId}`}${
-        l.failure ? `: ${l.failure.code} ${l.failure.message.slice(0, 300)}` : ''
-      }`;
+const linkText = (l: BoardsLink | null): string => {
+  if (l === null) return 'no link';
+  const item = l.workItemId === null ? '' : ` work item ${l.workItemId}`;
+  const failure = l.failure ? `: ${l.failure.code} ${l.failure.message.slice(0, 300)}` : '';
+  return `${l.state}${item}${failure}`;
+};
 
 // ---------------------------------------------------------------------------------------------
 // Azure DevOps
@@ -387,421 +387,601 @@ async function sweep(ctx: ProbeContext, projectId: string): Promise<number[]> {
 
 // ---------------------------------------------------------------------------------------------
 
+/** What the steps of the item share: the bench Qualor, its project and what the run has recorded. */
+interface Flow {
+  ctx: ProbeContext;
+  checks: Check[];
+  notes: string[];
+  /** What a weaker identity's verdict needs, as far as the run got (--qualor-identity). */
+  weak: WeakerSeen;
+  api: QualorApi;
+  qualorUrl: string;
+  scmUrl: string;
+  boardsToken: string;
+  projectKey: string;
+  boardsBase: string;
+  project: { id: string; key: string };
+  connectionId: string;
+}
+
+type AzureProjectRef = { id: string; name: string };
+type BugType = z.infer<typeof TypeItems>['items'][number];
+
+/** The flow once the probe project, the Bug type and the open issue are known. */
+interface Scope extends Flow {
+  azureProject: AzureProjectRef;
+  bug: BugType;
+  issueId: string;
+  /** The work item Qualor made, as far as the run has seen it (the clean-up reads it too). */
+  workItemId?: number;
+}
+
+/** The bench Qualor's organisation, Azure connection and project of the item. */
+async function openBench(ctx: ProbeContext): Promise<Flow> {
+  // The bench Qualor's boards project and connection of the target (Server: bench-server-boards).
+  const bench = benchProject(ctx.target, 'boards');
+  const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL').replace(/\/+$/, '');
+  const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
+  const scmUrl = benchScmUrl(ctx.target);
+  const boardsToken = needEnv(bench.tokenEnv);
+  const projectKey = bench.key;
+  const weak: WeakerSeen = {};
+
+  // The work item is Qualor's, made as its identity (the service principal; Server: the PAT's
+  // owner): its names join the redaction table before anything is recorded.
+  await qualorIdentityId(ctx);
+
+  // ---- The bench Qualor: organisation `bench`, its Azure connection, the item's project.
+  const api = new QualorApi(qualorUrl);
+  await api.login(adminPassword);
+  const org = (
+    await api.items('/api/v0/organizations', z.object({ id: z.string(), key: z.string() }).loose())
+  ).find((o) => o.key === BENCH_ORG);
+  if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
+  const connection = (
+    await api.items(
+      `/api/v0/scm-connections?organizationId=${org.id}`,
+      z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
+    )
+  ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
+  if (!connection)
+    throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+  weak.bench = { api, orgId: org.id, connectionId: connection.id };
+  const project = (
+    await api.items(
+      `/api/v0/projects?organizationId=${org.id}`,
+      z.object({ id: z.string(), key: z.string() }).loose(),
+    )
+  ).find((p) => p.key === projectKey);
+  if (!project) {
+    throw new Error(`the bench Qualor has no project ${projectKey} (run seed-qualor.mjs --boards)`);
+  }
+  return {
+    ctx,
+    checks: [],
+    notes: [],
+    weak,
+    api,
+    qualorUrl,
+    scmUrl,
+    boardsToken,
+    projectKey,
+    boardsBase: `/api/v0/projects/${project.id}/boards`,
+    project,
+    connectionId: connection.id,
+  };
+}
+
+/** A picker's answer. A weaker identity's pickers may be refused: Qualor's answer is recorded. */
+async function pickerAnswer(flow: Flow, what: string, path: string): Promise<unknown> {
+  const { ctx, api, checks } = flow;
+  if (!ctx.qualorAs) return (await api.call('GET', path)).json;
+  const got = await api.send('GET', path);
+  checks.push(
+    check(
+      `Qualor's ${what} picker answers (GET …/boards/${what === 'project' ? 'projects' : 'work-item-types'})`,
+      got.status === 200,
+      got.status === 200 ? 'HTTP 200' : qualorAnswerText(got.status, got.json),
+    ),
+  );
+  return got.status === 200 ? got.json : undefined;
+}
+
+/** How the Bug type shows in the picker. */
+function bugSupportText(bug: BugType | undefined): string {
+  if (!bug) return 'not listed';
+  return bug.supported ? 'supported' : 'NOT supported';
+}
+
+/** The probe project and the Bug type, as Qualor's pickers list them; undefined ends the run. */
+async function pickTargets(
+  flow: Flow,
+): Promise<{ azureProject: AzureProjectRef; bug: BugType | undefined } | undefined> {
+  const { ctx, notes, boardsBase, connectionId, checks } = flow;
+  const projectsJson = await pickerAnswer(
+    flow,
+    'project',
+    `${boardsBase}/projects?connection=${connectionId}`,
+  );
+  if (projectsJson === undefined) return undefined;
+  const azureProjects = shape(NamedItems, projectsJson, 'Boards projects').items;
+  const azureProject = azureProjects.find(
+    (p) => p.name.toLowerCase() === ctx.project.toLowerCase(),
+  );
+  if (!azureProject) {
+    const unlisted = `Qualor's project picker does not list the probe project (${azureProjects.length} listed)`;
+    if (!ctx.qualorAs) throw new Error(unlisted);
+    checks.push(check('the probe project is among the Azure projects listed', false, unlisted));
+    return undefined;
+  }
+  const typesJson = await pickerAnswer(
+    flow,
+    'work item type',
+    `${boardsBase}/work-item-types?connection=${connectionId}&azureProject=${azureProject.id}`,
+  );
+  if (typesJson === undefined) return undefined;
+  const types = shape(TypeItems, typesJson, 'work item types').items;
+  const bug = types.find((t) => t.name === TYPE_NAME);
+  notes.push(
+    `pickers: ${azureProjects.length} Azure project(s), the probe project among them; ${types.length} type(s), ${TYPE_NAME} ${bugSupportText(bug)}`,
+  );
+  return { azureProject, bug };
+}
+
+/** What Qualor's analysis of the uploaded report came to. */
+function analysisText(analysed: z.infer<typeof AnalysisSchema> | undefined): string {
+  if (!analysed) return `not done within ${ANALYSIS_WAIT_MS / 60000} minutes`;
+  const error = analysed.error
+    ? `: ${analysed.error.code} ${analysed.error.message.slice(0, 200)}`
+    : '';
+  return `${analysed.status}${error}`;
+}
+
+/**
+ * The open issue: this run's report of main, one finding with markup in its text. Undefined ends
+ * the run; otherwise the issue and the scope the later steps work in.
+ */
+async function openIssue(
+  flow: Flow,
+  azureProject: AzureProjectRef,
+  bug: BugType | undefined,
+): Promise<{ scope: Scope; found: Issue } | undefined> {
+  const { ctx, api, checks, notes } = flow;
+  const analysisId = await uploadReport(
+    flow.qualorUrl,
+    flow.boardsToken,
+    flow.projectKey,
+    boardsReport(flow.projectKey, ctx.stamp, new Date()),
+  );
+  const analysed = await waitFor(
+    async () => {
+      const a = shape(
+        AnalysisSchema,
+        (await api.call('GET', `/api/v0/analyses/${analysisId}`)).json,
+        'analysis',
+      );
+      return a.status === 'succeeded' || a.status === 'failed' ? a : undefined;
+    },
+    { timeoutMs: ANALYSIS_WAIT_MS, intervalMs: 3000 },
+  );
+  if (analysed?.status !== 'succeeded' || !analysed.branch) {
+    checks.push(check('Qualor analyses the report of main', false, analysisText(analysed)));
+    return undefined;
+  }
+  const found = (
+    await api.items(
+      `/api/v0/issues?branchId=${analysed.branch.id}&status=open&engine=${ENGINE}`,
+      IssueSchema,
+    )
+  ).find((i) => i.message === MESSAGE);
+  if (!found) {
+    checks.push(
+      check('the report opens an issue on main', false, 'no open issue with the message'),
+    );
+    return undefined;
+  }
+  notes.push(
+    `issue open on ${analysed.branch.name}; boardsLinkable before the mapping: ${found.boardsLinkable}`,
+  );
+  if (!bug?.supported) {
+    checks.push(
+      check(
+        `the probe project's ${TYPE_NAME} can be mapped`,
+        false,
+        bug ? 'Qualor says it is not supported' : 'not listed',
+      ),
+    );
+    return undefined;
+  }
+  return { scope: { ...flow, azureProject, bug, issueId: found.id }, found };
+}
+
+/**
+ * What an earlier run left (a live link, dismissed so the request makes a new work item, and work
+ * items tagged probe31), and the clean-up and verifications of this run.
+ */
+async function prepareBench(scope: Scope, found: Issue): Promise<void> {
+  const { ctx, api, notes, boardsBase, azureProject } = scope;
+  if (found.boards) {
+    await dismissLink(api, found.boards.id);
+    notes.push(`an earlier run's link (${found.boards.state}) dismissed first`);
+  }
+  const swept = await sweep(ctx, azureProject.id);
+  if (swept.length > 0)
+    notes.push(`${swept.length} earlier work item(s) tagged ${TAG} deleted first`);
+
+  // Clean-up, registered before the calls it undoes (it runs newest first): the mapping goes
+  // last, the tagged work items before it.
+  ctx.cleanup.add('remove the Boards mapping of the bench project', async () => {
+    const res = await api.send('DELETE', boardsBase);
+    if (res.status !== 204 && res.status !== 404) {
+      throw new Error(`HTTP ${res.status} ${problemText(res.json)}`);
+    }
+  });
+  ctx.cleanup.add(`delete the work items tagged ${TAG}`, () => sweep(ctx, azureProject.id));
+  ctx.verifications.push({
+    label: 'the Boards mapping',
+    check: async () => {
+      const got = shape(MappingAnswer, (await api.call('GET', boardsBase)).json, 'mapping');
+      return got.mapping === null
+        ? { ok: true, text: 'the bench project has no Boards mapping' }
+        : { ok: false, text: 'the bench project still has a Boards mapping' };
+    },
+  });
+}
+
+/** Step 1: map the bench project to the probe project, type Bug. False ends the run. */
+async function mapBenchProject(scope: Scope): Promise<boolean> {
+  const { api, checks, boardsBase, azureProject, bug } = scope;
+  const put = await api.send(
+    'PUT',
+    boardsBase,
+    mappingBody(scope.connectionId, azureProject, bug.referenceName, [TAG]),
+  );
+  const mapping = put.status === 200 ? MappingAnswer.safeParse(put.json).data?.mapping : null;
+  checks.push(
+    check(
+      `the bench project is mapped to the probe project, type ${TYPE_NAME} (PUT …/boards)`,
+      mapping?.workItemType.name === TYPE_NAME &&
+        mapping.azureProject.id.toLowerCase() === azureProject.id.toLowerCase() &&
+        mapping.tags.join() === TAG,
+      put.status === 200
+        ? `HTTP 200; type ${mapping?.workItemType.name ?? '?'}, tags ${mapping?.tags.join(', ') ?? '?'}`
+        : `HTTP ${put.status} ${problemText(put.json)}`,
+    ),
+  );
+  return Boolean(mapping);
+}
+
+/** Step 2a: requests a work item for the issue; the pending link, or undefined to end the run. */
+async function requestLink(scope: Scope): Promise<BoardsLink | undefined> {
+  const { ctx, api, checks, notes, boardsBase, azureProject, issueId } = scope;
+  ctx.cleanup.add('dismiss the link and delete its work item', async () => {
+    const now = await readIssue(api, issueId);
+    if (now.boards) {
+      scope.workItemId ??= now.boards.workItemId ?? undefined;
+      await dismissLink(api, now.boards.id);
+    }
+    if (scope.workItemId !== undefined) {
+      await deleteWorkItem(ctx, azureProject.id, scope.workItemId);
+    }
+  });
+  const linkable = (await readIssue(api, issueId)).boardsLinkable;
+  const posted = await api.send('POST', `${boardsBase}/links`, { issueIds: [issueId] });
+  const answered = posted.status === 202 ? LinksAnswer.safeParse(posted.json).data : undefined;
+  const link = answered?.items[0]?.link ?? null;
+  let got = `HTTP ${posted.status} ${problemText(posted.json)}`;
+  if (posted.status === 202) {
+    got = link ? `link ${link.state}` : `skipped ${answered?.items[0]?.skipped ?? '?'}`;
+  }
+  checks.push(
+    check(
+      'a work item is requested for the open issue (POST …/boards/links answers 202 with a pending link)',
+      posted.status === 202 && link?.state === 'pending',
+      got,
+    ),
+  );
+  notes.push(`boardsLinkable once mapped: ${linkable}`);
+  return link ?? undefined;
+}
+
+/** How the created link's URL compares with the work item's web page. */
+function urlVerdict(scope: Scope, url: string | null | undefined, madeId: number | undefined) {
+  if (madeId !== undefined && isWorkItemUrl(url, scope.scmUrl, scope.azureProject.id, madeId)) {
+    return "is the work item's web page";
+  }
+  return url ? 'is another address' : 'absent';
+}
+
+/** Step 2b: waits for the create run; the id of the work item it made, or undefined to end. */
+async function awaitCreatedWorkItem(scope: Scope): Promise<number | undefined> {
+  const { ctx, api, checks, scmUrl, azureProject, issueId } = scope;
+  ctx.log(`link requested; waiting up to ${CREATE_WAIT_MS / 60000} min for the work item`);
+  const requestedAt = Date.now();
+  const settled = await waitFor(
+    async () => {
+      const now = await readIssue(api, issueId);
+      return now.boards && now.boards.state !== 'pending' ? now : undefined;
+    },
+    { timeoutMs: CREATE_WAIT_MS, intervalMs: 5000 },
+  );
+  const createdLink = (settled ?? (await readIssue(api, issueId))).boards;
+  if (typeof createdLink?.workItemId === 'number') scope.workItemId = createdLink.workItemId;
+  const madeId = scope.workItemId;
+  const waited = settled
+    ? ` after ${seconds(requestedAt)} s`
+    : ` after ${CREATE_WAIT_MS / 60000} minutes`;
+  checks.push(
+    check(
+      'Qualor creates the work item within 3 minutes: the link is created, with the work item id and its web URL',
+      createdLink?.state === 'created' &&
+        madeId !== undefined &&
+        isWorkItemUrl(createdLink.url, scmUrl, azureProject.id, madeId),
+      `${linkText(createdLink)}${waited}; url ${urlVerdict(scope, createdLink?.url, madeId)}`,
+    ),
+  );
+  if (createdLink?.state !== 'created' || madeId === undefined) return undefined;
+  ctx.verifications.push({
+    label: `work item ${madeId}`,
+    check: async () => {
+      const res = await ctx.bot.request('GET', witPath(azureProject.id, `/workitems/${madeId}`));
+      const state = str(fieldsOf(res)['System.State']);
+      const stateText = state ? `, ${state}` : '';
+      return res.status === 404 || (res.status === 200 && state === 'Removed')
+        ? {
+            ok: true,
+            text: `work item ${madeId} is deleted (HTTP ${res.status}${stateText})`,
+          }
+        : {
+            ok: false,
+            text: `work item ${madeId} is still there (HTTP ${res.status}, ${state || 'no state'})`,
+          };
+    },
+  });
+  return madeId;
+}
+
+/** Step 3a: the tags and the reference line of the work item as Azure holds it. */
+function checkTagsAndReference(
+  scope: Scope,
+  fields: Record<string, unknown>,
+  linkHex: string,
+): void {
+  const { checks } = scope;
+  const description = str(fields['System.Description']);
+  const tags = tagsOf(fields['System.Tags']);
+  checks.push(
+    check(
+      "the tag qualor, and the mapping's tag",
+      tags.includes('qualor') && tags.includes(TAG),
+      `tags ${tags.join(', ') || 'none'}`,
+    ),
+  );
+  const ref = referenceOf(description);
+  let got = `last paragraph: ${(lastParagraph(description) ?? 'none').slice(0, 120)}`;
+  if (ref) {
+    const which = ref.linkHex === linkHex ? 'this link' : 'ANOTHER link';
+    got = `${ref.key} (${which}, generation ${ref.generation})`;
+  }
+  checks.push(
+    check(
+      "the description's last paragraph is the reference line of this link",
+      ref?.linkHex === linkHex,
+      got,
+    ),
+  );
+}
+
+/** Step 3b: the Hyperlink relation to the issue in Qualor. */
+function checkHyperlink(
+  scope: Scope,
+  relations: { rel: string; url: string }[] | null | undefined,
+): void {
+  const { checks, qualorUrl, project, issueId } = scope;
+  const issuePath = `/projects/${project.id}/issues/${issueId}`;
+  const hyperlink = hyperlinkTo(relations, issuePath);
+  let got = `relations ${(relations ?? []).map((r) => r.rel).join(', ') || 'none'}: none to the issue (QUALOR_PUBLIC_URL unset?)`;
+  if (hyperlink) {
+    const origin =
+      hyperlink === `${qualorUrl}${issuePath}`
+        ? ' on the bench Qualor'
+        : ' on another origin (QUALOR_PUBLIC_URL differs from AZURE_PROBE_QUALOR_URL)';
+    got = `to the issue page${origin}`;
+  }
+  checks.push(check('a Hyperlink relation to the issue in Qualor', hyperlink !== undefined, got));
+}
+
+/** Step 3c: the finding's markup reads back escaped, in the description and in Repro Steps. */
+function checkEscaping(scope: Scope, fields: Record<string, unknown>, linkHex: string): void {
+  const { checks } = scope;
+  const description = str(fields['System.Description']);
+  const stray = strayTags(description);
+  const unescaped = unescapedMarkup(description);
+  const strayText = stray.length > 0 ? `stray tags ${stray.join(', ')}` : 'no stray tag';
+  const markupText =
+    unescaped.length > 0
+      ? `not found escaped: ${unescaped.join(' ')}`
+      : 'its markup reads back escaped';
+  checks.push(
+    check(
+      "the finding's text is escaped: no markup of its own in the description",
+      stray.length === 0 && unescaped.length === 0,
+      `${strayText}; ${markupText}`,
+    ),
+  );
+  const repro = str(fields[REPRO]);
+  const reproRef = referenceOf(repro);
+  let refText = 'absent';
+  if (reproRef) refText = reproRef.linkHex === linkHex ? 'of this link' : 'of ANOTHER link';
+  const escapedText = unescapedMarkup(repro).length > 0 ? 'markup not escaped' : 'markup escaped';
+  checks.push(
+    check(
+      `Repro Steps (a ${TYPE_NAME}) holds the description: the reference line, the text escaped`,
+      reproRef?.linkHex === linkHex &&
+        strayTags(repro).length === 0 &&
+        unescapedMarkup(repro).length === 0,
+      repro === ''
+        ? 'Repro Steps is empty'
+        : `reference ${refText}; stray tags ${strayTags(repro).join(', ') || 'none'}; ${escapedText}`,
+    ),
+  );
+}
+
+/** Step 3: the work item as Azure holds it; its fields. */
+async function checkWorkItem(
+  scope: Scope,
+  link: BoardsLink,
+  madeId: number,
+): Promise<Record<string, unknown>> {
+  const { ctx, notes, azureProject } = scope;
+  const read = await readWorkItem(ctx, azureProject.id, madeId);
+  await rec(ctx, 'work-item', answerOf(read.res));
+  const fields = read.item.fields;
+  const linkHex = link.id.replaceAll('-', '').toLowerCase();
+  checkTagsAndReference(scope, fields, linkHex);
+  checkHyperlink(scope, read.item.relations);
+  checkEscaping(scope, fields, linkHex);
+  const title = str(fields['System.Title']);
+  const titleText =
+    title === MESSAGE
+      ? "is the finding's text as it is"
+      : `differs from the finding's text (${title.length} characters)`;
+  notes.push(
+    `title ${titleText}; type ${str(fields['System.WorkItemType'])}, state ${str(fields['System.State'])}`,
+  );
+  return fields;
+}
+
+/**
+ * Step 4a: a state set in Azure; the state it set, or undefined when there is none to set or
+ * Azure refuses (which ends the run).
+ */
+async function setAzureState(
+  scope: Scope,
+  madeId: number,
+  fields: Record<string, unknown>,
+): Promise<string | undefined> {
+  const { ctx, checks, azureProject } = scope;
+  const current = str(fields['System.State']);
+  const statesRes = ok(
+    await ctx.bot.request(
+      'GET',
+      witPath(
+        azureProject.id,
+        `/workitemtypes/${encodeURIComponent(str(fields['System.WorkItemType']) || TYPE_NAME)}/states`,
+      ),
+    ),
+    'type states',
+  );
+  await rec(ctx, 'type-states', answerOf(statesRes));
+  const target = targetState(shape(StatesSchema, statesRes.json, 'type states').value, current);
+  if (!target) {
+    checks.push(check('a state to set in Azure', false, `none besides ${current}`));
+    return undefined;
+  }
+  const patch = await ctx.bot.request(
+    'PATCH',
+    witPath(azureProject.id, `/workitems/${madeId}`),
+    [{ op: 'add', path: '/fields/System.State', value: target }],
+    { contentType: PATCH_JSON },
+  );
+  await rec(ctx, 'state-patch', answerOf(patch));
+  const patched = str(fieldsOf(patch)['System.State']);
+  checks.push(
+    check(
+      `Azure takes the state ${target} (from ${current})`,
+      patch.status === 200 && patched === target,
+      patch.status < 300
+        ? `HTTP ${patch.status}, state ${patched}`
+        : describeAnswer(patch.status, patch.json),
+    ),
+  );
+  return patch.status >= 300 ? undefined : target;
+}
+
+/** Step 4b: a mapping PUT pulls the pass forward; Qualor reads the state. */
+async function readStateInQualor(scope: Scope, target: string): Promise<void> {
+  const { ctx, api, checks, boardsBase, azureProject, bug, issueId } = scope;
+  const again = await api.send(
+    'PUT',
+    boardsBase,
+    mappingBody(scope.connectionId, azureProject, bug.referenceName, [TAG, STATE_TAG]),
+  );
+  ctx.log(`state ${target} set; waiting up to ${STATE_WAIT_MS / 60000} min for Qualor's pass`);
+  const pulledAt = Date.now();
+  const seen = await waitFor(
+    async () => {
+      const now = await readIssue(api, issueId);
+      return now.boards?.workItemState?.name.toLowerCase() === target.toLowerCase()
+        ? now
+        : undefined;
+    },
+    { timeoutMs: STATE_WAIT_MS, intervalMs: 5000 },
+  );
+  const stateNow = (seen ?? (await readIssue(api, issueId))).boards?.workItemState ?? null;
+  const putText = again.status === 200 ? '' : ` ${problemText(again.json)}`;
+  const readText = seen
+    ? `read after ${seconds(pulledAt)} s`
+    : `not within ${STATE_WAIT_MS / 60000} minutes`;
+  const stateText = stateNow ? `${stateNow.name} (${stateNow.category ?? 'no category'})` : 'none';
+  checks.push(
+    check(
+      `Qualor reads the state ${target} within 3 minutes of a mapping PUT that pulled its pass forward`,
+      again.status === 200 && seen !== undefined,
+      `PUT with tag ${STATE_TAG} added: HTTP ${again.status}${putText}; ${readText}; workItemState ${stateText}`,
+    ),
+  );
+}
+
+/** Step 5: dismisses the link; the work item stays in Azure until the clean-up. */
+async function dismissAndCheck(scope: Scope, link: BoardsLink, madeId: number): Promise<void> {
+  const { ctx, api, checks, azureProject, issueId } = scope;
+  const dismissed = await api.send('DELETE', `/api/v0/boards-links/${link.id}`);
+  const afterDismiss = await readIssue(api, issueId);
+  const still = await ctx.bot.request('GET', witPath(azureProject.id, `/workitems/${madeId}`));
+  checks.push(
+    check(
+      'the link is dismissed: DELETE answers 204, the issue shows no link, the work item stays in Azure',
+      dismissed.status === 204 && afterDismiss.boards === null && still.status === 200,
+      `DELETE HTTP ${dismissed.status}; the issue shows ${linkText(afterDismiss.boards)}, boardsLinkable ${afterDismiss.boardsLinkable}; the work item answers HTTP ${still.status}`,
+    ),
+  );
+}
+
+/** Steps 2 to 5, once the bench project is mapped: request, read, change state, dismiss. */
+async function workItemLifecycle(scope: Scope): Promise<void> {
+  const link = await requestLink(scope);
+  if (!link) return;
+  const madeId = await awaitCreatedWorkItem(scope);
+  if (madeId === undefined) return;
+  const fields = await checkWorkItem(scope, link, madeId);
+  const target = await setAzureState(scope, madeId, fields);
+  if (target === undefined) return;
+  await readStateInQualor(scope, target);
+  await dismissAndCheck(scope, link, madeId);
+}
+
+/** The steps up to the mapped bench project; the scope, or undefined when the run ends there. */
+async function mapped(flow: Flow): Promise<Scope | undefined> {
+  const picked = await pickTargets(flow);
+  if (!picked) return undefined;
+  const opened = await openIssue(flow, picked.azureProject, picked.bug);
+  if (!opened) return undefined;
+  await prepareBench(opened.scope, opened.found);
+  return (await mapBenchProject(opened.scope)) ? opened.scope : undefined;
+}
+
 export const item: ProbeItem = {
   id: 31,
   title:
     'Azure Boards end to end on Azure DevOps: the bench Qualor maps a project, creates a work item for an issue, reads its state, and the link is dismissed',
   async run(ctx) {
-    // The bench Qualor's boards project and connection of the target (Server: bench-server-boards).
-    const bench = benchProject(ctx.target, 'boards');
-    const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL').replace(/\/+$/, '');
-    const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const scmUrl = benchScmUrl(ctx.target);
-    const boardsToken = needEnv(bench.tokenEnv);
-    const projectKey = bench.key;
-    const checks: Check[] = [];
-    const notes: string[] = [];
-    // What a weaker identity's verdict needs, as far as the run got (--qualor-identity).
-    const weak: WeakerSeen = {};
-    const finish = () =>
-      ctx.qualorAs
-        ? weakerDone(ctx, checks, notes, projectKey, weak)
-        : done(ctx, checks, notes, projectKey);
-
-    // The work item is Qualor's, made as its identity (the service principal; Server: the PAT's
-    // owner): its names join the redaction table before anything is recorded.
-    await qualorIdentityId(ctx);
-
-    // ---- The bench Qualor: organisation `bench`, its Azure connection, the item's project.
-    const api = new QualorApi(qualorUrl);
-    await api.login(adminPassword);
-    const org = (
-      await api.items(
-        '/api/v0/organizations',
-        z.object({ id: z.string(), key: z.string() }).loose(),
-      )
-    ).find((o) => o.key === BENCH_ORG);
-    if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
-    const connection = (
-      await api.items(
-        `/api/v0/scm-connections?organizationId=${org.id}`,
-        z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
-      )
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
-    if (!connection)
-      throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
-    weak.bench = { api, orgId: org.id, connectionId: connection.id };
-    const project = (
-      await api.items(
-        `/api/v0/projects?organizationId=${org.id}`,
-        z.object({ id: z.string(), key: z.string() }).loose(),
-      )
-    ).find((p) => p.key === projectKey);
-    if (!project) {
-      throw new Error(
-        `the bench Qualor has no project ${projectKey} (run seed-qualor.mjs --boards)`,
-      );
-    }
-
-    // ---- The probe project and the Bug type, as Qualor's pickers list them.
-    const boardsBase = `/api/v0/projects/${project.id}/boards`;
-    // A weaker identity's pickers may be refused: Qualor's answer is recorded and the run ends there.
-    const picked = async (what: string, path: string): Promise<unknown> => {
-      if (!ctx.qualorAs) return (await api.call('GET', path)).json;
-      const got = await api.send('GET', path);
-      checks.push(
-        check(
-          `Qualor's ${what} picker answers (GET …/boards/${what === 'project' ? 'projects' : 'work-item-types'})`,
-          got.status === 200,
-          got.status === 200 ? 'HTTP 200' : qualorAnswerText(got.status, got.json),
-        ),
-      );
-      return got.status === 200 ? got.json : undefined;
-    };
-    const projectsJson = await picked(
-      'project',
-      `${boardsBase}/projects?connection=${connection.id}`,
-    );
-    if (projectsJson === undefined) return finish();
-    const azureProjects = shape(NamedItems, projectsJson, 'Boards projects').items;
-    const azureProject = azureProjects.find(
-      (p) => p.name.toLowerCase() === ctx.project.toLowerCase(),
-    );
-    if (!azureProject) {
-      const unlisted = `Qualor's project picker does not list the probe project (${azureProjects.length} listed)`;
-      if (!ctx.qualorAs) throw new Error(unlisted);
-      checks.push(check('the probe project is among the Azure projects listed', false, unlisted));
-      return finish();
-    }
-    const typesJson = await picked(
-      'work item type',
-      `${boardsBase}/work-item-types?connection=${connection.id}&azureProject=${azureProject.id}`,
-    );
-    if (typesJson === undefined) return finish();
-    const types = shape(TypeItems, typesJson, 'work item types').items;
-    const bug = types.find((t) => t.name === TYPE_NAME);
-    notes.push(
-      `pickers: ${azureProjects.length} Azure project(s), the probe project among them; ${types.length} type(s), ${TYPE_NAME} ${bug ? (bug.supported ? 'supported' : 'NOT supported') : 'not listed'}`,
-    );
-
-    // ---- The open issue: this run's report of main, one finding with markup in its text.
-    const analysisId = await uploadReport(
-      qualorUrl,
-      boardsToken,
-      projectKey,
-      boardsReport(projectKey, ctx.stamp, new Date()),
-    );
-    const analysed = await waitFor(
-      async () => {
-        const a = shape(
-          AnalysisSchema,
-          (await api.call('GET', `/api/v0/analyses/${analysisId}`)).json,
-          'analysis',
-        );
-        return a.status === 'succeeded' || a.status === 'failed' ? a : undefined;
-      },
-      { timeoutMs: ANALYSIS_WAIT_MS, intervalMs: 3000 },
-    );
-    if (analysed?.status !== 'succeeded' || !analysed.branch) {
-      checks.push(
-        check(
-          'Qualor analyses the report of main',
-          false,
-          analysed
-            ? `${analysed.status}${analysed.error ? `: ${analysed.error.code} ${analysed.error.message.slice(0, 200)}` : ''}`
-            : `not done within ${ANALYSIS_WAIT_MS / 60000} minutes`,
-        ),
-      );
-      return finish();
-    }
-    const found = (
-      await api.items(
-        `/api/v0/issues?branchId=${analysed.branch.id}&status=open&engine=${ENGINE}`,
-        IssueSchema,
-      )
-    ).find((i) => i.message === MESSAGE);
-    if (!found) {
-      checks.push(
-        check('the report opens an issue on main', false, 'no open issue with the message'),
-      );
-      return finish();
-    }
-    const issueId = found.id;
-    notes.push(
-      `issue open on ${analysed.branch.name}; boardsLinkable before the mapping: ${found.boardsLinkable}`,
-    );
-    if (!bug?.supported) {
-      checks.push(
-        check(
-          `the probe project's ${TYPE_NAME} can be mapped`,
-          false,
-          bug ? 'Qualor says it is not supported' : 'not listed',
-        ),
-      );
-      return finish();
-    }
-
-    // ---- What an earlier run left: a live link (dismissed, so the request makes a new work
-    // item) and work items tagged probe31.
-    if (found.boards) {
-      await dismissLink(api, found.boards.id);
-      notes.push(`an earlier run's link (${found.boards.state}) dismissed first`);
-    }
-    const swept = await sweep(ctx, azureProject.id);
-    if (swept.length > 0)
-      notes.push(`${swept.length} earlier work item(s) tagged ${TAG} deleted first`);
-
-    // Clean-up, registered before the calls it undoes (it runs newest first): the mapping goes
-    // last, the tagged work items before it.
-    ctx.cleanup.add('remove the Boards mapping of the bench project', async () => {
-      const res = await api.send('DELETE', boardsBase);
-      if (res.status !== 204 && res.status !== 404) {
-        throw new Error(`HTTP ${res.status} ${problemText(res.json)}`);
-      }
-    });
-    ctx.cleanup.add(`delete the work items tagged ${TAG}`, () => sweep(ctx, azureProject.id));
-    ctx.verifications.push({
-      label: 'the Boards mapping',
-      check: async () => {
-        const got = shape(MappingAnswer, (await api.call('GET', boardsBase)).json, 'mapping');
-        return got.mapping === null
-          ? { ok: true, text: 'the bench project has no Boards mapping' }
-          : { ok: false, text: 'the bench project still has a Boards mapping' };
-      },
-    });
-
-    // ---- 1. Map the bench project to the probe project, type Bug.
-    const put = await api.send(
-      'PUT',
-      boardsBase,
-      mappingBody(connection.id, azureProject, bug.referenceName, [TAG]),
-    );
-    const mapping = put.status === 200 ? MappingAnswer.safeParse(put.json).data?.mapping : null;
-    checks.push(
-      check(
-        `the bench project is mapped to the probe project, type ${TYPE_NAME} (PUT …/boards)`,
-        mapping?.workItemType.name === TYPE_NAME &&
-          mapping.azureProject.id.toLowerCase() === azureProject.id.toLowerCase() &&
-          mapping.tags.join() === TAG,
-        put.status === 200
-          ? `HTTP 200; type ${mapping?.workItemType.name ?? '?'}, tags ${mapping?.tags.join(', ') ?? '?'}`
-          : `HTTP ${put.status} ${problemText(put.json)}`,
-      ),
-    );
-    if (!mapping) return finish();
-
-    // ---- 2. Request a work item for the issue; the create run makes it.
-    let workItemId: number | undefined;
-    ctx.cleanup.add('dismiss the link and delete its work item', async () => {
-      const now = await readIssue(api, issueId);
-      if (now.boards) {
-        workItemId ??= now.boards.workItemId ?? undefined;
-        await dismissLink(api, now.boards.id);
-      }
-      if (workItemId !== undefined) await deleteWorkItem(ctx, azureProject.id, workItemId);
-    });
-    const linkable = (await readIssue(api, issueId)).boardsLinkable;
-    const posted = await api.send('POST', `${boardsBase}/links`, { issueIds: [issueId] });
-    const answered = posted.status === 202 ? LinksAnswer.safeParse(posted.json).data : undefined;
-    const link = answered?.items[0]?.link ?? null;
-    checks.push(
-      check(
-        'a work item is requested for the open issue (POST …/boards/links answers 202 with a pending link)',
-        posted.status === 202 && link?.state === 'pending',
-        posted.status === 202
-          ? link
-            ? `link ${link.state}`
-            : `skipped ${answered?.items[0]?.skipped ?? '?'}`
-          : `HTTP ${posted.status} ${problemText(posted.json)}`,
-      ),
-    );
-    notes.push(`boardsLinkable once mapped: ${linkable}`);
-    if (!link) return finish();
-    ctx.log(`link requested; waiting up to ${CREATE_WAIT_MS / 60000} min for the work item`);
-    const requestedAt = Date.now();
-    const settled = await waitFor(
-      async () => {
-        const now = await readIssue(api, issueId);
-        return now.boards && now.boards.state !== 'pending' ? now : undefined;
-      },
-      { timeoutMs: CREATE_WAIT_MS, intervalMs: 5000 },
-    );
-    const createdLink = (settled ?? (await readIssue(api, issueId))).boards;
-    if (typeof createdLink?.workItemId === 'number') workItemId = createdLink.workItemId;
-    const madeId = workItemId;
-    checks.push(
-      check(
-        'Qualor creates the work item within 3 minutes: the link is created, with the work item id and its web URL',
-        createdLink?.state === 'created' &&
-          madeId !== undefined &&
-          isWorkItemUrl(createdLink.url, scmUrl, azureProject.id, madeId),
-        `${linkText(createdLink)}${settled ? ` after ${seconds(requestedAt)} s` : ` after ${CREATE_WAIT_MS / 60000} minutes`}; url ${
-          madeId !== undefined && isWorkItemUrl(createdLink?.url, scmUrl, azureProject.id, madeId)
-            ? "is the work item's web page"
-            : createdLink?.url
-              ? 'is another address'
-              : 'absent'
-        }`,
-      ),
-    );
-    if (createdLink?.state !== 'created' || madeId === undefined) return finish();
-    ctx.verifications.push({
-      label: `work item ${madeId}`,
-      check: async () => {
-        const res = await ctx.bot.request('GET', witPath(azureProject.id, `/workitems/${madeId}`));
-        const state = str(fieldsOf(res)['System.State']);
-        return res.status === 404 || (res.status === 200 && state === 'Removed')
-          ? {
-              ok: true,
-              text: `work item ${madeId} is deleted (HTTP ${res.status}${state ? `, ${state}` : ''})`,
-            }
-          : {
-              ok: false,
-              text: `work item ${madeId} is still there (HTTP ${res.status}, ${state || 'no state'})`,
-            };
-      },
-    });
-
-    // ---- 3. The work item as Azure holds it.
-    const read = await readWorkItem(ctx, azureProject.id, madeId);
-    await rec(ctx, 'work-item', answerOf(read.res));
-    const fields = read.item.fields;
-    const description = str(fields['System.Description']);
-    const tags = tagsOf(fields['System.Tags']);
-    checks.push(
-      check(
-        "the tag qualor, and the mapping's tag",
-        tags.includes('qualor') && tags.includes(TAG),
-        `tags ${tags.join(', ') || 'none'}`,
-      ),
-    );
-    const linkHex = link.id.replaceAll('-', '').toLowerCase();
-    const ref = referenceOf(description);
-    checks.push(
-      check(
-        "the description's last paragraph is the reference line of this link",
-        ref?.linkHex === linkHex,
-        ref
-          ? `${ref.key} (${ref.linkHex === linkHex ? 'this link' : 'ANOTHER link'}, generation ${ref.generation})`
-          : `last paragraph: ${(lastParagraph(description) ?? 'none').slice(0, 120)}`,
-      ),
-    );
-    const issuePath = `/projects/${project.id}/issues/${issueId}`;
-    const hyperlink = hyperlinkTo(read.item.relations, issuePath);
-    checks.push(
-      check(
-        'a Hyperlink relation to the issue in Qualor',
-        hyperlink !== undefined,
-        hyperlink
-          ? `to the issue page${hyperlink === `${qualorUrl}${issuePath}` ? ' on the bench Qualor' : ' on another origin (QUALOR_PUBLIC_URL differs from AZURE_PROBE_QUALOR_URL)'}`
-          : `relations ${(read.item.relations ?? []).map((r) => r.rel).join(', ') || 'none'}: none to the issue (QUALOR_PUBLIC_URL unset?)`,
-      ),
-    );
-    const stray = strayTags(description);
-    const unescaped = unescapedMarkup(description);
-    checks.push(
-      check(
-        "the finding's text is escaped: no markup of its own in the description",
-        stray.length === 0 && unescaped.length === 0,
-        `${stray.length > 0 ? `stray tags ${stray.join(', ')}` : 'no stray tag'}; ${
-          unescaped.length > 0
-            ? `not found escaped: ${unescaped.join(' ')}`
-            : 'its markup reads back escaped'
-        }`,
-      ),
-    );
-    const repro = str(fields[REPRO]);
-    const reproRef = referenceOf(repro);
-    checks.push(
-      check(
-        `Repro Steps (a ${TYPE_NAME}) holds the description: the reference line, the text escaped`,
-        reproRef?.linkHex === linkHex &&
-          strayTags(repro).length === 0 &&
-          unescapedMarkup(repro).length === 0,
-        repro === ''
-          ? 'Repro Steps is empty'
-          : `reference ${reproRef ? (reproRef.linkHex === linkHex ? 'of this link' : 'of ANOTHER link') : 'absent'}; stray tags ${strayTags(repro).join(', ') || 'none'}; ${unescapedMarkup(repro).length > 0 ? 'markup not escaped' : 'markup escaped'}`,
-      ),
-    );
-    notes.push(
-      `title ${str(fields['System.Title']) === MESSAGE ? "is the finding's text as it is" : `differs from the finding's text (${str(fields['System.Title']).length} characters)`}; type ${str(fields['System.WorkItemType'])}, state ${str(fields['System.State'])}`,
-    );
-
-    // ---- 4. A state set in Azure; a mapping PUT pulls the pass forward; Qualor reads the state.
-    const current = str(fields['System.State']);
-    const statesRes = ok(
-      await ctx.bot.request(
-        'GET',
-        witPath(
-          azureProject.id,
-          `/workitemtypes/${encodeURIComponent(str(fields['System.WorkItemType']) || TYPE_NAME)}/states`,
-        ),
-      ),
-      'type states',
-    );
-    await rec(ctx, 'type-states', answerOf(statesRes));
-    const target = targetState(shape(StatesSchema, statesRes.json, 'type states').value, current);
-    if (!target) {
-      checks.push(check('a state to set in Azure', false, `none besides ${current}`));
-      return finish();
-    }
-    const patch = await ctx.bot.request(
-      'PATCH',
-      witPath(azureProject.id, `/workitems/${madeId}`),
-      [{ op: 'add', path: '/fields/System.State', value: target }],
-      { contentType: PATCH_JSON },
-    );
-    await rec(ctx, 'state-patch', answerOf(patch));
-    const patched = str(fieldsOf(patch)['System.State']);
-    checks.push(
-      check(
-        `Azure takes the state ${target} (from ${current})`,
-        patch.status === 200 && patched === target,
-        patch.status < 300
-          ? `HTTP ${patch.status}, state ${patched}`
-          : describeAnswer(patch.status, patch.json),
-      ),
-    );
-    if (patch.status >= 300) return finish();
-    const again = await api.send(
-      'PUT',
-      boardsBase,
-      mappingBody(connection.id, azureProject, bug.referenceName, [TAG, STATE_TAG]),
-    );
-    ctx.log(`state ${target} set; waiting up to ${STATE_WAIT_MS / 60000} min for Qualor's pass`);
-    const pulledAt = Date.now();
-    const seen = await waitFor(
-      async () => {
-        const now = await readIssue(api, issueId);
-        return now.boards?.workItemState?.name.toLowerCase() === target.toLowerCase()
-          ? now
-          : undefined;
-      },
-      { timeoutMs: STATE_WAIT_MS, intervalMs: 5000 },
-    );
-    const stateNow = (seen ?? (await readIssue(api, issueId))).boards?.workItemState ?? null;
-    checks.push(
-      check(
-        `Qualor reads the state ${target} within 3 minutes of a mapping PUT that pulled its pass forward`,
-        again.status === 200 && seen !== undefined,
-        `PUT with tag ${STATE_TAG} added: HTTP ${again.status}${again.status === 200 ? '' : ` ${problemText(again.json)}`}; ${
-          seen ? `read after ${seconds(pulledAt)} s` : `not within ${STATE_WAIT_MS / 60000} minutes`
-        }; workItemState ${stateNow ? `${stateNow.name} (${stateNow.category ?? 'no category'})` : 'none'}`,
-      ),
-    );
-
-    // ---- 5. Dismiss the link; the work item stays in Azure until the clean-up.
-    const dismissed = await api.send('DELETE', `/api/v0/boards-links/${link.id}`);
-    const afterDismiss = await readIssue(api, issueId);
-    const still = await ctx.bot.request('GET', witPath(azureProject.id, `/workitems/${madeId}`));
-    checks.push(
-      check(
-        'the link is dismissed: DELETE answers 204, the issue shows no link, the work item stays in Azure',
-        dismissed.status === 204 && afterDismiss.boards === null && still.status === 200,
-        `DELETE HTTP ${dismissed.status}; the issue shows ${linkText(afterDismiss.boards)}, boardsLinkable ${afterDismiss.boardsLinkable}; the work item answers HTTP ${still.status}`,
-      ),
-    );
-    return finish();
+    const flow = await openBench(ctx);
+    const scope = await mapped(flow);
+    if (scope) await workItemLifecycle(scope);
+    return ctx.qualorAs
+      ? weakerDone(ctx, flow.checks, flow.notes, flow.projectKey, flow.weak)
+      : done(ctx, flow.checks, flow.notes, flow.projectKey);
   },
 };
 

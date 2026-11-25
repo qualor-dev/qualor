@@ -76,12 +76,9 @@ export function errorFacts(
 ): { status: number; typeKey: string; message: string } {
   const body = json && typeof json === 'object' ? (json as Record<string, unknown>) : {};
   const typeKey = typeof body['typeKey'] === 'string' ? body['typeKey'] : 'none';
-  const message =
-    typeof body['message'] === 'string'
-      ? body['message'].slice(0, 300)
-      : typeof json === 'string'
-        ? json.slice(0, 200)
-        : '';
+  let message = '';
+  if (typeof body['message'] === 'string') message = body['message'].slice(0, 300);
+  else if (typeof json === 'string') message = json.slice(0, 200);
   return { status, typeKey, message };
 }
 
@@ -106,7 +103,8 @@ export function shapeOf(json: unknown, depth = 2): string {
 export function describeAnswer(status: number, json: unknown): string {
   if (status >= 200 && status < 300) return `HTTP ${status} ${shapeOf(json)}`;
   const f = errorFacts(status, json);
-  return `HTTP ${status} ${f.typeKey}${f.message ? `: ${f.message}` : ''}`;
+  const message = f.message ? `: ${f.message}` : '';
+  return `HTTP ${status} ${f.typeKey}${message}`;
 }
 
 /** A copy of `value` with every string longer than `max` cut to its start and its length. */
@@ -211,10 +209,11 @@ export function findingsLine(findings: readonly CaseFinding[]): string {
  * none for `null`) and the creation time.
  */
 export function reconcileWiql(since: string, creator: string | null = '@Me'): string {
-  const who =
-    creator === null
-      ? ''
-      : ` AND [System.CreatedBy] = ${creator === '@Me' ? '@Me' : `'${creator.replace(/'/g, "''")}'`}`;
+  let who = '';
+  if (creator !== null) {
+    const quoted = creator === '@Me' ? '@Me' : `'${creator.replace(/'/g, "''")}'`;
+    who = ` AND [System.CreatedBy] = ${quoted}`;
+  }
   return (
     "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.Tags] CONTAINS 'qualor'" +
     `${who} AND [System.CreatedDate] >= '${since}' ORDER BY [System.Id] DESC`
@@ -453,19 +452,27 @@ async function stepA(env: Env, note: Note, projects: AzureResponse): Promise<voi
       continuationToken: page2.headers['x-ms-continuationtoken'] ?? null,
     });
     const ids = ProjectsSchema.safeParse(page2.json);
-    page2Line = `continuationToken=<token> gives ${describe(page2)}, ${
-      ids.success
-        ? ids.data.value.some((p) => page1Ids.includes(p.id))
-          ? 'the same project again'
-          : 'another project'
-        : 'no list'
-    }`;
+    let verdict = 'no list';
+    if (ids.success) {
+      verdict = ids.data.value.some((p) => page1Ids.includes(p.id))
+        ? 'the same project again'
+        : 'another project';
+    }
+    page2Line = `continuationToken=<token> gives ${describe(page2)}, ${verdict}`;
   }
   const skip = await ctx.bot.request('GET', '/_apis/projects?$top=1&$skip=1');
   const skipIds = ProjectsSchema.safeParse(skip.json);
+  const tokenText = token ? `present (${token.length} characters)` : 'absent';
+  let skipText = 'no list';
+  if (skipIds.success) {
+    const again = skipIds.data.value.some((p) => page1Ids.includes(p.id))
+      ? ' (the first page again)'
+      : '';
+    skipText = `${skipIds.data.value.length} listed${again}`;
+  }
   note(
-    `projects $top=1: ${page1Ids.length} listed, x-ms-continuationtoken ${token ? `present (${token.length} characters)` : 'absent'}; ${page2Line}; ` +
-      `$skip=1 gives ${describe(skip)}, ${skipIds.success ? `${skipIds.data.value.length} listed${skipIds.data.value.some((p) => page1Ids.includes(p.id)) ? ' (the first page again)' : ''}` : 'no list'}`,
+    `projects $top=1: ${page1Ids.length} listed, x-ms-continuationtoken ${tokenText}; ${page2Line}; ` +
+      `$skip=1 gives ${describe(skip)}, ${skipText}`,
   );
 
   const nodes = await ctx.bot.request('GET', wit(agile, '/classificationnodes?$depth=10'));
@@ -569,9 +576,8 @@ async function stepC(env: Env, note: Note): Promise<void> {
     contentType: 'application/json',
   });
   await rec(env, 'c-json-content-type', answerOf(made.res));
-  note(
-    `create sent as application/json: ${describe(made.res)}${made.tracked ? `; it MADE work item ${made.tracked.id}` : ''}`,
-  );
+  const madeText = made.tracked ? `; it MADE work item ${made.tracked.id}` : '';
+  note(`create sent as application/json: ${describe(made.res)}${madeText}`);
 }
 
 /** d. (§7.12) `validateOnly=true` with the full body, an unknown type and an unknown area path. */
@@ -600,10 +606,11 @@ async function stepD(env: Env, note: Note): Promise<void> {
       )
     ).json,
   );
+  const trackedText = v.tracked ? ` (work item ${v.tracked.id} MADE)` : '';
   note(
     `validateOnly=true, full body: ${describe(v.res)}; answer id ${JSON.stringify(rawId ?? null)}, ` +
       `rev ${str(v.res.json && typeof v.res.json === 'object' ? (v.res.json as { rev?: unknown }).rev : undefined)}; ` +
-      `WIQL by its title finds ${found.length} work item(s)${v.tracked ? ` (work item ${v.tracked.id} MADE)` : ''}`,
+      `WIQL by its title finds ${found.length} work item(s)${trackedText}`,
   );
   const noType = await create(env, agile, 'NoSuchType30', full(agile.name), {
     query: '?validateOnly=true',
@@ -644,11 +651,10 @@ async function stepE(env: Env, note: Note): Promise<void> {
   ]);
   await rec(env, 'e-big-description', answerOf(huge.res));
   const stored = fieldsOf(huge.res)['System.Description'];
+  const storedText = typeof stored === 'string' ? `${stored.length} characters` : 'no description';
   note(
     `create with a ${(Buffer.byteLength(big) / 1024 / 1024).toFixed(2)} MiB description (${big.length} characters): ${describe(huge.res)}` +
-      (huge.res.status < 300
-        ? `; stored ${typeof stored === 'string' ? `${stored.length} characters` : 'no description'}`
-        : ''),
+      (huge.res.status < 300 ? `; stored ${storedText}` : ''),
   );
 
   const noProject = await create(env, { id: NO_PROJECT, name: 'none' }, 'Bug', [
@@ -656,6 +662,40 @@ async function stepE(env: Env, note: Note): Promise<void> {
   ]);
   await rec(env, 'e-no-project', answerOf(noProject.res));
   note(`create in a project GUID that does not exist: ${describe(noProject.res)}`);
+}
+
+/** Whether a WIQL answer lists both, one or neither of the ids. */
+function listsWhich(res: AzureResponse, ids: number[]): string {
+  if (res.status >= 300) return 'refused';
+  const got = wiqlIds(res.json);
+  const n = ids.filter((id) => got.includes(id)).length;
+  if (n === 2) return 'lists both';
+  return n === 0 ? 'lists neither' : 'lists one';
+}
+
+/** Polls the precise reconcile query until both ids are listed, it is refused, or the wait ends. */
+async function pollWiql(
+  env: Env,
+  agile: Project,
+  query: string,
+  ids: number[],
+  answered: number,
+): Promise<{ last: AzureResponse | undefined; listedAfter: number | undefined; polls: number }> {
+  let last: AzureResponse | undefined;
+  let listedAfter: number | undefined;
+  let polls = 0;
+  while (Date.now() - answered <= WIQL_WAIT_MS) {
+    polls++;
+    last = await wiql(env, agile, query, '?timePrecision=true');
+    if (last.status >= 300) break;
+    const got = wiqlIds(last.json);
+    if (ids.every((id) => got.includes(id))) {
+      listedAfter = Date.now() - answered;
+      break;
+    }
+    await sleep(WIQL_POLL_MS);
+  }
+  return { last, listedAfter, polls };
 }
 
 /** f. (§7.3) WIQL reconciliation: lag, `@Me`, time precision, `$top`. */
@@ -676,34 +716,26 @@ async function stepF(env: Env, note: Note): Promise<void> {
   const creator = fieldsOf(first.res)['System.CreatedBy'];
 
   const precise = reconcileWiql(since);
-  let last: AzureResponse | undefined;
-  let listedAfter: number | undefined;
-  let polls = 0;
-  while (Date.now() - answered <= WIQL_WAIT_MS) {
-    polls++;
-    last = await wiql(env, agile, precise, '?timePrecision=true');
-    if (last.status >= 300) break;
-    const got = wiqlIds(last.json);
-    if (ids.every((id) => got.includes(id))) {
-      listedAfter = Date.now() - answered;
-      break;
-    }
-    await sleep(WIQL_POLL_MS);
-  }
+  const { last, listedAfter, polls } = await pollWiql(env, agile, precise, ids, answered);
   if (last) await rec(env, 'f-wiql-precise', answerOf(last));
+  let listedText = `both ids NOT listed within ${WIQL_WAIT_MS / 1000} s (${polls} queries; last listed ${last ? wiqlIds(last.json).length : 0})`;
+  if (listedAfter !== undefined) {
+    listedText = `both ids listed ${(listedAfter / 1000).toFixed(1)} s after the second create answered (${polls} queries)`;
+  }
   note(
     `WIQL tag + CreatedBy = @Me + CreatedDate >= <ISO 1 min before> with timePrecision=true: ${last ? describe(last) : 'not sent'}; ` +
-      (listedAfter !== undefined
-        ? `both ids listed ${(listedAfter / 1000).toFixed(1)} s after the second create answered (${polls} queries)`
-        : `both ids NOT listed within ${WIQL_WAIT_MS / 1000} s (${polls} queries; last listed ${last ? wiqlIds(last.json).length : 0})`),
+      listedText,
   );
 
   const without = await wiql(env, agile, reconcileWiql(since, null), '?timePrecision=true');
   await rec(env, 'f-wiql-no-creator', answerOf(without));
   const withoutIds = wiqlIds(without.json);
+  let meText = 'cannot be judged (nothing listed)';
+  if (listedAfter !== undefined) meText = 'matches this identity';
+  else if (withoutIds.length > 0) meText = 'does NOT match this identity';
   note(
     `the same without the CreatedBy clause: ${describe(without)}; lists both: ${ids.every((id) => withoutIds.includes(id)) ? 'yes' : 'no'}; ` +
-      `so @Me ${listedAfter !== undefined ? 'matches this identity' : withoutIds.length > 0 ? 'does NOT match this identity' : 'cannot be judged (nothing listed)'}`,
+      `so @Me ${meText}`,
   );
   if (listedAfter === undefined && creator && typeof creator === 'object') {
     const c = creator as { displayName?: unknown; uniqueName?: unknown };
@@ -716,12 +748,7 @@ async function stepF(env: Env, note: Note): Promise<void> {
     );
   }
 
-  const listsBoth = (res: AzureResponse): string => {
-    if (res.status >= 300) return 'refused';
-    const got = wiqlIds(res.json);
-    const n = ids.filter((id) => got.includes(id)).length;
-    return n === 2 ? 'lists both' : n === 0 ? 'lists neither' : 'lists one';
-  };
+  const listsBoth = (res: AzureResponse): string => listsWhich(res, ids);
   const plain = await wiql(env, agile, precise);
   await rec(env, 'f-wiql-plain-time', answerOf(plain));
   note(
@@ -921,10 +948,11 @@ async function stepH(env: Env, note: Note): Promise<void> {
   const stored = (name: string): CaseFinding[] => caseFindings(str(f[name]));
   const texts = list.map((c) => c.text).join('');
   const rendered = list.map((c) => c.renderedText ?? '').join('');
+  const renderedText = rendered.length > 0 ? `${rendered.length} characters` : 'empty';
   note(
     `read back: CommentCount ${str(f['System.CommentCount'])}, ${list.length} comments, mentions listed ${list.reduce((n, c) => n + (c.mentions?.length ?? 0), 0)}, ` +
       `relations ${relations.map((r) => r.rel).join(', ') || 'none'} (${relations.length > 1 ? 'NEW relations appeared' : 'no new relation'}); ` +
-      `renderedText ${rendered.length > 0 ? `${rendered.length} characters` : 'empty'}`,
+      `renderedText ${renderedText}`,
   );
   const sets: [string, CaseFinding[]][] = [
     ['System.Description', stored('System.Description')],
@@ -961,18 +989,22 @@ async function stepJ(env: Env, note: Note): Promise<void> {
     await rec(env, `j-tag-${n}`, answerOf(res));
     const tags = tagsOf(fieldsOf(res)['System.Tags']);
     if (res.status < 300) made.push(...tags.filter((t) => t !== 'qualor'));
-    note(
-      `a ${n}-character tag: ${describe(res)}${res.status < 300 ? `; stored tag lengths ${tags.map((t) => t.length).join(', ')}` : ''}`,
-    );
+    const lengths =
+      res.status < 300 ? `; stored tag lengths ${tags.map((t) => t.length).join(', ')}` : '';
+    note(`a ${n}-character tag: ${describe(res)}${lengths}`);
   }
   const comma = await update(env, bug, [field('System.Tags', 'qualor; probe30-a,b')]);
   await rec(env, 'j-tag-comma', answerOf(comma));
   const ctags = tagsOf(fieldsOf(comma)['System.Tags']);
   if (comma.status < 300) made.push(...ctags.filter((t) => t !== 'qualor'));
   const short = ctags.filter((t) => t.length < 20);
-  note(
-    `tags "qualor; probe30-a,b": ${describe(comma)}${comma.status < 300 ? `; short tags stored ${JSON.stringify(short)} (a comma ${short.includes('b') ? 'splits' : 'does not split'} a tag); ${ctags.length - short.length} long tags still there, so PATCH add on System.Tags ${ctags.length > 3 ? 'adds to the tags already there' : 'replaces them'}` : ''}`,
-  );
+  let commaText = '';
+  if (comma.status < 300) {
+    const splits = short.includes('b') ? 'splits' : 'does not split';
+    const effect = ctags.length > 3 ? 'adds to the tags already there' : 'replaces them';
+    commaText = `; short tags stored ${JSON.stringify(short)} (a comma ${splits} a tag); ${ctags.length - short.length} long tags still there, so PATCH add on System.Tags ${effect}`;
+  }
+  note(`tags "qualor; probe30-a,b": ${describe(comma)}${commaText}`);
   // Best effort: unused tags also expire on their own; a refusal only goes to the console.
   ctx.cleanup.add('delete the probe tags', async () => {
     for (const tag of new Set(made)) {
@@ -1050,9 +1082,8 @@ async function stepK(env: Env, note: Note): Promise<void> {
     await rec(env, `k-states-${label}`, answerOf(res));
     const states = shape(StatesSchema, res.json, `${label} Bug states`).value;
     lists[label] = states.map((s) => s.name);
-    note(
-      `${label} Bug states: ${describe(res)}; ${states.map((s) => `${s.name}:${s.category ?? '?'}`).join(', ')}`,
-    );
+    const stateList = states.map((s) => `${s.name}:${s.category ?? '?'}`).join(', ');
+    note(`${label} Bug states: ${describe(res)}; ${stateList}`);
   }
   const bug = env.bug ?? (await plainItem(env, env.agile, 'Bug', 'removed'));
   const listed = lists['agile']?.includes('Removed') ?? false;
@@ -1181,7 +1212,9 @@ export const item: ProbeItem = {
         note(`NO ANSWER: ${(err as Error).name}: ${(err as Error).message}`);
       }
     }
-    const answer = answered === steps.length ? 'yes' : answered > 0 ? 'partly' : 'no';
+    let answer: 'yes' | 'partly' | 'no' = 'no';
+    if (answered === steps.length) answer = 'yes';
+    else if (answered > 0) answer = 'partly';
     return result(ctx, answer, lines.join('\n'));
   },
 };

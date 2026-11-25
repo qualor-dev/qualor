@@ -18,6 +18,7 @@ import {
   threadsPath,
   waitFor,
   type ProbeContext,
+  type Answer,
   type ProbeItem,
 } from './common.js';
 
@@ -358,7 +359,9 @@ export const item: ProbeItem = {
         `without the expected basic auth: ${sorted.badAuth}`,
     );
     const found = sorted.comments.size + (sorted.updates.length > 0 ? 1 : 0);
-    const answer = found === 4 ? 'yes' : found > 0 ? 'partly' : 'no';
+    let answer: Answer = 'no';
+    if (found === 4) answer = 'yes';
+    else if (found > 0) answer = 'partly';
     return result(ctx, answer, lines.join('\n\n'));
   },
 };

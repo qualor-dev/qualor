@@ -56,7 +56,8 @@ export function answerLine(res: { status: number; json: unknown }): string {
     return `HTTP ${res.status}, ${u.success ? 'succeeded' : 'NOT made'}, updateStatus ${u.updateStatus}`;
   }
   const type = (res.json as { typeKey?: unknown } | null)?.typeKey;
-  return `HTTP ${res.status}${typeof type === 'string' && TYPE_KEY.test(type) ? ` ${type}` : ''}: ${messageOf(res.json)}`;
+  const typeText = typeof type === 'string' && TYPE_KEY.test(type) ? ` ${type}` : '';
+  return `HTTP ${res.status}${typeText}: ${messageOf(res.json)}`;
 }
 
 /** Whether Azure DevOps refused: not a 2xx, or a 2xx ref update it did not make. */
@@ -74,15 +75,15 @@ export function qualorAnswerText(status: number, json: unknown): string {
     errors?: { path?: unknown; message?: unknown }[];
   };
   const first = Array.isArray(p.errors) ? p.errors[0] : undefined;
-  const message =
-    first && typeof first.message === 'string'
-      ? `${typeof first.path === 'string' ? `${first.path}: ` : ''}${first.message}`
-      : typeof p.detail === 'string'
-        ? p.detail
-        : typeof p.title === 'string'
-          ? p.title
-          : '';
-  return `HTTP ${status}${typeof p.code === 'string' ? ` ${p.code}` : ''}${message ? `: ${message.slice(0, 300)}` : ''}`;
+  let message = '';
+  if (first && typeof first.message === 'string') {
+    const path = typeof first.path === 'string' ? `${first.path}: ` : '';
+    message = `${path}${first.message}`;
+  } else if (typeof p.detail === 'string') message = p.detail;
+  else if (typeof p.title === 'string') message = p.title;
+  const code = typeof p.code === 'string' ? ` ${p.code}` : '';
+  const tail = message ? `: ${message.slice(0, 300)}` : '';
+  return `HTTP ${status}${code}${tail}`;
 }
 
 /** Who Qualor acts as, for the texts: the bot's names as before, else the weaker identity's. */
@@ -179,9 +180,12 @@ export async function qualorConnectionRecord(
     ? (items.find((c) => (c as { id?: unknown } | null)?.id === connectionId) as
         { problem?: { code?: unknown; at?: unknown } | null } | undefined)
     : undefined;
+  const problemText = found?.problem
+    ? `${String(found.problem.code)} since ${String(found.problem.at)}`
+    : 'none';
   lines.push(
     found
-      ? `Qualor's connection problem: ${found.problem ? `${String(found.problem.code)} since ${String(found.problem.at)}` : 'none'}`
+      ? `Qualor's connection problem: ${problemText}`
       : `Qualor's connection: not read (HTTP ${listed.status})`,
   );
   if (projectRef !== undefined) {
@@ -193,9 +197,13 @@ export async function qualorConnectionRecord(
       problem?: { code?: unknown; message?: unknown } | null;
       missingAccess?: unknown;
     } | null;
+    const testText =
+      t?.ok === true
+        ? 'ok'
+        : `failed, ${String(t?.problem?.code ?? '?')}: ${String(t?.problem?.message ?? '')}`;
     lines.push(
       tested.status === 200 && t
-        ? `Qualor's connection test: ${t.ok === true ? 'ok' : `failed, ${String(t.problem?.code ?? '?')}: ${String(t.problem?.message ?? '')}`}; missingAccess ${JSON.stringify(t.missingAccess ?? null)}`
+        ? `Qualor's connection test: ${testText}; missingAccess ${JSON.stringify(t.missingAccess ?? null)}`
         : `Qualor's connection test: ${qualorAnswerText(tested.status, tested.json)}`,
     );
   }

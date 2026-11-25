@@ -282,63 +282,67 @@ export type AuthKind = 'pat' | 'secret' | 'certificate';
 /** The identities a bench Qualor connection can hold besides the bot (seed-qualor.mjs --identity). */
 export type WeakerIdentity = Exclude<QualorIdentity, 'bot'>;
 
-/**
- * The target, the items a `--items 1,3,4` list names (all known items when absent) and the main
- * identity's credential kind `--auth pat|secret|certificate` (pat when absent; Entra kinds on
- * services only).
- */
-export function parseArgs(argv: string[]): {
-  target: TargetName;
-  items?: number[];
-  cleanupManual?: true;
-  auth?: AuthKind;
-  verifyApply?: number;
-  qualorIdentity?: WeakerIdentity;
-} {
-  let target: string | undefined;
-  let items: number[] | undefined;
-  let cleanupManual = false;
-  let auth: AuthKind | undefined;
-  let verifyApply: number | undefined;
-  let qualorIdentity: QualorIdentity | undefined;
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    const [flag, inline] = (arg ?? '').split('=', 2);
-    const value = (): string => {
-      const v = inline ?? argv[++i];
-      if (v === undefined) throw new Error(`${flag} needs a value`);
-      return v;
-    };
-    if (flag === '--target') target = value();
-    else if (flag === '--auth') {
-      const kind = value();
-      if (kind !== 'pat' && kind !== 'secret' && kind !== 'certificate') {
-        throw new Error(`--auth pat|secret|certificate, not ${kind}`);
-      }
-      auth = kind;
-    } else if (flag === '--qualor-identity') {
-      const who = value();
-      if (who !== 'bot' && who !== 'contributor' && who !== 'minimal-pat') {
-        throw new Error(`--qualor-identity bot|contributor|minimal-pat, not ${who}`);
-      }
-      qualorIdentity = who;
-    } else if (flag === '--verify-apply') {
-      const raw = value();
-      const n = Number(raw);
-      if (!Number.isInteger(n) || n <= 0) throw new Error(`not a pull request id: ${raw}`);
-      verifyApply = n;
-    } else if (flag === '--cleanup-manual' && inline === undefined) cleanupManual = true;
-    else if (flag === '--items') {
-      items = value()
-        .split(',')
-        .filter((s) => s.trim().length > 0)
-        .map((s) => {
-          const n = Number(s.trim());
-          if (!Number.isInteger(n) || n <= 0) throw new Error(`not an item number: ${s}`);
-          return n;
-        });
-    } else if (arg !== '--') throw new Error(`unknown argument: ${arg}`);
+interface ParsedFlags {
+  target: string | undefined;
+  items: number[] | undefined;
+  cleanupManual: boolean;
+  auth: AuthKind | undefined;
+  verifyApply: number | undefined;
+  qualorIdentity: QualorIdentity | undefined;
+}
+
+function parseAuthKind(kind: string): AuthKind {
+  if (kind !== 'pat' && kind !== 'secret' && kind !== 'certificate') {
+    throw new Error(`--auth pat|secret|certificate, not ${kind}`);
   }
+  return kind;
+}
+
+function parseIdentity(who: string): QualorIdentity {
+  if (who !== 'bot' && who !== 'contributor' && who !== 'minimal-pat') {
+    throw new Error(`--qualor-identity bot|contributor|minimal-pat, not ${who}`);
+  }
+  return who;
+}
+
+function parsePrId(raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`not a pull request id: ${raw}`);
+  return n;
+}
+
+function parseItemList(raw: string): number[] {
+  return raw
+    .split(',')
+    .filter((s) => s.trim().length > 0)
+    .map((s) => {
+      const n = Number(s.trim());
+      if (!Number.isInteger(n) || n <= 0) throw new Error(`not an item number: ${s}`);
+      return n;
+    });
+}
+
+/** Applies one flag to `flags`; `value` reads the flag's value (inline or the next argument). */
+function applyFlag(
+  flags: ParsedFlags,
+  arg: string | undefined,
+  flag: string | undefined,
+  inline: string | undefined,
+  value: () => string,
+): void {
+  if (flag === '--target') flags.target = value();
+  else if (flag === '--auth') flags.auth = parseAuthKind(value());
+  else if (flag === '--qualor-identity') flags.qualorIdentity = parseIdentity(value());
+  else if (flag === '--verify-apply') flags.verifyApply = parsePrId(value());
+  else if (flag === '--cleanup-manual' && inline === undefined) flags.cleanupManual = true;
+  else if (flag === '--items') {
+    flags.items = parseItemList(value());
+  } else if (arg !== '--') throw new Error(`unknown argument: ${arg}`);
+}
+
+/** The flags that cannot go together are refused; returns the target. */
+function checkFlags(flags: ParsedFlags): TargetName {
+  const { target, items, cleanupManual, auth, verifyApply, qualorIdentity } = flags;
   if (target !== 'services' && target !== 'server') {
     throw new Error('--target services|server is required');
   }
@@ -354,6 +358,43 @@ export function parseArgs(argv: string[]): {
       '--qualor-identity minimal-pat: services only (the Server bench has no minimal PAT)',
     );
   }
+  return target;
+}
+
+/**
+ * The target, the items a `--items 1,3,4` list names (all known items when absent) and the main
+ * identity's credential kind `--auth pat|secret|certificate` (pat when absent; Entra kinds on
+ * services only).
+ */
+export function parseArgs(argv: string[]): {
+  target: TargetName;
+  items?: number[];
+  cleanupManual?: true;
+  auth?: AuthKind;
+  verifyApply?: number;
+  qualorIdentity?: WeakerIdentity;
+} {
+  const flags: ParsedFlags = {
+    target: undefined,
+    items: undefined,
+    cleanupManual: false,
+    auth: undefined,
+    verifyApply: undefined,
+    qualorIdentity: undefined,
+  };
+  let next = 0;
+  while (next < argv.length) {
+    const arg = argv[next++];
+    const [flag, inline] = (arg ?? '').split('=', 2);
+    const value = (): string => {
+      const v = inline ?? argv[next++];
+      if (v === undefined) throw new Error(`${flag} needs a value`);
+      return v;
+    };
+    applyFlag(flags, arg, flag, inline, value);
+  }
+  const target = checkFlags(flags);
+  const { items, cleanupManual, auth, verifyApply, qualorIdentity } = flags;
   const withAuth = {
     ...(auth ? { auth } : {}),
     ...(verifyApply !== undefined ? { verifyApply } : {}),
@@ -1357,7 +1398,8 @@ export async function evaluations(ctx: ProbeContext, pr: Pr) {
 // The webhook recorder (item 9)
 
 function recorderAuth(ctx: ProbeContext): string {
-  return `Basic ${Buffer.from(`qualor:${ctx.recorderSecret}`).toString('base64')}`;
+  const credential = Buffer.from(`qualor:${ctx.recorderSecret}`).toString('base64');
+  return `Basic ${credential}`;
 }
 
 export async function recorderList(ctx: ProbeContext): Promise<string[]> {

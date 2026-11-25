@@ -427,9 +427,12 @@ export function judgeSetupItem(run: SetupRun): Check {
     item.ciUrl !== null &&
     item.error === null &&
     (item.projectOutcome === 'created' || item.projectOutcome === 'adopted');
-  const got = item
-    ? `run ${run.status}; ciOutcome ${item.ciOutcome}${item.ciReason ? ` (${item.ciReason})` : ''}; project ${item.projectOutcome}${item.error ? `; error ${item.error.code}: ${item.error.message}` : ''}`
-    : `run ${run.status}; no item`;
+  let got = `run ${run.status}; no item`;
+  if (item) {
+    const reason = item.ciReason ? ` (${item.ciReason})` : '';
+    const error = item.error ? `; error ${item.error.code}: ${item.error.message}` : '';
+    got = `run ${run.status}; ciOutcome ${item.ciOutcome}${reason}; project ${item.projectOutcome}${error}`;
+  }
   return check(
     'the setup run is done and its repository is `merge_request` (a pull request, no error)',
     pass,
@@ -449,10 +452,11 @@ export function judgePending(item: SetupItem): Check {
 /** After the main analysis the job turned the policy on. */
 export function judgePolicyOn(item: SetupItem | undefined): Check {
   const policy = item?.azure?.policy ?? 'absent';
+  const policyError = item?.azure?.policyError ? `: ${item.azure.policyError}` : '';
   return check(
     "the run's item has azure.policy `on` after the main analysis",
     policy === 'on',
-    `${policy}${item?.azure?.policyError ? `: ${item.azure.policyError}` : ''}`,
+    `${policy}${policyError}`,
   );
 }
 
@@ -598,14 +602,23 @@ export function judgeDefinition(
   const urlValue = url?.value;
   const urlSet = typeof urlValue === 'string' && urlValue.length > 0 && url?.isSecret !== true;
   const secret = token?.isSecret === true && (token.value === null || token.value === undefined);
-  const urlText = !url
-    ? 'absent'
-    : urlSet
-      ? `set (${sameUrl(urlValue, want.qualorUrl) ? "the probe's Qualor address" : 'another address than the probe uses'})`
-      : 'without a value';
-  const tokenText = !token
-    ? 'absent'
-    : `isSecret ${String(token.isSecret === true)}, ${token.value === null || token.value === undefined ? 'no value read back' : 'a value read back'}`;
+  let urlText = 'absent';
+  if (url && urlSet) {
+    const address = sameUrl(urlValue, want.qualorUrl)
+      ? "the probe's Qualor address"
+      : 'another address than the probe uses';
+    urlText = `set (${address})`;
+  } else if (url) {
+    urlText = 'without a value';
+  }
+  let tokenText = 'absent';
+  if (token) {
+    const readBack =
+      token.value === null || token.value === undefined
+        ? 'no value read back'
+        : 'a value read back';
+    tokenText = `isSecret ${String(token.isSecret === true)}, ${readBack}`;
+  }
   return [
     check(
       `the pipeline "${PIPELINE_NAMES.join('" or "')}" runs ${PIPELINE_PATH.slice(1)} of the repository on the ${POOL} queue`,
@@ -670,15 +683,16 @@ export function mainBuildOf(
  * image commit's push to the setup branch started a build too is told alongside.
  */
 export function judgeCiQueued(build: Build | undefined, setupBranchBuilt: boolean): Check {
-  const setup = setupBranchBuilt
-    ? 'started a CI build'
-    : build
-      ? 'started no CI build'
-      : 'started no CI build either';
+  let setup = 'started no CI build either';
+  if (setupBranchBuilt) setup = 'started a CI build';
+  else if (build) setup = 'started no CI build';
+  const mainBuild = build
+    ? `build ${build.id}, reason ${build.reason ?? 'unknown'}`
+    : `no build of main within ${MAIN_QUEUED_MS / 60000} min`;
   return check(
     'CI queued the main build (the pipeline runs on pushes)',
     build !== undefined && build.reason !== 'manual',
-    `${build ? `build ${build.id}, reason ${build.reason ?? 'unknown'}` : `no build of main within ${MAIN_QUEUED_MS / 60000} min`}; the image commit on ${SETUP_BRANCH} ${setup}`,
+    `${mainBuild}; the image commit on ${SETUP_BRANCH} ${setup}`,
   );
 }
 
@@ -708,10 +722,16 @@ export function judgePrBuild(
   const ev =
     want.policyId === null ? undefined : evals.find((e) => e.configuration.id === want.policyId);
   const evBuild = (ev?.context as { buildId?: unknown } | null | undefined)?.buildId;
+  const prResult = prBuild?.result ? ` ${prBuild.result}` : '';
+  const prText = prBuild
+    ? `build ${prBuild.id} (reason pullRequest, ${prBuild.status}${prResult})`
+    : 'no pullRequest build of the pipeline';
+  const withBuild = typeof evBuild === 'number' ? ` with build ${evBuild}` : ' without a build';
+  const evText = ev ? `evaluation ${ev.status}${withBuild}` : 'no evaluation of the policy';
   return check(
     'the policy queued a build of the pipeline for the probe pull request',
     prBuild !== undefined || typeof evBuild === 'number',
-    `${prBuild ? `build ${prBuild.id} (reason pullRequest, ${prBuild.status}${prBuild.result ? ` ${prBuild.result}` : ''})` : 'no pullRequest build of the pipeline'}; ${ev ? `evaluation ${ev.status}${typeof evBuild === 'number' ? ` with build ${evBuild}` : ' without a build'}` : 'no evaluation of the policy'}`,
+    `${prText}; ${evText}`,
   );
 }
 
@@ -752,15 +772,17 @@ export function problemText(json: unknown): string {
     errors?: { path?: unknown; message?: unknown }[];
   };
   const first = Array.isArray(p.errors) ? p.errors[0] : undefined;
-  const message =
-    first && typeof first.message === 'string'
-      ? `${typeof first.path === 'string' ? `${first.path}: ` : ''}${first.message}`
-      : typeof p.detail === 'string'
-        ? p.detail
-        : typeof p.title === 'string'
-          ? p.title
-          : '';
-  return `${codeOf(json)}${message ? ` (${message.slice(0, 200)})` : ''}`;
+  let message = '';
+  if (first && typeof first.message === 'string') {
+    const at = typeof first.path === 'string' ? `${first.path}: ` : '';
+    message = `${at}${first.message}`;
+  } else if (typeof p.detail === 'string') {
+    message = p.detail;
+  } else if (typeof p.title === 'string') {
+    message = p.title;
+  }
+  const shown = message ? ` (${message.slice(0, 200)})` : '';
+  return `${codeOf(json)}${shown}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -937,12 +959,14 @@ async function clearEarlierRun(ctx: ProbeContext, repoId: string, notes: string[
         : await deleteRef(ctx, repoId, r.name);
     if (gone) deleted++;
   }
+  const retiredText = retired.length ? ` (${retired.join(', ')})` : '';
   notes.push(
-    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retired.length ? ` (${retired.join(', ')})` : ''}, ${deleted} ref(s) deleted`,
+    `before the setup: ${prs.length} active pull request(s) abandoned, ${policies.length} Build validation policy(ies) removed, ${defs.own.length} pipeline(s) of an earlier run renamed and deleted${retiredText}, ${deleted} ref(s) deleted`,
   );
   if (defs.others.length > 0) {
+    const others = defs.others.map((d) => `"${d.name}" ${d.id}`).join(', ');
     notes.push(
-      `other pipelines on ${PIPELINE_PATH.slice(1)} stay (the setup will call them foreign): ${defs.others.map((d) => `"${d.name}" ${d.id}`).join(', ')}`,
+      `other pipelines on ${PIPELINE_PATH.slice(1)} stay (the setup will call them foreign): ${others}`,
     );
   }
 }
@@ -1030,8 +1054,9 @@ async function resetMain(ctx: ProbeContext, repoId: string, notes: string[]): Pr
     `reset main (fast-forward, after the force-move was refused: ${refused})`,
   );
   await rec(ctx, 'push-reset-ff', answerOf(ff));
+  const changed = changes.map((c) => `${c.changeType} ${c.path}`).join(', ');
   notes.push(
-    `refused: ${refused}; main of ${SETUP_REPOSITORY} reset by a fast-forward commit instead (${changes.map((c) => `${c.changeType} ${c.path}`).join(', ')})`,
+    `refused: ${refused}; main of ${SETUP_REPOSITORY} reset by a fast-forward commit instead (${changed})`,
   );
 }
 
@@ -1159,7 +1184,8 @@ async function prBuildState(ctx: ProbeContext, builds: readonly Build[], prId: n
   );
   if (!listed) return 'no pullRequest build listed';
   const { build } = await getBuild(ctx, listed.id);
-  const state = `build ${build.id} ${build.status}${build.result ? ` ${build.result}` : ''}`;
+  const result = build.result ? ` ${build.result}` : '';
+  const state = `build ${build.id} ${build.status}${result}`;
   return build.status === 'completed' && build.result !== 'succeeded'
     ? `${state}: ${await buildProblem(ctx, build.id)}`
     : state;
@@ -1191,6 +1217,486 @@ async function readRun(api: QualorApi, ctx: ProbeContext, id: string): Promise<S
 
 // ---------------------------------------------------------------------------------------------
 
+/** What every phase of the item shares: the checks and notes so far and the bench Qualor's login. */
+interface Flow {
+  ctx: ProbeContext;
+  api: QualorApi;
+  checks: Check[];
+  notes: string[];
+  spId: string;
+  who: string;
+}
+
+type Connection = z.infer<typeof ConnectionItem>;
+type SetupProject = NonNullable<SetupItem['project']>;
+
+/** The organisation `bench` and its Azure connection on the bench Qualor. */
+async function findBenchConnection(
+  api: QualorApi,
+  scmUrl: string,
+): Promise<{ orgId: string; connection: Connection }> {
+  const org = (
+    await api.items('/api/v0/organizations', z.object({ id: z.string(), key: z.string() }).loose())
+  ).find((o) => o.key === BENCH_ORG);
+  if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
+  const connection = (
+    await api.items(`/api/v0/scm-connections?organizationId=${org.id}`, ConnectionItem)
+  ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
+  if (!connection)
+    throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+  return { orgId: org.id, connection };
+}
+
+/** A run that stops before the merge leaves no open setup pull request or branch. */
+async function abandonSetupLeftovers(ctx: ProbeContext, setupCtx: ProbeContext, repo: Repo) {
+  for (const pr of await activePrsFrom(setupCtx, repo, SETUP_REF)) {
+    await abandonPr(setupCtx, pr.pullRequestId);
+  }
+  try {
+    await deleteBranch(setupCtx, SETUP_REF);
+  } catch (err) {
+    // Qualor's service principal pushed the branch: it tries when the probe may not.
+    const sp = ctx.entra?.('secret');
+    if (!sp || refusal(err) === null) throw err;
+    await deleteBranch(setupCtx, SETUP_REF, sp);
+  }
+}
+
+/** The repository, what an earlier run left removed, main as each run starts it. */
+async function prepareRepository(ctx: ProbeContext, notes: string[], seen: WeakerSeen) {
+  const created = await ensureRepository(ctx, notes, SETUP_REPOSITORY);
+  await clearEarlierRun(ctx, created.id, notes);
+  await resetMain(ctx, created.id, notes);
+  const setupCtx: ProbeContext = { ...ctx, repo: SETUP_REPOSITORY };
+  const repo = await repoInfo(setupCtx);
+  seen.repo = repo;
+  ctx.cleanup.add(`abandon the setup pull request and delete ${SETUP_BRANCH} if left`, () =>
+    abandonSetupLeftovers(ctx, setupCtx, repo),
+  );
+  return { setupCtx, repo };
+}
+
+/** 1. The setup, on the bench's self-hosted pool; undefined when it did not end in a pull request. */
+async function runSetup(flow: Flow, ids: { orgId: string; connectionId: string }, repo: Repo) {
+  const { ctx, api, checks, notes } = flow;
+  const posted = await api.send('POST', '/api/v0/repository-setups', {
+    organizationId: ids.orgId,
+    connectionId: ids.connectionId,
+    repositories: [repo.id],
+    ciSetup: true,
+    azurePool: POOL,
+  });
+  if (posted.status !== 202) {
+    checks.push(
+      check(
+        'the setup run is accepted (202)',
+        false,
+        `HTTP ${posted.status} ${problemText(posted.json)}`,
+      ),
+    );
+    return undefined;
+  }
+  const runId = shape(z.object({ id: z.string() }).loose(), posted.json, 'setup run').id;
+  const doneRun = await waitFor(
+    async () => {
+      const run = await readRun(api, ctx, runId);
+      return run.status === 'done' ? run : undefined;
+    },
+    { timeoutMs: SETUP_WAIT_MS, intervalMs: 3000 },
+  );
+  const run = doneRun ?? (await readRun(api, ctx, runId));
+  checks.push(judgeSetupItem(run));
+  const setupItem = run.items[0];
+  if (!doneRun || setupItem?.ciOutcome !== 'merge_request' || !setupItem.project) return undefined;
+  const project: SetupProject = setupItem.project;
+  notes.push(
+    `setup run: project ${setupItem.projectOutcome} with key ${project.key}; azure.queue ${setupItem.azure?.queue ?? 'absent'}`,
+  );
+  return { runId, setupItem, project };
+}
+
+/** 2. The pipeline first: its QUALOR_URL's host joins the redaction table before any recording. */
+async function readPipeline(flow: Flow, repo: Repo, setupItem: SetupItem) {
+  const { ctx, checks, notes } = flow;
+  const queueId = await defaultQueueId(ctx);
+  const listed = setupDefinitions(
+    ok(
+      await ctx.bot.request(
+        'GET',
+        `/${ctx.project}/_apis/build/definitions?repositoryId=${repo.id}&repositoryType=TfsGit&includeAllProperties=true`,
+      ),
+      'definitions of the repository',
+    ).json,
+    repo.id,
+  );
+  const defId = definitionIdOf(setupItem.azure?.pipelineUrl) ?? listed.own[0]?.id;
+  if (defId === undefined) {
+    checks.push(
+      check("the setup's pipeline is found", false, 'no pipelineUrl and no pipeline named Qualor'),
+    );
+    return undefined;
+  }
+  // The pipeline stays for the next run, but none of its builds may hold the bench's one agent.
+  ctx.cleanup.add(`cancel the unfinished builds of the setup's pipeline ${defId} (it stays)`, () =>
+    cancelBuilds(ctx, defId),
+  );
+  const defRes = ok(
+    await ctx.bot.request('GET', `/${ctx.project}/_apis/build/definitions/${defId}`),
+    'definition',
+  );
+  const def = shape(DefinitionSchema, defRes.json, 'definition');
+  const urlValue = def.variables?.['QUALOR_URL']?.value;
+  if (urlValue) addHosts(ctx.redaction, hostsOf(urlValue));
+  await rec(ctx, 'definition', { ...answerOf(defRes), body: definitionRecording(defRes.json) });
+  notes.push(
+    `the setup's pipeline: "${def.name}" (definition ${def.id}); triggers ${triggersText(def.triggers)}`,
+  );
+  return { queueId, defId, def };
+}
+
+/** 3. and 4. The setup's pull request as it opened it, the pipeline's variables, queue and pending policy. */
+async function judgeSetupState(
+  flow: Flow,
+  setupCtx: ProbeContext,
+  repo: Repo,
+  state: {
+    setupItem: SetupItem;
+    qualorUrl: string;
+    pipeline: { queueId: number; defId: number; def: Definition };
+  },
+) {
+  const { ctx, checks, notes, spId, who } = flow;
+  const { setupItem, qualorUrl } = state;
+  const { queueId, defId, def } = state.pipeline;
+  const setupPr = (await activePrsFrom(setupCtx, repo, SETUP_REF))[0];
+  if (!setupPr) {
+    checks.push(check(`an active pull request from ${SETUP_BRANCH}`, false, 'none found'));
+    return undefined;
+  }
+  const prId = setupPr.pullRequestId;
+  const prRes = ok(
+    await ctx.bot.request('GET', gitPath(setupCtx, repo, `/pullrequests/${prId}`)),
+    'setup pull request',
+  );
+  await rec(ctx, 'setup-pr', answerOf(prRes));
+  const changes = await iterationChanges(setupCtx, repo, prId);
+  await rec(ctx, 'setup-pr-changes', answerOf(changes));
+  const setupHead = await refHead(setupCtx, SETUP_REF);
+  const yaml = setupHead ? await fileText(ctx, repo.id, PIPELINE_PATH, setupHead) : null;
+  checks.push(...judgeSetupPr(setupPr, changedFiles(changes.json), yaml));
+  const createdBy = sameId(setupPr.createdBy?.id, spId) ? who : 'another identity';
+  const ciUrl =
+    setupItem.ciUrl === `${repo.webUrl}/pullrequest/${prId}`
+      ? 'is its web URL'
+      : 'differs from its web URL';
+  notes.push(
+    `setup pull request ${prId}: created by ${createdBy}; the run's ciUrl ${ciUrl}; the file's image ${imageOf(yaml) ?? 'line missing'}`,
+  );
+
+  checks.push(...judgeDefinition(def, { repositoryId: repo.id, queueId, qualorUrl }));
+  const perms = await queuePermissions(ctx, queueId);
+  await rec(ctx, 'queue-permissions', answerOf(perms.res));
+  checks.push(
+    judgeQueue(setupItem.azure?.queue, { open: perms.open, authorized: perms.authorized(defId) }),
+  );
+  checks.push(judgePending(setupItem));
+  return { prId, yaml, setupHead };
+}
+
+/** 5. What a person does on the bench: the image pinned to the bench's tag in the pull request. */
+async function pinImageInPr(
+  flow: Flow,
+  setupCtx: ProbeContext,
+  repo: Repo,
+  seen: { yaml: string | null; setupHead: string | undefined },
+) {
+  const { ctx, checks } = flow;
+  const { yaml, setupHead } = seen;
+  const pinned = yaml === null ? null : pinBenchImage(yaml);
+  if (!setupHead || pinned === null) {
+    checks.push(
+      check(
+        `the pipeline file's image can be pinned to qualor/scanner:${BENCH_IMAGE_TAG}`,
+        false,
+        setupHead ? 'no QUALOR_SCANNER_IMAGE line' : `${SETUP_BRANCH} has no head`,
+      ),
+    );
+    return undefined;
+  }
+  const imagePush = await pushPipelineEdit(setupCtx, repo, setupHead, pinned);
+  await rec(ctx, 'push-image', answerOf(imagePush));
+  return pushedCommit(imagePush, 'push the image commit').toLowerCase();
+}
+
+/** 6. Complete the pull request (merge into main); the merge commit, or undefined when it did not complete. */
+async function completeSetupPr(
+  flow: Flow,
+  setupCtx: ProbeContext,
+  repo: Repo,
+  merge: { prId: number; imageCommit: string; projectId: string },
+) {
+  const { ctx, api, checks } = flow;
+  const { prId, imageCommit } = merge;
+  const current = await waitFor(
+    async () => {
+      const got = await getPr(setupCtx, prId);
+      return sameId(got.pr.lastMergeSourceCommit?.commitId, imageCommit) ? got : undefined;
+    },
+    { timeoutMs: SOURCE_WAIT_MS, intervalMs: 3000 },
+  );
+  const before = (await qualorMain(api, merge.projectId))?.lastAnalysisId ?? null;
+  const completeRes = await ctx.bot.request(
+    'PATCH',
+    gitPath(setupCtx, repo, `/pullrequests/${prId}`),
+    {
+      status: 'completed',
+      lastMergeSourceCommit: {
+        commitId: current?.pr.lastMergeSourceCommit?.commitId ?? imageCommit,
+      },
+      completionOptions: { deleteSourceBranch: true, mergeStrategy: 'noFastForward' },
+    },
+  );
+  await rec(ctx, 'pr-complete', answerOf(completeRes));
+  const completed =
+    completeRes.status < 300
+      ? await waitFor(
+          async () => {
+            const got = await getPr(setupCtx, prId);
+            return got.pr.status === 'completed' ? got : undefined;
+          },
+          { timeoutMs: MERGE_WAIT_MS, intervalMs: 5000 },
+        )
+      : undefined;
+  const afterComplete = completed ?? (await getPr(setupCtx, prId));
+  const got =
+    completeRes.status >= 300
+      ? describeAnswer(completeRes.status, completeRes.json)
+      : `${afterComplete.pr.status}, mergeStatus ${mergeStatusOf(afterComplete.res.json)}`;
+  checks.push(
+    check(
+      'the setup pull request is completed (merged into main) through REST',
+      completed !== undefined,
+      got,
+    ),
+  );
+  if (!completed) return undefined;
+  return { mergeCommit: (await refHead(setupCtx, MAIN))?.toLowerCase(), before };
+}
+
+/** 7a. The main build: CI's, or one queued by hand when CI did not queue it; its id and the shared deadline. */
+async function queueMainBuild(
+  flow: Flow,
+  defId: number,
+  mergeCommit: string | undefined,
+): Promise<{ mainId: number; mainDeadline: number }> {
+  const { ctx, checks, notes } = flow;
+  const mainDeadline = Date.now() + MAIN_WAIT_MS;
+  let cancelledSetup = 0;
+  let setupBranchBuilt = false;
+  const ciBuild = await waitFor(
+    async () => {
+      const { list } = await definitionBuilds(ctx, defId);
+      setupBranchBuilt ||= list.some((b) => b.sourceBranch === SETUP_REF);
+      // The image commit's CI build of the setup branch is not needed: the one agent goes to main.
+      cancelledSetup += await cancelEach(ctx, toCancel(list, SETUP_REF));
+      return mainBuildOf(list, mergeCommit);
+    },
+    { timeoutMs: MAIN_QUEUED_MS, intervalMs: 10_000 },
+  );
+  if (cancelledSetup > 0) {
+    notes.push(`${cancelledSetup} CI build(s) of ${SETUP_BRANCH} cancelled (not needed)`);
+  }
+  checks.push(judgeCiQueued(ciBuild, setupBranchBuilt));
+  if (ciBuild) return { mainId: ciBuild.id, mainDeadline };
+  // Without CI the policy and the decoration still get checked: main is queued by hand.
+  const manual = await queueBuild(ctx, defId, MAIN);
+  await rec(ctx, 'build-main-queued', answerOf(manual.res));
+  notes.push(
+    `no CI build of main within ${MAIN_QUEUED_MS / 60000} min: the item queued build ${manual.id} by hand to go on`,
+  );
+  return { mainId: manual.id, mainDeadline };
+}
+
+/** 7b. The main build's end and the main analysis, within the shared 15 minutes; true when analysed. */
+async function checkMainAnalysis(
+  flow: Flow,
+  main: { mainId: number; mainDeadline: number; mergeCommit: string | undefined },
+  analysis: { projectId: string; before: string | null },
+): Promise<boolean> {
+  const { ctx, api, checks } = flow;
+  const { mainId, mainDeadline, mergeCommit } = main;
+  const mainBuild = await waitBuild(ctx, mainId, {
+    timeoutMs: mainWaits(mainDeadline, Date.now()).buildMs,
+  });
+  await rec(ctx, 'build-main', answerOf(mainBuild.res));
+  const ofMerge = sameId(mainBuild.build.sourceVersion, mergeCommit ?? '')
+    ? ', of the merge commit'
+    : '';
+  checks.push(
+    check(
+      'a build of main by the pipeline completed',
+      mainBuild.build.status === 'completed',
+      `build ${mainId} ${mainBuild.build.status} ${mainBuild.build.result ?? ''}`.trim() + ofMerge,
+    ),
+  );
+  // Within the same 15 minutes: the build's wait left the analysis its share.
+  const analysed = await waitFor(
+    async () => {
+      const b = await qualorMain(api, analysis.projectId);
+      return b?.lastAnalysisId && b.lastAnalysisId !== analysis.before ? b : undefined;
+    },
+    { timeoutMs: Math.max(0, mainDeadline - Date.now()), intervalMs: 10_000 },
+  );
+  let got = 'a new main analysis';
+  if (!analysed) {
+    const failed =
+      mainBuild.build.status === 'completed' && mainBuild.build.result !== 'succeeded'
+        ? `; ${await buildProblem(ctx, mainId)}`
+        : '';
+    got = `none within ${MAIN_WAIT_MS / 60000} min${failed}`;
+  }
+  checks.push(
+    check('Qualor analysed main (a new main analysis of the project)', analysed !== undefined, got),
+  );
+  return analysed !== undefined;
+}
+
+/** 8. The Build validation policy: the run's item turns `on`, Azure DevOps has it on main. */
+async function checkMainPolicy(flow: Flow, runId: string, repo: Repo, defId: number) {
+  const { ctx, api, checks } = flow;
+  const settled = await waitFor(
+    async () => {
+      const got = (await readRun(api, ctx, runId)).items[0];
+      return got && got.azure?.policy !== 'pending' ? got : undefined;
+    },
+    { timeoutMs: POLICY_WAIT_MS, intervalMs: 10_000 },
+  );
+  checks.push(judgePolicyOn(settled ?? (await readRun(api, ctx, runId)).items[0]));
+  const policiesRes = ok(
+    await ctx.bot.request(
+      'GET',
+      `/${ctx.project}/_apis/policy/configurations?repositoryId=${repo.id}&refName=${enc(MAIN)}&policyType=${BUILD_POLICY}`,
+    ),
+    'policies on main',
+  );
+  await rec(ctx, 'policies-main', answerOf(policiesRes));
+  const policy = judgeMainPolicy(policiesRes.json, { definitionId: defId, repositoryId: repo.id });
+  checks.push(policy.check);
+  return policy.policyId;
+}
+
+/** Who wrote Qualor's status on the probe pull request, as the item reports it. */
+function statusAuthor(flow: Flow, status: { createdBy?: { id: string } | null }): string {
+  if (!status.createdBy) return 'not listed';
+  return sameId(status.createdBy.id, flow.spId) ? flow.who : 'another identity';
+}
+
+/** 9. A probe pull request: the policy's build, then Qualor's status on it. */
+async function checkProbePr(
+  flow: Flow,
+  setupCtx: ProbeContext,
+  repo: Repo,
+  probe: { defId: number; policyId: number; projectKey: string },
+): Promise<void> {
+  const { ctx, checks, notes } = flow;
+  const { defId, policyId } = probe;
+  const base = await refHead(setupCtx, MAIN);
+  if (!base) throw new Error('main has no head after the merge');
+  const pushed = await pushFiles(
+    setupCtx,
+    `probe/27-${ctx.stamp}`,
+    [{ path: `/src/probe-27-${ctx.stamp}.js`, content: probeSource(ctx.stamp) }],
+    { base },
+  );
+  const created = await createPr(setupCtx, pushed.refName);
+  const probeId = created.pr.pullRequestId;
+  const statusDeadline = Date.now() + STATUS_WAIT_MS;
+  const { pr: probePr } = await prWithMerge(setupCtx, probeId);
+  const prBuildNow = async () => {
+    const b = await definitionBuilds(ctx, defId);
+    const e = await evaluations(setupCtx, probePr);
+    const c = judgePrBuild(b.list, e.list.value, { prId: probeId, policyId });
+    return { b, e, c };
+  };
+  const built = await waitFor(
+    async () => {
+      const now = await prBuildNow();
+      return now.c.pass ? now : undefined;
+    },
+    { timeoutMs: PR_BUILD_WAIT_MS, intervalMs: 10_000 },
+  );
+  const prBuild = built ?? (await prBuildNow());
+  await rec(ctx, 'builds-pr', answerOf(prBuild.b.res));
+  await rec(ctx, 'evaluations-pr', answerOf(prBuild.e.res));
+  checks.push(prBuild.c);
+  const cancelledProbe = await cancelBranchBuilds(ctx, defId, pushed.refName);
+  if (cancelledProbe > 0) {
+    notes.push(`${cancelledProbe} CI build(s) of the probe branch cancelled (not needed)`);
+  }
+  if (!built) return;
+  ctx.log(
+    `probe pull request ${probeId}: Qualor's status (up to ${STATUS_WAIT_MS / 60000} min from its creation)`,
+  );
+  const status = await waitFor(() => prStatus(setupCtx, repo, probeId, probe.projectKey), {
+    timeoutMs: Math.max(0, statusDeadline - Date.now()),
+    intervalMs: 15_000,
+  });
+  if (status) await rec(ctx, 'iteration-statuses-pr', answerOf(status.res));
+  const got = status
+    ? `${status.status.state ?? '?'} on iteration ${status.iterationId}; author ${statusAuthor(flow, status.status)}`
+    : `none within ${STATUS_WAIT_MS / 60000} min; ${await prBuildState(ctx, prBuild.b.list, probeId)}`;
+  checks.push(
+    check(
+      "Qualor's status (genre qualor, the project key as its name) on the probe pull request",
+      status !== undefined,
+      got,
+    ),
+  );
+}
+
+/** Steps 3 to 9 once the setup's pull request exists; the verdict is in the flow's checks. */
+async function judgeMergedSetup(
+  flow: Flow,
+  repoOf: { setupCtx: ProbeContext; repo: Repo },
+  setup: {
+    runId: string;
+    setupItem: SetupItem;
+    project: SetupProject;
+    pipeline: { queueId: number; defId: number; def: Definition };
+    qualorUrl: string;
+  },
+): Promise<void> {
+  const { ctx } = flow;
+  const { setupCtx, repo } = repoOf;
+  const { defId } = setup.pipeline;
+  const state = await judgeSetupState(flow, setupCtx, repo, setup);
+  if (!state) return;
+  const imageCommit = await pinImageInPr(flow, setupCtx, repo, state);
+  if (imageCommit === undefined) return;
+  const { prId } = state;
+  const merged = await completeSetupPr(flow, setupCtx, repo, {
+    prId,
+    imageCommit,
+    projectId: setup.project.id,
+  });
+  if (!merged) return;
+  const { mergeCommit, before } = merged;
+
+  ctx.log(
+    `setup pull request ${prId} merged: the main build and analysis (up to ${MAIN_WAIT_MS / 60000} min), then the policy`,
+  );
+  const { mainId, mainDeadline } = await queueMainBuild(flow, defId, mergeCommit);
+  const analysed = await checkMainAnalysis(
+    flow,
+    { mainId, mainDeadline, mergeCommit },
+    { projectId: setup.project.id, before },
+  );
+  if (!analysed) return;
+  const policyId = await checkMainPolicy(flow, setup.runId, repo, defId);
+  if (policyId === null) return;
+  await checkProbePr(flow, setupCtx, repo, { defId, policyId, projectKey: setup.project.key });
+}
+
 export const item: ProbeItem = {
   id: 27,
   title:
@@ -1216,19 +1722,9 @@ export const item: ProbeItem = {
     // ---- The bench Qualor: organisation `bench`, its Azure connection, CI setup available.
     const api = new QualorApi(qualorUrl);
     await api.login(adminPassword);
-    const org = (
-      await api.items(
-        '/api/v0/organizations',
-        z.object({ id: z.string(), key: z.string() }).loose(),
-      )
-    ).find((o) => o.key === BENCH_ORG);
-    if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
-    const connection = (
-      await api.items(`/api/v0/scm-connections?organizationId=${org.id}`, ConnectionItem)
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
-    if (!connection)
-      throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
-    seen.bench = { api, orgId: org.id, connectionId: connection.id };
+    const flow: Flow = { ctx, api, checks, notes, spId, who };
+    const { orgId, connection } = await findBenchConnection(api, scmUrl);
+    seen.bench = { api, orgId, connectionId: connection.id };
     if (!connection.ciSetup.available) {
       return result(
         ctx,
@@ -1237,338 +1733,12 @@ export const item: ProbeItem = {
       );
     }
 
-    // ---- The repository, what an earlier run left removed, main as each run starts it.
-    const created = await ensureRepository(ctx, notes, SETUP_REPOSITORY);
-    await clearEarlierRun(ctx, created.id, notes);
-    await resetMain(ctx, created.id, notes);
-    const setupCtx: ProbeContext = { ...ctx, repo: SETUP_REPOSITORY };
-    const repo = await repoInfo(setupCtx);
-    seen.repo = repo;
-    // A run that stops before the merge leaves no open setup pull request or branch.
-    ctx.cleanup.add(
-      `abandon the setup pull request and delete ${SETUP_BRANCH} if left`,
-      async () => {
-        for (const pr of await activePrsFrom(setupCtx, repo, SETUP_REF)) {
-          await abandonPr(setupCtx, pr.pullRequestId);
-        }
-        try {
-          await deleteBranch(setupCtx, SETUP_REF);
-        } catch (err) {
-          // Qualor's service principal pushed the branch: it tries when the probe may not.
-          const sp = ctx.entra?.('secret');
-          if (!sp || refusal(err) === null) throw err;
-          await deleteBranch(setupCtx, SETUP_REF, sp);
-        }
-      },
-    );
-
-    // ---- 1. The setup, on the bench's self-hosted pool.
-    const posted = await api.send('POST', '/api/v0/repository-setups', {
-      organizationId: org.id,
-      connectionId: connection.id,
-      repositories: [repo.id],
-      ciSetup: true,
-      azurePool: POOL,
-    });
-    if (posted.status !== 202) {
-      checks.push(
-        check(
-          'the setup run is accepted (202)',
-          false,
-          `HTTP ${posted.status} ${problemText(posted.json)}`,
-        ),
-      );
-      return finish();
-    }
-    const runId = shape(z.object({ id: z.string() }).loose(), posted.json, 'setup run').id;
-    const doneRun = await waitFor(
-      async () => {
-        const run = await readRun(api, ctx, runId);
-        return run.status === 'done' ? run : undefined;
-      },
-      { timeoutMs: SETUP_WAIT_MS, intervalMs: 3000 },
-    );
-    const run = doneRun ?? (await readRun(api, ctx, runId));
-    checks.push(judgeSetupItem(run));
-    const setupItem = run.items[0];
-    if (!doneRun || setupItem?.ciOutcome !== 'merge_request' || !setupItem.project) {
-      return finish();
-    }
-    const project = setupItem.project;
-    notes.push(
-      `setup run: project ${setupItem.projectOutcome} with key ${project.key}; azure.queue ${setupItem.azure?.queue ?? 'absent'}`,
-    );
-
-    // ---- 2. The pipeline first: its QUALOR_URL's host joins the redaction table before any recording.
-    const queueId = await defaultQueueId(ctx);
-    const listed = setupDefinitions(
-      ok(
-        await ctx.bot.request(
-          'GET',
-          `/${ctx.project}/_apis/build/definitions?repositoryId=${repo.id}&repositoryType=TfsGit&includeAllProperties=true`,
-        ),
-        'definitions of the repository',
-      ).json,
-      repo.id,
-    );
-    const defId = definitionIdOf(setupItem.azure?.pipelineUrl) ?? listed.own[0]?.id;
-    if (defId === undefined) {
-      checks.push(
-        check(
-          "the setup's pipeline is found",
-          false,
-          'no pipelineUrl and no pipeline named Qualor',
-        ),
-      );
-      return finish();
-    }
-    // The pipeline stays for the next run, but none of its builds may hold the bench's one agent.
-    ctx.cleanup.add(
-      `cancel the unfinished builds of the setup's pipeline ${defId} (it stays)`,
-      () => cancelBuilds(ctx, defId),
-    );
-    const defRes = ok(
-      await ctx.bot.request('GET', `/${ctx.project}/_apis/build/definitions/${defId}`),
-      'definition',
-    );
-    const def = shape(DefinitionSchema, defRes.json, 'definition');
-    const urlValue = def.variables?.['QUALOR_URL']?.value;
-    if (urlValue) addHosts(ctx.redaction, hostsOf(urlValue));
-    await rec(ctx, 'definition', { ...answerOf(defRes), body: definitionRecording(defRes.json) });
-    notes.push(
-      `the setup's pipeline: "${def.name}" (definition ${def.id}); triggers ${triggersText(def.triggers)}`,
-    );
-
-    // ---- 3. The setup's pull request as it opened it.
-    const setupPr = (await activePrsFrom(setupCtx, repo, SETUP_REF))[0];
-    if (!setupPr) {
-      checks.push(check(`an active pull request from ${SETUP_BRANCH}`, false, 'none found'));
-      return finish();
-    }
-    const prId = setupPr.pullRequestId;
-    const prRes = ok(
-      await ctx.bot.request('GET', gitPath(setupCtx, repo, `/pullrequests/${prId}`)),
-      'setup pull request',
-    );
-    await rec(ctx, 'setup-pr', answerOf(prRes));
-    const changes = await iterationChanges(setupCtx, repo, prId);
-    await rec(ctx, 'setup-pr-changes', answerOf(changes));
-    const setupHead = await refHead(setupCtx, SETUP_REF);
-    const yaml = setupHead ? await fileText(ctx, repo.id, PIPELINE_PATH, setupHead) : null;
-    checks.push(...judgeSetupPr(setupPr, changedFiles(changes.json), yaml));
-    notes.push(
-      `setup pull request ${prId}: created by ${sameId(setupPr.createdBy?.id, spId) ? who : 'another identity'}; the run's ciUrl ${setupItem.ciUrl === `${repo.webUrl}/pullrequest/${prId}` ? 'is its web URL' : 'differs from its web URL'}; the file's image ${imageOf(yaml) ?? 'line missing'}`,
-    );
-
-    // ---- 4. The pipeline's variables, its queue, the pending policy.
-    checks.push(...judgeDefinition(def, { repositoryId: repo.id, queueId, qualorUrl }));
-    const perms = await queuePermissions(ctx, queueId);
-    await rec(ctx, 'queue-permissions', answerOf(perms.res));
-    checks.push(
-      judgeQueue(setupItem.azure?.queue, { open: perms.open, authorized: perms.authorized(defId) }),
-    );
-    checks.push(judgePending(setupItem));
-
-    // ---- 5. What a person does on the bench: the image pinned to the bench's tag in the pull request.
-    const pinned = yaml === null ? null : pinBenchImage(yaml);
-    if (!setupHead || pinned === null) {
-      checks.push(
-        check(
-          `the pipeline file's image can be pinned to qualor/scanner:${BENCH_IMAGE_TAG}`,
-          false,
-          setupHead ? 'no QUALOR_SCANNER_IMAGE line' : `${SETUP_BRANCH} has no head`,
-        ),
-      );
-      return finish();
-    }
-    const imagePush = await pushPipelineEdit(setupCtx, repo, setupHead, pinned);
-    await rec(ctx, 'push-image', answerOf(imagePush));
-    const imageCommit = pushedCommit(imagePush, 'push the image commit').toLowerCase();
-
-    // ---- 6. Complete the pull request (merge into main).
-    const current = await waitFor(
-      async () => {
-        const got = await getPr(setupCtx, prId);
-        return sameId(got.pr.lastMergeSourceCommit?.commitId, imageCommit) ? got : undefined;
-      },
-      { timeoutMs: SOURCE_WAIT_MS, intervalMs: 3000 },
-    );
-    const before = (await qualorMain(api, project.id))?.lastAnalysisId ?? null;
-    const completeRes = await ctx.bot.request(
-      'PATCH',
-      gitPath(setupCtx, repo, `/pullrequests/${prId}`),
-      {
-        status: 'completed',
-        lastMergeSourceCommit: {
-          commitId: current?.pr.lastMergeSourceCommit?.commitId ?? imageCommit,
-        },
-        completionOptions: { deleteSourceBranch: true, mergeStrategy: 'noFastForward' },
-      },
-    );
-    await rec(ctx, 'pr-complete', answerOf(completeRes));
-    const completed =
-      completeRes.status < 300
-        ? await waitFor(
-            async () => {
-              const got = await getPr(setupCtx, prId);
-              return got.pr.status === 'completed' ? got : undefined;
-            },
-            { timeoutMs: MERGE_WAIT_MS, intervalMs: 5000 },
-          )
-        : undefined;
-    const afterComplete = completed ?? (await getPr(setupCtx, prId));
-    checks.push(
-      check(
-        'the setup pull request is completed (merged into main) through REST',
-        completed !== undefined,
-        completeRes.status >= 300
-          ? describeAnswer(completeRes.status, completeRes.json)
-          : `${afterComplete.pr.status}, mergeStatus ${mergeStatusOf(afterComplete.res.json)}`,
-      ),
-    );
-    if (!completed) return finish();
-    const mergeCommit = (await refHead(setupCtx, MAIN))?.toLowerCase();
-
-    // ---- 7. The main build and the main analysis, 15 minutes for both.
-    ctx.log(
-      `setup pull request ${prId} merged: the main build and analysis (up to ${MAIN_WAIT_MS / 60000} min), then the policy`,
-    );
-    const mainDeadline = Date.now() + MAIN_WAIT_MS;
-    let cancelledSetup = 0;
-    let setupBranchBuilt = false;
-    const ciBuild = await waitFor(
-      async () => {
-        const { list } = await definitionBuilds(ctx, defId);
-        setupBranchBuilt ||= list.some((b) => b.sourceBranch === SETUP_REF);
-        // The image commit's CI build of the setup branch is not needed: the one agent goes to main.
-        cancelledSetup += await cancelEach(ctx, toCancel(list, SETUP_REF));
-        return mainBuildOf(list, mergeCommit);
-      },
-      { timeoutMs: MAIN_QUEUED_MS, intervalMs: 10_000 },
-    );
-    if (cancelledSetup > 0) {
-      notes.push(`${cancelledSetup} CI build(s) of ${SETUP_BRANCH} cancelled (not needed)`);
-    }
-    checks.push(judgeCiQueued(ciBuild, setupBranchBuilt));
-    let mainId: number;
-    if (ciBuild) {
-      mainId = ciBuild.id;
-    } else {
-      // Without CI the policy and the decoration still get checked: main is queued by hand.
-      const manual = await queueBuild(ctx, defId, MAIN);
-      await rec(ctx, 'build-main-queued', answerOf(manual.res));
-      mainId = manual.id;
-      notes.push(
-        `no CI build of main within ${MAIN_QUEUED_MS / 60000} min: the item queued build ${mainId} by hand to go on`,
-      );
-    }
-    const mainBuild = await waitBuild(ctx, mainId, {
-      timeoutMs: mainWaits(mainDeadline, Date.now()).buildMs,
-    });
-    await rec(ctx, 'build-main', answerOf(mainBuild.res));
-    checks.push(
-      check(
-        'a build of main by the pipeline completed',
-        mainBuild.build.status === 'completed',
-        `build ${mainId} ${mainBuild.build.status} ${mainBuild.build.result ?? ''}`.trim() +
-          (sameId(mainBuild.build.sourceVersion, mergeCommit ?? '') ? ', of the merge commit' : ''),
-      ),
-    );
-    // Within the same 15 minutes: the build's wait left the analysis its share.
-    const analysed = await waitFor(
-      async () => {
-        const b = await qualorMain(api, project.id);
-        return b?.lastAnalysisId && b.lastAnalysisId !== before ? b : undefined;
-      },
-      { timeoutMs: Math.max(0, mainDeadline - Date.now()), intervalMs: 10_000 },
-    );
-    checks.push(
-      check(
-        'Qualor analysed main (a new main analysis of the project)',
-        analysed !== undefined,
-        analysed
-          ? 'a new main analysis'
-          : `none within ${MAIN_WAIT_MS / 60000} min${mainBuild.build.status === 'completed' && mainBuild.build.result !== 'succeeded' ? `; ${await buildProblem(ctx, mainId)}` : ''}`,
-      ),
-    );
-    if (!analysed) return finish();
-
-    // ---- 8. The Build validation policy: the run's item turns `on`, Azure DevOps has it on main.
-    const settled = await waitFor(
-      async () => {
-        const got = (await readRun(api, ctx, runId)).items[0];
-        return got && got.azure?.policy !== 'pending' ? got : undefined;
-      },
-      { timeoutMs: POLICY_WAIT_MS, intervalMs: 10_000 },
-    );
-    checks.push(judgePolicyOn(settled ?? (await readRun(api, ctx, runId)).items[0]));
-    const policiesRes = ok(
-      await ctx.bot.request(
-        'GET',
-        `/${ctx.project}/_apis/policy/configurations?repositoryId=${repo.id}&refName=${enc(MAIN)}&policyType=${BUILD_POLICY}`,
-      ),
-      'policies on main',
-    );
-    await rec(ctx, 'policies-main', answerOf(policiesRes));
-    const policy = judgeMainPolicy(policiesRes.json, {
-      definitionId: defId,
-      repositoryId: repo.id,
-    });
-    checks.push(policy.check);
-    if (policy.policyId === null) return finish();
-
-    // ---- 9. A probe pull request: the policy's build, then Qualor's status on it.
-    const base = await refHead(setupCtx, MAIN);
-    if (!base) throw new Error('main has no head after the merge');
-    const pushed = await pushFiles(
-      setupCtx,
-      `probe/27-${ctx.stamp}`,
-      [{ path: `/src/probe-27-${ctx.stamp}.js`, content: probeSource(ctx.stamp) }],
-      { base },
-    );
-    const probe = await createPr(setupCtx, pushed.refName);
-    const probeId = probe.pr.pullRequestId;
-    const statusDeadline = Date.now() + STATUS_WAIT_MS;
-    const { pr: probePr } = await prWithMerge(setupCtx, probeId);
-    const prBuildNow = async () => {
-      const b = await definitionBuilds(ctx, defId);
-      const e = await evaluations(setupCtx, probePr);
-      const c = judgePrBuild(b.list, e.list.value, { prId: probeId, policyId: policy.policyId });
-      return { b, e, c };
-    };
-    const built = await waitFor(
-      async () => {
-        const now = await prBuildNow();
-        return now.c.pass ? now : undefined;
-      },
-      { timeoutMs: PR_BUILD_WAIT_MS, intervalMs: 10_000 },
-    );
-    const prBuild = built ?? (await prBuildNow());
-    await rec(ctx, 'builds-pr', answerOf(prBuild.b.res));
-    await rec(ctx, 'evaluations-pr', answerOf(prBuild.e.res));
-    checks.push(prBuild.c);
-    const cancelledProbe = await cancelBranchBuilds(ctx, defId, pushed.refName);
-    if (cancelledProbe > 0) {
-      notes.push(`${cancelledProbe} CI build(s) of the probe branch cancelled (not needed)`);
-    }
-    if (!built) return finish();
-    ctx.log(
-      `probe pull request ${probeId}: Qualor's status (up to ${STATUS_WAIT_MS / 60000} min from its creation)`,
-    );
-    const status = await waitFor(() => prStatus(setupCtx, repo, probeId, project.key), {
-      timeoutMs: Math.max(0, statusDeadline - Date.now()),
-      intervalMs: 15_000,
-    });
-    if (status) await rec(ctx, 'iteration-statuses-pr', answerOf(status.res));
-    checks.push(
-      check(
-        "Qualor's status (genre qualor, the project key as its name) on the probe pull request",
-        status !== undefined,
-        status
-          ? `${status.status.state ?? '?'} on iteration ${status.iterationId}; author ${status.status.createdBy ? (sameId(status.status.createdBy.id, spId) ? who : 'another identity') : 'not listed'}`
-          : `none within ${STATUS_WAIT_MS / 60000} min; ${await prBuildState(ctx, prBuild.b.list, probeId)}`,
-      ),
-    );
+    const repoOf = await prepareRepository(ctx, notes, seen);
+    const setup = await runSetup(flow, { orgId, connectionId: connection.id }, repoOf.repo);
+    if (!setup) return finish();
+    const pipeline = await readPipeline(flow, repoOf.repo, setup.setupItem);
+    if (!pipeline) return finish();
+    await judgeMergedSetup(flow, repoOf, { ...setup, pipeline, qualorUrl });
     return finish();
   },
 };

@@ -10,6 +10,7 @@ import {
   ThreadListSchema,
   ThreadSchema,
   threadsPath,
+  type Answer,
   type ProbeItem,
 } from './common.js';
 
@@ -76,12 +77,19 @@ export const item: ProbeItem = {
     const final = added.status < 300 ? await listThread('thread-list-after-add') : after;
     const updated = propertyValue(final.properties, RESOLVED_BY) === 'qualor-again';
 
+    const createdText = roundTrip
+      ? 'both properties read back'
+      : `read back ${MARKER}=${JSON.stringify(marker)}, ${RESOLVED_BY}=${JSON.stringify(resolvedBy)}`;
+    const removedText = removed
+      ? 'the property is gone'
+      : `the property is still there (${JSON.stringify(removedValue)})`;
     const detail = [
-      `create: ${roundTrip ? 'both properties read back' : `read back ${MARKER}=${JSON.stringify(marker)}, ${RESOLVED_BY}=${JSON.stringify(resolvedBy)}`} (values come back as {$type, $value})`,
-      `PATCH {${RESOLVED_BY}: null}: HTTP ${patched.status}; ${removed ? 'the property is gone' : `the property is still there (${JSON.stringify(removedValue)})`}; ${MARKER} ${kept ? 'kept' : 'lost'}`,
+      `create: ${createdText} (values come back as {$type, $value})`,
+      `PATCH {${RESOLVED_BY}: null}: HTTP ${patched.status}; ${removedText}; ${MARKER} ${kept ? 'kept' : 'lost'}`,
       `PATCH {${RESOLVED_BY}: "qualor-again"}: HTTP ${added.status}; ${updated ? 'read back' : 'not read back'}`,
     ].join('\n\n');
-    const answer = roundTrip && removed && kept && updated ? 'yes' : roundTrip ? 'partly' : 'no';
+    let answer: Answer = 'no';
+    if (roundTrip) answer = removed && kept && updated ? 'yes' : 'partly';
     return result(ctx, answer, detail);
   },
 };

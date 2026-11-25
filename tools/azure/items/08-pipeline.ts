@@ -186,11 +186,13 @@ export const item: ProbeItem = {
       }
     }
 
+    let secretText = 'absent';
+    if (readSecret) secretText = readSecret.value ? 'a value' : 'null';
     const detail = [
       `definition with yamlFilename ${YAML_PATH} and defaultBranch ${repo.defaultBranch} (file absent there): ${onDefault}; created on ${createdOn}`,
       `queue ${queueId} (Default) before the run: ${before.open ? 'open to all pipelines' : 'not open to all pipelines'}`,
       `run 1 on the probe branch: result ${first.result}, QUALOR_TOKEN ${first.token} (length ${first.length}); ${first.waited}`,
-      `GET definition: the secret reads back as ${readSecret ? (readSecret.value ? 'a value' : 'null') : 'absent'}, isSecret ${String(readSecret?.isSecret)}; PUT of the same body: HTTP ${put.status}`,
+      `GET definition: the secret reads back as ${secretText}, isSecret ${String(readSecret?.isSecret)}; PUT of the same body: HTTP ${put.status}`,
       `run 2 after GET+PUT: result ${second.result}, QUALOR_TOKEN ${second.token} (length ${second.length}); ${second.waited}`,
       `hosted pool (vmImage ubuntu-latest): ${hosted}`,
     ].join('\n\n');

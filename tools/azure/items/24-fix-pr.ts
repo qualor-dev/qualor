@@ -531,9 +531,8 @@ async function seedMain(ctx: ProbeContext, repoId: string, notes: string[]): Pro
     'seed main of the fix repository',
   );
   await rec(ctx, 'push-seed', answerOf(res));
-  notes.push(
-    `main of ${FIX_REPOSITORY} seeded: ${changes.map((c) => `${c.changeType} ${c.path}`).join(', ')}`,
-  );
+  const seeded = changes.map((c) => `${c.changeType} ${c.path}`).join(', ');
+  notes.push(`main of ${FIX_REPOSITORY} seeded: ${seeded}`);
 }
 
 const PrListSchema = z.object({ value: z.array(FixPrSchema) });
@@ -545,13 +544,14 @@ async function readPr(ctx: ProbeContext, repo: Repo, id: number) {
 
 /** The active pull requests from `branch` into main. */
 async function activePrsFrom(ctx: ProbeContext, repo: Repo, branch: string): Promise<FixPr[]> {
+  const sourceRef = enc(`refs/heads/${branch}`);
   const res = ok(
     await ctx.bot.request(
       'GET',
       gitPath(
         ctx,
         repo,
-        `/pullrequests?searchCriteria.sourceRefName=${enc(`refs/heads/${branch}`)}` +
+        `/pullrequests?searchCriteria.sourceRefName=${sourceRef}` +
           `&searchCriteria.targetRefName=${enc('refs/heads/main')}&searchCriteria.status=active`,
       ),
     ),
@@ -655,7 +655,9 @@ export async function qualorMain(api: QualorApi, projectId: string) {
 async function vulndbStatus(api: QualorApi): Promise<string> {
   const res = await api.send('GET', '/api/v0/system/vulnerability-db');
   const s = res.json as { status?: unknown; lastError?: { code?: unknown } | null } | null;
-  return `vulnerability database ${String(s?.status ?? `HTTP ${res.status}`)}${s?.lastError?.code ? ` (last error ${String(s.lastError.code)})` : ''}`;
+  const status = String(s?.status ?? `HTTP ${res.status}`);
+  const lastError = s?.lastError?.code ? ` (last error ${String(s.lastError.code)})` : '';
+  return `vulnerability database ${status}${lastError}`;
 }
 
 /** Why a build did not succeed: its failed steps and their log tails (the detail only, redacted). */
@@ -665,24 +667,408 @@ export async function buildProblem(ctx: ProbeContext, buildId: number): Promise<
 
 // ---------------------------------------------------------------------------------------------
 
+/** What the item's phases share: the fix repository, the checks and notes so far, and who Qualor is. */
+interface Flow {
+  ctx: ProbeContext;
+  /** The probe context aimed at the fix repository. */
+  fixCtx: ProbeContext;
+  repo: Repo;
+  checks: Check[];
+  notes: string[];
+  seen: WeakerSeen;
+  spId: string;
+}
+
+/** The bench Qualor's address, login, project and the fix project's token, read from the environment. */
+interface Bench {
+  qualorUrl: string;
+  adminPassword: string;
+  projectKey: string;
+  scmUrl: string;
+  fixToken: string;
+}
+
+/** The verdict as far as the run got: a weaker identity's own, or the full flow's. */
+function finishFlow(flow: Flow): Promise<ProbeResult> {
+  const { ctx, checks, notes, seen } = flow;
+  return ctx.qualorAs ? weakerDone(ctx, checks, notes, seen) : done(ctx, checks, notes);
+}
+
+type BenchSetup = { api: QualorApi; projectId: string } | { stop: ProbeResult };
+
+/** The bench Qualor: project bench-fix mapped to the repository, fixes usable. */
+async function setupBench(flow: Flow, bench: Bench): Promise<BenchSetup> {
+  const { ctx, repo, notes } = flow;
+  const { projectKey, scmUrl } = bench;
+  const api = new QualorApi(bench.qualorUrl);
+  await api.login(bench.adminPassword);
+  const org = (
+    await api.items('/api/v0/organizations', z.object({ id: z.string(), key: z.string() }).loose())
+  ).find((o) => o.key === BENCH_ORG);
+  if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
+  const connection = (
+    await api.items(
+      `/api/v0/scm-connections?organizationId=${org.id}`,
+      z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
+    )
+  ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
+  if (!connection)
+    throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+  flow.seen.bench = { api, orgId: org.id, connectionId: connection.id };
+  const project = (
+    await api.items(
+      `/api/v0/projects?organizationId=${org.id}`,
+      z
+        .object({
+          id: z.string(),
+          key: z.string(),
+          scmConnectionId: z.string().nullable(),
+          scmProjectRef: z.string().nullable(),
+        })
+        .loose(),
+    )
+  ).find((p) => p.key === projectKey);
+  if (!project) {
+    throw new Error(`the bench Qualor has no project ${projectKey} (run seed-qualor.mjs --fixes)`);
+  }
+  const ref = repo.id.toLowerCase();
+  if (project.scmConnectionId !== connection.id || project.scmProjectRef?.toLowerCase() !== ref) {
+    // The seed runs before this item made the repository on the first run: the item maps it then.
+    await api.call('PATCH', `/api/v0/projects/${project.id}`, {
+      scmConnectionId: connection.id,
+      scmProjectRef: ref,
+    });
+    notes.push(`project ${projectKey} mapped to ${FIX_REPOSITORY} by the item`);
+  }
+  const missing = await missingPreconditions(api, project.id);
+  if (missing.length > 0) {
+    return {
+      stop: result(
+        ctx,
+        'no',
+        `fixes are not usable on ${projectKey}: ${missing.join('; ')} (run seed-qualor.mjs --fixes)`,
+      ),
+    };
+  }
+  return { api, projectId: project.id };
+}
+
+/** What the project's fix settings still lack: fixes on, mapped, fixMrsAllowed, monitoring. */
+async function missingPreconditions(api: QualorApi, projectId: string): Promise<string[]> {
+  const settings = shape(
+    z
+      .object({
+        settings: z.object({ enabled: z.boolean() }).loose(),
+        preconditions: z
+          .object({
+            scmBound: z.boolean(),
+            fixMrsAllowed: z.boolean(),
+            monitoringOn: z.boolean(),
+          })
+          .loose(),
+      })
+      .loose(),
+    (await api.call('GET', `/api/v0/projects/${projectId}/fixes/settings`)).json,
+    'fix settings',
+  );
+  return [
+    ...(settings.settings.enabled ? [] : ['fixes are off for the project']),
+    ...(settings.preconditions.scmBound ? [] : ['the project is not mapped']),
+    ...(settings.preconditions.fixMrsAllowed ? [] : ["the connection's fixMrsAllowed is off"]),
+    ...(settings.preconditions.monitoringOn ? [] : ['vulnerability monitoring is off']),
+  ];
+}
+
+/** What an earlier run left: a lodash fix in flight is cancelled and its PR and branch go. */
+async function clearEarlierFixes(flow: Flow, api: QualorApi, projectId: string): Promise<void> {
+  const { fixCtx, repo, notes } = flow;
+  for (const old of (await api.all(`/api/v0/projects/${projectId}/fixes`, FixItem)).filter(
+    (f) => f.packageName === PACKAGE && ACTIVE_STATES.includes(f.state),
+  )) {
+    await clearFix(api, projectId, fixCtx, repo, old);
+    notes.push(`an earlier run's ${PACKAGE} fix (${old.state}) cancelled and cleared first`);
+  }
+}
+
+/** The definitions: the scan (uploads) and the fix pipeline, on the bench queue. */
+async function createDefinitions(
+  flow: Flow,
+  bench: Bench,
+): Promise<{ scanId: number; fixId: number }> {
+  const { ctx, repo, notes } = flow;
+  const queueId = await defaultQueueId(ctx);
+  const variables = {
+    QUALOR_URL: { value: bench.qualorUrl, allowOverride: false },
+    QUALOR_PROJECT_KEY: { value: bench.projectKey, allowOverride: false },
+    QUALOR_TOKEN: { value: bench.fixToken, isSecret: true, allowOverride: false },
+  };
+  const definition = (name: string, yamlFilename: string) =>
+    createDefinition(ctx, {
+      name: `Qualor probe item 24 ${name} ${ctx.stamp}`,
+      path: '\\',
+      type: 'build',
+      queue: { id: queueId },
+      process: { type: 2, yamlFilename },
+      repository: {
+        id: repo.id,
+        name: repo.name,
+        type: 'TfsGit',
+        defaultBranch: 'refs/heads/main',
+      },
+      variables,
+    });
+  const scanDef = await definition('scan', DOCKER_PATH);
+  const fixDef = await definition('fix', FIX_DOCKER_PATH);
+  notes.push(await authorizeDefinitions(ctx, queueId, [scanDef.id, fixDef.id]));
+  return { scanId: scanDef.id, fixId: fixDef.id };
+}
+
+type Vulnerability = z.infer<typeof VulnerabilityItem>;
+
+/** The npm lodash vulnerabilities of the branch, once one of them is fixable. */
+async function fixableLodash(
+  api: QualorApi,
+  projectId: string,
+  branchId: string,
+): Promise<Vulnerability[] | undefined> {
+  const res = await api.call(
+    'GET',
+    `/api/v0/projects/${projectId}/vulnerabilities?target=branch:${branchId}&pageSize=100`,
+  );
+  const items = shape(
+    z.object({ items: z.array(VulnerabilityItem) }).loose(),
+    res.json,
+    'vulnerabilities',
+  ).items;
+  const mine = items.filter((v) => v.packageName === PACKAGE && v.ecosystem === 'npm');
+  return mine.some((v) => v.fixable) ? mine : undefined;
+}
+
+/** Scan main; wait for the analysis and its fixable lodash vulnerability (undefined: the run ends here). */
+async function scanAndAnalyse(
+  flow: Flow,
+  api: QualorApi,
+  projectId: string,
+  scanDefId: number,
+): Promise<Vulnerability[] | undefined> {
+  const { ctx, checks, notes } = flow;
+  const before = (await qualorMain(api, projectId))?.lastAnalysisId ?? null;
+  ctx.log(`scan of main, then the fix pipeline (builds up to ${BUILD_WAIT_MS / 60000} min each)`);
+  const scan = await queueBuild(ctx, scanDefId, 'refs/heads/main');
+  const scanned = await waitBuild(ctx, scan.id, { timeoutMs: BUILD_WAIT_MS });
+  await rec(ctx, 'build-scan', answerOf(scanned.res));
+  notes.push(`scan build ${scan.id}: ${scanned.build.status} ${scanned.build.result ?? '?'}`);
+  if (scanned.build.status !== 'completed') {
+    checks.push(
+      check(
+        'the scan of main completed',
+        false,
+        `${scanned.build.status} after ${BUILD_WAIT_MS / 60000} min`,
+      ),
+    );
+    return undefined;
+  }
+  const main = await waitFor(
+    async () => {
+      const b = await qualorMain(api, projectId);
+      return b?.lastAnalysisId && b.lastAnalysisId !== before ? b : undefined;
+    },
+    { timeoutMs: ANALYSIS_WAIT_MS, intervalMs: 10_000 },
+  );
+  let gotMain = 'a new main analysis';
+  if (!main) {
+    const problem =
+      scanned.build.result === 'succeeded' ? '' : `; ${await buildProblem(ctx, scan.id)}`;
+    gotMain = `none within ${ANALYSIS_WAIT_MS / 60000} min${problem}`;
+  }
+  checks.push(check('Qualor analysed the scan of main', main !== undefined, gotMain));
+  if (!main) return undefined;
+  const vulnerable = await waitFor(() => fixableLodash(api, projectId, main.id), {
+    timeoutMs: ANALYSIS_WAIT_MS,
+    intervalMs: 15_000,
+  });
+  const gotVulnerable = vulnerable
+    ? vulnerable.map((v) => `${v.vulnerabilityId} fixed in ${v.fixedVersion ?? '?'}`).join(', ')
+    : `not within ${ANALYSIS_WAIT_MS / 60000} min; ${await vulndbStatus(api)}`;
+  checks.push(
+    check(
+      `${PACKAGE} ${INSTALLED} is a fixable vulnerability of main`,
+      vulnerable !== undefined,
+      gotVulnerable,
+    ),
+  );
+  return vulnerable;
+}
+
+/** How the fix reads in the check: its state and, when it failed, Qualor's own failure text. */
+function describeOpened(ctx: ProbeContext, opened: Fix | undefined): string {
+  if (!opened) return 'the fix is gone';
+  if (!opened.failure) return opened.state;
+  const message = excerpt(opened.failure.message, ctx.redaction, 300);
+  return `${opened.state}: ${opened.failure.code} ${message}`;
+}
+
+/** Request the fix, run the fix pipeline, wait for the commit job (undefined: the run ends here). */
+async function requestAndOpen(
+  flow: Flow,
+  api: QualorApi,
+  projectId: string,
+  fixDefId: number,
+): Promise<{ fixId: string; opened: Fix; prId: number } | undefined> {
+  const { ctx, fixCtx, repo, checks, notes } = flow;
+  const requested = await api.send('POST', `/api/v0/projects/${projectId}/fixes`, {
+    ecosystem: 'npm',
+    packageName: PACKAGE,
+  });
+  if (requested.status !== 202) {
+    checks.push(
+      check(
+        'the fix request is accepted (202)',
+        false,
+        `HTTP ${requested.status} ${codeOf(requested.json)}`,
+      ),
+    );
+    return undefined;
+  }
+  const fix = shape(FixItem, requested.json, 'requested fix');
+  // The clean-up uses the row last read: once the fix is open it knows the pull request's id too.
+  let latest: Fix = fix;
+  ctx.cleanup.add(`cancel the ${PACKAGE} fix, abandon its pull request, delete its branch`, () =>
+    clearFix(api, projectId, fixCtx, repo, latest),
+  );
+
+  // The fix pipeline, then the commit job: the fix becomes open.
+  const fixBuild = await queueBuild(ctx, fixDefId, 'refs/heads/main');
+  const built = await waitBuild(ctx, fixBuild.id, { timeoutMs: BUILD_WAIT_MS });
+  await rec(ctx, 'build-fix', answerOf(built.res));
+  notes.push(`fix build ${fixBuild.id}: ${built.build.status} ${built.build.result ?? '?'}`);
+  if (built.build.status === 'completed' && built.build.result !== 'succeeded') {
+    notes.push(`fix build: ${await buildProblem(ctx, fixBuild.id)}`);
+  }
+  const settled = await waitFor(
+    async () => {
+      const f = await fixById(api, projectId, fix.id);
+      return f && !['requested', 'preparing', 'committing'].includes(f.state) ? f : undefined;
+    },
+    { timeoutMs: COMMIT_WAIT_MS, intervalMs: 10_000 },
+  );
+  const opened = settled ?? (await fixById(api, projectId, fix.id));
+  if (opened) latest = opened;
+  checks.push(
+    check(
+      'the fix is open (the fix pipeline uploaded, the commit job opened the pull request)',
+      opened?.state === 'open' && opened.mrNumber !== null,
+      describeOpened(ctx, opened),
+    ),
+  );
+  if (opened?.state !== 'open' || opened.mrNumber === null) return undefined;
+  return { fixId: fix.id, opened, prId: opened.mrNumber };
+}
+
+/** Azure DevOps: the branch, both files, the pull request. */
+async function checkAzure(
+  flow: Flow,
+  opened: Fix,
+  prId: number,
+  vulnerable: Vulnerability[],
+): Promise<void> {
+  const { ctx, fixCtx, repo, checks, notes, spId } = flow;
+  const target = opened.targetVersion;
+  checks.push(judgeTarget(target, vulnerable));
+  const head = await refHead(fixCtx, `refs/heads/${opened.branch}`);
+  checks.push(
+    check(
+      'the fix branch qualor/fix/js/… exists',
+      opened.branch.startsWith('qualor/fix/js/') && head !== undefined,
+      `${opened.branch} ${head ? 'exists' : 'missing'}`,
+    ),
+  );
+  if (head && target) {
+    checks.push(
+      judgeFiles(
+        lodashIn(
+          await fileText(fixCtx, repo.id, '/package.json', head),
+          await fileText(fixCtx, repo.id, '/package-lock.json', head),
+        ),
+        target,
+      ),
+    );
+  }
+  const open = await readPr(fixCtx, repo, prId);
+  await rec(ctx, 'pr-open', answerOf(open.res));
+  checks.push(...judgeOpenPr(open.pr, { branch: opened.branch, target: target ?? 'none', spId }));
+  const mrUrl =
+    opened.mrUrl === `${repo.webUrl}/pullrequest/${prId}`
+      ? "is the pull request's web URL"
+      : 'differs from the pull request web URL';
+  notes.push(`installed version ${opened.installedVersion ?? '?'}; the fix's mrUrl ${mrUrl}`);
+}
+
+/** Cancel; the pull request abandoned with Qualor's closed thread, the branch deleted. */
+async function cancelAndClose(
+  flow: Flow,
+  api: QualorApi,
+  projectId: string,
+  opened: { fixId: string; opened: Fix; prId: number },
+): Promise<void> {
+  const { ctx, fixCtx, repo, checks, spId } = flow;
+  const { fixId, prId } = opened;
+  const branchRef = `refs/heads/${opened.opened.branch}`;
+  await cancelFix(api, fixId);
+  const cancelled = await waitFor(
+    async () => {
+      const f = await fixById(api, projectId, fixId);
+      return f?.state === 'cancelled' ? f : undefined;
+    },
+    { timeoutMs: 60_000, intervalMs: 5000 },
+  );
+  checks.push(
+    check(
+      'the fix is cancelled',
+      cancelled !== undefined,
+      cancelled ? 'cancelled' : 'not within a minute',
+    ),
+  );
+  const closed = await waitFor(
+    async () => {
+      const got = await readPr(fixCtx, repo, prId);
+      const threads = await listThreads(fixCtx, repo, prId);
+      const gone = (await refHead(fixCtx, branchRef)) === undefined;
+      return got.pr.status === 'abandoned' && gone && closedThread(threads.threads, spId)
+        ? { got, threads }
+        : undefined;
+    },
+    { timeoutMs: CLOSE_WAIT_MS, intervalMs: 10_000 },
+  );
+  const after = closed ?? {
+    got: await readPr(fixCtx, repo, prId),
+    threads: await listThreads(fixCtx, repo, prId),
+  };
+  await rec(ctx, 'pr-closed', answerOf(after.got.res));
+  await rec(ctx, 'threads-closed', answerOf(after.threads.res));
+  checks.push(
+    ...judgeClosed(after.got.pr, after.threads.threads, await refHead(fixCtx, branchRef), spId),
+  );
+}
+
 export const item: ProbeItem = {
   id: 24,
   title:
     'a dependency fix pull request on Azure DevOps: Qualor opens it from the fix pipeline, and a cancel closes it',
   async run(ctx) {
     // The bench Qualor's fix project and connection of the target (Server: bench-server-fix).
-    const bench = benchProject(ctx.target, 'fix');
-    const qualorUrl = needEnv('AZURE_PROBE_QUALOR_URL');
-    const fixToken = needEnv(bench.tokenEnv);
-    const adminPassword = needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD');
-    const scmUrl = benchScmUrl(ctx.target);
-    const projectKey = bench.key;
+    const project = benchProject(ctx.target, 'fix');
+    const bench: Bench = {
+      qualorUrl: needEnv('AZURE_PROBE_QUALOR_URL'),
+      fixToken: needEnv(project.tokenEnv),
+      adminPassword: needEnv('AZURE_PROBE_QUALOR_ADMIN_PASSWORD'),
+      scmUrl: benchScmUrl(ctx.target),
+      projectKey: project.key,
+    };
     const checks: Check[] = [];
     const notes: string[] = [];
     // What a weaker identity's verdict needs, as far as the run got (--qualor-identity).
     const seen: WeakerSeen = {};
-    const finish = () =>
-      ctx.qualorAs ? weakerDone(ctx, checks, notes, seen) : done(ctx, checks, notes);
 
     // Qualor's identity's names (the service principal; Server: the PAT's owner) join the
     // redaction table before anything is recorded.
@@ -694,298 +1080,22 @@ export const item: ProbeItem = {
     const fixCtx: ProbeContext = { ...ctx, repo: FIX_REPOSITORY };
     const repo = await repoInfo(fixCtx);
     seen.fix = { ctx: fixCtx, repo };
+    const flow: Flow = { ctx, fixCtx, repo, checks, notes, seen, spId };
 
-    // ---- The bench Qualor: project bench-fix mapped to the repository, fixes usable.
-    const api = new QualorApi(qualorUrl);
-    await api.login(adminPassword);
-    const org = (
-      await api.items(
-        '/api/v0/organizations',
-        z.object({ id: z.string(), key: z.string() }).loose(),
-      )
-    ).find((o) => o.key === BENCH_ORG);
-    if (!org) throw new Error('the bench Qualor has no organisation `bench` (run seed-qualor.mjs)');
-    const connection = (
-      await api.items(
-        `/api/v0/scm-connections?organizationId=${org.id}`,
-        z.object({ id: z.string(), provider: z.string(), baseUrl: z.string() }).loose(),
-      )
-    ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
-    if (!connection)
-      throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
-    seen.bench = { api, orgId: org.id, connectionId: connection.id };
-    const project = (
-      await api.items(
-        `/api/v0/projects?organizationId=${org.id}`,
-        z
-          .object({
-            id: z.string(),
-            key: z.string(),
-            scmConnectionId: z.string().nullable(),
-            scmProjectRef: z.string().nullable(),
-          })
-          .loose(),
-      )
-    ).find((p) => p.key === projectKey);
-    if (!project) {
-      throw new Error(
-        `the bench Qualor has no project ${projectKey} (run seed-qualor.mjs --fixes)`,
-      );
-    }
-    const ref = repo.id.toLowerCase();
-    if (project.scmConnectionId !== connection.id || project.scmProjectRef?.toLowerCase() !== ref) {
-      // The seed runs before this item made the repository on the first run: the item maps it then.
-      await api.call('PATCH', `/api/v0/projects/${project.id}`, {
-        scmConnectionId: connection.id,
-        scmProjectRef: ref,
-      });
-      notes.push(`project ${projectKey} mapped to ${FIX_REPOSITORY} by the item`);
-    }
-    const settings = shape(
-      z
-        .object({
-          settings: z.object({ enabled: z.boolean() }).loose(),
-          preconditions: z
-            .object({
-              scmBound: z.boolean(),
-              fixMrsAllowed: z.boolean(),
-              monitoringOn: z.boolean(),
-            })
-            .loose(),
-        })
-        .loose(),
-      (await api.call('GET', `/api/v0/projects/${project.id}/fixes/settings`)).json,
-      'fix settings',
-    );
-    const missing = [
-      ...(settings.settings.enabled ? [] : ['fixes are off for the project']),
-      ...(settings.preconditions.scmBound ? [] : ['the project is not mapped']),
-      ...(settings.preconditions.fixMrsAllowed ? [] : ["the connection's fixMrsAllowed is off"]),
-      ...(settings.preconditions.monitoringOn ? [] : ['vulnerability monitoring is off']),
-    ];
-    if (missing.length > 0) {
-      return result(
-        ctx,
-        'no',
-        `fixes are not usable on ${projectKey}: ${missing.join('; ')} (run seed-qualor.mjs --fixes)`,
-      );
-    }
+    const setup = await setupBench(flow, bench);
+    if ('stop' in setup) return setup.stop;
+    const { api, projectId } = setup;
+    await clearEarlierFixes(flow, api, projectId);
+    const defs = await createDefinitions(flow, bench);
 
-    // ---- What an earlier run left: a lodash fix in flight is cancelled and its PR and branch go.
-    for (const old of (await api.all(`/api/v0/projects/${project.id}/fixes`, FixItem)).filter(
-      (f) => f.packageName === PACKAGE && ACTIVE_STATES.includes(f.state),
-    )) {
-      await clearFix(api, project.id, fixCtx, repo, old);
-      notes.push(`an earlier run's ${PACKAGE} fix (${old.state}) cancelled and cleared first`);
-    }
-
-    // ---- Definitions: the scan (uploads) and the fix pipeline, on the bench queue.
-    const queueId = await defaultQueueId(ctx);
-    const variables = {
-      QUALOR_URL: { value: qualorUrl, allowOverride: false },
-      QUALOR_PROJECT_KEY: { value: projectKey, allowOverride: false },
-      QUALOR_TOKEN: { value: fixToken, isSecret: true, allowOverride: false },
-    };
-    const definition = (name: string, yamlFilename: string) =>
-      createDefinition(ctx, {
-        name: `Qualor probe item 24 ${name} ${ctx.stamp}`,
-        path: '\\',
-        type: 'build',
-        queue: { id: queueId },
-        process: { type: 2, yamlFilename },
-        repository: {
-          id: repo.id,
-          name: repo.name,
-          type: 'TfsGit',
-          defaultBranch: 'refs/heads/main',
-        },
-        variables,
-      });
-    const scanDef = await definition('scan', DOCKER_PATH);
-    const fixDef = await definition('fix', FIX_DOCKER_PATH);
-    notes.push(await authorizeDefinitions(ctx, queueId, [scanDef.id, fixDef.id]));
-
-    // ---- 1. Scan main; wait for the analysis and its fixable lodash vulnerability.
-    const before = (await qualorMain(api, project.id))?.lastAnalysisId ?? null;
-    ctx.log(`scan of main, then the fix pipeline (builds up to ${BUILD_WAIT_MS / 60000} min each)`);
-    const scan = await queueBuild(ctx, scanDef.id, 'refs/heads/main');
-    const scanned = await waitBuild(ctx, scan.id, { timeoutMs: BUILD_WAIT_MS });
-    await rec(ctx, 'build-scan', answerOf(scanned.res));
-    notes.push(`scan build ${scan.id}: ${scanned.build.status} ${scanned.build.result ?? '?'}`);
-    if (scanned.build.status !== 'completed') {
-      checks.push(
-        check(
-          'the scan of main completed',
-          false,
-          `${scanned.build.status} after ${BUILD_WAIT_MS / 60000} min`,
-        ),
-      );
-      return finish();
-    }
-    const main = await waitFor(
-      async () => {
-        const b = await qualorMain(api, project.id);
-        return b?.lastAnalysisId && b.lastAnalysisId !== before ? b : undefined;
-      },
-      { timeoutMs: ANALYSIS_WAIT_MS, intervalMs: 10_000 },
-    );
-    checks.push(
-      check(
-        'Qualor analysed the scan of main',
-        main !== undefined,
-        main
-          ? 'a new main analysis'
-          : `none within ${ANALYSIS_WAIT_MS / 60000} min${scanned.build.result === 'succeeded' ? '' : `; ${await buildProblem(ctx, scan.id)}`}`,
-      ),
-    );
-    if (!main) return finish();
-    const vulnerable = await waitFor(
-      async () => {
-        const res = await api.call(
-          'GET',
-          `/api/v0/projects/${project.id}/vulnerabilities?target=branch:${main.id}&pageSize=100`,
-        );
-        const items = shape(
-          z.object({ items: z.array(VulnerabilityItem) }).loose(),
-          res.json,
-          'vulnerabilities',
-        ).items;
-        const mine = items.filter((v) => v.packageName === PACKAGE && v.ecosystem === 'npm');
-        return mine.some((v) => v.fixable) ? mine : undefined;
-      },
-      { timeoutMs: ANALYSIS_WAIT_MS, intervalMs: 15_000 },
-    );
-    checks.push(
-      check(
-        `${PACKAGE} ${INSTALLED} is a fixable vulnerability of main`,
-        vulnerable !== undefined,
-        vulnerable
-          ? vulnerable
-              .map((v) => `${v.vulnerabilityId} fixed in ${v.fixedVersion ?? '?'}`)
-              .join(', ')
-          : `not within ${ANALYSIS_WAIT_MS / 60000} min; ${await vulndbStatus(api)}`,
-      ),
-    );
-    if (!vulnerable) return finish();
-
-    // ---- 2. Request the fix.
-    const requested = await api.send('POST', `/api/v0/projects/${project.id}/fixes`, {
-      ecosystem: 'npm',
-      packageName: PACKAGE,
-    });
-    if (requested.status !== 202) {
-      checks.push(
-        check(
-          'the fix request is accepted (202)',
-          false,
-          `HTTP ${requested.status} ${codeOf(requested.json)}`,
-        ),
-      );
-      return finish();
-    }
-    const fix = shape(FixItem, requested.json, 'requested fix');
-    // The clean-up uses the row last read: once the fix is open it knows the pull request's id too.
-    let latest: Fix = fix;
-    ctx.cleanup.add(`cancel the ${PACKAGE} fix, abandon its pull request, delete its branch`, () =>
-      clearFix(api, project.id, fixCtx, repo, latest),
-    );
-
-    // ---- 3. The fix pipeline, then the commit job: the fix becomes open.
-    const fixBuild = await queueBuild(ctx, fixDef.id, 'refs/heads/main');
-    const built = await waitBuild(ctx, fixBuild.id, { timeoutMs: BUILD_WAIT_MS });
-    await rec(ctx, 'build-fix', answerOf(built.res));
-    notes.push(`fix build ${fixBuild.id}: ${built.build.status} ${built.build.result ?? '?'}`);
-    if (built.build.status === 'completed' && built.build.result !== 'succeeded') {
-      notes.push(`fix build: ${await buildProblem(ctx, fixBuild.id)}`);
-    }
-    const settled = await waitFor(
-      async () => {
-        const f = await fixById(api, project.id, fix.id);
-        return f && !['requested', 'preparing', 'committing'].includes(f.state) ? f : undefined;
-      },
-      { timeoutMs: COMMIT_WAIT_MS, intervalMs: 10_000 },
-    );
-    const opened = settled ?? (await fixById(api, project.id, fix.id));
-    if (opened) latest = opened;
-    checks.push(
-      check(
-        'the fix is open (the fix pipeline uploaded, the commit job opened the pull request)',
-        opened?.state === 'open' && opened.mrNumber !== null,
-        opened
-          ? `${opened.state}${opened.failure ? `: ${opened.failure.code} ${excerpt(opened.failure.message, ctx.redaction, 300)}` : ''}`
-          : 'the fix is gone',
-      ),
-    );
-    if (opened?.state !== 'open' || opened.mrNumber === null) return finish();
-    const prId = opened.mrNumber;
-
-    // ---- 4. Azure DevOps: the branch, both files, the pull request.
-    const target = opened.targetVersion;
-    checks.push(judgeTarget(target, vulnerable));
-    const branchRef = `refs/heads/${opened.branch}`;
-    const head = await refHead(fixCtx, branchRef);
-    checks.push(
-      check(
-        'the fix branch qualor/fix/js/… exists',
-        opened.branch.startsWith('qualor/fix/js/') && head !== undefined,
-        `${opened.branch} ${head ? 'exists' : 'missing'}`,
-      ),
-    );
-    if (head && target) {
-      checks.push(
-        judgeFiles(
-          lodashIn(
-            await fileText(fixCtx, repo.id, '/package.json', head),
-            await fileText(fixCtx, repo.id, '/package-lock.json', head),
-          ),
-          target,
-        ),
-      );
-    }
-    const open = await readPr(fixCtx, repo, prId);
-    await rec(ctx, 'pr-open', answerOf(open.res));
-    checks.push(...judgeOpenPr(open.pr, { branch: opened.branch, target: target ?? 'none', spId }));
-    notes.push(
-      `installed version ${opened.installedVersion ?? '?'}; the fix's mrUrl ${opened.mrUrl === `${repo.webUrl}/pullrequest/${prId}` ? "is the pull request's web URL" : 'differs from the pull request web URL'}`,
-    );
-
-    // ---- 5. Cancel; 6. the pull request abandoned with Qualor's closed thread, the branch deleted.
-    await cancelFix(api, fix.id);
-    const cancelled = await waitFor(
-      async () => {
-        const f = await fixById(api, project.id, fix.id);
-        return f?.state === 'cancelled' ? f : undefined;
-      },
-      { timeoutMs: 60_000, intervalMs: 5000 },
-    );
-    checks.push(
-      check(
-        'the fix is cancelled',
-        cancelled !== undefined,
-        cancelled ? 'cancelled' : 'not within a minute',
-      ),
-    );
-    const closed = await waitFor(
-      async () => {
-        const got = await readPr(fixCtx, repo, prId);
-        const threads = await listThreads(fixCtx, repo, prId);
-        const gone = (await refHead(fixCtx, branchRef)) === undefined;
-        return got.pr.status === 'abandoned' && gone && closedThread(threads.threads, spId)
-          ? { got, threads }
-          : undefined;
-      },
-      { timeoutMs: CLOSE_WAIT_MS, intervalMs: 10_000 },
-    );
-    const after = closed ?? {
-      got: await readPr(fixCtx, repo, prId),
-      threads: await listThreads(fixCtx, repo, prId),
-    };
-    await rec(ctx, 'pr-closed', answerOf(after.got.res));
-    await rec(ctx, 'threads-closed', answerOf(after.threads.res));
-    checks.push(
-      ...judgeClosed(after.got.pr, after.threads.threads, await refHead(fixCtx, branchRef), spId),
-    );
-    return finish();
+    // ---- 1. Scan main, 2. request the fix, 3. the fix becomes open, 4. Azure DevOps, 5-6. cancel.
+    const vulnerable = await scanAndAnalyse(flow, api, projectId, defs.scanId);
+    if (!vulnerable) return finishFlow(flow);
+    const fix = await requestAndOpen(flow, api, projectId, defs.fixId);
+    if (!fix) return finishFlow(flow);
+    await checkAzure(flow, fix.opened, fix.prId, vulnerable);
+    await cancelAndClose(flow, api, projectId, fix);
+    return finishFlow(flow);
   },
 };
 

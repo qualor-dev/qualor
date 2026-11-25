@@ -10,6 +10,7 @@ import {
   ThreadSchema,
   threadsPath,
   type ProbeContext,
+  type Answer,
   type ProbeItem,
   type Thread,
 } from './common.js';
@@ -76,7 +77,8 @@ export const item: ProbeItem = {
       `compared: comments (id, parent, content, type, deleted, author), properties, threadContext, pullRequestThreadContext, isDeleted`,
     ].join('\n\n');
     const allSame = same(fixed.thread) && same(active.thread);
-    const answer = resolvedOk && reopenedOk ? (allSame ? 'yes' : 'partly') : 'no';
+    let answer: Answer = 'no';
+    if (resolvedOk && reopenedOk) answer = allSame ? 'yes' : 'partly';
     return result(ctx, answer, detail);
   },
 };

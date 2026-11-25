@@ -132,7 +132,8 @@ const fieldOf = (json: unknown, key: string): unknown =>
 /** What a failed-or-not answer says, for the detail: status, typeKey and message. */
 function describeAnswer(res: AzureResponse): string {
   const type = fieldOf(res.json, 'typeKey');
-  return `HTTP ${res.status}${typeof type === 'string' ? ` ${type}` : ''}: ${messageOf(res.json)}`;
+  const typeKey = typeof type === 'string' ? ` ${type}` : '';
+  return `HTTP ${res.status}${typeKey}: ${messageOf(res.json)}`;
 }
 
 export const item: ProbeItem = {
@@ -242,8 +243,7 @@ export const item: ProbeItem = {
     facts.push(
       `22a ancestry: A to B (A is an ancestor) is ${a1}; B to the fix commit (diverged) is ${a2}; common commit of the diverged pair is A: ${common(diverged) === baseA}`,
     );
-    if (a1 !== 'ancestor' || a2 !== 'diverged')
-      fail('22a: the common commit does not tell ancestor from diverged');
+    if (!ancestryTold(a1, a2)) fail('22a: the common commit does not tell ancestor from diverged');
 
     // 22d: move the fix branch onto a different commit of the base branch. First the single push
     // (recorded: Azure refuses it), then the two-step refresh: push to a temporary ref, move the branch.
@@ -261,8 +261,7 @@ export const item: ProbeItem = {
     facts.push(
       `22d single push with oldObjectId = head and another parent: ${describeAnswer(move)}`,
     );
-    if (move.status >= 200 && move.status < 300)
-      fail('22d: the single push was accepted, the two-step is not needed');
+    if (isSuccess(move)) fail('22d: the single push was accepted, the two-step is not needed');
 
     const refresh = async (name: string) => {
       const res = await pushBytes(
@@ -288,8 +287,9 @@ export const item: ProbeItem = {
       tmpPush = await refresh(tmpRef);
       await ctx.record('push-tmp-ref-branch', answerOf(tmpPush));
     }
+    const refKind = tmpRef === tmpOther ? 'not a branch' : 'a branch name';
     facts.push(
-      `22d temporary ref: ${tmpOther} -> ${firstTried}; used ${tmpRef} (${tmpRef === tmpOther ? 'not a branch' : 'a branch name'}): ${describeAnswer(tmpPush)}`,
+      `22d temporary ref: ${tmpOther} -> ${firstTried}; used ${tmpRef} (${refKind}): ${describeAnswer(tmpPush)}`,
     );
     const fix2 = pushedCommit(tmpPush, 'push to the temporary ref');
     const moveRef = await ctx.bot.request('POST', gitPath(ctx, repo, '/refs'), [
@@ -301,8 +301,9 @@ export const item: ProbeItem = {
       moveRef.status < 300 && moveUpdate.success && moveUpdate.data.value[0]?.success === true;
     const headAfter = await refHead(ctx, fixRef);
     const atFix2 = await readRaw(ctx, repo, filePath, fix2);
+    const moveDetail = updateDetail('', moveUpdate);
     facts.push(
-      `22d non-fast-forward ref update of the branch: ${describeAnswer(moveRef)}${moveUpdate.success ? `; success=${String(moveUpdate.data.value[0]?.success)} updateStatus=${moveUpdate.data.value[0]?.updateStatus}` : ''}; ` +
+      `22d non-fast-forward ref update of the branch: ${describeAnswer(moveRef)}${moveDetail}; ` +
         `head is the new commit: ${headAfter === fix2}; file equals the pushed bytes: ${atFix2.bytes.equals(fix2Bytes)}`,
     );
     if (!moved || headAfter !== fix2)
@@ -351,7 +352,7 @@ export const item: ProbeItem = {
     facts.push(
       `22f description of ${DESCRIPTION_LIMIT + 1} characters: ${describeAnswer(tooLong)}`,
     );
-    if (tooLong.status >= 200 && tooLong.status < 300) {
+    if (isSuccess(tooLong)) {
       const id = track(tooLong);
       await abandonIfActive(ctx, repo, id);
     }
@@ -366,11 +367,7 @@ export const item: ProbeItem = {
     const merged = await prWithMerge(ctx, prId);
     await ctx.record('pr-get', answerOf(merged.res));
     const pr = merged.res.json;
-    const repoField = fieldOf(pr, 'repository');
-    facts.push(
-      `22f PR GET: mergeStatus ${String(fieldOf(pr, 'mergeStatus'))}, lastMergeSourceCommit ${fieldOf(pr, 'lastMergeSourceCommit') ? 'present' : 'absent'}, ` +
-        `description ${String(fieldOf(pr, 'description')).length} characters, repository.id ${fieldOf(repoField, 'id') ? 'present' : 'absent'}, forkSource ${fieldOf(pr, 'forkSource') === undefined ? 'absent' : 'present'}`,
-    );
+    facts.push(describePrGet(pr));
 
     // 22g: find it by source and target.
     const find = ok(
@@ -408,18 +405,9 @@ export const item: ProbeItem = {
       'Qualor probe item 22: conflicting base',
     );
     pushedCommit(conflictPush, 'push conflicting base change');
-    let conflictRes: AzureResponse | undefined;
-    const conflicted = await waitFor(
-      async () => {
-        const got = await getPr(ctx, prId);
-        conflictRes = got.res;
-        return fieldOf(got.res.json, 'mergeStatus') === 'conflicts' ? got : undefined;
-      },
-      { timeoutMs: 60_000, intervalMs: 2000 },
-    );
-    if (conflictRes) await ctx.record('pr-conflict', answerOf(conflictRes));
+    const conflicted = await pollConflict(ctx, prId, 'pr-conflict');
     facts.push(
-      `22h conflict: mergeStatus ${String(fieldOf(conflictRes?.json, 'mergeStatus'))} (polled up to 60 s), reached conflicts: ${conflicted !== undefined}`,
+      `22h conflict: mergeStatus ${String(fieldOf(conflicted.last?.json, 'mergeStatus'))} (polled up to 60 s), reached conflicts: ${conflicted.reached}`,
     );
 
     // 22i: close: PATCH title and description, a closed PR-level thread, then abandon.
@@ -453,18 +441,9 @@ export const item: ProbeItem = {
         'create the late pull request',
       ),
     );
-    let lateRes: AzureResponse | undefined;
-    const lateConflict = await waitFor(
-      async () => {
-        const got = await getPr(ctx, late);
-        lateRes = got.res;
-        return fieldOf(got.res.json, 'mergeStatus') === 'conflicts' ? got : undefined;
-      },
-      { timeoutMs: 60_000, intervalMs: 2000 },
-    );
-    if (lateRes) await ctx.record('pr-conflict-late', answerOf(lateRes));
+    const lateConflict = await pollConflict(ctx, late, 'pr-conflict-late');
     facts.push(
-      `22h a pull request created after the base change: mergeStatus ${String(fieldOf(lateRes?.json, 'mergeStatus'))}, reached conflicts: ${lateConflict !== undefined}`,
+      `22h a pull request created after the base change: mergeStatus ${String(fieldOf(lateConflict.last?.json, 'mergeStatus'))}, reached conflicts: ${lateConflict.reached}`,
     );
     await abandonIfActive(ctx, repo, late);
 
@@ -499,9 +478,8 @@ export const item: ProbeItem = {
     await ctx.record('ref-delete-stale', answerOf(staleDelete));
     const staleUpdate =
       staleDelete.status < 300 ? RefUpdatesSchema.safeParse(staleDelete.json) : undefined;
-    facts.push(
-      `22j delete with a stale oldObjectId: ${describeAnswer(staleDelete)}${staleUpdate?.success ? `; per update success=${String(staleUpdate.data.value[0]?.success)} updateStatus=${staleUpdate.data.value[0]?.updateStatus}` : ''}`,
-    );
+    const staleDetail = updateDetail('per update ', staleUpdate);
+    facts.push(`22j delete with a stale oldObjectId: ${describeAnswer(staleDelete)}${staleDetail}`);
     const rightDelete = await ctx.bot.request('POST', gitPath(ctx, repo, '/refs'), [
       { name: fixRef, oldObjectId: fix2, newObjectId: ZEROS },
     ]);
@@ -518,6 +496,49 @@ export const item: ProbeItem = {
     return result(ctx, 'yes', facts.join('\n'));
   },
 };
+
+const isSuccess = (res: AzureResponse): boolean => res.status >= 200 && res.status < 300;
+
+const ancestryTold = (first: string, second: string): boolean =>
+  first === 'ancestor' && second === 'diverged';
+
+/** The 22f fact line for the pull request GET. */
+function describePrGet(pr: unknown): string {
+  const repoField = fieldOf(pr, 'repository');
+  return (
+    `22f PR GET: mergeStatus ${String(fieldOf(pr, 'mergeStatus'))}, lastMergeSourceCommit ${fieldOf(pr, 'lastMergeSourceCommit') ? 'present' : 'absent'}, ` +
+    `description ${String(fieldOf(pr, 'description')).length} characters, repository.id ${fieldOf(repoField, 'id') ? 'present' : 'absent'}, forkSource ${fieldOf(pr, 'forkSource') === undefined ? 'absent' : 'present'}`
+  );
+}
+
+/** The first ref update's success and updateStatus, when the answer parsed. */
+function updateDetail(
+  prefix: string,
+  update: ReturnType<typeof RefUpdatesSchema.safeParse> | undefined,
+): string {
+  if (!update?.success) return '';
+  const first = update.data.value[0];
+  return `; ${prefix}success=${String(first?.success)} updateStatus=${first?.updateStatus}`;
+}
+
+/** Polls a pull request for up to 60 s until its mergeStatus is conflicts; records the last answer. */
+async function pollConflict(
+  ctx: ProbeContext,
+  prId: number,
+  recording: string,
+): Promise<{ last: AzureResponse | undefined; reached: boolean }> {
+  let last: AzureResponse | undefined;
+  const got = await waitFor(
+    async () => {
+      const pr = await getPr(ctx, prId);
+      last = pr.res;
+      return fieldOf(pr.res.json, 'mergeStatus') === 'conflicts' ? pr : undefined;
+    },
+    { timeoutMs: 60_000, intervalMs: 2000 },
+  );
+  if (last) await ctx.record(recording, answerOf(last));
+  return { last, reached: got !== undefined };
+}
 
 async function deleteRef(ctx: ProbeContext, repo: Repo, refName: string): Promise<void> {
   const head = await refHead(ctx, refName);

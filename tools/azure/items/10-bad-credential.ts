@@ -51,10 +51,11 @@ export const item: ProbeItem = {
     const opts = ctx.caPem ? { caPem: ctx.caPem } : {};
     const accept = { accept: 'application/json' };
 
+    const wrongBasic = Buffer.from(`:${wrong}`).toString('base64');
     const withWrong = await rawRequest(
       'GET',
       url,
-      { ...accept, authorization: `Basic ${Buffer.from(`:${wrong}`).toString('base64')}` },
+      { ...accept, authorization: `Basic ${wrongBasic}` },
       undefined,
       opts,
     );

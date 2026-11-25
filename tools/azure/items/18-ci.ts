@@ -179,9 +179,11 @@ export async function extensionInstalled(
     );
     const count = z.object({ count: z.number() }).safeParse(task.json);
     const available = task.status === 200 && count.success && count.data.count > 0;
+    const versions = count.success ? `, ${count.data.count} versions` : '';
+    const availability = available ? 'available' : `not available (HTTP ${task.status}${versions})`;
     return {
       installed: available,
-      why: `installed extensions not readable here (HTTP ${res.status}); task ${QUALOR_TASK_ID} ${available ? 'available' : `not available (HTTP ${task.status}${count.success ? `, ${count.data.count} versions` : ''})`}`,
+      why: `installed extensions not readable here (HTTP ${res.status}); task ${QUALOR_TASK_ID} ${availability}`,
     };
   }
   const list = shape(
@@ -351,7 +353,8 @@ export function failedSteps(records: TimelineRecord[], logs: Map<number, string[
       .filter((l) => l.length > 0)
       .slice(0, 6)
       .map((l) => l.slice(0, 300));
-    return `no failed step in the timeline (${records.length} records)${first.length ? `; logs: ${first.join(' / ')}` : '; no logs'}`;
+    const logsText = first.length ? `; logs: ${first.join(' / ')}` : '; no logs';
+    return `no failed step in the timeline (${records.length} records)${logsText}`;
   }
   return bad
     .map((r) => {
@@ -361,7 +364,8 @@ export function failedSteps(records: TimelineRecord[], logs: Map<number, string[
         .filter((l) => l.length > 0 && !l.startsWith('##[section]'))
         .slice(-6)
         .map((l) => l.slice(0, 220));
-      return `step "${r.name ?? '?'}" ${r.result ?? '?'}: ${issue.slice(0, 300)}${tail.length ? ` | log tail: ${tail.join(' / ')}` : ''}`;
+      const tailText = tail.length ? ` | log tail: ${tail.join(' / ')}` : '';
+      return `step "${r.name ?? '?'}" ${r.result ?? '?'}: ${issue.slice(0, 300)}${tailText}`;
     })
     .join('; ');
 }
@@ -473,9 +477,11 @@ export async function checkForm(
     got === expected ? `${what} = ${got}` : `${what}: expected ${expected}, got ${got ?? 'absent'}`,
   );
   // The item asks about the scan and its report: another failed step is named in the text only.
+  const fieldsText =
+    failed.length === 0 ? 'every scm field as expected' : `${failed.length} scm field(s) differ`;
   return {
     pass: failed.length === 0 && scanStep === 'succeeded',
-    text: `${tag} form: ${status}; ${failed.length === 0 ? 'every scm field as expected' : `${failed.length} scm field(s) differ`}: ${lines.join('; ')}`,
+    text: `${tag} form: ${status}; ${fieldsText}: ${lines.join('; ')}`,
   };
 }
 

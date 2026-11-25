@@ -190,10 +190,10 @@ export async function verifyApply(ctx: ProbeContext, prId: number): Promise<Prob
   const all = text === expectedText(['A', 'B', 'C']);
   const detail = [
     `file ${filePath} at ${head.slice(0, 8)}: ${raw.bytes.length} bytes, equals the text with all three applied: ${all}`,
-    ...verdicts.map(
-      (v) =>
-        `thread ${v.thread}: ${v.verdict}${v.thread === 'C' ? `, blank line remains: ${v.blankLine}` : ''}`,
-    ),
+    ...verdicts.map((v) => {
+      const blank = v.thread === 'C' ? `, blank line remains: ${v.blankLine}` : '';
+      return `thread ${v.thread}: ${v.verdict}${blank}`;
+    }),
     `text: ${JSON.stringify(text)}`,
   ].join('\n');
   const answer = verdicts.every((v) => v.verdict === 'as-expected') ? 'yes' : 'partly';

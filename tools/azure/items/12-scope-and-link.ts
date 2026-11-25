@@ -45,35 +45,42 @@ async function open(ctx: ProbeContext, url: string, method: 'HEAD' | 'GET', pat:
       "repository.webUrl is not on the target URL's origin: no credential sent to it",
     );
   }
+  const credential = Buffer.from(`:${pat}`).toString('base64');
   return rawRequest(
     method,
     page,
-    { authorization: `Basic ${Buffer.from(`:${pat}`).toString('base64')}`, accept: 'text/html' },
+    { authorization: `Basic ${credential}`, accept: 'text/html' },
     undefined,
     ctx.caPem ? { caPem: ctx.caPem } : {},
   );
+}
+
+/** Item 12, part one: the Entra scope string with a secret and with a certificate. */
+async function checkScope(ctx: ProbeContext): Promise<{ lines: string[]; scopeOk: boolean }> {
+  const lines: string[] = [];
+  let scopeOk = true;
+  if (!ctx.entra) {
+    lines.push('scope: skipped (server has no Entra)');
+    return { lines, scopeOk };
+  }
+  for (const kind of ['secret', 'certificate'] as const) {
+    try {
+      await whoAmI(ctx, ctx.entra(kind), kind, false);
+      lines.push(`scope 499b84ac-1321-427f-aa17-267ca6975798/.default with ${kind}: accepted`);
+    } catch (err) {
+      if (err instanceof InterruptedError) throw err;
+      scopeOk = false;
+      lines.push(`scope with ${kind}: failed: ${(err as Error).message}`);
+    }
+  }
+  return { lines, scopeOk };
 }
 
 export const item: ProbeItem = {
   id: 12,
   title: 'the Entra scope string is accepted, and repository.webUrl + /pullrequest/{id} opens',
   async run(ctx) {
-    const lines: string[] = [];
-    let scopeOk = true;
-    if (!ctx.entra) {
-      lines.push('scope: skipped (server has no Entra)');
-    } else {
-      for (const kind of ['secret', 'certificate'] as const) {
-        try {
-          await whoAmI(ctx, ctx.entra(kind), kind, false);
-          lines.push(`scope 499b84ac-1321-427f-aa17-267ca6975798/.default with ${kind}: accepted`);
-        } catch (err) {
-          if (err instanceof InterruptedError) throw err;
-          scopeOk = false;
-          lines.push(`scope with ${kind}: failed: ${(err as Error).message}`);
-        }
-      }
-    }
+    const { lines, scopeOk } = await checkScope(ctx);
 
     const title = `Qualor probe item ${ctx.item} (${ctx.stamp})`;
     const { refName } = await pushFiles(ctx, `probe/12-${ctx.stamp}`, [probeSource(ctx)]);

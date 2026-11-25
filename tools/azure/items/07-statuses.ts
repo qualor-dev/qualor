@@ -151,10 +151,13 @@ export const item: ProbeItem = {
 
     const commitSatisfies = afterCommit === 'approved';
     const prSatisfies = accepted && !commitSatisfies && afterPr === 'approved';
+    const prStatusText = accepted
+      ? `accepted (HTTP ${noIteration.status})`
+      : `refused: HTTP ${noIteration.status} ${messageOf(noIteration.json)}`;
     const detail = [
       `policy evaluation before any status: ${initial}`,
       `commit status on the source commit: HTTP ${commitStatus.status}; evaluation ${afterCommit} (${commitSatisfies ? 'satisfies the policy' : 'does not satisfy it'})`,
-      `PR status without iterationId: ${accepted ? `accepted (HTTP ${noIteration.status})` : `refused: HTTP ${noIteration.status} ${messageOf(noIteration.json)}`}; evaluation ${afterPr}` +
+      `PR status without iterationId: ${prStatusText}; evaluation ${afterPr}` +
         (commitSatisfies
           ? ' (already approved by the commit status: its own effect is unknown)'
           : ''),
