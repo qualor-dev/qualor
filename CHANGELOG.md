@@ -48,6 +48,11 @@ All notable changes to Qualor are listed here, newest first. The format follows
   ([The project key](docs/guide/azure-devops.md#the-project-key)).
 - Telemetry reports whether an Azure DevOps connection exists, and counts pull request analyses and
   analyses that ran in Azure Pipelines ([Telemetry](docs/guide/telemetry.md)).
+- Opt-in cleanup of inactive branches and merge requests: an instance admin sets a server default in
+  **Settings → Cleanup**, a project admin overrides it per project, and the main branch, tracked
+  branches and your keep patterns stay
+  ([Clean up old branches and merge requests](docs/guide/users-projects-tokens.md#clean-up-old-branches-and-merge-requests),
+  issue #38).
 
 ### Changed
 
@@ -72,7 +77,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Upgrade notes
 
-- Migrations 0034 to 0037 run at the server's first start.
+- Migrations 0034 to 0038 run at the server's first start.
+- The cleanup of inactive branches and merge requests is off after the upgrade.
 - Move the server to 0.17 before you point an Azure Pipelines task at it.
 
 ## [0.16.0] - 2026-11-19

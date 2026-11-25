@@ -32,6 +32,8 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 | Create, retry and unlink Azure Boards work items (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 | Allow [fix merge requests](./fix-merge-requests.md) on a GitLab, GitHub or Azure DevOps connection (part of managing connections) | ✓ | | | |
 | Turn fix merge requests on for a project and set their automatic mode (part of changing project settings) | ✓ | ✓ | | |
+| Set when a project's inactive branches and merge requests are deleted, and its branches to keep ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests); part of changing project settings) | ✓ | ✓ | | |
+| Set the server's default for that cleanup (**Settings → Cleanup**) | instance admins only | | | |
 | Request, retry and cancel a fix merge request (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 
 - In the API the roles are `admin` (Organization admin), `project_admin`, `member` (Maintainer)
@@ -174,6 +176,7 @@ in `.*` (for example `issue.*`).
   a link removed (`boards_link.dismissed`, with the work item id). The automatic rule's work items
   are not recorded.
 - **Fix merge requests** ([Fix merge requests](./fix-merge-requests.md)): a project's settings changed (`project.fixes_updated`, with the names of the changed fields only), and a fix requested, retried or cancelled (`dependency_fix.requested`, `.retried`, `.cancelled`, with the package and its family). The connection's **Allow fix MRs** switch is a changed field of `scm_connection.updated` (`fixMrsAllowed`). The automatic mode's requests are not recorded.
+- **Cleanup of inactive branches and merge requests** ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests)): a project's cleanup settings changed (`project.cleanup_updated`) and the server default changed (`cleanup.settings_updated`), each with the names of the changed fields only. The deletions are not recorded.
 - **Email:** its settings changed (the names of the changed fields only, never the password), and a
   test message sent, with whether it was delivered.
 - **The licence policy** (with `license-policy`, [Dependency licences](./dependency-licenses.md)):

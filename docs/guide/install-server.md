@@ -598,6 +598,8 @@ A daily housekeeping job deletes old data:
 | closed issues | 30 days |
 | branches and MRs that have no analysis | 30 days |
 | webhook deliveries | 30 days |
+| branches not analysed for N days | kept, unless **Settings → Cleanup** sets a number of days; a project can override it ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests)) |
+| merge requests not analysed for N days | kept, unless **Settings → Cleanup** sets a number of days; a project can override it ([Clean up old branches and merge requests](./users-projects-tokens.md#clean-up-old-branches-and-merge-requests)) |
 | the email log (**Settings → Email**) | 30 days; a message still waiting after 2 days is given up |
 | AI assistant requests and answers | 90 days, an automatic fix suggestion while its issue exists; stored prompts (off by default) 1–90 days, default 7 |
 | [AI review](./ai-review.md) snapshots (copies of a merge request's repository) | until a newer analysis of the merge request replaces them, the merge request is merged or closed (within an hour), or AI review stops covering the project; 14 days at most; one the server refused, 1 day ([How long copies live](./ai-review.md#how-long-copies-live)) |

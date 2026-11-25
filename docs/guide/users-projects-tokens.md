@@ -213,6 +213,7 @@ A project's **Settings** tab has these panels, and shows each person only the on
 | **New code** | how new code is defined on the main branch ([Quality gates](./quality-gates.md#new-code)) | Project admin, Organization admin |
 | **Quality gate and profiles** | the project's **Quality gate** (without a choice the organisation's default applies) and the **Quality profile per language** | Project admin, Organization admin |
 | **Main branch** | the name of the main branch. Analyses of the previous main branch stay on that branch, and new code on the new one starts from its own analyses | Project admin, Organization admin |
+| **Cleanup** | when Qualor deletes branches and merge requests that nobody analyses any more ([below](#clean-up-old-branches-and-merge-requests)) | Project admin, Organization admin |
 | **Analysis tokens** | create and revoke the project's analysis tokens ([below](#project-analysis-tokens)) | Project admin, Organization admin |
 | **Webhooks** | webhooks that fire for this project only ([Webhooks](./webhooks-and-api.md#webhooks)) | Organization admin |
 | **Danger zone** | **Delete project** | Organization admin |
@@ -241,6 +242,40 @@ curl -fsS -X PATCH -H "Authorization: Bearer $QUALOR_ADMIN_TOKEN" -H 'Content-Ty
 To assign a quality profile to one project, send `{"profileId": "..."}` to
 `PUT /api/v0/projects/<id>/quality-profiles/<language>`. Send `null` to return that language to the
 organisation's default profile.
+
+### Clean up old branches and merge requests
+
+Qualor can delete branches and merge requests that have had no analysis for a number of days. It is
+off by default, so the branch list keeps growing until you turn it on.
+
+| Where | Who | What it sets |
+|---|---|---|
+| **Settings → Cleanup** | instance admin | the server default: **Branches not analysed for** and **Merge requests not analysed for**, each off, 30, 60, 90, 180 or 365 days |
+| **Project → Settings → Cleanup** | Project admin, Organization admin | per project, for branches and merge requests separately: the server default, off, or a number of days |
+
+A project also lists **branches to keep**: up to 20 patterns, written like the branch patterns of
+[vulnerability monitoring](./releases.md#the-settings-panel).
+
+Qualor always keeps:
+
+- the main branch,
+- the branches that match the project's vulnerability-monitoring branch patterns,
+- the branches that match its keep patterns.
+
+The daily housekeeping job does the deleting ([Retention](./install-server.md#retention)). A merge
+request counts as inactive by its last analysis only, merged or closed or not.
+
+A deleted branch or merge request takes its analyses, issues and measures with it. They cannot be
+recovered. The branch or merge request comes back when a new analysis is uploaded for it.
+
+Branches and merge requests that never had an analysis keep their 30-day retention, whatever these
+settings say.
+
+Qualor audits the changes to the settings (`project.cleanup_updated`, `cleanup.settings_updated`;
+[Roles and the audit log](./roles-and-audit.md#what-is-recorded)). It does not audit the deletions.
+
+The API: `GET/PUT /api/v0/system/cleanup` and `GET/PUT /api/v0/projects/<id>/cleanup`
+([Webhooks and API](./webhooks-and-api.md)).
 
 ## Tokens
 
