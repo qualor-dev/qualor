@@ -139,7 +139,7 @@ function connectedText(result: TestResult, name: string): string {
 
 /** A passing Test's `read_permissions`: the identity cannot look up commenters or read the repository's permissions. */
 export function azureReadPermissionsText(): string {
-  return $localize`:@@azure.missing.readPermissions:The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. Add it to Project Administrators in the project, which may read identities and permissions.`;
+  return $localize`:@@azure.missing.readPermissions:The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. For a personal access token, add the Identity (Read) scope; for a service principal, add it to the project's Contributors group.`;
 }
 
 /** A passing Test's `work_items`: a dry-run work item in a mapped Boards project was refused for the right. */

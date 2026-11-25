@@ -2502,7 +2502,7 @@
     "azure.testOkRepository": "Connected as {$user}; the repository {$repository} is reachable.",
     "azure.testOkVisible": "Connected as {$user}; {$repositories} in {$projects} visible.",
     "azure.testOk": "Connected as {$user}.",
-    "azure.missing.readPermissions": "The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. Add it to Project Administrators in the project, which may read identities and permissions.",
+    "azure.missing.readPermissions": "The identity cannot read who may change findings, so Qualor refuses every qualor review and every status change by reply. For a personal access token, add the Identity (Read) scope; for a service principal, add it to the project's Contributors group.",
     "azure.missing.workItems": "The identity lacks a right: Create work items in the mapped Azure Boards project (Work items: Read & write).",
     "azure.hooks.unread": "Qualor could not read the subscriptions from Azure DevOps. Replies and commands are still read every 15 minutes.",
     "azure.hooks.confirmNewPassword": "Azure DevOps keeps sending the current password, so Qualor refuses every delivery until you create or update Qualor's subscriptions with the new one.",

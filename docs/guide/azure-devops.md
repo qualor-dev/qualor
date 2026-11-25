@@ -108,7 +108,7 @@ Azure DevOps answers a missing scope with HTTP 401:
 |---|---|
 | CI setup | "A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes." |
 | Azure Boards | "Azure DevOps refused the credential." in the project's panel |
-| `qualor review` | "Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope)." **Test** says that the identity cannot read who may change findings |
+| `qualor review` | "Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope)." For a service principal: "Qualor could not check your rights: its Azure DevOps service principal cannot read identities and permissions (add it to the project's Contributors group)." **Test** says that the identity cannot read who may change findings |
 
 If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
 `NODE_EXTRA_CA_CERTS`.
