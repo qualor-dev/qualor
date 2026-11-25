@@ -30,7 +30,7 @@ Star the repository to find it again.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/screenshots/vulnerabilities-by-version.png" alt="A project's Vulnerabilities tab by version: the main branch and three released versions, each with its Critical, High and Medium counts, and the exploited vulnerabilities in v2.1.0 and v2.2.0">
+      <img src="docs/screenshots/vulnerabilities-by-version.png" alt="A project's Vulnerabilities tab by version: the main branch, an uploaded container image SBOM and three released versions, each with its Critical, High and Medium counts, and the exploited vulnerabilities in v2.1.0 and v2.2.0">
       <br><sub><b>Vulnerabilities</b> of each branch and released version</sub>
     </td>
     <td width="50%" valign="top">
