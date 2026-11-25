@@ -562,6 +562,20 @@ describe('the Boards pass (design §7.8, plan Task 7)', () => {
     expect(fake.requests.map((r) => r.path)).toEqual(['/_apis/connectionData']);
     expect((await connection()).problem?.code).toBe('token_refused');
 
+    // A probe failing for another reason (a 403) ends the pass as transient and records nothing.
+    fake.inject('GET', /connectionData$/, {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message: 'TF400813: no access',
+        typeKey: 'UnauthorizedAccessException',
+      }),
+    });
+    fake.clearRequests();
+    expect(await runPass()).toMatchObject({ created: 0, stop: 'transient' });
+    expect(fake.requests).toHaveLength(1);
+    expect((await connection()).problem?.code).toBe('token_refused');
+
     // The probe passes: the problem is cleared and the pass goes on.
     fake.clearRequests();
     expect(await runPass()).toMatchObject({ created: 1, stop: null });

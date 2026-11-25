@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { uuidList } from '../db/bulk';
 import type { Db } from '../db/client';
-import { jiraLinks, projectJiraSettings, projects } from '../db/schema';
+import { jiraLinks, projectJiraSettings, projects, type JiraLinkKind } from '../db/schema';
 import { issueUrl } from '../scm/decoration-data';
 import { targetId, targetRefsOf } from '../vulnerabilities/list';
 import { runAutoRule } from './auto-rule';
@@ -413,6 +413,20 @@ async function readStatuses(pass: Pass): Promise<void> {
 
 // ─── Step 5: fixed and found again ──────────────────────────────────────────────────────────────
 
+/**
+ * A link row as the fixed and found-again rules read it: a Jira link, or an Azure Boards link
+ * (design §7.8: the same rules, boards/sync.ts).
+ */
+export interface TransitionRow {
+  id: string;
+  projectId: string;
+  kind: JiraLinkKind;
+  issueId: string | null;
+  packageName: string | null;
+  vulnerabilityId: string | null;
+  reportedFixedAt: Date | null;
+}
+
 type CreatedRow = Pick<
   JiraLinkRow,
   | 'id'
@@ -463,7 +477,7 @@ function createdRows(ctx: JiraRunContext): Promise<CreatedRow[]> {
     .orderBy(asc(jiraLinks.createdAt), asc(jiraLinks.id));
 }
 
-const pairOf = (r: CreatedRow) => ({
+const pairOf = (r: TransitionRow) => ({
   packageName: r.packageName ?? '',
   vulnerabilityId: r.vulnerabilityId ?? '',
 });
@@ -474,10 +488,10 @@ const pairOf = (r: CreatedRow) => ({
  */
 async function judgeVulnerabilities(
   db: Db,
-  rows: readonly CreatedRow[],
+  rows: readonly TransitionRow[],
   judged: Map<string, Judgement>,
 ): Promise<Map<string, PresenceScope | null>> {
-  const byProject = new Map<string, CreatedRow[]>();
+  const byProject = new Map<string, TransitionRow[]>();
   for (const r of rows) {
     const list = byProject.get(r.projectId);
     if (list === undefined) byProject.set(r.projectId, [r]);
@@ -499,7 +513,7 @@ async function judgeVulnerabilities(
 /** Each judged row's {@link Judgement}, by link id, and the presence scopes of its projects. */
 async function judge(
   db: Db,
-  rows: readonly CreatedRow[],
+  rows: readonly TransitionRow[],
 ): Promise<{ judged: Map<string, Judgement>; scopes: Map<string, PresenceScope | null> }> {
   const judged = new Map<string, Judgement>();
   const codes = rows.flatMap((r) =>
@@ -528,7 +542,7 @@ interface CommentSources {
 
 async function commentSources(
   db: Db,
-  due: readonly { row: CreatedRow; judgement: Judgement }[],
+  due: readonly { row: TransitionRow; judgement: Judgement }[],
   scopes: ReadonlyMap<string, PresenceScope | null>,
 ): Promise<CommentSources> {
   const code = await codeIssueFacts(
@@ -557,6 +571,12 @@ async function commentSources(
   return { code, projectNames: new Map(named.map((p) => [p.id, p.name])), tracked };
 }
 
+/** Where a pass's comments link to (`QUALOR_PUBLIC_URL`) and its day (UTC, `YYYY-MM-DD`). */
+export interface TransitionContext {
+  publicUrl: string | null;
+  day: string;
+}
+
 /**
  * Ruling P4: a comment's facts from the link row, the project and the tracked targets (the pair
  * may be gone). R20: a code issue's fixed day is its `closed_at`, its found-again day its last
@@ -564,11 +584,11 @@ async function commentSources(
  * targets ("on the tracked branches and versions"), a found-again one's where it is now.
  */
 function commentFacts(
-  pass: Pass,
-  d: { row: CreatedRow; judgement: Judgement },
+  at: TransitionContext,
+  d: { row: TransitionRow; judgement: Judgement },
   sources: CommentSources,
 ): CommentFacts | null {
-  const { publicUrl } = pass.ctx.deps;
+  const { publicUrl } = at;
   const { row, judgement } = d;
   if (row.kind === 'issue') {
     const f = row.issueId === null ? undefined : sources.code.get(row.issueId);
@@ -579,7 +599,7 @@ function commentFacts(
       projectName: f.projectName,
       branchName: f.branchName,
       ruleKey: f.ruleKey,
-      day: when === null ? pass.day : dayOf(when),
+      day: when === null ? at.day : dayOf(when),
       link: issueUrl(publicUrl, f.projectId, f.issueId),
     };
   }
@@ -590,20 +610,30 @@ function commentFacts(
     projectName,
     ...pairOf(row),
     foundIn: judgement.gone ? (sources.tracked.get(row.projectId) ?? []) : judgement.places,
-    day: pass.day,
+    day: at.day,
     link: vulnerabilitiesUrl(publicUrl, row.projectId),
   };
 }
 
+/** A transition due: the fixed comment (`fixed`) or the found-again one, with its facts. */
+export interface DueTransition<R extends TransitionRow> {
+  row: R;
+  fixed: boolean;
+  facts: CommentFacts;
+}
+
 /**
- * The transitions of this pass, at most 100, oldest link first: a `created` row whose finding is
- * gone and not reported fixed gets the fixed comment; one reported fixed whose finding is present
- * again the found-again comment. Vulnerability links of a project with monitoring off are not
- * judged.
+ * The transitions of a pass, at most `limit`, in the order of `rows` (the `created` rows, oldest
+ * link first): a row whose finding is gone and not reported fixed is due the fixed comment; one
+ * reported fixed whose finding is present again the found-again comment. Vulnerability links of a
+ * project with monitoring off are not judged. Jira's step 5 and the Azure Boards notes share it.
  */
-async function dueComments(pass: Pass): Promise<DueComment[]> {
-  const { db } = pass.ctx.deps;
-  const rows = await createdRows(pass.ctx);
+export async function dueTransitions<R extends TransitionRow>(
+  db: Db,
+  rows: readonly R[],
+  at: TransitionContext,
+  limit: number,
+): Promise<DueTransition<R>[]> {
   const { judged, scopes } = await judge(db, rows);
   const due = rows
     .flatMap((row) => {
@@ -611,14 +641,31 @@ async function dueComments(pass: Pass): Promise<DueComment[]> {
       if (judgement === undefined || judgement.gone === (row.reportedFixedAt !== null)) return [];
       return [{ row, judgement }];
     })
-    .slice(0, COMMENTS_PER_PASS);
+    .slice(0, limit);
   const sources = await commentSources(db, due, scopes);
   return due.flatMap((d) => {
-    const facts = commentFacts(pass, d, sources);
-    if (facts === null) return [];
-    const fixed = d.judgement.gone;
-    return [{ row: d.row, fixed, body: fixed ? fixedComment(facts) : foundAgainComment(facts) }];
+    const facts = commentFacts(at, d, sources);
+    return facts === null ? [] : [{ row: d.row, fixed: d.judgement.gone, facts }];
   });
+}
+
+/**
+ * The transitions of this pass ({@link dueTransitions}), at most 100, oldest link first, each
+ * with its comment.
+ */
+async function dueComments(pass: Pass): Promise<DueComment[]> {
+  const { db, publicUrl } = pass.ctx.deps;
+  const due = await dueTransitions(
+    db,
+    await createdRows(pass.ctx),
+    { publicUrl, day: pass.day },
+    COMMENTS_PER_PASS,
+  );
+  return due.map(({ row, fixed, facts }) => ({
+    row,
+    fixed,
+    body: fixed ? fixedComment(facts) : foundAgainComment(facts),
+  }));
 }
 
 /** The transition, written whether Jira took the comment or refused it (R14). */

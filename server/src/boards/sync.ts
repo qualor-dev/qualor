@@ -1,35 +1,23 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { uuidList } from '../db/bulk';
-import type { Db } from '../db/client';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   boardsLinks,
   projectBoardsSettings,
-  projects,
   scmConnections,
   type BoardsStateCategory,
   type ScmProblemValue,
 } from '../db/schema';
-import { vulnerabilitiesUrl, type CodeIssueFacts, type CommentFacts } from '../jira/content';
 import { recordset } from '../jira/create';
-import { codeIssueFacts } from '../jira/facts';
-import {
-  goneIssueIds,
-  pairKey,
-  pairPlaces,
-  presenceScopes,
-  type PresenceScope,
-} from '../jira/presence';
+import { dueTransitions } from '../jira/sync';
 import {
   AzureError,
+  MAX_AZURE_PROJECTS,
   MAX_WORK_ITEM_BATCH,
   WORK_ITEM_QUERY_TOP,
   type AzureWorkItem,
   type AzureWorkItemType,
 } from '../scm/azure/client';
-import { issueUrl } from '../scm/decoration-data';
 import { clearScmProblem } from '../scm/problems';
 import { ScmError } from '../scm/provider';
-import { targetId, targetRefsOf } from '../vulnerabilities/list';
 import { runBoardsAutoRule } from './auto-rule';
 import { fixedNote, foundAgainNote, keyOfDescription, reconciliationKey } from './content';
 import {
@@ -72,6 +60,8 @@ export const NOTES_PER_PASS = 100;
 export const MISSING_AFTER_PASSES = 2;
 /** Unanswered rows one pass reads: 10 Azure DevOps projects of 200 work items each. */
 const UNANSWERED_PER_PASS = 2_000;
+/** The most requests `projects()` makes: pages of 100 up to its cap. */
+const PROJECT_LIST_PAGES = MAX_AZURE_PROJECTS / 100;
 
 /**
  * The most requests of each step of a pass (plan Task 7), 366 in all with the second create, so a
@@ -187,13 +177,14 @@ async function mappedNames(pass: Pass): Promise<Map<string, string>> {
  * The id of the Azure DevOps project a work item is in now (`System.TeamProject` is its name, a
  * work item path takes its GUID): from the connection's mappings, else from the organisation's
  * project list, read at most once per pass (a moved work item, a renamed project, a link whose
- * mapping is gone). Null when the name is not found or the list is not read.
+ * mapping is gone) and only while the pass's type lists still allow all its pages. Null when the
+ * name is not found or the list is not read.
  */
 async function projectIdOf(pass: Pass, name: string): Promise<string | null> {
   const names = await mappedNames(pass);
   const known = names.get(name.toLowerCase());
   if (known !== undefined || pass.projectsListed) return known ?? null;
-  if (pass.outcome.stop !== null || typeListsLeft(pass) === 0) return null;
+  if (pass.outcome.stop !== null || typeListsLeft(pass) < PROJECT_LIST_PAGES) return null;
   pass.projectsListed = true;
   const before = pass.ctx.client.requestCount;
   try {
@@ -286,8 +277,9 @@ function clearBlocking(ctx: BoardsRunContext): Promise<ScmProblemValue | null> {
 
 /**
  * While a problem that stops Boards is stored, one `connectionData` first: its success clears the
- * blocking codes and the pass goes on; a failure ends the pass (a refused credential recorded
- * again).
+ * blocking codes and the pass goes on; a failure ends the pass, labelled by its kind: a refused
+ * credential is recorded again (`credential`), a 429 or the budget are theirs, and anything else
+ * (a timeout, a 403, a 404, an unreadable answer) is `transient` and records nothing.
  */
 async function probe(pass: Pass): Promise<void> {
   const { ctx } = pass;
@@ -297,7 +289,7 @@ async function probe(pass: Pass): Promise<void> {
     await ctx.client.connectionData();
   } catch (err) {
     if (!(err instanceof ScmError)) throw err;
-    pass.outcome.stop = (await stopFor(ctx, err)) ?? 'credential';
+    pass.outcome.stop = (await stopFor(ctx, err)) ?? 'transient';
     return;
   }
   ctx.connection.problem = await clearBlocking(ctx);
@@ -681,12 +673,6 @@ type CreatedRow = Pick<
   | 'reportedFixedAt'
 >;
 
-/** Whether a link's finding is gone, and where a present pair is found now. */
-interface Judgement {
-  gone: boolean;
-  places: string[];
-}
-
 interface DueNote {
   row: CreatedRow & { workItemId: number };
   fixed: boolean;
@@ -720,150 +706,26 @@ function createdRows(ctx: BoardsRunContext): Promise<CreatedRow[]> {
     .orderBy(asc(boardsLinks.createdAt), asc(boardsLinks.id));
 }
 
-const pairOf = (r: CreatedRow) => ({
-  packageName: r.packageName ?? '',
-  vulnerabilityId: r.vulnerabilityId ?? '',
-});
-
 /**
- * Jira's judgement (jira/sync.ts): a code issue is gone once `closed`; a pair is gone when no
- * tracked target or tracked branch holds it, judged per project with one presence query; a
- * project with monitoring off (no scope) is not judged at all. Returns the scopes too.
- */
-async function judge(
-  db: Db,
-  rows: readonly CreatedRow[],
-): Promise<{ judged: Map<string, Judgement>; scopes: Map<string, PresenceScope | null> }> {
-  const judged = new Map<string, Judgement>();
-  const codes = rows.flatMap((r) =>
-    r.kind === 'issue' && r.issueId !== null ? [{ id: r.id, issueId: r.issueId }] : [],
-  );
-  const closed = await goneIssueIds(
-    db,
-    codes.map((c) => c.issueId),
-  );
-  for (const c of codes) judged.set(c.id, { gone: closed.has(c.issueId), places: [] });
-  const byProject = new Map<string, CreatedRow[]>();
-  for (const r of rows) {
-    if (r.kind !== 'vulnerability') continue;
-    const list = byProject.get(r.projectId);
-    if (list === undefined) byProject.set(r.projectId, [r]);
-    else list.push(r);
-  }
-  const scopes = await presenceScopes(db, [...byProject.keys()]);
-  for (const [projectId, list] of byProject) {
-    const scope = scopes.get(projectId);
-    if (!scope) continue;
-    const { present } = await pairPlaces(db, projectId, scope, list.map(pairOf));
-    for (const r of list) {
-      const places = present.get(pairKey(r.packageName ?? '', r.vulnerabilityId ?? ''));
-      judged.set(r.id, { gone: places === undefined, places: places ?? [] });
-    }
-  }
-  return { judged, scopes };
-}
-
-/** What the notes of the due rows say beyond the link row: names, days, tracked targets. */
-interface NoteSources {
-  code: Map<string, CodeIssueFacts>;
-  projectNames: Map<string, string>;
-  /** The tracked targets' names of each project with a fixed vulnerability note due. */
-  tracked: Map<string, string[]>;
-}
-
-async function noteSources(
-  db: Db,
-  due: readonly { row: CreatedRow; judgement: Judgement }[],
-  scopes: ReadonlyMap<string, PresenceScope | null>,
-): Promise<NoteSources> {
-  const code = await codeIssueFacts(
-    db,
-    due.flatMap((d) => (d.row.kind === 'issue' && d.row.issueId !== null ? [d.row.issueId] : [])),
-  );
-  const vulnerable = due.filter((d) => d.row.kind === 'vulnerability');
-  const ids = [...new Set(vulnerable.map((d) => d.row.projectId))];
-  const named =
-    ids.length === 0
-      ? []
-      : await db
-          .select({ id: projects.id, name: projects.name })
-          .from(projects)
-          .where(inArray(projects.id, uuidList(ids)));
-  const tracked = new Map<string, string[]>();
-  for (const projectId of new Set(
-    vulnerable.filter((d) => d.judgement.gone).map((d) => d.row.projectId),
-  )) {
-    const targets = scopes.get(projectId)?.targets ?? [];
-    tracked.set(
-      projectId,
-      (await targetRefsOf(db, projectId, targets.map(targetId))).map((t) => t.name),
-    );
-  }
-  return { code, projectNames: new Map(named.map((p) => [p.id, p.name])), tracked };
-}
-
-/**
- * Jira's comment facts (ruling P4, R20): a code issue's fixed day is its `closed_at`, its
- * found-again day its last analysis's; a vulnerability's is the pass's. A fixed vulnerability is
- * no longer on the tracked targets, a found-again one is where it is now.
- */
-function noteFacts(
-  pass: Pass,
-  d: { row: CreatedRow; judgement: Judgement },
-  sources: NoteSources,
-): CommentFacts | null {
-  const { publicUrl } = pass.ctx.deps;
-  const { row, judgement } = d;
-  if (row.kind === 'issue') {
-    const f = row.issueId === null ? undefined : sources.code.get(row.issueId);
-    if (f === undefined) return null;
-    const when = judgement.gone ? f.closedAt : f.lastSeenAt;
-    return {
-      kind: 'code',
-      projectName: f.projectName,
-      branchName: f.branchName,
-      ruleKey: f.ruleKey,
-      day: when === null ? pass.day : dayOf(when),
-      link: issueUrl(publicUrl, f.projectId, f.issueId),
-    };
-  }
-  const projectName = sources.projectNames.get(row.projectId);
-  if (projectName === undefined) return null;
-  return {
-    kind: 'vulnerability',
-    projectName,
-    ...pairOf(row),
-    foundIn: judgement.gone ? (sources.tracked.get(row.projectId) ?? []) : judgement.places,
-    day: pass.day,
-    link: vulnerabilitiesUrl(publicUrl, row.projectId),
-  };
-}
-
-/**
- * The transitions of this pass, at most 100, oldest link first: a `created` row whose finding is
- * gone and not reported fixed gets the fixed note; one reported fixed whose finding is present
- * again the found-again note. Vulnerability links of a project with monitoring off are not judged.
+ * The transitions of this pass, at most 100, oldest link first, with Jira's rules and facts
+ * (`dueTransitions`): a `created` row whose finding is gone and not reported fixed gets the fixed
+ * note; one reported fixed whose finding is present again the found-again note. Vulnerability
+ * links of a project with monitoring off are not judged.
  */
 async function dueNotes(pass: Pass): Promise<DueNote[]> {
-  const { db } = pass.ctx.deps;
-  const rows = await createdRows(pass.ctx);
-  const { judged, scopes } = await judge(db, rows);
-  const due = rows
-    .flatMap((row) => {
-      const judgement = judged.get(row.id);
-      if (judgement === undefined || judgement.gone === (row.reportedFixedAt !== null)) return [];
-      return [{ row, judgement }];
-    })
-    .slice(0, NOTES_PER_PASS);
-  const sources = await noteSources(db, due, scopes);
-  return due.flatMap((d) => {
-    const facts = noteFacts(pass, d, sources);
-    const { workItemId } = d.row;
-    if (facts === null || workItemId === null) return [];
-    const fixed = d.judgement.gone;
+  const { db, publicUrl } = pass.ctx.deps;
+  const due = await dueTransitions(
+    db,
+    await createdRows(pass.ctx),
+    { publicUrl, day: pass.day },
+    NOTES_PER_PASS,
+  );
+  return due.flatMap(({ row, fixed, facts }) => {
+    const { workItemId } = row;
+    if (workItemId === null) return [];
     return [
       {
-        row: { ...d.row, workItemId },
+        row: { ...row, workItemId },
         fixed,
         html: fixed ? fixedNote(facts) : foundAgainNote(facts),
       },

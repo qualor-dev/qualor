@@ -98,7 +98,9 @@ function linkProject(
 
 /**
  * Design §7.8, the pass's automatic rule: the connection's mapped projects, at most `cap` new
- * links in all (counted across those projects). It calls no Azure DevOps: the pass's create step
+ * links in all (counted across those projects). The cap is per connection, as the pass is: an
+ * organisation with several Azure DevOps connections gets `cap` per connection per pass. It calls
+ * no Azure DevOps: the pass's create step
  * sends the rows. A stored `exploited` applies only while `vuln.priority` is active. Returns how
  * many links it made.
  */
