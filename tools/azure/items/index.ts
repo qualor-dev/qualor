@@ -28,6 +28,7 @@ import { item as onboarding } from './27-onboarding.js';
 import { item as ciTrigger } from './28-ci-trigger.js';
 import { item as nameTaken } from './29-name-taken.js';
 import { item as boardsFacts } from './30-boards-facts.js';
+import { item as boardsEndToEnd } from './31-boards.js';
 
 /** The probe items, by number (14, the Marketplace publisher verification, is done by hand). */
 export const ITEMS: readonly ProbeItem[] = [
@@ -60,4 +61,5 @@ export const ITEMS: readonly ProbeItem[] = [
   ciTrigger,
   nameTaken,
   boardsFacts,
+  boardsEndToEnd,
 ];
