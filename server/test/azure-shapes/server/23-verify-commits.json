@@ -1,0 +1,66 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 3,
+    "value": [
+      {
+        "commitId": "6dcf689c4ce4840ec5782a435fb9f7ce24509ed8",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-25T01:29:41Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-25T01:29:41Z"
+        },
+        "comment": "Apply suggestions from code review",
+        "changeCounts": {
+          "Add": 0,
+          "Edit": 1,
+          "Delete": 0
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/6dcf689c4ce4840ec5782a435fb9f7ce24509ed8",
+        "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/commit/6dcf689c4ce4840ec5782a435fb9f7ce24509ed8"
+      },
+      {
+        "commitId": "9ce0f2bbbbb0232b8f2534e43009c3025cff9dbe",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-25T01:28:24Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-25T01:28:24Z"
+        },
+        "comment": "Qualor probe item 23",
+        "changeCounts": {
+          "Add": 1,
+          "Edit": 0,
+          "Delete": 0
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/9ce0f2bbbbb0232b8f2534e43009c3025cff9dbe",
+        "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/commit/9ce0f2bbbbb0232b8f2534e43009c3025cff9dbe"
+      },
+      {
+        "commitId": "dd50ae676c5e5551dd5d0630073bc38532442fe4",
+        "author": {
+          "name": "Probe User",
+          "date": "2026-11-21T06:15:01Z"
+        },
+        "committer": {
+          "name": "Probe User",
+          "date": "2026-11-21T06:15:01Z"
+        },
+        "comment": "Initial probe project",
+        "changeCounts": {
+          "Add": 5,
+          "Edit": 0,
+          "Delete": 0
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/dd50ae676c5e5551dd5d0630073bc38532442fe4",
+        "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe/commit/dd50ae676c5e5551dd5d0630073bc38532442fe4"
+      }
+    ]
+  }
+}

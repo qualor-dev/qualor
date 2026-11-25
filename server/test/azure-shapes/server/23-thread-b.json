@@ -1,0 +1,82 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "pullRequestThreadContext": {
+      "iterationContext": {
+        "firstComparingIteration": 1,
+        "secondComparingIteration": 1
+      },
+      "changeTrackingId": 1
+    },
+    "id": 87,
+    "publishedDate": "2026-11-25T01:28:25.38Z",
+    "lastUpdatedDate": "2026-11-25T01:28:25.38Z",
+    "comments": [
+      {
+        "id": 1,
+        "parentCommentId": 0,
+        "author": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "content": "**Qualor probe item 23, thread B**: Apply change should replace lines 4-5.\n\n```suggestion\ndelta-echo-1\ndelta-echo-2\ndelta-echo-3\n```",
+        "publishedDate": "2026-11-25T01:28:25.38Z",
+        "lastUpdatedDate": "2026-11-25T01:28:25.38Z",
+        "lastContentUpdatedDate": "2026-11-25T01:28:25.38Z",
+        "commentType": "text",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/23/threads/87/comments/1"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          },
+          "threads": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/23/threads/87"
+          },
+          "pullRequests": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/23"
+          }
+        }
+      }
+    ],
+    "status": "active",
+    "threadContext": {
+      "filePath": "/probe/item-23-20261125012823.txt",
+      "rightFileStart": {
+        "line": 4,
+        "offset": 1
+      },
+      "rightFileEnd": {
+        "line": 5,
+        "offset": 5
+      }
+    },
+    "properties": {
+      "Microsoft.TeamFoundation.Discussion.UniqueID": {
+        "$type": "System.String",
+        "$value": "7d7d1411642b437a8da4fa6e0000e9c6"
+      }
+    },
+    "identities": null,
+    "isDeleted": false,
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/23/threads/87"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+      }
+    }
+  }
+}

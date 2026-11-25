@@ -151,7 +151,7 @@ export const item: ProbeItem = {
       ctx,
       'manual',
       `pull request ${pr.pullRequestId}, left open; click Apply change on each thread (${refName}).\n${lines.join('\n')}\n` +
-        `then: pnpm azure:probe --target services --auth secret --items 23 --verify-apply ${pr.pullRequestId}`,
+        `then: pnpm azure:probe --target ${ctx.target}${ctx.target === 'services' ? ' --auth secret' : ''} --items 23 --verify-apply ${pr.pullRequestId}`,
       [webUrl],
     );
   },
