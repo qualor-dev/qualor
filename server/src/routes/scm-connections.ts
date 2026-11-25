@@ -24,7 +24,13 @@ import type { UserPrincipal } from '../auth/principal';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import type { Db, Executor } from '../db/client';
 import { first } from '../db/rows';
-import { memberships, organizations, scmConnections } from '../db/schema';
+import {
+  boardsLinks,
+  memberships,
+  organizations,
+  projectBoardsSettings,
+  scmConnections,
+} from '../db/schema';
 import { decodeCursor, pageQuery, pageSchema, toPage } from '../http/pagination';
 import {
   conflict,
@@ -864,6 +870,16 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const azureMove = moves && row.provider === 'azure';
       if (azureMove) changes.webhookSecretEnc = null;
       const updated = await deps.db.transaction(async (tx) => {
+        if (azureMove) {
+          // As Jira's connection save: the row first, so a link request or the automatic Boards
+          // rule that holds it (key share) commits before the move, and the delete below sees
+          // its rows.
+          await tx
+            .select({ id: scmConnections.id })
+            .from(scmConnections)
+            .where(eq(scmConnections.id, row.id))
+            .for('update');
+        }
         // The checks above hold only for the row they read: the write is conditional on the
         // stored address (and Azure DevOps kind and ids), so an address changed by a concurrent
         // request (with its own credentials) is never paired with this request's, or kept with
@@ -921,6 +937,15 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         }
         if (written.baseUrl !== row.baseUrl) {
           await forgetForeignMergeRequestUrls(tx, { connectionId: written.id });
+        }
+        if (azureMove) {
+          // Azure Boards, as Jira's address change: work item ids are per organisation, so the
+          // old organisation's mappings and links would read unrelated work items of the new
+          // one. Both go; the work items stay in Azure Boards.
+          await tx
+            .delete(projectBoardsSettings)
+            .where(eq(projectBoardsSettings.connectionId, written.id));
+          await tx.delete(boardsLinks).where(eq(boardsLinks.connectionId, written.id));
         }
         // Names only (rbac-audit.md §8): a credential sent is a change, its value never recorded.
         const changed = SCM_CONNECTION_CHANGED_FIELDS.filter((field) => {

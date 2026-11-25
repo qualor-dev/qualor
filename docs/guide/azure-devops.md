@@ -438,6 +438,9 @@ active, or finds none to check. Changing the connection's address clears it too.
 
 Changing the connection's address clears the password. Subscribe again afterwards.
 
+Changing the connection's address removes its Azure Boards mappings and links; the work items stay
+in Azure Boards.
+
 Deleting a connection leaves its subscriptions in Azure DevOps. Remove them under **Project
 settings → Service hooks**.
 
@@ -486,6 +489,9 @@ panel shows Azure DevOps's own words.
 **Remove mapping** stops new work items for the project. Existing work items stay in Azure Boards,
 and Qualor keeps reading their state and adding notes. Mapping the project to another Azure DevOps
 project later changes only the new work items.
+
+Changing the connection's address removes its Azure Boards mappings and links; the work items stay
+in Azure Boards.
 
 ### Which work item types work
 

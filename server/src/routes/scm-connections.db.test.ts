@@ -24,6 +24,7 @@ import { selfSignedRsaCertificate } from '../../test/x509';
 import { decryptSecret, encryptionKey, encryptSecret } from '../crypto/secrets';
 import {
   auditEvents,
+  boardsLinks,
   branches,
   jobs,
   organizations,
@@ -2194,6 +2195,79 @@ describe('Azure DevOps connections (Azure DevOps design §7.1, §7.2)', () => {
     ]);
     expect(await rowOf(id)).toMatchObject({ azureAuth: 'pat', baseUrl: server.url });
     await expectNoCredential();
+  });
+
+  it("removes the connection's Azure Boards mappings and links when its address moves, and only then", async () => {
+    const AZURE_PROJECT = '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c';
+    const { id } = await created({ azureAuth: 'pat', token: services.pat });
+    const other = await created({
+      baseUrl: 'https://dev.azure.com/boards-stays',
+      azureAuth: 'pat',
+      token: services.pat,
+    });
+    const mine = await h.project('AZ-MOVE-BOARDS');
+    const theirs = await h.project('AZ-STAY-BOARDS');
+    const map = (projectId: string, connectionId: string) =>
+      h.ctx.db.insert(projectBoardsSettings).values({
+        projectId,
+        connectionId,
+        azureProjectId: AZURE_PROJECT,
+        azureProjectName: 'Payments',
+        workItemTypeRef: 'Microsoft.VSTS.WorkItemTypes.Bug',
+        workItemTypeName: 'Bug',
+      });
+    const link = (projectId: string, connectionId: string, workItemId: number | null) =>
+      h.ctx.db.insert(boardsLinks).values({
+        projectId,
+        connectionId,
+        azureProjectId: AZURE_PROJECT,
+        kind: 'vulnerability',
+        packageName: `pkg-${workItemId ?? 'none'}`,
+        vulnerabilityId: 'CVE-2026-1',
+        state: workItemId === null ? 'failed' : 'created',
+        origin: 'manual',
+        workItemId,
+      });
+    await map(mine.id, id);
+    await link(mine.id, id, 7);
+    await link(mine.id, id, null);
+    await map(theirs.id, other.id);
+    await link(theirs.id, other.id, 7);
+    const boardsOf = async (connectionId: string) => ({
+      mappings: (
+        await h.ctx.db
+          .select()
+          .from(projectBoardsSettings)
+          .where(eq(projectBoardsSettings.connectionId, connectionId))
+      ).length,
+      links: (
+        await h.ctx.db.select().from(boardsLinks).where(eq(boardsLinks.connectionId, connectionId))
+      ).length,
+    });
+    expect(await boardsOf(id)).toEqual({ mappings: 1, links: 2 });
+
+    // The same address however spelled, a new credential, another kind: the organisation stays.
+    for (const payload of [
+      { baseUrl: `${SERVICES}/`, token: services.pat },
+      { token: services.pat },
+      SP_SECRET,
+    ]) {
+      const kept = await patch(id, payload);
+      expect(kept.statusCode, kept.body).toBe(200);
+      expect(await boardsOf(id), JSON.stringify(Object.keys(payload))).toEqual({
+        mappings: 1,
+        links: 2,
+      });
+    }
+
+    // A new address is another organisation, whose work item ids are not the old ones.
+    const moved = await patch(id, { baseUrl: 'https://dev.azure.com/other-org', token: SECRET });
+    expect(moved.statusCode, moved.body).toBe(200);
+    expect(await boardsOf(id)).toEqual({ mappings: 0, links: 0 });
+    expect(await boardsOf(other.id)).toEqual({ mappings: 1, links: 1 });
+    expect((await auditOf('scm_connection.updated', id)).at(-1)).toEqual({
+      changed: ['baseUrl', 'token'],
+    });
   });
 
   it("takes none of GitLab's or GitHub's fields, and they take none of its own", async () => {
