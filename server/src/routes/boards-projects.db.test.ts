@@ -782,6 +782,7 @@ describe('the project Azure Boards mapping (design §7.8)', () => {
         .values({
           projectId,
           connectionId: azure,
+          azureProjectId: payments.id,
           kind: 'vulnerability',
           packageName: 'lodash',
           vulnerabilityId: 'CVE-2021-23337',

@@ -1,5 +1,5 @@
 {
-  "id": "53120779-3691-431f-a10d-a7f8bf63f891",
+  "id": "2e0971cd-7766-4622-a0cc-041d72235d60",
   "prevId": "3c6c6590-2fef-414e-995e-cc901e42f0c7",
   "version": "7",
   "dialect": "postgresql",
@@ -1000,6 +1000,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "azure_project_id": {
+          "name": "azure_project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -1258,6 +1264,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "boards_links_azure_project_check": {
+          "name": "boards_links_azure_project_check",
+          "value": "azure_project_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'"
+        },
         "boards_links_kind_check": {
           "name": "boards_links_kind_check",
           "value": "kind IN ('issue','vulnerability')"

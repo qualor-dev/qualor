@@ -28,6 +28,8 @@ const NOW = new Date('2027-01-01T00:00:00Z');
 const CVE = 'CVE-2026-1111';
 const BASE_URL = 'https://dev.azure.com/boards-links';
 const AZURE_PROJECT = '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c';
+/** The Azure DevOps project of an earlier mapping. */
+const OLD_PROJECT = '0b1d2c3e-4f50-4617-8a9b-0c1d2e3f4a5b';
 
 interface Link {
   id: string;
@@ -171,6 +173,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
       .values({
         projectId,
         connectionId,
+        azureProjectId: AZURE_PROJECT,
         kind: 'issue',
         state: 'pending',
         origin: 'manual',
@@ -349,6 +352,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
       issueId: open,
       projectId,
       connectionId,
+      azureProjectId: AZURE_PROJECT,
       createdBy: adminId,
       generation: 1,
       attemptedAt: null,
@@ -476,7 +480,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     ).toEqual([]);
   });
 
-  it('re-arms a failed or dismissed row (on the mapping connection); a created row is already linked', async () => {
+  it('re-arms a failed or dismissed row onto the mapping connection and project; a created row is already linked', async () => {
     const old = await azureConnection(db(), {
       organizationId: h.organizationId,
       baseUrl: 'https://dev.azure.com/boards-links-old',
@@ -486,6 +490,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     const failed = await seedBoardsLink({
       issueId: failedIssue,
       connectionId: old.id,
+      azureProjectId: OLD_PROJECT,
       state: 'failed',
       origin: 'auto',
       workItemId: 9,
@@ -532,6 +537,7 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
       state: 'pending',
       origin: 'manual',
       connectionId,
+      azureProjectId: AZURE_PROJECT,
       generation: 2,
       workItemId: null,
       stateName: null,
@@ -610,8 +616,15 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
   });
 
   it('retries a failed or missing link with generation + 1; refuses another state and an invisible one', async () => {
+    const old = await azureConnection(db(), {
+      organizationId: h.organizationId,
+      baseUrl: 'https://dev.azure.com/boards-links-old',
+      secretKey: h.ctx.config.secretKey,
+    });
     const failed = await seedBoardsLink({
       issueId: await code(main),
+      connectionId: old.id,
+      azureProjectId: OLD_PROJECT,
       state: 'failed',
       failure: { code: 'permission_missing', message: 'x' },
       attemptedAt: NOW,
@@ -621,7 +634,14 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
     const res = await retry(failed);
     expect(res.statusCode, res.body).toBe(202);
     expect(res.json()).toMatchObject({ id: failed, state: 'pending', failure: null, url: null });
-    expect(await row(failed)).toMatchObject({ state: 'pending', generation: 2, attemptedAt: null });
+    // A retry keeps the link's own connection and Azure DevOps project.
+    expect(await row(failed)).toMatchObject({
+      state: 'pending',
+      generation: 2,
+      attemptedAt: null,
+      connectionId: old.id,
+      azureProjectId: OLD_PROJECT,
+    });
     expect(await events('boards_link.requested')).toEqual([
       { details: { count: 1, kind: 'issue' }, targetType: 'project', targetId: projectId },
     ]);
@@ -868,14 +888,28 @@ describe('Azure Boards links: request, retry, dismiss, embedded (design §7.8, p
       jiraLinkable: true,
     });
 
-    // Without a mapping nothing is linkable in Boards; the links stay, without a URL.
+    // Without a mapping nothing is linkable in Boards; the links stay with their URLs.
     await unmapBoards();
     const unmapped = await list(main);
     expect(unmapped.find((i) => i.id === plain)).toMatchObject({ boardsLinkable: false });
     expect(unmapped.find((i) => i.id === inBoards)).toMatchObject({
-      boards: { id: boardsLink, workItemId: 7, url: null },
+      boards: {
+        id: boardsLink,
+        workItemId: 7,
+        url: `${BASE_URL}/${AZURE_PROJECT}/_workitems/edit/7`,
+      },
       boardsLinkable: false,
     });
+    // A link made on an earlier mapping's Azure DevOps project keeps that project's URL.
+    const earlier = await seedBoardsLink({
+      issueId: await code(main),
+      azureProjectId: OLD_PROJECT,
+      state: 'created',
+      workItemId: 70,
+    });
+    expect((await list(main)).find((i) => i.boards?.id === earlier)?.boards?.url).toBe(
+      `${BASE_URL}/${OLD_PROJECT}/_workitems/edit/70`,
+    );
     expect((await vulns()).find((v) => v.packageName === pkg)).toMatchObject({
       boardsLinkable: false,
     });

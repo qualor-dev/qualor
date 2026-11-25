@@ -1639,6 +1639,11 @@ export const boardsLinks = pgTable(
     connectionId: uuid('connection_id')
       .notNull()
       .references(() => scmConnections.id, { onDelete: 'cascade' }),
+    /**
+     * The Azure DevOps project (GUID, lower case) of the mapping the link was made or last re-armed
+     * on: the work item's path, kept when the mapping is removed or changed.
+     */
+    azureProjectId: text('azure_project_id').notNull(),
     kind: text('kind').notNull().$type<BoardsLinkKind>(),
     issueId: uuid('issue_id').references(() => issues.id, { onDelete: 'cascade' }),
     packageName: text('package_name'),
@@ -1673,6 +1678,10 @@ export const boardsLinks = pgTable(
     index('boards_links_created_by_idx')
       .on(t.createdBy)
       .where(sql`created_by IS NOT NULL`),
+    check(
+      'boards_links_azure_project_check',
+      sql`azure_project_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+    ),
     check('boards_links_kind_check', sql`kind IN ('issue','vulnerability')`),
     check(
       'boards_links_target_check',

@@ -195,17 +195,19 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
           }
           const pending = await insertPendingBoardsLinks(
             tx,
-            { projectId: project.id, connectionId: connection.id, userId: principal.user.id },
+            {
+              projectId: project.id,
+              connectionId: connection.id,
+              azureProjectId: mapping.azureProjectId,
+              userId: principal.user.id,
+            },
             fresh,
           );
           for (const row of rearm) {
-            const rearmed = await rearmBoardsLink(
-              tx,
-              row.id,
-              REARMABLE_STATES,
-              principal.user.id,
-              connection.id,
-            );
+            const rearmed = await rearmBoardsLink(tx, row.id, REARMABLE_STATES, principal.user.id, {
+              connectionId: connection.id,
+              azureProjectId: mapping.azureProjectId,
+            });
             if (rearmed) pending.push(rearmed);
           }
           const made = new Map(pending.map((row) => [targetKey(rowTarget(row)), row]));
@@ -236,7 +238,7 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
         const key = targetKey(r.target);
         const made = outcome.made.get(key);
         if (made) {
-          const link = boardsLinkDto(made, outcome.baseUrl, mapping.azureProjectId);
+          const link = boardsLinkDto(made, outcome.baseUrl);
           if (claimed.has(key)) return { link, skipped: 'ALREADY_LINKED' };
           claimed.add(key);
           return { link, skipped: null };
@@ -298,8 +300,7 @@ export const boardsLinkRoutes: FastifyPluginAsyncZod<{
         chargeChanges.refund(principal.user.id, 1);
         throw err;
       }
-      // A re-armed row has no work item, so no URL: the Azure DevOps project is not needed.
-      return reply.code(202).send(boardsLinkDto(row, connection.baseUrl, null));
+      return reply.code(202).send(boardsLinkDto(row, connection.baseUrl));
     },
   );
 

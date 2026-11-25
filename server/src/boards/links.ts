@@ -5,7 +5,6 @@ import type { Executor } from '../db/client';
 import {
   BOARDS_STATE_CATEGORIES,
   boardsLinks,
-  projectBoardsSettings,
   scmConnections,
   type BoardsLinkState,
 } from '../db/schema';
@@ -35,8 +34,9 @@ export const boardsLinkSchema = z.object({
   /** The work item's id; null until it is created (and after a re-arm). */
   workItemId: z.number().int().nullable(),
   /**
-   * `<connection base URL>/<Azure DevOps project id>/_workitems/edit/<id>`; null without a work
-   * item id, or while the project has no Boards mapping on the link's connection.
+   * `<connection base URL>/<Azure DevOps project id>/_workitems/edit/<id>`, from the link's own
+   * connection and Azure DevOps project (kept when the mapping is removed); null without a work
+   * item id.
    */
   url: z.string().nullable(),
   /**
@@ -65,24 +65,19 @@ export const boardsLinkSchema = z.object({
 export type BoardsLink = z.infer<typeof boardsLinkSchema>;
 
 /**
- * The link as the API shows it. `azureProjectId` is the Azure DevOps project of the project's
- * Boards mapping on the link's connection (the work item page's path, Part B a/d); without one the
- * link has no `url`.
+ * The link as the API shows it: the work item page's URL (Part B a/d) from the link's connection's
+ * base URL and its own Azure DevOps project.
  */
-export function boardsLinkDto(
-  row: BoardsLinkRow,
-  connectionBaseUrl: string,
-  azureProjectId: string | null,
-): BoardsLink {
+export function boardsLinkDto(row: BoardsLinkRow, connectionBaseUrl: string): BoardsLink {
   return {
     id: row.id,
     state: row.state,
     origin: row.origin,
     workItemId: row.workItemId,
     url:
-      row.workItemId === null || azureProjectId === null
+      row.workItemId === null
         ? null
-        : `${azureWebBase(connectionBaseUrl)}/${azureProjectId}/_workitems/edit/${row.workItemId}`,
+        : `${azureWebBase(connectionBaseUrl)}/${row.azureProjectId}/_workitems/edit/${row.workItemId}`,
     workItemState:
       row.stateName === null ? null : { name: row.stateName, category: row.stateCategory },
     stateCheckedAt: isoOrNull(row.stateCheckedAt),
@@ -92,21 +87,14 @@ export function boardsLinkDto(
   };
 }
 
-/** A link row with what its URL needs: its connection's base URL and the mapped Azure project. */
-export type BoardsLinkWithUrl = BoardsLinkRow & {
-  baseUrl: string;
-  azureProjectId: string | null;
-};
+/** A link row with what its URL needs besides its own columns: its connection's base URL. */
+export type BoardsLinkWithUrl = BoardsLinkRow & { baseUrl: string };
 
-const withUrl = {
-  ...getTableColumns(boardsLinks),
-  baseUrl: scmConnections.baseUrl,
-  azureProjectId: projectBoardsSettings.azureProjectId,
-};
+const withUrl = { ...getTableColumns(boardsLinks), baseUrl: scmConnections.baseUrl };
 
 /** The DTO of a row {@link boardsLinkRowsOf} read. */
 export const boardsLinkDtoOf = (row: BoardsLinkWithUrl): BoardsLink =>
-  boardsLinkDto(row, row.baseUrl, row.azureProjectId);
+  boardsLinkDto(row, row.baseUrl);
 
 /**
  * The project's Boards link rows of these targets by {@link targetKey}, dismissed ones too unless
@@ -130,13 +118,6 @@ export async function boardsLinkRowsOf(
       .select(withUrl)
       .from(boardsLinks)
       .innerJoin(scmConnections, eq(scmConnections.id, boardsLinks.connectionId))
-      .leftJoin(
-        projectBoardsSettings,
-        and(
-          eq(projectBoardsSettings.projectId, boardsLinks.projectId),
-          eq(projectBoardsSettings.connectionId, boardsLinks.connectionId),
-        ),
-      )
       .where(
         and(
           eq(boardsLinks.projectId, projectId),
@@ -289,18 +270,19 @@ export async function boardsLinkPreconditions(
 
 /**
  * A pending row for each target that has none (one statement per kind, `ON CONFLICT DO NOTHING`
- * on its unique index): `origin` manual and made by `userId`, or, with `userId` null, the
- * automatic rule's (`origin` auto, no `created_by`). Returns the rows made: a target another
- * request linked meanwhile makes none.
+ * on its unique index), on the mapping's connection and Azure DevOps project: `origin` manual and
+ * made by `userId`, or, with `userId` null, the automatic rule's (`origin` auto, no
+ * `created_by`). Returns the rows made: a target another request linked meanwhile makes none.
  */
 export async function insertPendingBoardsLinks(
   tx: Executor,
-  at: { projectId: string; connectionId: string; userId: string | null },
+  at: { projectId: string; connectionId: string; azureProjectId: string; userId: string | null },
   targets: readonly LinkTarget[],
 ): Promise<BoardsLinkRow[]> {
   const base = {
     projectId: at.projectId,
     connectionId: at.connectionId,
+    azureProjectId: at.azureProjectId,
     state: 'pending' as const,
     origin: at.userId === null ? ('auto' as const) : ('manual' as const),
     createdBy: at.userId,
@@ -349,16 +331,16 @@ export async function insertPendingBoardsLinks(
  * The row back to `pending` for a new create, if its state is one of `from`: `generation` + 1 (the
  * old work item's reconciliation key no longer matches), and everything of the old work item and
  * its creation cleared (id, state, failure, `attempted_at`, so the create claims it;
- * `missed_passes`, `reported_fixed_at`). With `connectionId` the row moves to that connection (a
- * request re-arms on the mapping's current one). Null when the row is in another state, as when a
- * concurrent request re-armed it first.
+ * `missed_passes`, `reported_fixed_at`). With `onto` the row moves to that connection and Azure
+ * DevOps project (a request re-arms onto the mapping's current ones; a retry keeps the link's).
+ * Null when the row is in another state, as when a concurrent request re-armed it first.
  */
 export async function rearmBoardsLink(
   tx: Executor,
   linkId: string,
   from: readonly BoardsLinkState[],
   userId: string | null,
-  connectionId?: string,
+  onto?: { connectionId: string; azureProjectId: string },
 ): Promise<BoardsLinkRow | null> {
   const [row] = await tx
     .update(boardsLinks)
@@ -366,7 +348,9 @@ export async function rearmBoardsLink(
       state: 'pending',
       origin: 'manual',
       createdBy: userId,
-      ...(connectionId === undefined ? {} : { connectionId }),
+      ...(onto === undefined
+        ? {}
+        : { connectionId: onto.connectionId, azureProjectId: onto.azureProjectId }),
       generation: sql`${boardsLinks.generation} + 1`,
       workItemId: null,
       stateName: null,

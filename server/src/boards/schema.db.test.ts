@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, expectPgError, type TestDatabase } from '../../test/db';
+import { PG_NOT_NULL_VIOLATION } from '../../test/refusals';
 import { PG_CHECK_VIOLATION, PG_UNIQUE_VIOLATION } from '../db/errors';
 import { uuidv7 } from '../db/ids';
 import {
@@ -92,6 +93,7 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
   const issueLink = (connectionId: string, issueId: string | null, over = {}) => ({
     projectId,
     connectionId,
+    azureProjectId: AZURE_PROJECT,
     kind: 'issue' as const,
     issueId,
     state: 'pending' as const,
@@ -101,6 +103,7 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
   const vulnLink = (connectionId: string, over = {}) => ({
     projectId,
     connectionId,
+    azureProjectId: AZURE_PROJECT,
     kind: 'vulnerability' as const,
     packageName: 'lodash',
     vulnerabilityId: 'CVE-2021-23337',
@@ -187,6 +190,7 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
         .values(vulnLink(conn.id, { packageName: 'defaults-pkg' }))
         .returning();
       expect(a).toMatchObject({
+        azureProjectId: AZURE_PROJECT,
         generation: 1,
         missedPasses: 0,
         failure: null,
@@ -296,12 +300,27 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
         { stateCategory: 'InProgress' as never },
       ],
       ['the kind "epic"', { kind: 'epic' as never }],
+      ['an upper-case Azure DevOps project id', { azureProjectId: AZURE_PROJECT.toUpperCase() }],
+      ['a project name as the Azure DevOps project id', { azureProjectId: 'Payments Team' }],
     ])('a link with %s', async (_what, over) => {
       const conn = await makeConnection();
       const issue = await makeIssue();
       await expectPgError(
         t.db.insert(boardsLinks).values(issueLink(conn.id, issue.id, over)),
         PG_CHECK_VIOLATION,
+      );
+    });
+
+    it('a link without its Azure DevOps project', async () => {
+      const conn = await makeConnection();
+      const issue = await makeIssue();
+      await expectPgError(
+        t.pool.query(
+          `INSERT INTO boards_links (id, project_id, connection_id, kind, issue_id, state, origin)
+           VALUES ($1, $2, $3, 'issue', $4, 'pending', 'manual')`,
+          [uuidv7(), projectId, conn.id, issue.id],
+        ),
+        PG_NOT_NULL_VIOLATION,
       );
     });
 
