@@ -97,6 +97,16 @@ export function isReplyNote(content: string | undefined): boolean {
   return new RegExp(`^<!-- qualor:reply ${UUID} -->$`).test(first);
 }
 
+/**
+ * Qualor's answer when it refuses a `qualor review` (server/src/review/commands.ts NOT_A_MEMBER: the
+ * author's Contribute could not be shown, also when Qualor's own credential cannot read the identities
+ * or the ACL): the text, else undefined.
+ */
+export function commandRefusal(content: string | undefined): string | undefined {
+  const refused = 'Only project members can ask for an AI review.';
+  return (content ?? '').includes(refused) ? refused : undefined;
+}
+
 /** An issue thread's first note is the AI review's when its header line (the second) opens with `**AI review**`. */
 export function isAiNote(content: string | undefined): boolean {
   if (markerKind(content) !== 'issue') return false;
@@ -733,12 +743,14 @@ export const item: ProbeItem = {
       COMMAND_WAIT_MS,
     );
     if (commandAnswer) await rec(ctx, 'command-threads', answerOf(commandAnswer.res));
+    // Qualor answers a command it refuses as well: that answer is no review.
+    const refusal = commandAnswer ? commandRefusal(commandAnswer.answer.content) : undefined;
     checks.push(
       check(
-        'an answer to `qualor review` with the reply marker, in the thread of the command itself',
-        commandAnswer !== undefined,
+        'an answer to `qualor review` with the reply marker, in the thread of the command itself, not a refusal',
+        commandAnswer !== undefined && refusal === undefined,
         commandAnswer
-          ? `answered in ${Math.round((Date.now() - commandAt) / 1000)} s`
+          ? `answered in ${Math.round((Date.now() - commandAt) / 1000)} s${refusal ? `; Qualor refused: "${refusal}"` : ''}`
           : `no answer within ${COMMAND_WAIT_MS / 60000} minutes`,
       ),
     );

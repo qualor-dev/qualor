@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   aiInProgress,
   aiSection,
+  commandRefusal,
   commandWaitMs,
   deliveries,
   isAiNote,
@@ -243,5 +244,16 @@ describe('commandWaitMs', () => {
     expect(commandWaitMs('')).toBe(5 * 60_000);
     expect(commandWaitMs('17')).toBe(17 * 60_000);
     for (const bad of ['0', '31', '2.5', 'x']) expect(() => commandWaitMs(bad)).toThrow(/1 to 30/);
+  });
+});
+
+describe('commandRefusal', () => {
+  it('finds the refusal Qualor writes for a command it does not take', () => {
+    const answer = `<!-- qualor:reply ${ID} -->\n**AI review** · reply\n\nOnly project members can ask for an AI review.`;
+    expect(commandRefusal(answer)).toBe('Only project members can ask for an AI review.');
+    expect(
+      commandRefusal('This commit (` abc `) has been reviewed. Push a new commit to review again.'),
+    ).toBeUndefined();
+    expect(commandRefusal(undefined)).toBeUndefined();
   });
 });
