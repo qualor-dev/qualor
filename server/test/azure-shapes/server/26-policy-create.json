@@ -1,0 +1,54 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "createdDate": "2026-11-25T01:33:13.3276614",
+    "isEnabled": true,
+    "isBlocking": false,
+    "isDeleted": false,
+    "settings": {
+      "buildDefinitionId": 16,
+      "queueOnSourceUpdateOnly": false,
+      "manualQueueOnly": false,
+      "displayName": "Qualor probe item 26",
+      "validDuration": 0,
+      "scope": [
+        {
+          "refName": "refs/heads/probe/26-target-20261125013224",
+          "matchKind": "Exact",
+          "repositoryId": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+        }
+      ]
+    },
+    "isEnterpriseManaged": false,
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/configurations/15"
+      },
+      "policyType": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241"
+      }
+    },
+    "revision": 1,
+    "id": 15,
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/configurations/15",
+    "type": {
+      "id": "0609b952-1397-4640-95ec-e00a01b2c241",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/policy/types/0609b952-1397-4640-95ec-e00a01b2c241",
+      "displayName": "Build"
+    }
+  }
+}

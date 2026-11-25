@@ -1,0 +1,61 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 7,
+    "value": [
+      {
+        "objectId": "4545606f70c1cd259ab8902fc863fbb2b2b95bc2",
+        "gitObjectType": "tree",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/",
+        "isFolder": true,
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items?path=%2F&versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "54ffd352ac41b6ecf0d0c3e6a5445a46c2ba32ee",
+        "gitObjectType": "tree",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/.azure-pipelines",
+        "isFolder": true,
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//.azure-pipelines?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "fb2dae548fa313a791f28c4cb1b272268fb06c17",
+        "gitObjectType": "blob",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/README.md",
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//README.md?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "0ee5e1895d8beeadc065c58106f80c828521d1f9",
+        "gitObjectType": "blob",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/eslint.config.js",
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//eslint.config.js?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "0d2a88cced56dcf8897238a129cc5045e263d546",
+        "gitObjectType": "blob",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/package.json",
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//package.json?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "75dedadb099c6b358cab3856f4cce980445f48c6",
+        "gitObjectType": "tree",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/src",
+        "isFolder": true,
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//src?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      },
+      {
+        "objectId": "f4a296a20e0dddb9e71afe460abcdb1b9b2a2ce0",
+        "gitObjectType": "blob",
+        "commitId": "2e0f70e0d789773dd0cfe477f56db62d52722515",
+        "path": "/tsconfig.json",
+        "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items//tsconfig.json?versionType=Commit&version=2e0f70e0d789773dd0cfe477f56db62d52722515&versionOptions=None"
+      }
+    ]
+  }
+}

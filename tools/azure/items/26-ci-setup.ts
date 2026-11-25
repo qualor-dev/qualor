@@ -4,6 +4,7 @@ import {
   BUILD_POLICY,
   InterruptedError,
   answerOf,
+  authorizeQueue,
   buildLogs,
   createBranchAt,
   createPolicy,
@@ -23,21 +24,27 @@ import {
   waitFor,
   type ProbeContext,
   type ProbeItem,
+  type TargetName,
 } from './common.js';
 
 const YAML_PATH = '.azure-pipelines/qualor.yml';
 const HOSTED_QUEUE = 'Azure Pipelines';
+/** Azure DevOps Server has no hosted pool: the run goes to the bench's own pool `Default`. */
+const SERVER_QUEUE = 'Default';
 const ZEROS = '0'.repeat(40);
-/** A hosted run must start within this long without any authorisation. */
+/** A hosted run (Server: a run on `Default`) must start within this long without any authorisation. */
 const START_MS = 5 * 60_000;
 const API = { apiVersion: '7.0-preview.1' };
 
-/** The setup's pipeline file: the hosted pool, a non-ASCII line so the bytes can be compared. */
-export function setupYaml(): string {
+/**
+ * The setup's pipeline file: the hosted pool (Server: the pool `Default`), a non-ASCII line so the
+ * bytes can be compared.
+ */
+export function setupYaml(target: TargetName = 'services'): string {
   return [
     'trigger: none',
     'pool:',
-    '  vmImage: ubuntu-latest',
+    target === 'server' ? `  name: ${SERVER_QUEUE}` : '  vmImage: ubuntu-latest',
     'steps:',
     '- script: |',
     '    echo "Qualor probe item 26: Grüße ✓"',
@@ -163,40 +170,46 @@ export const item: ProbeItem = {
         return stop('26a', `queues by project GUID: ${describeAnswer(qres.status, qres.json)}`);
       }
       const queues = shape(QueuesSchema, qres.json, 'agent queues').value;
-      const hosted = queueNamed(queues, HOSTED_QUEUE);
+      // Server: the Default queue takes the hosted queue's place in every step below.
+      const onServer = ctx.target === 'server';
+      const kind = onServer ? SERVER_QUEUE : 'hosted';
+      const wanted = onServer ? SERVER_QUEUE : HOSTED_QUEUE;
+      const hosted = queueNamed(queues, wanted);
       const dflt = queueNamed(queues, 'Default');
       facts.push(
         `26a queues by project GUID: HTTP 200, ${queues.length} queues: ${queueLines(queues).join('; ')}`,
       );
-      if (!hosted) return stop('26a', `no queue named ${HOSTED_QUEUE}`);
+      if (!hosted) return stop('26a', `no queue named ${wanted}`);
       facts.push(
-        `26a hosted queue "${hosted.name}" id ${hosted.id}, pool ${hosted.pool?.name ?? 'none'}; Default queue: ${dflt ? `id ${dflt.id}` : 'none'}`,
+        `26a ${kind} queue "${hosted.name}" id ${hosted.id}, pool ${hosted.pool?.name ?? 'none'}; Default queue: ${dflt ? `id ${dflt.id}` : 'none'}`,
       );
 
-      // b: is the hosted queue open to all pipelines?
+      // b: is the hosted (Server: Default) queue open to all pipelines?
       const pres = await ctx.bot.request(
         'GET',
         `${root}/pipelines/pipelinePermissions/queue/${hosted.id}`,
         undefined,
         API,
       );
-      await ctx.record('hosted-queue-permissions', answerOf(pres));
+      await ctx.record(`${onServer ? 'default' : 'hosted'}-queue-permissions`, answerOf(pres));
       const perms = pres.json as {
         allPipelines?: { authorized?: boolean } | null;
         pipelines?: unknown[];
       };
       facts.push(
-        `26b hosted queue permissions: ${describeAnswer(pres.status, pres.status === 200 ? {} : pres.json)}; allPipelines ${
+        `26b ${kind} queue permissions: ${describeAnswer(pres.status, pres.status === 200 ? {} : pres.json)}; allPipelines ${
           perms?.allPipelines ? String(perms.allPipelines.authorized) : 'absent'
         }; ${perms?.pipelines?.length ?? 0} listed pipelines`,
       );
+      // Server's Default queue is not open to all pipelines: the setup authorises its pipeline on it.
+      const authorise = onServer && perms?.allPipelines?.authorized !== true;
 
       // c: a new branch with one base64 file, from the default branch's head.
       const base = await refHead(ctx, repo.defaultBranch);
       if (!base) return stop('26c', 'no head on the default branch');
       const branch = `probe/26-${ctx.stamp}`;
       const refName = `refs/heads/${branch}`;
-      const bytes = Buffer.from(setupYaml(), 'utf8');
+      const bytes = Buffer.from(setupYaml(ctx.target), 'utf8');
       ctx.cleanup.add(`delete branch ${branch}`, () => deleteBranch(ctx, refName));
       const push = await ctx.bot.request('POST', `${gitRoot}/pushes`, {
         refUpdates: [{ name: refName, oldObjectId: ZEROS }],
@@ -241,7 +254,7 @@ export const item: ProbeItem = {
         `26d root listing at the commit: HTTP ${list.status}; entries ${rootEntries(list.json).join(', ') || 'none'}`,
       );
 
-      // e: a definition on the hosted queue; a run on the branch must start without authorisation.
+      // e: a definition on the hosted (Server: Default) queue; a run on the branch must start without authorisation.
       const token = `probe-${randomBytes(16).toString('hex')}`;
       ctx.redaction.secrets.push(token);
       const defsPath = `${root}/build/definitions`;
@@ -262,10 +275,20 @@ export const item: ProbeItem = {
       if (created.status >= 300) {
         return stop(
           '26e',
-          `definition on the hosted queue: ${describeAnswer(created.status, created.json)}`,
+          `definition on the ${kind} queue: ${describeAnswer(created.status, created.json)}`,
         );
       }
       const defId = createdNumber(created, 'id', 'definition');
+      if (authorise) {
+        // As the setup does (settleQueue): PATCH pipelinePermissions for this pipeline alone;
+        // clean-up takes it back and checks the queue's permissions read as before.
+        const auth = await authorizeQueue(ctx, hosted.id, defId);
+        await ctx.record('queue-authorize', answerOf(auth));
+        facts.push(
+          `26e the ${kind} queue is not open to all pipelines: the definition authorised on it (PATCH pipelinePermissions, as the setup does): ${describeAnswer(auth.status, auth.status < 300 ? {} : auth.json)}`,
+        );
+        if (auth.status >= 300) return stop('26e', 'the authorisation on the queue was refused');
+      }
       const qb = await ctx.bot.request('POST', `${root}/build/builds`, {
         definition: { id: defId },
         sourceBranch: refName,
@@ -289,15 +312,20 @@ export const item: ProbeItem = {
         { timeoutMs: START_MS, intervalMs: 10_000 },
       );
       if (!started) {
-        facts.push('26e hosted run still notStarted after 5 minutes: needs authorisation');
-        return stop('26e', 'the hosted run did not start within 5 minutes without authorisation');
+        facts.push(
+          `26e ${kind} run still notStarted after 5 minutes: ${authorise ? 'no agent took it' : 'needs authorisation'}`,
+        );
+        return stop(
+          '26e',
+          `the ${kind} run did not start within 5 minutes ${authorise ? 'after the authorisation' : 'without authorisation'}`,
+        );
       }
       const seconds = Math.round((Date.now() - startedAt) / 1000);
       const done = await waitBuild(ctx, queued.id, { timeoutMs: 6 * 60_000 });
       if (done.build.status === 'completed') await buildLogs(ctx, queued.id);
       await ctx.record('run', answerOf(done.res));
       facts.push(
-        `26e definition on hosted queue ${hosted.id}: HTTP ${created.status}; run started within ~${seconds} s without any authorisation (status ${started.build.status}); final ${done.build.status}${done.build.result ? ` ${done.build.result}` : ''}`,
+        `26e definition on ${kind} queue ${hosted.id}: HTTP ${created.status}; run started within ~${seconds} s ${authorise ? 'after that authorisation' : 'without any authorisation'} (status ${started.build.status}); final ${done.build.status}${done.build.result ? ` ${done.build.result}` : ''}`,
       );
 
       // f: find definitions of the repository.

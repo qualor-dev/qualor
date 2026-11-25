@@ -18,6 +18,13 @@ describe('item 26 helpers', () => {
     expect(Buffer.byteLength(text)).toBeGreaterThan(text.length);
   });
 
+  it('on Server the setup YAML uses the pool Default, not the hosted image', () => {
+    const text = setupYaml('server');
+    expect(text).toContain('pool:\n  name: Default\n');
+    expect(text).not.toContain('vmImage');
+    expect(setupYaml('services')).toBe(setupYaml());
+  });
+
   it('finds a queue by its exact name and lists id, name and pool', () => {
     const queues = [
       { id: 1, name: 'Azure Pipelines 2', pool: { id: 9, name: 'Other' } },

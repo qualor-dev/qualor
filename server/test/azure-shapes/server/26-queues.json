@@ -1,0 +1,24 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0-preview.1",
+  "body": {
+    "count": 1,
+    "value": [
+      {
+        "id": 1,
+        "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "Default",
+        "pool": {
+          "id": 1,
+          "scope": "f373876b-d7ee-414e-832a-fa6e0000ce91",
+          "name": "Default",
+          "isHosted": false,
+          "poolType": "automation",
+          "size": 1,
+          "isLegacy": false,
+          "options": "none"
+        }
+      }
+    ]
+  }
+}
