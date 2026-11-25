@@ -1,0 +1,108 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "id": 16,
+    "rev": 2,
+    "fields": {
+      "System.AreaPath": "probe-org",
+      "System.TeamProject": "probe-org",
+      "System.IterationPath": "probe-org",
+      "System.WorkItemType": "Bug",
+      "System.State": "Active",
+      "System.Reason": "Approved",
+      "System.CreatedDate": "2026-11-25T01:58:09.853Z",
+      "System.CreatedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+          }
+        },
+        "id": "7c429e0c-e3c7-43e0-8633-fa6e0000136d",
+        "uniqueName": "00000000-0000-0000-0000-00000000000t\\Probe User",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw",
+        "descriptor": "aadsp.YTQzYzdkZWItZDI4Yy00YTNkLTg0ZWYtZmE2ZTAwMDA0NzIw"
+      },
+      "System.ChangedDate": "2026-11-25T01:58:14.343Z",
+      "System.ChangedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "System.CommentCount": 0,
+      "System.Title": "Qualor probe item 31: <script>alert(\"31\")</script> & <b>'bold'</b> <img src=x onerror=alert(31)>",
+      "Microsoft.VSTS.Common.ActivatedBy": {
+        "displayName": "Probe User",
+        "url": "https://spsprodneu1.vssps.visualstudio.com/A40e98ba4-cfd8-4f7e-8c16-fa6e00001b9f/_apis/Identities/8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "_links": {
+          "avatar": {
+            "href": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+          }
+        },
+        "id": "8bcb5100-06e4-4ee5-865f-fa6e00005496",
+        "uniqueName": "user@example.invalid",
+        "imageUrl": "https://dev.azure.com/probe-org/_apis/GraphProfile/MemberAvatars/aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1",
+        "descriptor": "aad.MTgwMTY2NWUtMzZhYS00ZjllLTgyYjgtZmE2ZTAwMDA1M2Q1"
+      },
+      "Microsoft.VSTS.Common.ActivatedDate": "2026-11-25T01:58:14.343Z",
+      "Microsoft.VSTS.Common.Priority": 2,
+      "Microsoft.VSTS.Common.Severity": "3 - Medium",
+      "Microsoft.VSTS.Common.StateChangeDate": "2026-11-25T01:58:14.343Z",
+      "Microsoft.VSTS.Common.ValueArea": "Business",
+      "System.Description": "<h3>Qualor probe item 31: markup in a finding </h3>\n<pre>Qualor probe item 31: &lt;script&gt;alert(&quot;31&quot;)&lt;/script&gt; &amp; &lt;b&gt;'bold'&lt;/b&gt; &lt;img src=x onerror=alert(31)&gt;</pre>\n<p>Project: <code>Bench boards</code> (<code>bench-boards</code>) </p>\n<p>Branch: <code>main</code> </p>\n<p>File: <code>src/probe31.ts:3</code> </p>\n<p>Rule: <code>probe31:markup</code>, high, <code>security</code> </p>\n<p>First seen: 2026-11-25 </p>\n<p><a href=\"https://ado.example.invalid/projects/daacfda5-87e2-41ed-8f20-fa6e0000d7d2/issues/58c9ba54-3798-4c11-8b17-fa6e00006cd8\">Open in Qualor</a> </p>\n<p>Qualor reference: qualor-aa96a20d548d4c8b8209fa6e00003efb-1 </p>",
+      "Microsoft.VSTS.TCM.ReproSteps": "<h3>Qualor probe item 31: markup in a finding </h3>\n<pre>Qualor probe item 31: &lt;script&gt;alert(&quot;31&quot;)&lt;/script&gt; &amp; &lt;b&gt;'bold'&lt;/b&gt; &lt;img src=x onerror=alert(31)&gt;</pre>\n<p>Project: <code>Bench boards</code> (<code>bench-boards</code>) </p>\n<p>Branch: <code>main</code> </p>\n<p>File: <code>src/probe31.ts:3</code> </p>\n<p>Rule: <code>probe31:markup</code>, high, <code>security</code> </p>\n<p>First seen: 2026-11-25 </p>\n<p><a href=\"https://ado.example.invalid/projects/daacfda5-87e2-41ed-8f20-fa6e0000d7d2/issues/58c9ba54-3798-4c11-8b17-fa6e00006cd8\">Open in Qualor</a> </p>\n<p>Qualor reference: qualor-aa96a20d548d4c8b8209fa6e00003efb-1 </p>",
+      "System.Tags": "probe31; qualor"
+    },
+    "multilineFieldsFormat": {
+      "System.Description": "html",
+      "Microsoft.VSTS.TCM.ReproSteps": "html"
+    },
+    "relations": [
+      {
+        "rel": "Hyperlink",
+        "url": "https://ado.example.invalid/projects/daacfda5-87e2-41ed-8f20-fa6e0000d7d2/issues/58c9ba54-3798-4c11-8b17-fa6e00006cd8",
+        "attributes": {
+          "authorizedDate": "2026-11-25T01:58:09.853Z",
+          "id": 140799,
+          "resourceCreatedDate": "2026-11-25T01:58:09.853Z",
+          "resourceModifiedDate": "2026-11-25T01:58:09.853Z",
+          "revisedDate": "9999-01-01T00:00:00Z"
+        }
+      }
+    ],
+    "_links": {
+      "self": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/16"
+      },
+      "workItemUpdates": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/16/updates"
+      },
+      "workItemRevisions": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/16/revisions"
+      },
+      "workItemComments": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/16/comments"
+      },
+      "html": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_workitems/edit/16"
+      },
+      "workItemType": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItemTypes/Bug"
+      },
+      "fields": {
+        "href": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/fields"
+      }
+    },
+    "url": "https://dev.azure.com/probe-org/a1532079-a512-4327-8d28-fa6e00004469/_apis/wit/workItems/16"
+  }
+}
