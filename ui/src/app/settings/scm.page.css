@@ -127,6 +127,31 @@ dl.app-facts dd {
 dl.app-facts code {
   font-size: 12.5px;
 }
+/*
+ * Azure DevOps: the choice of authentication, a group whose legend reads like a setting's name
+ * and whose options wrap their words beside the radio, as in a setting's field.
+ */
+.kind-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.kind-group > legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.kind-group > label.row {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  margin-top: 6px;
+}
+.kind-group > label.row > input {
+  flex: none;
+  margin-top: 3px;
+}
 /* A switch whose help ends in a link to the guide: the help sits beside the label, not in it. */
 .sw-text {
   display: grid;

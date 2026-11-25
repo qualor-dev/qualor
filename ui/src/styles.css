@@ -2605,6 +2605,18 @@ input.switch[type='checkbox']:focus-visible {
 .dialog-body {
   padding: 16px 24px 4px;
 }
+/*
+ * Setting rows in a dialog (the Azure DevOps connection's fields, shared with its card): a dialog
+ * has no room for the name beside the field, so each row stacks the name over its field.
+ */
+.dialog .setting-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 14px 0;
+}
+.dialog .setting-row:first-child {
+  padding-top: 0;
+}
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
