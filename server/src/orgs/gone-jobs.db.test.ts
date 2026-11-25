@@ -11,6 +11,8 @@ import { seedFix } from '../../test/fixes';
 import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
 import { createAuditRecorder, SYSTEM_ACTOR } from '../audit/recorder';
 import { bootstrap } from '../auth/bootstrap';
+import { BOARDS_QUEUE, enqueueBoardsCreate, scheduleBoardsSync } from '../boards/jobs';
+import { boardsHandlers } from '../boards/run';
 import { encryptionKey, encryptSecret } from '../crypto/secrets';
 import type { Db } from '../db/client';
 import {
@@ -19,6 +21,7 @@ import {
   jiraConnections,
   jobs,
   llmRequests,
+  projectBoardsSettings,
   projectFixSettings,
   projects,
   repositorySetupItems,
@@ -66,6 +69,7 @@ import { AI_REVIEW_QUEUE, createReviewRun } from '../review/runs';
 import { REVIEW_SNAPSHOT_QUEUE, storeSnapshotUpload } from '../review/snapshot-store';
 import { scmHandlers, type DecorationDeps } from '../scm/decorate';
 import { enqueueDecoration, SCM_QUEUE } from '../scm/queue';
+import { InstallationTokenCache } from '../scm/github/app-auth';
 import { createScmRuntime } from '../scm/runtime';
 import { makeDatasetCurrent, storeDataset } from '../vulndb/store';
 import { ALERTS_QUEUE } from '../vulnerabilities/alerts/enqueue';
@@ -308,6 +312,38 @@ const fixDeps = (logger: Logger) => ({
   db,
   scm,
   runtime: createScmRuntime(),
+  publicUrl: null,
+  limits: communityLimits,
+  logger,
+});
+
+/** An Azure DevOps connection of the organisation with its project mapped to Azure Boards. */
+async function seedBoardsConnection(org: Org): Promise<string> {
+  const [made] = await db
+    .insert(scmConnections)
+    .values({
+      organizationId: org.organizationId,
+      provider: 'azure',
+      baseUrl: 'https://dev.azure.com/gone',
+      azureAuth: 'pat',
+      tokenEnc: encryptSecret(KEY, 'azure-pat', 'scm_connections.token_enc'),
+    })
+    .returning({ id: scmConnections.id });
+  await db.insert(projectBoardsSettings).values({
+    projectId: org.projectId,
+    connectionId: made!.id,
+    azureProjectId: '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c',
+    azureProjectName: 'Payments',
+    workItemTypeRef: 'Microsoft.VSTS.WorkItemTypes.Bug',
+    workItemTypeName: 'Bug',
+  });
+  return made!.id;
+}
+
+const boardsDeps = (logger: Logger) => ({
+  db,
+  scm,
+  azureTokens: new InstallationTokenCache(),
   publicUrl: null,
   limits: communityLimits,
   logger,
@@ -626,6 +662,26 @@ const ROWS: Row[] = [
       return [connectionId];
     },
     handlers: (logger) => jiraHandlers(jiraDeps(logger)),
+  },
+  {
+    name: 'boards: a pass of the Azure DevOps connection',
+    queue: BOARDS_QUEUE,
+    queueJob: async (org) => {
+      const connectionId = await seedBoardsConnection(org);
+      expect(await scheduleBoardsSync(db, connectionId, 0)).toBe(true);
+      return [connectionId];
+    },
+    handlers: (logger) => boardsHandlers(boardsDeps(logger)),
+  },
+  {
+    name: 'boards: a create run of the Azure DevOps connection',
+    queue: BOARDS_QUEUE,
+    queueJob: async (org) => {
+      const connectionId = await seedBoardsConnection(org);
+      expect(await enqueueBoardsCreate(db, connectionId)).toBe(true);
+      return [connectionId];
+    },
+    handlers: (logger) => boardsHandlers(boardsDeps(logger)),
   },
   {
     name: 'fixes: the commit of a fix',

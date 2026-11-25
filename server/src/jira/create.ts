@@ -319,7 +319,7 @@ export async function stopFor(ctx: JiraRunContext, err: JiraError): Promise<Stop
  * limit with an answered call (R18: a run Jira never answered, a sign-in proxy, waits for the
  * pass instead of pushing the whole backlog through); else none.
  */
-function followUpDelay(
+export function followUpDelay(
   stop: Stop,
   full: boolean,
   answered: boolean,

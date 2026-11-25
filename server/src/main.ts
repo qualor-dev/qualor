@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app';
 import { SYSTEM_ACTOR, type AuditRecorder } from './audit/recorder';
 import { bootstrap, BootstrapError } from './auth/bootstrap';
+import { ensureBoardsSyncScheduled } from './boards/jobs';
+import { BOARDS_LEASE_MS, BOARDS_WORKER_CONCURRENCY, boardsHandlers } from './boards/run';
 import { ConfigError, loadConfig, type Config } from './config';
 import { createDatabase, type Db } from './db/client';
 import { EmbeddedPostgresError, startEmbeddedPostgres, type EmbeddedPostgres } from './db/embedded';
@@ -589,6 +591,26 @@ async function main(): Promise<void> {
       await ensureJiraSyncScheduled(db);
     },
   });
+  // Azure DevOps design §7.8: Azure Boards calls have their own worker too, like Jira's. Each
+  // connection's create runs and passes have a key of their own (plan Ruling 6); the pass is
+  // ensured for every connection with a mapping or a live link after each reap.
+  const boardsWorker = startWorker({
+    db: database.db,
+    handlers: boardsHandlers({
+      db: database.db,
+      scm: scmDepsOf(config),
+      azureTokens: scmRuntime.azureTokens,
+      publicUrl: config.publicUrl,
+      limits: () => edition.limits(),
+      logger,
+    }),
+    concurrency: BOARDS_WORKER_CONCURRENCY,
+    leaseMs: BOARDS_LEASE_MS,
+    logger,
+    afterReap: async (db) => {
+      await ensureBoardsSyncScheduled(db);
+    },
+  });
   // enterprise.md §10.3: plugin jobs have their own worker, only when a plugin registered jobs;
   // each job checks its feature against the same edition as the API's routes.
   const pluginWorker = startPluginWorker({ db: database.db, plugins, edition, logger });
@@ -627,6 +649,7 @@ async function main(): Promise<void> {
       await reviewsStopped;
       await mailWorker.stop();
       await jiraWorker.stop();
+      await boardsWorker.stop();
       await vulndbStopped;
       await pluginWorker?.stop();
       await database.close();
@@ -691,6 +714,9 @@ async function main(): Promise<void> {
   );
   await scheduleAtBoot(logger, 'jira', 'the Jira passes could not be scheduled', () =>
     ensureJiraSyncScheduled(database.db),
+  );
+  await scheduleAtBoot(logger, 'boards', 'the Azure Boards passes could not be scheduled', () =>
+    ensureBoardsSyncScheduled(database.db),
   );
   await scheduleAtBoot(logger, 'fixes', 'the fix passes could not be scheduled', () =>
     ensureFixSyncScheduled(database.db),
