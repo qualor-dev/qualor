@@ -1,0 +1,61 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "pullRequestThreadContext": null,
+    "id": 110,
+    "publishedDate": "2026-11-25T02:40:59.87Z",
+    "lastUpdatedDate": "2026-11-25T02:40:59.87Z",
+    "comments": [
+      {
+        "id": 1,
+        "parentCommentId": 0,
+        "author": {
+          "displayName": "Probe User",
+          "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/f62329bc-174c-4a93-8562-fa6e00009803",
+          "_links": {
+            "avatar": {
+              "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+            }
+          },
+          "id": "f62329bc-174c-4a93-8562-fa6e00009803",
+          "uniqueName": "",
+          "imageUrl": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>",
+          "descriptor": "win.<sid>"
+        },
+        "content": "qualor review",
+        "publishedDate": "2026-11-25T02:40:59.87Z",
+        "lastUpdatedDate": "2026-11-25T02:40:59.87Z",
+        "lastContentUpdatedDate": "2026-11-25T02:40:59.87Z",
+        "commentType": "text",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/30/threads/110/comments/1"
+          },
+          "repository": {
+            "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+          },
+          "threads": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/30/threads/110"
+          },
+          "pullRequests": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/git/pullRequests/30"
+          }
+        }
+      }
+    ],
+    "status": "active",
+    "threadContext": null,
+    "properties": null,
+    "identities": null,
+    "isDeleted": false,
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/30/threads/110"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+      }
+    }
+  }
+}

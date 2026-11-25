@@ -1,0 +1,123 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "count": 2,
+    "value": [
+      {
+        "id": "c1297790-11a6-41b0-886c-fa6e000017d3",
+        "status": "enabled",
+        "eventType": "git.pullrequest.updated",
+        "publisherInputs": {
+          "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+          "tfsSubscriptionId": "6d386583-c7bb-47dc-8a6c-fa6e000048ff"
+        },
+        "consumerInputs": {
+          "url": "https://ado.example.invalid/api/v0/azure-devops/webhooks/aa76363c-175a-4613-8748-fa6e00007a04",
+          "basicAuthUsername": "qualor",
+          "detailedMessagesToSend": "none",
+          "messagesToSend": "none",
+          "resourceDetailsToSend": "all",
+          "basicAuthPassword": "********"
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/c1297790-11a6-41b0-886c-fa6e000017d3",
+        "publisherId": "tfs",
+        "subscriber": null,
+        "resourceVersion": "1.0",
+        "eventDescription": "Any branch on any repository.",
+        "consumerId": "webHooks",
+        "consumerActionId": "httpRequest",
+        "actionDescription": "To host ado.example.invalid",
+        "createdBy": {
+          "displayName": "Probe User",
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "descriptor": "win.<sid>"
+        },
+        "createdDate": "2026-11-25T02:38:39.487Z",
+        "modifiedBy": {
+          "displayName": "Probe User",
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "descriptor": "win.<sid>"
+        },
+        "modifiedDate": "2026-11-25T02:38:39.487Z",
+        "lastProbationRetryDate": "0001-01-01T00:00:00",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/c1297790-11a6-41b0-886c-fa6e000017d3"
+          },
+          "consumer": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks"
+          },
+          "actions": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks/actions"
+          },
+          "notifications": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/c1297790-11a6-41b0-886c-fa6e000017d3/notifications"
+          },
+          "publisher": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/publishers/tfs"
+          }
+        }
+      },
+      {
+        "id": "aad74078-4a67-404b-8c9a-fa6e0000a6d2",
+        "status": "enabled",
+        "eventType": "ms.vss-code.git-pullrequest-comment-event",
+        "publisherInputs": {
+          "projectId": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+          "tfsSubscriptionId": "3a664f07-dfeb-4e02-89dd-fa6e00008287"
+        },
+        "consumerInputs": {
+          "url": "https://ado.example.invalid/api/v0/azure-devops/webhooks/aa76363c-175a-4613-8748-fa6e00007a04",
+          "basicAuthUsername": "qualor",
+          "detailedMessagesToSend": "none",
+          "messagesToSend": "none",
+          "resourceDetailsToSend": "all",
+          "basicAuthPassword": "********"
+        },
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/aad74078-4a67-404b-8c9a-fa6e0000a6d2",
+        "publisherId": "tfs",
+        "subscriber": null,
+        "resourceVersion": "2.0",
+        "eventDescription": "Any branch on any repository.",
+        "consumerId": "webHooks",
+        "consumerActionId": "httpRequest",
+        "actionDescription": "To host ado.example.invalid",
+        "createdBy": {
+          "displayName": "Probe User",
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "descriptor": "win.<sid>"
+        },
+        "createdDate": "2026-11-25T02:38:39.193Z",
+        "modifiedBy": {
+          "displayName": "Probe User",
+          "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+          "uniqueName": "ado.example.invalid\\Probe User",
+          "descriptor": "win.<sid>"
+        },
+        "modifiedDate": "2026-11-25T02:38:39.193Z",
+        "lastProbationRetryDate": "0001-01-01T00:00:00",
+        "_links": {
+          "self": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/aad74078-4a67-404b-8c9a-fa6e0000a6d2"
+          },
+          "consumer": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks"
+          },
+          "actions": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/consumers/webHooks/actions"
+          },
+          "notifications": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/subscriptions/aad74078-4a67-404b-8c9a-fa6e0000a6d2/notifications"
+          },
+          "publisher": {
+            "href": "https://ado.example.invalid/DefaultCollection/_apis/hooks/publishers/tfs"
+          }
+        }
+      }
+    ]
+  }
+}
