@@ -70,6 +70,9 @@ function statusOf(
 ): CiSetupStatus {
   switch (row.provider) {
     case 'gitlab':
+    case 'azure':
+      // Azure DevOps shares GitLab's answer: the rights each step needs are found per step in the
+      // run, not up front, so there is no request here.
       if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
       return row.ciSetupAllowed
         ? { available: true, reason: null, missing: [] }
@@ -81,12 +84,6 @@ function statusOf(
         ? { available: true, reason: null, missing: [] }
         : { available: false, reason: 'missing_permissions', missing };
     }
-    case 'azure':
-      // The rights each step needs are found per step in the run, not up front: no request here.
-      if (publicUrl === null) return { available: false, reason: 'no_public_url', missing: [] };
-      return row.ciSetupAllowed
-        ? { available: true, reason: null, missing: [] }
-        : { available: false, reason: 'not_allowed', missing: [] };
     default:
       return assertNever(row.provider, 'provider');
   }

@@ -52,17 +52,20 @@ const carries = (p: ScmProvider): SQL =>
 function scmCountsQuery(): SQL {
   const columns: SQL[] = [];
   SCM_PROVIDERS.forEach((p, i) => {
+    const mrColumn = sql.raw(`mr_${p}`);
+    const ciColumn = sql.raw(`ci_${p}`);
     columns.push(sql`count(*) FILTER (
                    WHERE scm_context ->> 'provider' = ${p}::text
                      AND scm_context ->> 'mergeRequestId' IS NOT NULL
-                 ) AS ${sql.raw(`mr_${p}`)}`);
+                 ) AS ${mrColumn}`);
     const earlier = SCM_PROVIDERS.slice(0, i).map((q) => sql`NOT (${carries(q)})`);
     columns.push(sql`count(*) FILTER (
                    WHERE ${sql.join([carries(p), ...earlier], sql` AND `)}
-                 ) AS ${sql.raw(`ci_${p}`)}`);
+                 ) AS ${ciColumn}`);
   });
   const none = SCM_PROVIDERS.map((p) => sql`NOT (${carries(p)})`);
-  columns.push(sql`count(*) FILTER (WHERE ${sql.join(none, sql` AND `)}) AS ci_other`);
+  const noneCarried = sql.join(none, sql` AND `);
+  columns.push(sql`count(*) FILTER (WHERE ${noneCarried}) AS ci_other`);
   return sql`
           SELECT ${sql.join(
             columns,

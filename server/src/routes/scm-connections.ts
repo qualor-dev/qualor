@@ -554,6 +554,19 @@ async function connectionFor(
   return row.connection;
 }
 
+/**
+ * The connection's row locked for update before anything else: as Jira's connection save, so a
+ * link request or the automatic Boards rule that holds it (key share) commits before the move, and
+ * the delete after it sees its rows.
+ */
+async function lockRowFirst(tx: Executor, id: string): Promise<void> {
+  await tx
+    .select({ id: scmConnections.id })
+    .from(scmConnections)
+    .where(eq(scmConnections.id, id))
+    .for('update');
+}
+
 export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = async (
   app,
   { deps },
@@ -855,9 +868,8 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
         moves = next !== row.baseUrl;
         changes.baseUrl = next;
       }
-      const missing = moves
-        ? moveProblems(body, row, bringsCredential ? null : needsCredential)
-        : [];
+      const stillNeeded = bringsCredential ? null : needsCredential;
+      const missing = moves ? moveProblems(body, row, stillNeeded) : [];
       const own = providerChanges(row, body, next, moves);
       if ('problems' in own || missing.length > 0) {
         throw validationFailed([...missing, ...('problems' in own ? own.problems : [])]);
@@ -870,16 +882,7 @@ export const scmConnectionRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       const azureMove = moves && row.provider === 'azure';
       if (azureMove) changes.webhookSecretEnc = null;
       const updated = await deps.db.transaction(async (tx) => {
-        if (azureMove) {
-          // As Jira's connection save: the row first, so a link request or the automatic Boards
-          // rule that holds it (key share) commits before the move, and the delete below sees
-          // its rows.
-          await tx
-            .select({ id: scmConnections.id })
-            .from(scmConnections)
-            .where(eq(scmConnections.id, row.id))
-            .for('update');
-        }
+        if (azureMove) await lockRowFirst(tx, row.id);
         // The checks above hold only for the row they read: the write is conditional on the
         // stored address (and Azure DevOps kind and ids), so an address changed by a concurrent
         // request (with its own credentials) is never paired with this request's, or kept with

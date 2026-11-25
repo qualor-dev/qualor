@@ -14,7 +14,7 @@ import {
   rules,
   scmConnections,
   users,
-  type BoardsLinkState,
+  type JiraLinkState,
   type BoardsStateCategory,
 } from '../db/schema';
 
@@ -203,7 +203,7 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
       expect(b?.kind).toBe('vulnerability');
     });
 
-    it.each(['pending', 'created', 'failed', 'missing', 'dismissed'] as BoardsLinkState[])(
+    it.each(['pending', 'created', 'failed', 'missing', 'dismissed'] as JiraLinkState[])(
       'the state %s with a work item id',
       async (state) => {
         const conn = await makeConnection();
@@ -216,7 +216,7 @@ describe('the Boards tables (Azure DevOps design §7.8, migration 0037_azure_boa
       },
     );
 
-    it.each(['pending', 'failed', 'dismissed'] as BoardsLinkState[])(
+    it.each(['pending', 'failed', 'dismissed'] as JiraLinkState[])(
       'the state %s without a work item id',
       async (state) => {
         const conn = await makeConnection();

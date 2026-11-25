@@ -79,17 +79,7 @@ function shortestScript(b: string[], h: string[], maxEdits: number): number[] | 
     const cur = new Int32Array(d + 1);
     const prev = d > 0 ? (trace[d - 1] ?? null) : null;
     for (let k = -d; k <= d; k += 2) {
-      let x: number;
-      if (prev === null) {
-        x = 0;
-      } else if (
-        k === -d ||
-        (k !== d && furthest(prev, k - 1, d - 1) < furthest(prev, k + 1, d - 1))
-      ) {
-        x = furthest(prev, k + 1, d - 1);
-      } else {
-        x = furthest(prev, k - 1, d - 1) + 1;
-      }
+      let x = startOf(prev, k, d);
       let y = x - k;
       while (x < n && y < m && b[x] === h[y]) {
         x++;
@@ -106,6 +96,17 @@ function shortestScript(b: string[], h: string[], maxEdits: number): number[] | 
   return null;
 }
 
+/** Whether diagonal k of round d is reached by an insertion (down) from diagonal k + 1. */
+function movesDown(prev: Int32Array, k: number, d: number): boolean {
+  return k === -d || (k !== d && furthest(prev, k - 1, d - 1) < furthest(prev, k + 1, d - 1));
+}
+
+/** Where diagonal k of round d starts: 0 in the first round, else after the better neighbour. */
+function startOf(prev: Int32Array | null, k: number, d: number): number {
+  if (prev === null) return 0;
+  return movesDown(prev, k, d) ? furthest(prev, k + 1, d - 1) : furthest(prev, k - 1, d - 1) + 1;
+}
+
 /** Furthest x on diagonal k after round r. */
 function furthest(round: Int32Array, k: number, r: number): number {
   return round[(k + r) >> 1] ?? 0;
@@ -118,8 +119,7 @@ function backtrack(trace: Int32Array[], dEnd: number, n: number, m: number): num
   for (let d = dEnd; d > 0; d--) {
     const prev = trace[d - 1] ?? new Int32Array(0);
     const k = x - y;
-    const down =
-      k === -d || (k !== d && furthest(prev, k - 1, d - 1) < furthest(prev, k + 1, d - 1));
+    const down = movesDown(prev, k, d);
     const prevK = down ? k + 1 : k - 1;
     const prevX = furthest(prev, prevK, d - 1);
     const prevY = prevX - prevK;

@@ -403,6 +403,23 @@ function byKey(items: readonly AzureWorkItem[]): Map<string, AzureWorkItem> {
  *   again fail `outcome_unknown` instead: Qualor cannot tell, and never sends blindly.
  * - Younger rows not found wait for the next pass.
  */
+/** The rows read back (found), and of the stale ones not found those to send again or to fail. */
+function sortByFound(
+  rows: readonly Unanswered[],
+  keyed: ReadonlyMap<string, AzureWorkItem>,
+  full: boolean,
+): { found: Found[]; resend: BoardsLinkRow[]; unknown: BoardsLinkRow[] } {
+  const found: Found[] = [];
+  const resend: BoardsLinkRow[] = [];
+  const unknown: BoardsLinkRow[] = [];
+  for (const { row, stale } of rows) {
+    const item = keyed.get(reconciliationKey(row.id, row.generation));
+    if (item !== undefined) found.push({ row, item });
+    else if (stale) (full ? unknown : resend).push(row);
+  }
+  return { found, resend, unknown };
+}
+
 async function reconcileProject(
   pass: Pass,
   azureProjectId: string,
@@ -437,15 +454,7 @@ async function reconcileProject(
     return;
   }
   const full = ids.length >= WORK_ITEM_QUERY_TOP;
-  const keyed = byKey(items);
-  const found: Found[] = [];
-  const resend: BoardsLinkRow[] = [];
-  const unknown: BoardsLinkRow[] = [];
-  for (const { row, stale: old } of rows) {
-    const item = keyed.get(reconciliationKey(row.id, row.generation));
-    if (item !== undefined) found.push({ row, item });
-    else if (old) (full ? unknown : resend).push(row);
-  }
+  const { found, resend, unknown } = sortByFound(rows, byKey(items), full);
   pass.outcome.reconciled += await recordFound(pass, found);
   await releaseLinks(ctx, resend);
   await failUnknown(ctx, unknown);

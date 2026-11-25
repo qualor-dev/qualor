@@ -6,6 +6,7 @@ import { projects, repositorySetupItems, repositorySetupRuns, scmConnections } f
 import type { SetupAzurePolicy } from '../db/schema';
 import { enqueue } from '../queue/queue';
 import type { JobHandlers } from '../queue/worker';
+import type { AzureDevOpsClient } from '../scm/azure/client';
 import { azureClientFor } from '../scm/azure/connections';
 import type { DecorationDeps } from '../scm/decorate';
 import { ScmError } from '../scm/provider';
@@ -139,7 +140,7 @@ async function run(deps: DecorationDeps, payload: Payload): Promise<void> {
     .orderBy(desc(repositorySetupRuns.createdAt), desc(repositorySetupItems.position));
   const newest = pending[0];
   if (!newest) return;
-  const done = (state: SetupAzurePolicy, error: string | null) =>
+  const done: Done = (state, error) =>
     settle(
       deps,
       { projectId: payload.projectId, repositoryId, pipelineId: newest.pipelineId },
@@ -154,58 +155,78 @@ async function run(deps: DecorationDeps, payload: Payload): Promise<void> {
     await done('failed', AZURE_POLICY_TEXT.failed);
     return;
   }
-  const refName = `refs/heads/${project.main}`;
   try {
-    const { client } = found;
-    const { projectId } = await client.repository(repositoryId);
-    // The pipeline's file must be on main first: until the setup pull request is merged, a pull
-    // request would run a pipeline whose file is not on its target branch. Stays pending.
-    const head = await client.branchHead(repositoryId, project.main);
-    if (head === null) return;
-    const file = await client.fileText(repositoryId, AZURE_FILE, head);
-    if ('skipped' in file && file.skipped === 'missing') return;
-    const existing = (await client.buildPolicies(projectId, repositoryId, refName)).filter(
-      (p) => p.definitionId === newest.pipelineId,
-    );
-    // A disabled one is a person's choice. An enabled one is adopted, a blocking one (a person
-    // made it so) left as it is.
-    if (existing.length > 0 && !existing.some((p) => p.isEnabled)) {
-      await done('manual', AZURE_POLICY_TEXT.disabled);
+    await ensureBuildPolicy(found.client, {
+      repositoryId,
+      main: project.main,
+      pipelineId: newest.pipelineId,
+      done,
+    });
+  } catch (err) {
+    await settleFailure(deps, payload, err, done);
+  }
+}
+
+type Done = (state: SetupAzurePolicy, error: string | null) => Promise<void>;
+
+/** The build policy of the pipeline on main: left pending until the pipeline's file is there. */
+async function ensureBuildPolicy(
+  client: AzureDevOpsClient,
+  at: { repositoryId: string; main: string; pipelineId: number; done: Done },
+): Promise<void> {
+  const { repositoryId, pipelineId, done } = at;
+  const refName = `refs/heads/${at.main}`;
+  const { projectId } = await client.repository(repositoryId);
+  // The pipeline's file must be on main first: until the setup pull request is merged, a pull
+  // request would run a pipeline whose file is not on its target branch. Stays pending.
+  const head = await client.branchHead(repositoryId, at.main);
+  if (head === null) return;
+  const file = await client.fileText(repositoryId, AZURE_FILE, head);
+  if ('skipped' in file && file.skipped === 'missing') return;
+  const existing = (await client.buildPolicies(projectId, repositoryId, refName)).filter(
+    (p) => p.definitionId === pipelineId,
+  );
+  // A disabled one is a person's choice. An enabled one is adopted, a blocking one (a person
+  // made it so) left as it is.
+  if (existing.length > 0 && !existing.some((p) => p.isEnabled)) {
+    await done('manual', AZURE_POLICY_TEXT.disabled);
+    return;
+  }
+  if (existing.length === 0) {
+    await client.createBuildPolicy(projectId, { definitionId: pipelineId, repositoryId, refName });
+  }
+  await done('on', null);
+}
+
+/** What an error of Azure DevOps (or Microsoft Entra, for a service principal's token) comes to. */
+async function settleFailure(
+  deps: DecorationDeps,
+  payload: Payload,
+  err: unknown,
+  done: Done,
+): Promise<void> {
+  if (!(err instanceof ScmError)) throw err;
+  if (err.kind === 'auth') {
+    // Only a missing right (403) is a step a person can take; a refused credential (401, a
+    // sign-in page, Entra) fails.
+    if (err.reason === 'permission_missing') await done('manual', AZURE_POLICY_TEXT.manual);
+    else await done('failed', AZURE_POLICY_TEXT.refused);
+  } else if (err.kind === 'transient' || err.kind === 'rate_limited') {
+    const next = payload.attempt + 1;
+    if (next >= MAX_DECORATION_ATTEMPTS) {
+      await done('failed', AZURE_POLICY_TEXT.unreachable);
       return;
     }
-    if (existing.length === 0) {
-      await client.createBuildPolicy(projectId, {
-        definitionId: newest.pipelineId,
-        repositoryId,
-        refName,
-      });
-    }
-    await done('on', null);
-  } catch (err) {
-    // Azure DevOps' errors, and Microsoft Entra's for a service principal's token.
-    if (!(err instanceof ScmError)) throw err;
-    if (err.kind === 'auth') {
-      // Only a missing right (403) is a step a person can take; a refused credential (401, a
-      // sign-in page, Entra) fails.
-      if (err.reason === 'permission_missing') await done('manual', AZURE_POLICY_TEXT.manual);
-      else await done('failed', AZURE_POLICY_TEXT.refused);
-    } else if (err.kind === 'transient' || err.kind === 'rate_limited') {
-      const next = payload.attempt + 1;
-      if (next < MAX_DECORATION_ATTEMPTS) {
-        const delay = Math.max(decorationRetryDelaySeconds(next), err.retryAfterSeconds ?? 0);
-        await enqueue(deps.db, {
-          queue: AZURE_POLICY_QUEUE,
-          concurrencyKey: azurePolicyKey(payload.projectId),
-          payload: { projectId: payload.projectId, attempt: next } satisfies Payload,
-          runAt: inSeconds(delay),
-          maxAttempts: 3,
-        });
-        return;
-      }
-      await done('failed', AZURE_POLICY_TEXT.unreachable);
-    } else {
-      await done('failed', AZURE_POLICY_TEXT.failed);
-    }
+    const delay = Math.max(decorationRetryDelaySeconds(next), err.retryAfterSeconds ?? 0);
+    await enqueue(deps.db, {
+      queue: AZURE_POLICY_QUEUE,
+      concurrencyKey: azurePolicyKey(payload.projectId),
+      payload: { projectId: payload.projectId, attempt: next } satisfies Payload,
+      runAt: inSeconds(delay),
+      maxAttempts: 3,
+    });
+  } else {
+    await done('failed', AZURE_POLICY_TEXT.failed);
   }
 }
 

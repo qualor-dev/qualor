@@ -6,7 +6,7 @@ import {
   BOARDS_STATE_CATEGORIES,
   boardsLinks,
   scmConnections,
-  type BoardsLinkState,
+  type JiraLinkState,
   type ScmProblemValue,
 } from '../db/schema';
 import { conflict, ProblemError } from '../http/problem';
@@ -363,7 +363,7 @@ export async function insertPendingBoardsLinks(
 export async function rearmBoardsLink(
   tx: Executor,
   linkId: string,
-  from: readonly BoardsLinkState[],
+  from: readonly JiraLinkState[],
   userId: string | null,
   onto?: { connectionId: string; azureProjectId: string },
 ): Promise<BoardsLinkRow | null> {

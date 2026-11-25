@@ -513,6 +513,61 @@ interface Prepared {
   failed: Failed[];
 }
 
+/** A row with its mapping and the content of its work item. */
+interface Candidate {
+  row: BoardsLinkRow;
+  mapping: BoardsMappingRow;
+  content: WorkItemContent;
+}
+
+/**
+ * The type list of one Azure DevOps project for its rows, or null when they do not go on: held
+ * (the run stops, the list is unreadable) or failed with the refusal the list read gave.
+ */
+async function projectTypes(
+  run: CreateRun,
+  azureProjectId: string,
+  list: readonly Candidate[],
+  prepared: Prepared,
+): Promise<AzureWorkItemType[] | null> {
+  if (run.outcome.stop !== null || run.unreadable.has(azureProjectId)) {
+    run.held.push(...list.map((c) => c.row));
+    return null;
+  }
+  try {
+    return await typesOf(run, azureProjectId);
+  } catch (err) {
+    const refused = createFailureOf(err);
+    if (refused !== null) {
+      if (answeredBy(err)) run.answered += 1;
+      prepared.failed.push(...list.map((c) => ({ row: c.row, ...refused })));
+      return null;
+    }
+    run.outcome.stop = await stopOn(run, err);
+    if (run.outcome.stop === null) run.unreadable.add(azureProjectId);
+    run.held.push(...list.map((c) => c.row));
+    return null;
+  }
+}
+
+/** The rows whose mapped type is there and supported are ready; the others fail. */
+function readyOrUnsupported(
+  list: readonly Candidate[],
+  types: readonly AzureWorkItemType[],
+  prepared: Prepared,
+): void {
+  for (const c of list) {
+    const type = types.find((t) => t.referenceName === c.mapping.workItemTypeRef);
+    const support = type === undefined ? null : analyzeWorkItemType(type);
+    if (type === undefined || support === null || !support.supported) {
+      prepared.failed.push({ row: c.row, ...fixed('type_unsupported') });
+      continue;
+    }
+    const ops = workItemOps(c.content, placementOf(c.mapping, c.row), support.reproSteps);
+    prepared.ready.push({ row: c.row, type, ops });
+  }
+}
+
 /**
  * The chunk's rows checked against their mapping and finding (no mapping → `not_mapped`; no
  * finding → `finding_gone`), then, per Azure DevOps project, against its type list: the mapped
@@ -532,10 +587,7 @@ async function prepare(run: CreateRun, rows: readonly BoardsLinkRow[]): Promise<
     rows.filter((r) => mappings.has(r.projectId)),
     run.priority,
   );
-  const byProject = new Map<
-    string,
-    { row: BoardsLinkRow; mapping: BoardsMappingRow; content: WorkItemContent }[]
-  >();
+  const byProject = new Map<string, Candidate[]>();
   for (const row of rows) {
     const mapping = mappings.get(row.projectId);
     if (!mapping) {
@@ -552,35 +604,8 @@ async function prepare(run: CreateRun, rows: readonly BoardsLinkRow[]): Promise<
     byProject.set(row.azureProjectId, list);
   }
   for (const [azureProjectId, list] of byProject) {
-    if (run.outcome.stop !== null || run.unreadable.has(azureProjectId)) {
-      run.held.push(...list.map((c) => c.row));
-      continue;
-    }
-    let types: AzureWorkItemType[];
-    try {
-      types = await typesOf(run, azureProjectId);
-    } catch (err) {
-      const refused = createFailureOf(err);
-      if (refused !== null) {
-        if (answeredBy(err)) run.answered += 1;
-        prepared.failed.push(...list.map((c) => ({ row: c.row, ...refused })));
-        continue;
-      }
-      run.outcome.stop = await stopOn(run, err);
-      if (run.outcome.stop === null) run.unreadable.add(azureProjectId);
-      run.held.push(...list.map((c) => c.row));
-      continue;
-    }
-    for (const c of list) {
-      const type = types.find((t) => t.referenceName === c.mapping.workItemTypeRef);
-      const support = type === undefined ? null : analyzeWorkItemType(type);
-      if (type === undefined || support === null || !support.supported) {
-        prepared.failed.push({ row: c.row, ...fixed('type_unsupported') });
-        continue;
-      }
-      const ops = workItemOps(c.content, placementOf(c.mapping, c.row), support.reproSteps);
-      prepared.ready.push({ row: c.row, type, ops });
-    }
+    const types = await projectTypes(run, azureProjectId, list, prepared);
+    if (types !== null) readyOrUnsupported(list, types, prepared);
   }
   return prepared;
 }

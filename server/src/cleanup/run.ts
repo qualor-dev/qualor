@@ -223,6 +223,24 @@ async function deleteChunk(
   }
 }
 
+/** Deletes a page's ids CLEANUP_CHUNK at a time; 'go' once all went, else what stopped it. */
+async function deleteIds(
+  db: Db,
+  plan: CleanupPlan,
+  project: ProjectPlan,
+  page: { kind: CleanupKind; cutoff: SQL; ids: string[]; counts: CleanupCounts },
+): Promise<Awaited<ReturnType<typeof chunkMay>>> {
+  const { kind, cutoff, ids, counts } = page;
+  for (let i = 0; i < ids.length; i += CLEANUP_CHUNK) {
+    const may = await chunkMay(db, plan, project);
+    if (may !== 'go') return may;
+    const n = await deleteChunk(db, plan, project, kind, cutoff, ids.slice(i, i + CLEANUP_CHUNK));
+    if (kind === 'branch') counts.branches += n;
+    else counts.mergeRequests += n;
+  }
+  return 'go';
+}
+
 /**
  * One rule of one project: walks its inactive rows by id, CLEANUP_BATCH at a time, so a page full
  * of kept branches never hides the ones behind it, and deletes a page's rows CLEANUP_CHUNK at a
@@ -254,14 +272,8 @@ async function cleanRule(
        ORDER BY b.id
        LIMIT ${CLEANUP_BATCH}`);
     const ids = rows.filter((row) => !kept(row.name)).map((row) => row.id);
-    for (let i = 0; i < ids.length; i += CLEANUP_CHUNK) {
-      const may = await chunkMay(db, plan, project);
-      if (may !== 'go') return may;
-      const chunk = ids.slice(i, i + CLEANUP_CHUNK);
-      const n = await deleteChunk(db, plan, project, rule.kind, cutoff, chunk);
-      if (rule.kind === 'branch') counts.branches += n;
-      else counts.mergeRequests += n;
-    }
+    const may = await deleteIds(db, plan, project, { kind: rule.kind, cutoff, ids, counts });
+    if (may !== 'go') return may;
     const last = rows.at(-1);
     if (rows.length < CLEANUP_BATCH || last === undefined) return 'done';
     after = last.id;

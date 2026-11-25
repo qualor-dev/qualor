@@ -367,6 +367,52 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
     return types.filter((t) => !hidden.has(t.name));
   };
 
+  /** The listed spelling of the set path of its kind; 422 when the project does not list it. */
+  const listedPathOf = async (
+    client: AzureDevOpsClient,
+    azureProject: string,
+    field: 'areaPath' | 'iterationPath',
+    wanted: string | null,
+  ): Promise<string | null> => {
+    if (wanted === null) return null;
+    const kind = field === 'areaPath' ? 'areas' : 'iterations';
+    const listed = listedPath(
+      await asked(() => client.classificationPaths(azureProject, kind)),
+      wanted,
+    );
+    if (listed === null) throw pathUnknown(field);
+    return listed;
+  };
+
+  /** A `validateOnly` create with the mapping: what Azure DevOps refuses is the mapping's fault. */
+  const validateMapping = async (
+    client: AzureDevOpsClient,
+    azureProject: string,
+    typeName: string,
+    ops: ReturnType<typeof mappingCheckOps>,
+  ): Promise<void> => {
+    try {
+      await client.validateWorkItem(azureProject, typeName, ops);
+    } catch (err) {
+      if (err instanceof AzureError) {
+        // Probe item 30d: the type was removed or renamed away since the list was read.
+        if (err.kind === 'not_found' && err.azureTypeKey === 'WorkItemTypeNotFoundException') {
+          throw typeUnsupported([]);
+        }
+        if (err.kind === 'refused' && err.azureMessage !== null) {
+          throw new ProblemError(
+            422,
+            'BOARDS_CREATE_REFUSED',
+            'Azure DevOps refused a work item with this mapping',
+            { detail: cutText(err.azureMessage, AZURE_WORDS_MAX) },
+          );
+        }
+      }
+      if (err instanceof ScmError) unavailable(err.message, problemCode(err));
+      throw err;
+    }
+  };
+
   const answer = async (db: Executor, project: ProjectRow) => {
     const [mapping, connections, monitoring] = await Promise.all([
       boardsMappingOf(db, project.id),
@@ -565,46 +611,19 @@ export const boardsProjectRoutes: FastifyPluginAsyncZod<{ deps: RouteDeps }> = a
       if (!type) throw typeUnsupported([]);
       const support = analyzeWorkItemType(type);
       if (!support.supported) throw typeUnsupported(support.missingFields);
-      const areaPath =
-        body.areaPath === null
-          ? null
-          : listedPath(
-              await asked(() => client.classificationPaths(azureProject, 'areas')),
-              body.areaPath,
-            );
-      if (body.areaPath !== null && areaPath === null) throw pathUnknown('areaPath');
-      const iterationPath =
-        body.iterationPath === null
-          ? null
-          : listedPath(
-              await asked(() => client.classificationPaths(azureProject, 'iterations')),
-              body.iterationPath,
-            );
-      if (body.iterationPath !== null && iterationPath === null) throw pathUnknown('iterationPath');
-      try {
-        await client.validateWorkItem(
-          azureProject,
-          type.name,
-          mappingCheckOps({ tags: body.tags, areaPath, iterationPath }, support.reproSteps),
-        );
-      } catch (err) {
-        if (err instanceof AzureError) {
-          // Probe item 30d: the type was removed or renamed away since the list was read.
-          if (err.kind === 'not_found' && err.azureTypeKey === 'WorkItemTypeNotFoundException') {
-            throw typeUnsupported([]);
-          }
-          if (err.kind === 'refused' && err.azureMessage !== null) {
-            throw new ProblemError(
-              422,
-              'BOARDS_CREATE_REFUSED',
-              'Azure DevOps refused a work item with this mapping',
-              { detail: cutText(err.azureMessage, AZURE_WORDS_MAX) },
-            );
-          }
-        }
-        if (err instanceof ScmError) unavailable(err.message, problemCode(err));
-        throw err;
-      }
+      const areaPath = await listedPathOf(client, azureProject, 'areaPath', body.areaPath);
+      const iterationPath = await listedPathOf(
+        client,
+        azureProject,
+        'iterationPath',
+        body.iterationPath,
+      );
+      await validateMapping(
+        client,
+        azureProject,
+        type.name,
+        mappingCheckOps({ tags: body.tags, areaPath, iterationPath }, support.reproSteps),
+      );
       const { minSeverity, exploited } = body.autoCreate;
       await deps.db.transaction(async (tx) => {
         await tx

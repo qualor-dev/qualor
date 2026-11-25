@@ -441,6 +441,28 @@ interface AzureCallOptions {
   /** Reads a success's headers (a paging token) before the body is parsed. */
   onHeaders?: (headers: IncomingHttpHeaders) => void;
 }
+/** One request of {@link AzureClient}'s `#call`, besides its method and path. */
+interface AzureCall<T> {
+  schema: z.ZodType<T>;
+  body?: unknown;
+  apiVersion?: string;
+  host?: 'base' | 'identities';
+  /** Secrets of this request's body (a hook's password): cut from Azure DevOps' error text too. */
+  bodySecrets?: readonly string[];
+  options?: AzureCallOptions;
+}
+/** What `#send` needs for one request: the call's own values and the ones `#call` settled. */
+interface AzureSend {
+  method: AzureMethod;
+  path: string;
+  body: unknown;
+  apiVersion: string;
+  authorization: string;
+  secrets: string[];
+  now: () => number;
+  host: 'base' | 'identities';
+  options: AzureCallOptions;
+}
 const ZERO_OBJECT_ID = '0'.repeat(40);
 const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 /** A pull request's changes come in pages of this many. */
@@ -1001,6 +1023,66 @@ function azureErrorOf(
   return { azureMessage, azureTypeKey: typed.success ? typed.data.typeKey : null };
 }
 
+/** A success's body: the bytes as they are (raw), nothing for an empty one, else the parsed JSON. */
+function successJson(status: number, answer: Buffer, raw: boolean): unknown {
+  if (raw) return answer;
+  try {
+    return answer.length === 0 ? undefined : (JSON.parse(textOf(answer)) as unknown);
+  } catch {
+    throw new AzureError('bad_answer', AZURE_TEXT.badAnswer, { status });
+  }
+}
+
+/** The error of a status that is neither a success nor an HTML sign-in page. */
+function failureOf(
+  status: number,
+  headers: IncomingHttpHeaders,
+  answer: Buffer,
+  secrets: string[],
+  now: () => number,
+): AzureError {
+  if (status === 401) {
+    const serviceError = [headers['x-tfs-serviceerror'] ?? []].flat().join(' ');
+    if (serviceError.includes('TF401444') || answer.includes('TF401444')) {
+      return new AzureError('auth', AZURE_TEXT.signInRequired, {
+        status,
+        reason: 'sign_in_required',
+      });
+    }
+    return new AzureError('auth', AZURE_TEXT.refused, { status, reason: 'http' });
+  }
+  const found = azureErrorOf(answer, secrets);
+  if (status === 403) {
+    return new AzureError('auth', AZURE_TEXT.forbidden, {
+      status,
+      reason: 'permission_missing',
+      ...found,
+    });
+  }
+  if (status === 404) {
+    return new AzureError('not_found', AZURE_TEXT.notFound, {
+      status,
+      reason: 'http',
+      ...found,
+    });
+  }
+  if (status === 429) {
+    return new AzureError('rate_limited', AZURE_TEXT.rateLimited, {
+      status,
+      reason: 'http',
+      retryAfterSeconds: retryAfterSeconds(headers, now()),
+      ...found,
+    });
+  }
+  // A long text over Azure DevOps' limit is a 500 (probe item 30e), yet asking again cannot help.
+  const outage = status >= 500 && !REFUSED_SERVER_ERRORS.has(found.azureTypeKey ?? '');
+  return new AzureError(outage ? 'transient' : 'refused', `Azure DevOps answered HTTP ${status}`, {
+    status,
+    reason: 'http',
+    ...found,
+  });
+}
+
 /** Milliseconds a success asks the next request to wait: `Retry-After`, else `X-RateLimit-Delay`. */
 function paceOf(headers: IncomingHttpHeaders, nowMs: number): number {
   const retryAfter = headers['retry-after']?.trim() ?? '';
@@ -1133,17 +1215,15 @@ export class AzureDevOpsClient {
     repositoryId: string,
     input: NewAzurePullRequest,
   ): Promise<AzurePullRequest> {
-    const answer = await this.#call(
-      'POST',
-      `${this.#repositoryPath(repositoryId)}/pullrequests`,
-      pullRequestWithId,
-      {
+    const answer = await this.#call('POST', `${this.#repositoryPath(repositoryId)}/pullrequests`, {
+      schema: pullRequestWithId,
+      body: {
         sourceRefName: `refs/heads/${input.sourceBranch}`,
         targetRefName: `refs/heads/${input.targetBranch}`,
         title: input.title,
         description: input.description,
       },
-    );
+    });
     return pullRequestOf(answer, answer.pullRequestId, answer.repository);
   }
 
@@ -1152,7 +1232,10 @@ export class AzureDevOpsClient {
     id: number,
     patch: { title?: string; description?: string; status?: 'abandoned' },
   ): Promise<void> {
-    await this.#call('PATCH', this.#pullRequestPath(repositoryId, id), z.unknown(), patch);
+    await this.#call('PATCH', this.#pullRequestPath(repositoryId, id), {
+      schema: z.unknown(),
+      body: patch,
+    });
   }
 
   /** The head of branch `name` (without `refs/heads/`), lower-case; null when there is none. */
@@ -1188,11 +1271,9 @@ export class AzureDevOpsClient {
    * usual `refused` error: a stale head and a parent that is not the head look alike (item 22e).
    */
   async push(repositoryId: string, input: AzurePushInput): Promise<string> {
-    const answer = await this.#call(
-      'POST',
-      `${this.#repositoryPath(repositoryId)}/pushes`,
-      pushAnswer,
-      {
+    const answer = await this.#call('POST', `${this.#repositoryPath(repositoryId)}/pushes`, {
+      schema: pushAnswer,
+      body: {
         refUpdates: [{ name: input.ref, oldObjectId: input.oldObjectId ?? ZERO_OBJECT_ID }],
         commits: [
           {
@@ -1209,7 +1290,7 @@ export class AzureDevOpsClient {
           },
         ],
       },
-    );
+    });
     const commit = answer.commits.at(-1);
     if (!commit) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer);
     return commit.commitId.toLowerCase();
@@ -1275,13 +1356,11 @@ export class AzureDevOpsClient {
 
   /** Authorises one pipeline on a queue; the other permissions are left as they are. */
   async authorizeOnQueue(projectId: string, queueId: number, definitionId: number): Promise<void> {
-    await this.#call(
-      'PATCH',
-      this.#queuePermissionsPath(projectId, queueId),
-      z.unknown(),
-      { pipelines: [{ id: definitionId, authorized: true }] },
-      AZURE_PREVIEW_API_VERSION,
-    );
+    await this.#call('PATCH', this.#queuePermissionsPath(projectId, queueId), {
+      schema: z.unknown(),
+      body: { pipelines: [{ id: definitionId, authorized: true }] },
+      apiVersion: AZURE_PREVIEW_API_VERSION,
+    });
   }
 
   #queuePermissionsPath(projectId: string, queueId: number): string {
@@ -1323,11 +1402,9 @@ export class AzureDevOpsClient {
     logger?: AzureClientLogger,
   ): Promise<AzureDefinition> {
     this.#repositoryPath(input.repositoryId); // validates the id
-    const created = await this.#call(
-      'POST',
-      `${this.#projectPath(projectId)}/build/definitions`,
-      definitionAnswer,
-      {
+    const created = await this.#call('POST', `${this.#projectPath(projectId)}/build/definitions`, {
+      schema: definitionAnswer,
+      body: {
         name: input.name,
         path: '\\',
         type: 'build',
@@ -1342,10 +1419,10 @@ export class AzureDevOpsClient {
         variables: variablesBody(input.variables),
         triggers: [AZURE_YAML_CI_TRIGGER],
       },
-      AZURE_API_VERSION,
-      'base',
-      secretValues(input.variables),
-    );
+      apiVersion: AZURE_API_VERSION,
+      host: 'base',
+      bodySecrets: secretValues(input.variables),
+    });
     try {
       return await this.#resave(projectId, created.id);
     } catch (err) {
@@ -1385,28 +1462,24 @@ export class AzureDevOpsClient {
   ): Promise<AzureDefinition> {
     const path = this.#definitionPath(projectId, definition.id);
     const current = await this.#get(path, definitionAnswer);
-    const answer = await this.#call(
-      'PUT',
-      path,
-      definitionAnswer,
-      { ...current, variables: { ...current.variables, ...variablesBody(variables) } },
-      AZURE_API_VERSION,
-      'base',
-      secretValues(variables),
-    );
+    const answer = await this.#call('PUT', path, {
+      schema: definitionAnswer,
+      body: { ...current, variables: { ...current.variables, ...variablesBody(variables) } },
+      apiVersion: AZURE_API_VERSION,
+      host: 'base',
+      bodySecrets: secretValues(variables),
+    });
     return definitionOf(answer);
   }
 
   /** GET then PUT of the same body: the secret reads back `null` and survives. */
   async #resave(projectId: string, id: number): Promise<AzureDefinition> {
     const path = this.#definitionPath(projectId, id);
-    const answer = await this.#call(
-      'PUT',
-      path,
-      definitionAnswer,
-      await this.#get(path, definitionAnswer),
-      AZURE_API_VERSION,
-    );
+    const answer = await this.#call('PUT', path, {
+      schema: definitionAnswer,
+      body: await this.#get(path, definitionAnswer),
+      apiVersion: AZURE_API_VERSION,
+    });
     return definitionOf(answer);
   }
 
@@ -1440,24 +1513,26 @@ export class AzureDevOpsClient {
     const answer = await this.#call(
       'POST',
       `${this.#projectPath(projectId)}/policy/configurations`,
-      policyAnswer,
       {
-        isEnabled: true,
-        isBlocking: false,
-        type: { id: AZURE_BUILD_POLICY_TYPE },
-        settings: {
-          buildDefinitionId: input.definitionId,
-          queueOnSourceUpdateOnly: false,
-          manualQueueOnly: false,
-          displayName: 'Qualor',
-          validDuration: 0,
-          scope: [
-            {
-              repositoryId: input.repositoryId.toLowerCase(),
-              refName: input.refName,
-              matchKind: 'exact',
-            },
-          ],
+        schema: policyAnswer,
+        body: {
+          isEnabled: true,
+          isBlocking: false,
+          type: { id: AZURE_BUILD_POLICY_TYPE },
+          settings: {
+            buildDefinitionId: input.definitionId,
+            queueOnSourceUpdateOnly: false,
+            manualQueueOnly: false,
+            displayName: 'Qualor',
+            validDuration: 0,
+            scope: [
+              {
+                repositoryId: input.repositoryId.toLowerCase(),
+                refName: input.refName,
+                matchKind: 'exact',
+              },
+            ],
+          },
         },
       },
     );
@@ -1471,12 +1546,10 @@ export class AzureDevOpsClient {
     oldObjectId: string,
     newObjectId: string,
   ): Promise<void> {
-    const answer = await this.#call(
-      'POST',
-      `${this.#repositoryPath(repositoryId)}/refs`,
-      refUpdates,
-      [{ name, oldObjectId, newObjectId }],
-    );
+    const answer = await this.#call('POST', `${this.#repositoryPath(repositoryId)}/refs`, {
+      schema: refUpdates,
+      body: [{ name, oldObjectId, newObjectId }],
+    });
     const [first] = answer.value;
     if (first?.success !== true) throwRefRefused(first?.updateStatus);
   }
@@ -1505,16 +1578,13 @@ export class AzureDevOpsClient {
     });
     let bytes: Buffer;
     try {
-      bytes = await this.#call(
-        'GET',
-        `${this.#repositoryPath(repositoryId)}/items?${query}`,
-        rawBytes,
-        undefined,
-        AZURE_API_VERSION,
-        'base',
-        [],
-        { raw: true, maxBytes },
-      );
+      bytes = await this.#call('GET', `${this.#repositoryPath(repositoryId)}/items?${query}`, {
+        schema: rawBytes,
+        apiVersion: AZURE_API_VERSION,
+        host: 'base',
+        bodySecrets: [],
+        options: { raw: true, maxBytes },
+      });
     } catch (err) {
       if (err instanceof AzureError && err.kind === 'not_found') return { skipped: 'missing' };
       // Over the answer limit: the client's own bad_answer, without a status.
@@ -1651,11 +1721,13 @@ export class AzureDevOpsClient {
     const answer = await this.#call(
       'POST',
       `${this.#pullRequestPath(repositoryId, prId)}/threads`,
-      createdThread,
       {
-        comments: [{ parentCommentId: 0, content: thread.content, commentType: 1 }],
-        status: THREAD_STATUS[thread.status],
-        ...(threadContext ? { threadContext } : {}),
+        schema: createdThread,
+        body: {
+          comments: [{ parentCommentId: 0, content: thread.content, commentType: 1 }],
+          status: THREAD_STATUS[thread.status],
+          ...(threadContext ? { threadContext } : {}),
+        },
       },
     );
     const [first] = answer.comments;
@@ -1670,12 +1742,10 @@ export class AzureDevOpsClient {
     threadId: number,
     status: 'active' | 'fixed',
   ): Promise<void> {
-    await this.#call(
-      'PATCH',
-      `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}`,
-      z.unknown(),
-      { status: THREAD_STATUS[status] },
-    );
+    await this.#call('PATCH', `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}`, {
+      schema: z.unknown(),
+      body: { status: THREAD_STATUS[status] },
+    });
   }
 
   async addComment(
@@ -1687,8 +1757,7 @@ export class AzureDevOpsClient {
     await this.#call(
       'POST',
       `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}/comments`,
-      z.unknown(),
-      { content, parentCommentId: 0, commentType: 1 },
+      { schema: z.unknown(), body: { content, parentCommentId: 0, commentType: 1 } },
     );
   }
 
@@ -1703,8 +1772,7 @@ export class AzureDevOpsClient {
     const answer = await this.#call(
       'POST',
       `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}/comments`,
-      createdComment,
-      { content, parentCommentId, commentType: 1 },
+      { schema: createdComment, body: { content, parentCommentId, commentType: 1 } },
     );
     return answer.id;
   }
@@ -1719,8 +1787,7 @@ export class AzureDevOpsClient {
     await this.#call(
       'PATCH',
       `${this.#pullRequestPath(repositoryId, prId)}/threads/${threadId}/comments/${commentId}`,
-      z.unknown(),
-      { content },
+      { schema: z.unknown(), body: { content } },
     );
   }
 
@@ -1730,12 +1797,15 @@ export class AzureDevOpsClient {
     prId: number,
     status: AzureStatus,
   ): Promise<void> {
-    await this.#call('POST', `${this.#pullRequestPath(repositoryId, prId)}/statuses`, z.unknown(), {
-      iterationId: status.iterationId,
-      state: status.state,
-      description: status.description,
-      ...(status.targetUrl === null ? {} : { targetUrl: status.targetUrl }),
-      context: { genre: status.genre, name: status.name },
+    await this.#call('POST', `${this.#pullRequestPath(repositoryId, prId)}/statuses`, {
+      schema: z.unknown(),
+      body: {
+        iterationId: status.iterationId,
+        state: status.state,
+        description: status.description,
+        ...(status.targetUrl === null ? {} : { targetUrl: status.targetUrl }),
+        context: { genre: status.genre, name: status.name },
+      },
     });
   }
 
@@ -1789,12 +1859,14 @@ export class AzureDevOpsClient {
     await this.#call(
       'POST',
       `${this.#repositoryPath(repositoryId)}/commits/${sha.toLowerCase()}/statuses`,
-      z.unknown(),
       {
-        state: status.state,
-        description: status.description,
-        ...(status.targetUrl === null ? {} : { targetUrl: status.targetUrl }),
-        context: { genre: status.genre, name: status.name },
+        schema: z.unknown(),
+        body: {
+          state: status.state,
+          description: status.description,
+          ...(status.targetUrl === null ? {} : { targetUrl: status.targetUrl }),
+          context: { genre: status.genre, name: status.name },
+        },
       },
     );
   }
@@ -1811,10 +1883,7 @@ export class AzureDevOpsClient {
     const answer = await this.#call(
       'GET',
       `/_apis/identities?identityIds=${identityId.toLowerCase()}`,
-      identityList,
-      undefined,
-      AZURE_API_VERSION,
-      'identities',
+      { schema: identityList, apiVersion: AZURE_API_VERSION, host: 'identities' },
     );
     return answer.value[0]?.descriptor || null;
   }
@@ -1867,15 +1936,13 @@ export class AzureDevOpsClient {
 
   async createSubscription(input: NewAzureSubscription): Promise<AzureSubscription> {
     return subscriptionOf(
-      await this.#call(
-        'POST',
-        '/_apis/hooks/subscriptions',
-        subscriptionAnswer,
-        this.#subscriptionBody(input),
-        AZURE_API_VERSION,
-        'base',
-        [input.password],
-      ),
+      await this.#call('POST', '/_apis/hooks/subscriptions', {
+        schema: subscriptionAnswer,
+        body: this.#subscriptionBody(input),
+        apiVersion: AZURE_API_VERSION,
+        host: 'base',
+        bodySecrets: [input.password],
+      }),
     );
   }
 
@@ -1885,16 +1952,14 @@ export class AzureDevOpsClient {
       throw new AzureError('refused', AZURE_TEXT.guid, { reason: 'invalid_input' });
     }
     return subscriptionOf(
-      await this.#call(
-        'PUT',
-        `/_apis/hooks/subscriptions/${id.toLowerCase()}`,
-        subscriptionAnswer,
+      await this.#call('PUT', `/_apis/hooks/subscriptions/${id.toLowerCase()}`, {
+        schema: subscriptionAnswer,
         // `status` is sent: a PUT without it is not recorded to enable the subscription again.
-        { ...this.#subscriptionBody(input), id: id.toLowerCase(), status: 'enabled' },
-        AZURE_API_VERSION,
-        'base',
-        [input.password],
-      ),
+        body: { ...this.#subscriptionBody(input), id: id.toLowerCase(), status: 'enabled' },
+        apiVersion: AZURE_API_VERSION,
+        host: 'base',
+        bodySecrets: [input.password],
+      }),
     );
   }
 
@@ -1936,21 +2001,18 @@ export class AzureDevOpsClient {
       const after =
         page.token === null ? '' : `&continuationToken=${encodeURIComponent(page.token)}`;
       page.token = null;
-      const answer = await this.#call(
-        'GET',
-        `/_apis/projects?$top=100${after}`,
-        projectList,
-        undefined,
-        AZURE_API_VERSION,
-        'base',
-        [],
-        {
+      const answer = await this.#call('GET', `/_apis/projects?$top=100${after}`, {
+        schema: projectList,
+        apiVersion: AZURE_API_VERSION,
+        host: 'base',
+        bodySecrets: [],
+        options: {
           onHeaders: (headers) => {
             const token = [headers['x-ms-continuationtoken'] ?? []].flat()[0]?.trim();
             page.token = token ? token : null;
           },
         },
-      );
+      });
       for (const p of answer.value) found.push({ id: p.id.toLowerCase(), name: p.name });
       if (answer.value.length === 0) break;
     } while (page.token !== null && found.length < MAX_AZURE_PROJECTS);
@@ -2034,16 +2096,14 @@ export class AzureDevOpsClient {
     typeName: string,
     ops: readonly AzureJsonPatch[],
   ): Promise<AzureWorkItem> {
-    const answer = await this.#call(
-      'POST',
-      this.#workItemTypePath(projectId, typeName),
-      workItemAnswer,
-      ops,
-      AZURE_API_VERSION,
-      'base',
-      [],
-      { contentType: AZURE_JSON_PATCH },
-    );
+    const answer = await this.#call('POST', this.#workItemTypePath(projectId, typeName), {
+      schema: workItemAnswer,
+      body: ops,
+      apiVersion: AZURE_API_VERSION,
+      host: 'base',
+      bodySecrets: [],
+      options: { contentType: AZURE_JSON_PATCH },
+    });
     return workItemOf(answer);
   }
 
@@ -2056,16 +2116,14 @@ export class AzureDevOpsClient {
     typeName: string,
     ops: readonly AzureJsonPatch[],
   ): Promise<void> {
-    await this.#call(
-      'POST',
-      `${this.#workItemTypePath(projectId, typeName)}?validateOnly=true`,
-      validatedWorkItem,
-      ops,
-      AZURE_API_VERSION,
-      'base',
-      [],
-      { contentType: AZURE_JSON_PATCH },
-    );
+    await this.#call('POST', `${this.#workItemTypePath(projectId, typeName)}?validateOnly=true`, {
+      schema: validatedWorkItem,
+      body: ops,
+      apiVersion: AZURE_API_VERSION,
+      host: 'base',
+      bodySecrets: [],
+      options: { contentType: AZURE_JSON_PATCH },
+    });
   }
 
   /** A PATCH of a work item (a `System.History` note); either project's path reads a moved item. */
@@ -2076,16 +2134,14 @@ export class AzureDevOpsClient {
   ): Promise<AzureWorkItem> {
     const base = this.#projectPath(projectId);
     checkWorkItemId(id);
-    const answer = await this.#call(
-      'PATCH',
-      `${base}/wit/workitems/${id}`,
-      workItemAnswer,
-      ops,
-      AZURE_API_VERSION,
-      'base',
-      [],
-      { contentType: AZURE_JSON_PATCH },
-    );
+    const answer = await this.#call('PATCH', `${base}/wit/workitems/${id}`, {
+      schema: workItemAnswer,
+      body: ops,
+      apiVersion: AZURE_API_VERSION,
+      host: 'base',
+      bodySecrets: [],
+      options: { contentType: AZURE_JSON_PATCH },
+    });
     return workItemOf(answer);
   }
 
@@ -2097,8 +2153,7 @@ export class AzureDevOpsClient {
     const answer = await this.#call(
       'POST',
       `${this.#projectPath(projectId)}/wit/wiql?timePrecision=true&$top=${WORK_ITEM_QUERY_TOP}`,
-      wiqlAnswer,
-      { query: wiql },
+      { schema: wiqlAnswer, body: { query: wiql } },
     );
     return answer.workItems.slice(0, WORK_ITEM_QUERY_TOP).map((w) => w.id);
   }
@@ -2122,34 +2177,29 @@ export class AzureDevOpsClient {
       options.description === false
         ? WORK_ITEM_BATCH_FIELDS.filter((f) => f !== 'System.Description')
         : WORK_ITEM_BATCH_FIELDS;
-    const answer = await this.#call('POST', '/_apis/wit/workitemsbatch', workItemBatch, {
-      ids: [...ids],
-      fields,
-      errorPolicy: 'omit',
+    const answer = await this.#call('POST', '/_apis/wit/workitemsbatch', {
+      schema: workItemBatch,
+      body: {
+        ids: [...ids],
+        fields,
+        errorPolicy: 'omit',
+      },
     });
     return answer.value.filter((w) => w !== null).map(workItemOf);
   }
 
   /** The answer of a GET as `schema` reads it; its error names the route ({@link azureRoute}). */
   #get<T>(path: string, schema: z.ZodType<T>, apiVersion: string = AZURE_API_VERSION): Promise<T> {
-    return this.#call('GET', path, schema, undefined, apiVersion);
+    return this.#call('GET', path, { schema, apiVersion });
   }
 
   /**
    * One request, GET or a write with a JSON body; a write counts against the same budget as a read.
    * An empty 2xx body is `undefined` to `schema` (so `z.unknown()` takes a write's empty answer).
    */
-  async #call<T>(
-    method: AzureMethod,
-    path: string,
-    schema: z.ZodType<T>,
-    body?: unknown,
-    apiVersion: string = AZURE_API_VERSION,
-    host: 'base' | 'identities' = 'base',
-    /** Secrets of this request's body (a hook's password): cut from Azure DevOps' error text too. */
-    bodySecrets: readonly string[] = [],
-    options: AzureCallOptions = {},
-  ): Promise<T> {
+  async #call<T>(method: AzureMethod, path: string, call: AzureCall<T>): Promise<T> {
+    const { schema, body, apiVersion = AZURE_API_VERSION, host = 'base' } = call;
+    const { bodySecrets = [], options = {} } = call;
     const max = this.#options.maxRequests ?? MAX_AZURE_REQUESTS;
     if (this.#requestCount >= max) {
       throw new AzureError('budget', `More than ${max} Azure DevOps requests in one job`);
@@ -2164,17 +2214,17 @@ export class AzureDevOpsClient {
     // Outside the naming below: an Entra failure keeps the request it names.
     const { authorization, secrets } = await this.#authorization();
     try {
-      const { status, json } = await this.#send(
+      const { status, json } = await this.#send({
         method,
         path,
         body,
         apiVersion,
         authorization,
-        [...secrets, ...bodySecrets],
+        secrets: [...secrets, ...bodySecrets],
         now,
         host,
         options,
-      );
+      });
       const parsed = schema.safeParse(json);
       if (!parsed.success) throw new AzureError('bad_answer', AZURE_TEXT.badAnswer, { status });
       return parsed.data;
@@ -2208,17 +2258,8 @@ export class AzureDevOpsClient {
     return { authorization: `Bearer ${token}`, secrets: [token] };
   }
 
-  async #send(
-    method: AzureMethod,
-    path: string,
-    body: unknown,
-    apiVersion: string,
-    authorization: string,
-    secrets: string[],
-    now: () => number,
-    host: 'base' | 'identities',
-    options: AzureCallOptions = {},
-  ): Promise<{ status: number; json: unknown }> {
+  async #send(request: AzureSend): Promise<{ status: number; json: unknown }> {
+    const { method, path, body, apiVersion, authorization, secrets, now, host, options } = request;
     const { baseUrl, allowInternalHosts } = host === 'base' ? this.#connection : this.#identities();
     const separator = path.includes('?') ? '&' : '?';
     const result = await outboundRequest(
@@ -2255,55 +2296,8 @@ export class AzureDevOpsClient {
     if (status >= 200 && status < 300) {
       this.#notBefore = now() + paceOf(headers, now());
       options.onHeaders?.(headers);
-      if (options.raw) return { status, json: answer };
-      try {
-        return {
-          status,
-          json: answer.length === 0 ? undefined : (JSON.parse(textOf(answer)) as unknown),
-        };
-      } catch {
-        throw new AzureError('bad_answer', AZURE_TEXT.badAnswer, { status });
-      }
+      return { status, json: successJson(status, answer, options.raw === true) };
     }
-    if (status === 401) {
-      const serviceError = [headers['x-tfs-serviceerror'] ?? []].flat().join(' ');
-      if (serviceError.includes('TF401444') || answer.includes('TF401444')) {
-        throw new AzureError('auth', AZURE_TEXT.signInRequired, {
-          status,
-          reason: 'sign_in_required',
-        });
-      }
-      throw new AzureError('auth', AZURE_TEXT.refused, { status, reason: 'http' });
-    }
-    const found = azureErrorOf(answer, secrets);
-    if (status === 403) {
-      throw new AzureError('auth', AZURE_TEXT.forbidden, {
-        status,
-        reason: 'permission_missing',
-        ...found,
-      });
-    }
-    if (status === 404) {
-      throw new AzureError('not_found', AZURE_TEXT.notFound, {
-        status,
-        reason: 'http',
-        ...found,
-      });
-    }
-    if (status === 429) {
-      throw new AzureError('rate_limited', AZURE_TEXT.rateLimited, {
-        status,
-        reason: 'http',
-        retryAfterSeconds: retryAfterSeconds(headers, now()),
-        ...found,
-      });
-    }
-    // A long text over Azure DevOps' limit is a 500 (probe item 30e), yet asking again cannot help.
-    const outage = status >= 500 && !REFUSED_SERVER_ERRORS.has(found.azureTypeKey ?? '');
-    throw new AzureError(outage ? 'transient' : 'refused', `Azure DevOps answered HTTP ${status}`, {
-      status,
-      reason: 'http',
-      ...found,
-    });
+    throw failureOf(status, headers, answer, secrets, now);
   }
 }

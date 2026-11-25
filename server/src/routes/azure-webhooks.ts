@@ -94,24 +94,7 @@ export const azureWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = async
         throw new ProblemError(415, 'UNSUPPORTED_MEDIA_TYPE', 'The body must be JSON');
       }
       const body = request.body;
-      const password = basicPassword(header(request.headers.authorization));
-      if (password === null || !safeEqual(password, secret)) {
-        // As with GitLab's webhook, only a wrong credential is counted: one that counted every
-        // delivery would let someone who shares the sender's address turn its deliveries into 429s.
-        if (!failures.hit(request.ip)) {
-          throw new ProblemError(
-            429,
-            'RATE_LIMITED',
-            'Too many deliveries with a wrong credential',
-            { headers: { 'retry-after': '60' } },
-          );
-        }
-        throw new ProblemError(
-          401,
-          'UNAUTHENTICATED',
-          'The credential does not match the webhook secret',
-        );
-      }
+      checkCredential(failures, request.ip, header(request.headers.authorization), secret);
       // The delivery proves that Azure DevOps holds this password (a subscription made by hand,
       // say): it is marked so, as a complete subscribe marks it. Not awaited, so it never delays
       // or fails the answer; a failure is logged without its text.
@@ -123,47 +106,89 @@ export const azureWebhookRoutes: FastifyPluginAsync<{ deps: RouteDeps }> = async
           );
         });
       }
-      let payload: unknown;
-      try {
-        payload = JSON.parse(body.toString('utf8'));
-      } catch {
-        throw new ProblemError(400, 'BAD_REQUEST', 'The body is not JSON');
-      }
+      const payload = jsonBody(body);
       // Only a comment and an update are read; any other event, or a body of another shape, is
       // acknowledged unread.
       const parsed = envelope.safeParse(payload);
-      if (!parsed.success) return reply.code(204).send();
-      const event = parsed.data;
-      if (event.eventType !== COMMENT_EVENT && event.eventType !== UPDATED_EVENT) {
-        return reply.code(204).send();
-      }
-      // A delivery id is kept per connection: another connection's hook is another delivery.
-      const remembered =
-        event.id !== undefined && UUID.test(event.id) ? `${row.id}:${event.id}` : null;
-      if (remembered !== null && !deliveries.remember(remembered)) {
-        return reply.code(204).send();
-      }
-      try {
-        const { resource } = event;
-        const comment = event.eventType === COMMENT_EVENT;
-        const repositoryId = comment
-          ? resource.pullRequest?.repository.id
-          : resource.repository?.id;
-        const pullRequestId = comment
-          ? resource.pullRequest?.pullRequestId
-          : resource.pullRequestId;
-        if (repositoryId !== undefined && pullRequestId !== undefined) {
-          await queueScans(deps, row.id, repositoryId, pullRequestId);
-        }
-      } catch (err) {
-        // Not processed: the retry of this delivery must not be taken for a repeat.
-        if (remembered !== null) deliveries.forget(remembered);
-        throw err;
-      }
+      if (parsed.success) await handleEvent(deps, deliveries, row.id, parsed.data);
       return reply.code(204).send();
     },
   );
 };
+
+type Envelope = z.infer<typeof envelope>;
+
+/** Queues the scans an event asks for; any other event than a comment and an update is unread. */
+async function handleEvent(
+  deps: RouteDeps,
+  deliveries: DeliveryIds,
+  connectionId: string,
+  event: Envelope,
+): Promise<void> {
+  if (event.eventType !== COMMENT_EVENT && event.eventType !== UPDATED_EVENT) return;
+  // A delivery id is kept per connection: another connection's hook is another delivery.
+  const remembered =
+    event.id !== undefined && UUID.test(event.id) ? `${connectionId}:${event.id}` : null;
+  if (remembered !== null && !deliveries.remember(remembered)) return;
+  try {
+    const { repositoryId, pullRequestId } = pullRequestOf(event);
+    if (repositoryId !== undefined && pullRequestId !== undefined) {
+      await queueScans(deps, connectionId, repositoryId, pullRequestId);
+    }
+  } catch (err) {
+    // Not processed: the retry of this delivery must not be taken for a repeat.
+    if (remembered !== null) deliveries.forget(remembered);
+    throw err;
+  }
+}
+
+/**
+ * The delivery's basic-auth password must be the webhook secret. As with GitLab's webhook, only a
+ * wrong credential is counted: one that counted every delivery would let someone who shares the
+ * sender's address turn its deliveries into 429s.
+ */
+function checkCredential(
+  failures: LoginThrottle,
+  ip: string,
+  authorization: string,
+  secret: string,
+): void {
+  const password = basicPassword(authorization);
+  if (password !== null && safeEqual(password, secret)) return;
+  if (!failures.hit(ip)) {
+    throw new ProblemError(429, 'RATE_LIMITED', 'Too many deliveries with a wrong credential', {
+      headers: { 'retry-after': '60' },
+    });
+  }
+  throw new ProblemError(
+    401,
+    'UNAUTHENTICATED',
+    'The credential does not match the webhook secret',
+  );
+}
+
+function jsonBody(body: Buffer): unknown {
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new ProblemError(400, 'BAD_REQUEST', 'The body is not JSON');
+  }
+}
+
+/** The repository and pull request an event is on, each undefined when the event has none. */
+function pullRequestOf(event: Envelope): {
+  repositoryId: string | undefined;
+  pullRequestId: number | undefined;
+} {
+  const { resource } = event;
+  if (event.eventType === COMMENT_EVENT) {
+    return {
+      repositoryId: resource.pullRequest?.repository.id,
+      pullRequestId: resource.pullRequest?.pullRequestId,
+    };
+  }
+  return { repositoryId: resource.repository?.id, pullRequestId: resource.pullRequestId };
+}
 
 /**
  * Queues a scan for the pull request an event is on, for each Qualor project of this connection

@@ -73,8 +73,10 @@ export async function recordScmProblem(
  * other problem stays. An Azure DevOps address move writes it, since the new organisation holds no
  * subscription of Qualor's yet.
  */
-export const withoutHookProblem = (): SQL =>
-  sql`CASE WHEN ${inArray(sql`(${scmConnections.problem} ->> 'code')`, [...SCM_HOOK_PROBLEM_CODES])} THEN NULL ELSE ${scmConnections.problem} END`;
+export const withoutHookProblem = (): SQL => {
+  const code = sql`(${scmConnections.problem} ->> 'code')`;
+  return sql`CASE WHEN ${inArray(code, [...SCM_HOOK_PROBLEM_CODES])} THEN NULL ELSE ${scmConnections.problem} END`;
+};
 
 /**
  * Clears the recorded problem when its code is one of `codes` (whatever its code, without

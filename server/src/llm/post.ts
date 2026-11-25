@@ -37,6 +37,7 @@ import {
   machineMadeComment,
   sameAzureIdentity,
   type AzureDevOpsClient,
+  type AzureThread,
 } from '../scm/azure/client';
 import { azureClientFor } from '../scm/azure/connections';
 import { iterationOf } from '../scm/azure/decorate';
@@ -520,6 +521,18 @@ async function postToGitHub(
   return { kind: 'posted', url: commentUrl(created.html_url) };
 }
 
+/** Whether the thread's first comment is the author's own (`meId`) and opens with `marker`. */
+function startsWithMarker(thread: AzureThread, meId: string, marker: string): boolean {
+  const first = thread.comments[0];
+  return (
+    first !== undefined &&
+    !first.isDeleted &&
+    !machineMadeComment(first.commentType) &&
+    sameAzureIdentity(first.authorId, meId) &&
+    firstLineOf(first.content) === marker
+  );
+}
+
 /**
  * As on GitLab and GitHub, on Azure DevOps: the thread found by its marker (posted already: a
  * retry, or an outcome that was lost) whatever else changed, else the pull request active at the
@@ -541,18 +554,10 @@ async function postToAzure(client: AzureDevOpsClient, t: Target): Promise<Outcom
   const pull = await client.pullRequest(repositoryId, prId);
   const threadUrl = (id: number) =>
     linkOn(`${pull.webUrl}?discussionId=${id}`, azureWebBase(connection.baseUrl));
-  for (const thread of await client.threads(repositoryId, prId)) {
-    const first = thread.comments[0];
-    if (
-      first !== undefined &&
-      !first.isDeleted &&
-      !machineMadeComment(first.commentType) &&
-      sameAzureIdentity(first.authorId, me.id) &&
-      firstLineOf(first.content) === t.marker
-    ) {
-      return { kind: 'posted', url: threadUrl(thread.id) };
-    }
-  }
+  const posted = (await client.threads(repositoryId, prId)).find((thread) =>
+    startsWithMarker(thread, me.id, t.marker),
+  );
+  if (posted) return { kind: 'posted', url: threadUrl(posted.id) };
   if (pull.status !== 'active') return failed('closed');
   if (pull.headSha?.toLowerCase() !== revision.toLowerCase()) return failed('not_head');
   const iteration = iterationOf(await client.iterations(repositoryId, prId), revision);

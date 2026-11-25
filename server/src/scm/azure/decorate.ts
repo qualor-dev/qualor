@@ -233,6 +233,96 @@ function problemCodeOf(error: ScmError) {
   return isScmBackgroundProblem(code) ? code : null;
 }
 
+/** What {@link placeInline} works on: the pull request, its analysed iteration and the head. */
+interface InlineWork {
+  client: AzureDevOpsClient;
+  loaded: Loaded;
+  repositoryId: string;
+  prId: number;
+  analysed: AzureIteration | null;
+  newest: number;
+  liveHead: string | null;
+  analyzers: boolean;
+  identityId: string;
+  failures: Failures;
+}
+
+/**
+ * Qualor's inline threads of the pull request: reconciled when the analysed iteration is the newest
+ * one, else left as they are, with the summary saying why.
+ */
+async function placeInline(
+  deps: DecorationDeps,
+  work: InlineWork,
+): Promise<{ inline: Inline; aiNotPosted: readonly DesiredAiIssue[] }> {
+  const { client, loaded, repositoryId, prId, analysed, newest, liveHead, analyzers } = work;
+  const { identityId, failures } = work;
+  // The pipeline's checkout decides the analyzers' threads only: the AI review's are placed on the
+  // live diff at the reviewed head, whatever was analysed.
+  if (analysed === null || analysed.id !== newest) {
+    // The checkout is a lasting setting of the pipeline, a stale head clears with the next analysis:
+    // the checkout is what the summary says (the order GitHub has too).
+    return {
+      inline: { ...NO_INLINE, skipped: analyzers ? 'stale' : 'checkout_other' },
+      aiNotPosted: [],
+    };
+  }
+  let aiNotPosted: readonly DesiredAiIssue[] = [];
+  const inline =
+    (await attempt(failures, () =>
+      reconcileAzureThreads({
+        deps,
+        client,
+        loaded,
+        repositoryId,
+        prId,
+        analysed,
+        liveHead,
+        analyzers,
+        identityId,
+        failures,
+      }).then((result): Inline => {
+        aiNotPosted = result.aiNotPosted;
+        return {
+          commented: result.commented,
+          unplaced: result.unplaced,
+          skipped: analyzers ? null : 'checkout_other',
+        };
+      }),
+    )) ?? NOT_UPDATED;
+  return { inline, aiNotPosted };
+}
+
+/**
+ * The client and the repository the decoration acts on, or the outcome that ends it: the stored
+ * credential cannot be read, the address is no longer allowed, or the job is for another repository.
+ */
+async function clientFor(
+  deps: DecorationDeps,
+  payload: DecorationPayload,
+  loaded: Loaded,
+  failed: (error: ScmError, circuit?: boolean) => DecorationOutcome,
+): Promise<{ client: AzureDevOpsClient; repositoryId: string } | { outcome: DecorationOutcome }> {
+  const { connection, project } = loaded;
+  const found = azureClientFor(connection, deps.scm, deps.runtime);
+  if ('problem' in found) {
+    // The stored credential cannot be read, or the address is no longer allowed: no request is made.
+    const code = clientProblemCode(found.problem);
+    if (isScmBackgroundProblem(code)) {
+      await keepOutcome(deps, connection.id, () => recordScmProblem(deps.db, connection.id, code));
+    }
+    return { outcome: failed(new AzureError('refused', found.problem), false) };
+  }
+  const repositoryId = project.scmProjectRef ?? '';
+  if (
+    payload.azure?.repositoryId !== undefined &&
+    payload.azure.repositoryId.toLowerCase() !== repositoryId.toLowerCase()
+  ) {
+    return { outcome: failed(new AzureError('refused', AZURE_REPOSITORY_MISMATCH), false) };
+  }
+  return { client: found.client, repositoryId };
+}
+
 /**
  * The steps of one Azure DevOps decoration: the client and the repository check; a branch analysis gets a
  * commit status. A pull request gets, in this order, its status on the analysed iteration (the one
@@ -247,23 +337,9 @@ async function decorateAzureSteps(
   failed: (error: ScmError, circuit?: boolean) => DecorationOutcome,
 ): Promise<DecorationOutcome> {
   const { connection, branch, project, analysis } = loaded;
-  const found = azureClientFor(connection, deps.scm, deps.runtime);
-  if ('problem' in found) {
-    // The stored credential cannot be read, or the address is no longer allowed: no request is made.
-    const code = clientProblemCode(found.problem);
-    if (isScmBackgroundProblem(code)) {
-      await keepOutcome(deps, connection.id, () => recordScmProblem(deps.db, connection.id, code));
-    }
-    return failed(new AzureError('refused', found.problem), false);
-  }
-  const client = found.client;
-  const repositoryId = project.scmProjectRef ?? '';
-  if (
-    payload.azure?.repositoryId !== undefined &&
-    payload.azure.repositoryId.toLowerCase() !== repositoryId.toLowerCase()
-  ) {
-    return failed(new AzureError('refused', AZURE_REPOSITORY_MISMATCH), false);
-  }
+  const ready = await clientFor(deps, payload, loaded, failed);
+  if ('outcome' in ready) return ready.outcome;
+  const { client, repositoryId } = ready;
   try {
     const identity = await client.connectionData();
     if (branch.kind !== 'merge_request' || !AZURE_PR_ID.test(branch.name)) {
@@ -306,40 +382,20 @@ async function decorateAzureSteps(
     // Only the pull request's latest analysis speaks for it: an older one leaves the threads and
     // the summary as they are.
     if (branch.lastAnalysisId !== analysis.id) return finish(connection.id, failures, failed);
-    let inline: Inline;
-    let aiNotPosted: readonly DesiredAiIssue[] = [];
-    // The pipeline's checkout decides the analyzers' threads only: the AI review's are placed on the
-    // live diff at the reviewed head, whatever was analysed.
-    const analyzers = payload.azure?.checkout === 'head';
-    if (analysed === null || analysed.id !== newest) {
-      // The checkout is a lasting setting of the pipeline, a stale head clears with the next analysis:
-      // the checkout is what the summary says (the order GitHub has too).
-      inline = { ...NO_INLINE, skipped: analyzers ? 'stale' : 'checkout_other' };
-    } else {
-      inline =
-        (await attempt(failures, () =>
-          reconcileAzureThreads({
-            deps,
-            client,
-            loaded,
-            repositoryId,
-            prId,
-            analysed,
-            liveHead: pull.headSha,
-            analyzers,
-            identityId: identity.id,
-            failures,
-          }).then((result) => {
-            aiNotPosted = result.aiNotPosted;
-            return {
-              commented: result.commented,
-              unplaced: result.unplaced,
-              skipped: analyzers ? null : 'checkout_other',
-            };
-          }),
-        )) ?? NOT_UPDATED;
-      if (failures.stop !== null) return failed(failures.stop);
-    }
+    const placed = await placeInline(deps, {
+      client,
+      loaded,
+      repositoryId,
+      prId,
+      analysed,
+      newest,
+      liveHead: pull.headSha,
+      analyzers: payload.azure?.checkout === 'head',
+      identityId: identity.id,
+      failures,
+    });
+    if (failures.stop !== null) return failed(failures.stop);
+    const { inline, aiNotPosted } = placed;
     const data = await summaryData(deps.db, loaded, deps.publicUrl);
     const review = await loadReviewSummary(deps.db, analysis.id, deps.publicUrl);
     const body = summaryFor(deps, loaded, data, review, pull, inline, aiNotPosted);

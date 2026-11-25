@@ -76,10 +76,6 @@ export interface JiraFailure {
 }
 /** The Jira priority name for a Qualor severity; a severity without one sets none. */
 export type JiraPriorities = Partial<Record<Severity, string>>;
-/** Azure Boards (Azure DevOps design §7.8): a link's kinds, states and origins are the Jira ones. */
-export type BoardsLinkKind = JiraLinkKind;
-export type BoardsLinkState = JiraLinkState;
-export type BoardsLinkOrigin = JiraLinkOrigin;
 /** Azure Boards' state categories (Proposed, InProgress, Resolved, Completed, Removed), lower-cased. */
 export const BOARDS_STATE_CATEGORIES = [
   'proposed',
@@ -1665,12 +1661,12 @@ export const boardsLinks = pgTable(
      * on: the work item's path, kept when the mapping is removed or changed.
      */
     azureProjectId: text('azure_project_id').notNull(),
-    kind: text('kind').notNull().$type<BoardsLinkKind>(),
+    kind: text('kind').notNull().$type<JiraLinkKind>(),
     issueId: uuid('issue_id').references(() => issues.id, { onDelete: 'cascade' }),
     packageName: text('package_name'),
     vulnerabilityId: text('vulnerability_id'),
-    state: text('state').notNull().$type<BoardsLinkState>(),
-    origin: text('origin').notNull().$type<BoardsLinkOrigin>(),
+    state: text('state').notNull().$type<JiraLinkState>(),
+    origin: text('origin').notNull().$type<JiraLinkOrigin>(),
     /** Raised on each re-arm; part of the reconciliation key. */
     generation: smallint('generation').notNull().default(1),
     attemptedAt: at('attempted_at'),

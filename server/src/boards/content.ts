@@ -114,10 +114,8 @@ export function codeIssueWorkItem(
   key: string,
 ): WorkItemContent {
   const link = issueUrl(publicUrl, f.projectId, f.issueId);
-  const place =
-    f.path === null
-      ? []
-      : [para(`File: ${code(f.line === null ? f.path : `${f.path}:${f.line}`)}`)];
+  const where = f.path !== null && f.line !== null ? `${f.path}:${f.line}` : f.path;
+  const place = f.path === null ? [] : [para(`File: ${code(where ?? f.path)}`)];
   const build = (messageMax: number): string =>
     [
       `<h3>${short(f.ruleName)}</h3>`,

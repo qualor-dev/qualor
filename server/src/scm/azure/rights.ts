@@ -51,23 +51,24 @@ export async function azureTriageRight(
   // Unlike GitHub's and GitLab's checks, no author is no (not a vacuous yes): a comment whose
   // author is unknown (a deleted comment has none) must never change a status.
   if (authors.length === 0 || authors.length > MAX_AUTHORS_LOOKED_UP) return 'may_not';
-  let reading: 'repository' | 'identity' | 'acl' = 'repository';
+  // What the check is reading when it fails; a property, as the catch below reads it.
+  const progress: { reading: 'repository' | 'identity' | 'acl' } = { reading: 'repository' };
   try {
     const { projectId } = await client.repository(repositoryId);
     for (const author of authors) {
-      reading = 'identity';
+      progress.reading = 'identity';
       const descriptor = await client.identityDescriptor(author);
       if (descriptor === null) return 'may_not';
-      reading = 'acl';
+      progress.reading = 'acl';
       if (!(await client.contributeAllowed(projectId, repositoryId, descriptor))) return 'may_not';
     }
     return 'may';
   } catch (err) {
     if (!(err instanceof ScmError)) throw err;
-    const rightsRead = reading !== 'repository';
+    const rightsRead = progress.reading !== 'repository';
     if (!isDefinitive(err) && !(rightsRead && isMissingScope(err))) throw err;
     logger?.warn({ kind: err.kind }, 'azure devops contribute check failed');
-    return credentialRefused(err, reading) ? 'unreadable' : 'may_not';
+    return credentialRefused(err, progress.reading) ? 'unreadable' : 'may_not';
   }
 }
 

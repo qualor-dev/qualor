@@ -153,7 +153,8 @@ export function blocksOtherTrackerSql(
   itemColumn: 'jira_issue_id' | 'work_item_id',
 ): SQL {
   const row = sql.raw(alias);
-  return sql`(${row}.state <> 'failed' OR ${sql.raw(`${alias}.${itemColumn}`)} IS NOT NULL
+  const item = sql.raw(`${alias}.${itemColumn}`);
+  return sql`(${row}.state <> 'failed' OR ${item} IS NOT NULL
     OR coalesce(${row}.failure ->> 'code' = 'outcome_unknown', false))`;
 }
 

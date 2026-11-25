@@ -98,6 +98,11 @@ describe('scm_connections azure checks (migration 0034)', () => {
   it('an azure row with a service principal accepts both GUIDs', async () => {
     await insert('azure', null, 'service_principal_secret', GUID, GUID);
     await insert('azure', null, 'service_principal_certificate', GUID, GUID);
+    const { rows } = await t.pool.query(
+      `SELECT count(*)::int AS n FROM scm_connections
+        WHERE provider = 'azure' AND azure_auth LIKE 'service_principal_%'`,
+    );
+    expect(rows[0]?.n).toBe(2);
   });
 
   it('an azure row with a service principal kind needs both ids', async () => {

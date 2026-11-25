@@ -133,6 +133,46 @@ export interface SubscribeResult {
   wrote: boolean;
 }
 
+/** One event of one project: what was done about its subscription, and whether it was written. */
+async function subscribeEvent(
+  input: SubscribeInput,
+  offered: ReadonlyMap<string, readonly string[]>,
+  own: ReturnType<typeof ownSubscriptions>,
+  projectId: string,
+  eventType: (typeof HOOK_EVENTS)[number],
+): Promise<{ outcome: HookOutcome; wrote: boolean }> {
+  const { client, url, password } = input;
+  const resourceVersion = HOOK_EVENT_VERSIONS[eventType];
+  if (!offered.get(eventType)?.includes(resourceVersion))
+    return { outcome: 'refused', wrote: false };
+  const subscription = { eventType, resourceVersion, projectId, url, password };
+  const existing = managedSubscription(own, projectId, eventType);
+  try {
+    if (
+      existing &&
+      input.passwordKnownToAzure &&
+      existing.resourceVersion === resourceVersion &&
+      existing.status === 'enabled'
+    ) {
+      return { outcome: 'unchanged', wrote: false };
+    }
+    let outcome: HookOutcome = 'created';
+    if (existing) {
+      try {
+        await client.replaceSubscription(existing.id, subscription);
+        outcome = 'replaced';
+      } catch (err) {
+        if (!(err instanceof ScmError) || err.kind !== 'not_found') throw err;
+      }
+    }
+    if (outcome === 'created') await client.createSubscription(subscription);
+    return { outcome, wrote: true };
+  } catch (err) {
+    if (!refusedByAzure(err)) throw err;
+    return { outcome: 'refused', wrote: false };
+  }
+}
+
 /**
  * Creates Qualor's two subscriptions in each project, or rewrites those that exist when their
  * version or status differ, or when Azure DevOps may hold another password. An event whose newest
@@ -143,7 +183,7 @@ export interface SubscribeResult {
  * what was done so far; a failure that is not Azure DevOps' is thrown.
  */
 export async function subscribeProjects(input: SubscribeInput): Promise<SubscribeResult> {
-  const { client, url, password } = input;
+  const { client, url } = input;
   const result: SubscribeResult = { projects: [], failure: null, wrote: false };
   if (input.projectIds.length === 0) return result;
   try {
@@ -152,40 +192,10 @@ export async function subscribeProjects(input: SubscribeInput): Promise<Subscrib
     for (const projectId of input.projectIds) {
       const done = {} as Record<'comment' | 'updated', HookOutcome>;
       for (const eventType of HOOK_EVENTS) {
-        const resourceVersion = HOOK_EVENT_VERSIONS[eventType];
         const key = eventType === 'git.pullrequest.updated' ? 'updated' : 'comment';
-        if (!offered.get(eventType)?.includes(resourceVersion)) {
-          done[key] = 'refused';
-          continue;
-        }
-        const subscription = { eventType, resourceVersion, projectId, url, password };
-        const existing = managedSubscription(own, projectId, eventType);
-        try {
-          if (
-            existing &&
-            input.passwordKnownToAzure &&
-            existing.resourceVersion === resourceVersion &&
-            existing.status === 'enabled'
-          ) {
-            done[key] = 'unchanged';
-            continue;
-          }
-          let outcome: HookOutcome = 'created';
-          if (existing) {
-            try {
-              await client.replaceSubscription(existing.id, subscription);
-              outcome = 'replaced';
-            } catch (err) {
-              if (!(err instanceof ScmError) || err.kind !== 'not_found') throw err;
-            }
-          }
-          if (outcome === 'created') await client.createSubscription(subscription);
-          result.wrote = true;
-          done[key] = outcome;
-        } catch (err) {
-          if (!refusedByAzure(err)) throw err;
-          done[key] = 'refused';
-        }
+        const event = await subscribeEvent(input, offered, own, projectId, eventType);
+        done[key] = event.outcome;
+        if (event.wrote) result.wrote = true;
       }
       result.projects.push({ projectId, ...done });
     }

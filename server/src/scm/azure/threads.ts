@@ -205,9 +205,8 @@ async function planUpdates(
   // same on every run.
   for (const [issueId, mine] of own) {
     const issue = known.get(issueId);
-    if (issue === undefined) continue;
     // Without `analyzers` their threads are left as they are.
-    if (!ctx.analyzers && issue.engineId !== AI_ENGINE) continue;
+    if (issue === undefined || (!ctx.analyzers && issue.engineId !== AI_ENGINE)) continue;
     // The AI review's threads are reconciled like the analyzers' but not counted: the summary's
     // count is the analyzers' (GitLab's `reviewed` rule).
     const reviewed = issue.engineId === AI_ENGINE;
@@ -224,16 +223,35 @@ async function planUpdates(
         reviewed,
       });
     }
-    if (
-      onBranch &&
-      issue.status === 'closed' &&
-      azureThreadOpen(mine.thread.status) &&
-      mine.humanReplied
-    ) {
-      plan.fixed.push(issueId);
-    }
+    if (onBranch && repliedToFixed(issue.status, mine)) plan.fixed.push(issueId);
   }
   return plan;
+}
+
+/** Whether a person replied in the thread of an issue that is fixed, and the thread is still open. */
+const repliedToFixed = (status: string, mine: OwnThread): boolean =>
+  status === 'closed' && azureThreadOpen(mine.thread.status) && mine.humanReplied;
+
+/** Resolves a thread of a fixed issue: Qualor's fixed comment first, then the status. */
+async function resolveThread(
+  ctx: AzureThreadsContext,
+  update: Plan['updates'][number],
+  sha: string,
+): Promise<void> {
+  const { client, repositoryId, prId, failures } = ctx;
+  const id = update.thread.id;
+  // No full revision to name (a marker holds one only): the thread waits.
+  if (!update.fixedLast && !isFullSha(sha)) return;
+  // Qualor's fixed comment is already the last (an earlier job's status change failed, or a
+  // person reopened the thread without a word): only the status is sent, one note a time.
+  const noted =
+    update.fixedLast ||
+    (await write(failures, () =>
+      client.addComment(repositoryId, prId, id, resolvedNote(update.issueId, sha)),
+    ));
+  if (noted) {
+    await write(failures, () => client.setThreadStatus(repositoryId, prId, id, 'fixed'));
+  }
 }
 
 /**
@@ -265,19 +283,7 @@ async function applyUpdates(
     if (failures.stop !== null) break;
     const id = update.thread.id;
     if (update.action === 'resolve') {
-      const sha = revisions.get(update.issueId) ?? revision;
-      // No full revision to name (a marker holds one only): the thread waits.
-      if (!update.fixedLast && !isFullSha(sha)) continue;
-      // Qualor's fixed comment is already the last (an earlier job's status change failed, or a
-      // person reopened the thread without a word): only the status is sent, one note a time.
-      const noted =
-        update.fixedLast ||
-        (await write(failures, () =>
-          client.addComment(repositoryId, prId, id, resolvedNote(update.issueId, sha)),
-        ));
-      if (noted) {
-        await write(failures, () => client.setThreadStatus(repositoryId, prId, id, 'fixed'));
-      }
+      await resolveThread(ctx, update, revisions.get(update.issueId) ?? revision);
     } else if (update.action === 'reopen') {
       if (await write(failures, () => client.setThreadStatus(repositoryId, prId, id, 'active'))) {
         await reopenedComment(update);
@@ -328,6 +334,110 @@ const listedAiFindings = (
   posted: ReadonlySet<DesiredAiIssue>,
 ): DesiredAiIssue[] =>
   waiting.filter((issue) => !posted.has(issue) && AI_THREAD_SEVERITIES.has(issue.severity));
+
+/** The threads of the analyzers' new issues that have a place on an added line; the rest is counted. */
+async function createAnalyzerThreads(
+  ctx: AzureThreadsContext,
+  fresh: readonly Awaited<ReturnType<typeof desiredInlineIssues>>[number][],
+  places: ReadonlyMap<string, ReadonlyMap<number, string>>,
+): Promise<{ created: number; unplaced: number }> {
+  const { client, repositoryId, prId, failures } = ctx;
+  let created = 0;
+  let unplaced = 0;
+  for (const issue of fresh) {
+    const text =
+      issue.path === null || issue.line === null
+        ? undefined
+        : places.get(issue.path)?.get(issue.line);
+    if (issue.path === null || issue.line === null || text === undefined) {
+      unplaced += 1;
+      continue;
+    }
+    if (failures.stop !== null) break;
+    const { path, line } = issue;
+    const body = inlineBody({
+      issueId: issue.id,
+      severity: issue.severity as Severity,
+      quality: issue.quality as Quality,
+      ruleKey: issue.ruleKey,
+      helpUri: issue.helpUri,
+      message: issue.message,
+      confidence: issue.confidence,
+      url: issueUrl(ctx.deps.publicUrl, ctx.loaded.project.id, issue.id),
+    });
+    const made = await write(failures, () =>
+      client.createThread(repositoryId, prId, {
+        content: body,
+        status: 'active',
+        anchor: { filePath: path, startLine: line, endLine: line, endLineLength: text.length },
+      }),
+    );
+    if (made) created += 1;
+  }
+  return { created, unplaced };
+}
+
+/** The AI review's threads on their anchors; `posted` collects the findings that got one. */
+async function createAiThreads(
+  ctx: AzureThreadsContext,
+  aiCreate: readonly DesiredAiIssue[],
+  head: string,
+  places: ReadonlyMap<string, ReadonlyMap<number, string>>,
+  posted: Set<DesiredAiIssue>,
+): Promise<void> {
+  const { client, repositoryId, prId, failures } = ctx;
+  for (const issue of aiCreate) {
+    if (failures.stop !== null) break;
+    const place = places.get(issue.path);
+    const text = place?.get(issue.anchorLine);
+    if (place === undefined || text === undefined) continue;
+    const found = await liveSuggestion(ctx.deps.db, ctx.loaded.branch.id, head, issue, place);
+    const note = aiFindingNote(
+      'azure',
+      issue,
+      found,
+      issueUrl(ctx.deps.publicUrl, ctx.loaded.project.id, issue.id),
+    );
+    // The thread selects what the note kept: a suggestion's lines whole (all are added lines,
+    // `liveSuggestion`), or the anchor alone when the note left it out.
+    const range = anchorRange(issue.anchorLine, note.suggestion, place, text);
+    if (!postsAiThread(issue, note)) continue;
+    try {
+      await client.createThread(repositoryId, prId, {
+        content: note.body,
+        status: 'active',
+        anchor: { filePath: issue.path, ...range },
+      });
+      posted.add(issue);
+    } catch (err) {
+      noteAiThreadFailure(err, failures);
+    }
+  }
+}
+
+/** The lines an AI thread selects: the suggestion's whole, or the anchor alone. */
+function anchorRange(
+  anchorLine: number,
+  kept: { startLine: number; endLine: number } | null,
+  place: ReadonlyMap<number, string>,
+  anchorText: string,
+): { startLine: number; endLine: number; endLineLength: number } {
+  if (kept === null) {
+    return { startLine: anchorLine, endLine: anchorLine, endLineLength: anchorText.length };
+  }
+  return {
+    startLine: kept.startLine,
+    endLine: kept.endLine,
+    endLineLength: (place.get(kept.endLine) ?? anchorText).length,
+  };
+}
+
+/** A failed AI thread creation: the job goes on; only an unexpected failure is kept. */
+function noteAiThreadFailure(err: unknown, failures: Failures): void {
+  // Azure DevOps refused the position (a 400): the summary lists the finding.
+  if (err instanceof ScmError && err.kind === 'refused' && err.status === 400) return;
+  if (!(err instanceof ScmError && err.kind === 'not_found')) failures.add(err);
+}
 
 /**
  * The new threads of the most severe open new issues without one, each on an added line of the
@@ -381,77 +491,8 @@ async function createThreads(
     failures.add(err);
     return unlisted;
   }
-  let created = 0;
-  let unplaced = 0;
-  for (const issue of fresh) {
-    const text =
-      issue.path === null || issue.line === null
-        ? undefined
-        : places.get(issue.path)?.get(issue.line);
-    if (issue.path === null || issue.line === null || text === undefined) {
-      unplaced += 1;
-      continue;
-    }
-    if (failures.stop !== null) break;
-    const { path, line } = issue;
-    const body = inlineBody({
-      issueId: issue.id,
-      severity: issue.severity as Severity,
-      quality: issue.quality as Quality,
-      ruleKey: issue.ruleKey,
-      helpUri: issue.helpUri,
-      message: issue.message,
-      confidence: issue.confidence,
-      url: issueUrl(ctx.deps.publicUrl, ctx.loaded.project.id, issue.id),
-    });
-    const made = await write(failures, () =>
-      client.createThread(repositoryId, prId, {
-        content: body,
-        status: 'active',
-        anchor: { filePath: path, startLine: line, endLine: line, endLineLength: text.length },
-      }),
-    );
-    if (made) created += 1;
-  }
-  if (ai !== null) {
-    for (const issue of aiCreate) {
-      if (failures.stop !== null) break;
-      const place = places.get(issue.path);
-      const text = place?.get(issue.anchorLine);
-      if (place === undefined || text === undefined) continue;
-      const found = await liveSuggestion(ctx.deps.db, ctx.loaded.branch.id, ai.head, issue, place);
-      const note = aiFindingNote(
-        'azure',
-        issue,
-        found,
-        issueUrl(ctx.deps.publicUrl, ctx.loaded.project.id, issue.id),
-      );
-      // The thread selects what the note kept: a suggestion's lines whole (all are added lines,
-      // `liveSuggestion`), or the anchor alone when the note left it out.
-      const kept = note.suggestion;
-      const range =
-        kept === null
-          ? { startLine: issue.anchorLine, endLine: issue.anchorLine, endLineLength: text.length }
-          : {
-              startLine: kept.startLine,
-              endLine: kept.endLine,
-              endLineLength: (place.get(kept.endLine) ?? text).length,
-            };
-      if (!postsAiThread(issue, note)) continue;
-      try {
-        await client.createThread(repositoryId, prId, {
-          content: note.body,
-          status: 'active',
-          anchor: { filePath: issue.path, ...range },
-        });
-        posted.add(issue);
-      } catch (err) {
-        // Azure DevOps refused the position (a 400): the summary lists the finding, the job goes on.
-        if (err instanceof ScmError && err.kind === 'refused' && err.status === 400) continue;
-        if (!(err instanceof ScmError && err.kind === 'not_found')) failures.add(err);
-      }
-    }
-  }
+  const { created, unplaced } = await createAnalyzerThreads(ctx, fresh, places);
+  if (ai !== null) await createAiThreads(ctx, aiCreate, ai.head, places, posted);
   // An AI thread is not counted in `created`: the summary's count is the analyzers'.
   return {
     created,

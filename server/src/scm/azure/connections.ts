@@ -140,12 +140,8 @@ function problemsOf(
     problems.push({ path: `body.${rules.credential}`, message: credentialNeeded });
   }
   for (const id of IDS) {
-    const needed = needs[id];
-    if (!rules.principal && body[id] !== undefined) {
-      problems.push({ path: `body.${id}`, message: notOfKind });
-    } else if (rules.principal && body[id] === undefined && needed !== null) {
-      problems.push({ path: `body.${id}`, message: needed });
-    }
+    const problem = idProblem(rules.principal, id, body, needs[id], notOfKind);
+    if (problem) problems.push(problem);
   }
   if (rules.credential === 'certificate' && body.certificate !== undefined) {
     const parsed = parseAzureCertificate(body.certificate);
@@ -157,6 +153,18 @@ function problemsOf(
     }
   }
   return problems;
+}
+
+/** The 422 of one id: a PAT takes none, a service principal needs it when `needed` says so. */
+function idProblem(
+  principal: boolean,
+  id: (typeof IDS)[number],
+  body: AzureFields,
+  needed: string | null,
+  notOfKind: string,
+): FieldError | null {
+  if (!principal) return body[id] !== undefined ? { path: `body.${id}`, message: notOfKind } : null;
+  return body[id] === undefined && needed !== null ? { path: `body.${id}`, message: needed } : null;
 }
 
 /** A service principal's ids as stored (lower case), or null for a PAT. */
