@@ -8,11 +8,11 @@ Categories: Developer tools, Integration & delivery, Security
 
 **Code quality, AI code review and dependency vulnerability tracking in one self-hosted server.**
 
-Qualor is an open-source, self-hosted SonarQube alternative for GitLab and GitHub. It runs the
-analyzers you already trust, follows every issue across commits, and fails the merge request that
-makes the code worse. An AI reviewer comments on the same merge requests, on a model you choose.
-The server keeps checking the dependencies of your branches and releases for new vulnerabilities.
-MIT licensed, with no limit on lines, users or projects.
+Qualor is an open-source, self-hosted SonarQube alternative for GitLab, GitHub and Azure DevOps. It
+runs the analyzers you already trust, follows every issue across commits, and fails the merge
+request that makes the code worse. An AI reviewer comments on the same merge requests, on a model
+you choose. The server keeps checking the dependencies of your branches and releases for new
+vulnerabilities. MIT licensed, with no limit on lines, users or projects.
 
 - **An AI reviewer on your own model.** It reads the change and the files it needs, and comments in
   threads with suggested changes you apply in one click. It answers replies. Any OpenAI-compatible
@@ -23,8 +23,8 @@ MIT licensed, with no limit on lines, users or projects.
   each new copy. Triage once per project, with VEX reasons. A Business key adds exploited
   vulnerabilities (CISA KEV), alerts, and SBOM and VEX export.
 - **It judges only the code you changed.** A quality gate on new code, a summary and a status on
-  every GitLab merge request and GitHub pull request, and new issues marked on the lines that
-  caused them.
+  every GitLab merge request and GitHub or Azure DevOps pull request, and new issues marked on the
+  lines that caused them.
 - **Your analyzers, one list.** ESLint, PMD, SpotBugs with FindSecBugs, detekt for Kotlin, SwiftLint for
   Swift, PHPStan for PHP, RuboCop for Ruby, staticcheck, go vet and gosec for Go, cppcheck and clang-tidy
   for C and C++, Roslyn and Roslynator for C#, OpenGrep, Gitleaks, Trivy, SonarQube-compatible

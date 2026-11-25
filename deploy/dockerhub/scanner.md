@@ -66,9 +66,17 @@ qualor:
       env: { QUALOR_URL: '${{ vars.QUALOR_URL }}', QUALOR_TOKEN: '${{ secrets.QUALOR_TOKEN }}' }
 ```
 
+### Azure Pipelines
+
+Copy
+[`integrations/azure-devops/qualor-docker.yml`](https://github.com/qualor-dev/qualor/blob/main/integrations/azure-devops/qualor-docker.yml)
+to `azure-pipelines.yml`. It runs this image with `docker run` on a Linux agent and needs no
+extension. Add the pipeline variables `QUALOR_URL` and `QUALOR_TOKEN` (a secret). Pull requests run
+through a Build validation policy. The Azure DevOps guide: <https://qualor.dev/docs/azure-devops>.
+
 Before `qualor scan`:
 
-- Check out the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`).
+- Check out the full git history (`GIT_DEPTH: 0`, `fetch-depth: 0`, `fetchDepth: 0`).
 - JavaScript and TypeScript: install the project's dependencies (ESLint runs from `node_modules`).
 - Java: build the project (SpotBugs reads compiled classes).
 - PHP: run `composer install --no-scripts --no-plugins` (PHPStan reads `vendor/`, never runs it).

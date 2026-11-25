@@ -77,6 +77,11 @@ qualor:
     - if [ -d .qualor/dotnet ]; then qualor dotnet abort; fi
 ```
 
+Azure Pipelines: copy
+[`integrations/azure-devops/qualor-dotnet-docker.yml`](https://github.com/qualor-dev/qualor/blob/main/integrations/azure-devops/qualor-dotnet-docker.yml)
+to `azure-pipelines.yml`. It runs this image with `docker run` and needs no extension
+(<https://qualor.dev/docs/azure-devops>).
+
 `--no-incremental` matters: a project that is not recompiled writes no log. The environment
 variables and exit codes are those of `qualor/scanner`. The full guide is at
 <https://qualor.dev/docs/languages-and-analyzers>.

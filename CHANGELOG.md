@@ -57,6 +57,16 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - New illustrations in the same style on the sign-in, server-unavailable and not-found pages and in
   empty lists. A filter that matches nothing has its own picture. On wide screens a project's
   header shows the mark in its corner, in place of the halftone picture.
+- AI review and fix-suggestion texts say "pull request" on GitHub and Azure DevOps.
+
+### Security
+
+- The `qualor/scanner` image keeps `QUALOR_TOKEN` out of the analyzers' environment: its entrypoint,
+  `/usr/local/bin/qualor-entrypoint`, hands the token to `qualor` on a file descriptor
+  ([Environment variables](docs/guide/configuration.md#environment-variables-scanner)). A job that
+  replaces the entrypoint, such as a GitLab job with `entrypoint: ['']`, runs `qualor` directly and
+  keeps the token in the environment.
+- The scanner's own git calls ignore the repository's hooks and `core.fsmonitor`.
 
 ### Upgrade notes
 
