@@ -17,7 +17,12 @@ import type { Db } from '../db/client';
 import { boardsLinks, jobs, projectBoardsSettings, scmConnections, users } from '../db/schema';
 import type { WorkerLogger } from '../queue/worker';
 import type { AzureJsonPatch } from '../scm/azure/client';
-import { BOARDS_FAILURE_TEXT, CREATE_PER_RUN, createPendingWorkItems } from './create';
+import {
+  BOARDS_FAILURE_TEXT,
+  claimPendingLinks,
+  CREATE_PER_RUN,
+  createPendingWorkItems,
+} from './create';
 import {
   BOARDS_QUEUE,
   BOARDS_SYNC_INTERVAL_SECONDS,
@@ -608,6 +613,72 @@ describe('the Boards create job (design §7.8, plan Task 6)', () => {
     expect(creates()).toHaveLength(1);
     expect(await row(first!)).toMatchObject({ state: 'created' });
     expect(await row(second!)).toMatchObject({ state: 'dismissed', workItemId: null });
+  });
+
+  it('a row reset and claimed by another run after this run’s claim is neither sent nor written by it', async () => {
+    const other = (await openBoardsRun(deps, connectionId))!;
+    /** The pass’s reconcile resets the row, then another run claims it: the stamp it got. */
+    const steal = async (id: string): Promise<Date | null> => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await db().update(boardsLinks).set({ attemptedAt: null }).where(eq(boardsLinks.id, id));
+      const [taken] = await claimPendingLinks(other, 1);
+      expect(taken?.id).toBe(id);
+      return taken!.attemptedAt;
+    };
+    const [first, second] = await pendingLinks(2);
+    let stolen: Date | null = null;
+    fake.inject('POST', CREATE_PATH, {
+      passThrough: true,
+      status: 200,
+      before: async () => {
+        stolen = await steal(second!);
+      },
+    });
+    await run();
+    expect(creates()).toHaveLength(1);
+    expect(await row(first!)).toMatchObject({ state: 'created' });
+    expect(await row(second!)).toMatchObject({
+      state: 'pending',
+      workItemId: null,
+      attemptedAt: stolen,
+    });
+
+    // Taken over while its own create is out: the late answer writes nothing on the other claim.
+    const [inFlight] = await pendingLinks(1);
+    fake.clearRequests();
+    fake.inject('POST', CREATE_PATH, {
+      passThrough: true,
+      status: 200,
+      before: async () => {
+        stolen = await steal(inFlight!);
+      },
+    });
+    await run();
+    expect(creates()).toHaveLength(1);
+    expect(await row(inFlight!)).toMatchObject({
+      state: 'pending',
+      workItemId: null,
+      attemptedAt: stolen,
+    });
+  });
+
+  it('an unexpected error in a send releases the rows after it, never the one in flight', async () => {
+    const ids = await pendingLinks(4);
+    const ctx = (await openBoardsRun(deps, connectionId))!;
+    const real = ctx.client.createWorkItem.bind(ctx.client);
+    let calls = 0;
+    ctx.client.createWorkItem = async (projectId, typeName, ops) => {
+      calls += 1;
+      if (calls === 2) throw new Error('boom');
+      return real(projectId, typeName, ops);
+    };
+    await expect(createPendingWorkItems(ctx)).rejects.toThrow('boom');
+    const [created, inFlight, ...after] = await Promise.all(ids.map(row));
+    expect(created).toMatchObject({ state: 'created' });
+    expect(inFlight!.state).toBe('pending');
+    expect(inFlight!.attemptedAt).not.toBeNull();
+    expect(after).toHaveLength(2);
+    for (const r of after) expect(r).toMatchObject({ state: 'pending', attemptedAt: null });
   });
 
   it('a lost answer: the work item is made, the row waits with attempted_at, never resent', async () => {

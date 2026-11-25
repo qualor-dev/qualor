@@ -5,10 +5,11 @@ import {
   BOARDS_STATE_CATEGORIES,
   boardsLinks,
   projectBoardsSettings,
+  scmConnections,
   type BoardsStateCategory,
 } from '../db/schema';
 import type { VulnerabilityFacts } from '../jira/content';
-import { fenceOf, followUpDelay, recordset } from '../jira/create';
+import { followUpDelay, recordset } from '../jira/create';
 import { codeIssueFacts, vulnerabilityFacts, type CodeIssueRecord } from '../jira/facts';
 import { cutText } from '../jira/markup';
 import { pairKey, type VulnerabilityPair } from '../jira/presence';
@@ -184,12 +185,26 @@ async function connectionUnmoved(ctx: BoardsRunContext): Promise<boolean> {
 
 /**
  * Records `code` as the connection's problem (Ruling 5: the slot decoration shares) while the
- * connection still has the run's address, and lets the run's view follow.
+ * connection still has the run's address: checked and written under the connection row's lock, so
+ * an address move cannot slip in between. The run's view follows.
  */
 async function recordProblem(ctx: BoardsRunContext, code: ScmBackgroundProblemCode): Promise<void> {
-  if (!(await connectionUnmoved(ctx))) return;
-  await recordScmProblem(ctx.deps.db, ctx.connection.id, code);
-  if (ctx.connection.problem?.code !== code) {
+  const written = await ctx.deps.db.transaction(async (tx) => {
+    const [held] = await tx
+      .select({ id: scmConnections.id })
+      .from(scmConnections)
+      .where(
+        and(
+          eq(scmConnections.id, ctx.connection.id),
+          eq(scmConnections.baseUrl, ctx.connection.baseUrl),
+        ),
+      )
+      .for('no key update');
+    if (!held) return false;
+    await recordScmProblem(tx, ctx.connection.id, code);
+    return true;
+  });
+  if (written && ctx.connection.problem?.code !== code) {
     ctx.connection.problem = { code, at: new Date().toISOString() };
   }
 }
@@ -216,11 +231,29 @@ export async function stopFor(ctx: BoardsRunContext, err: ScmError): Promise<Boa
 }
 
 /**
+ * `attempted_at` as a run stamps it: to the millisecond, so the `Date` a row carries back holds the
+ * stamp exactly and every later write of the run can be conditional on it.
+ */
+const STAMP = sql`date_trunc('milliseconds', now())`;
+
+/**
+ * A row's claim as the run's writes check it: `(id, generation)` and the `attempted_at` the run
+ * stamped. A row whose stamp changed since (the pass's reconcile reset it, another run claimed
+ * it) is no longer this run's: nothing of this run is written to it.
+ */
+const claimOf = (row: BoardsLinkRow) => ({
+  id: row.id,
+  generation: row.generation,
+  stamp: row.attemptedAt?.toISOString() ?? null,
+});
+
+/**
  * Up to `n` of the connection's never-attempted pending rows, oldest first, stamped with
- * `attempted_at` in one short transaction that commits before any call. `SKIP LOCKED` and the
- * condition on `attempted_at` let a create job and a pass of the connection never take one row
- * twice; none once the connection is gone or has another address. As Jira's ruling T8a, the ids
- * are picked first (`LIMIT n … FOR UPDATE SKIP LOCKED`), then exactly those rows are updated.
+ * `attempted_at` ({@link STAMP}) in one short transaction that commits before any call.
+ * `SKIP LOCKED` and the condition on `attempted_at` let a create job and a pass of the connection
+ * never take one row twice; none once the connection is gone or has another address. As Jira's
+ * ruling T8a, the ids are picked first (`LIMIT n … FOR UPDATE SKIP LOCKED`), then exactly those
+ * rows are updated.
  */
 export async function claimPendingLinks(
   ctx: BoardsRunContext,
@@ -244,7 +277,7 @@ export async function claimPendingLinks(
     if (picked.length === 0) return [];
     return tx
       .update(boardsLinks)
-      .set({ attemptedAt: sql`now()`, updatedAt: sql`now()` })
+      .set({ attemptedAt: STAMP, updatedAt: sql`now()` })
       .where(
         inArray(
           boardsLinks.id,
@@ -256,7 +289,11 @@ export async function claimPendingLinks(
   return rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || compare(a.id, b.id));
 }
 
-/** Rows whose create never reached Azure DevOps: never attempted again, so the next run sends them. */
+/**
+ * Rows whose create never reached Azure DevOps: never attempted again, so the next run sends them.
+ * Only rows still holding the stamp each carries ({@link claimOf}): a row another run claimed since
+ * stays that run's.
+ */
 export async function releaseLinks(
   ctx: BoardsRunContext,
   rows: readonly BoardsLinkRow[],
@@ -264,22 +301,25 @@ export async function releaseLinks(
   if (rows.length === 0) return;
   await ctx.deps.db.execute(sql`
     UPDATE boards_links l SET attempted_at = NULL, updated_at = now()
-      FROM jsonb_to_recordset(${recordset(rows.map(fenceOf))}::jsonb) AS c(id uuid, generation int)
-     WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'
-       AND ${boardsConnectionUnmoved(ctx.connection)}`);
+      FROM jsonb_to_recordset(${recordset(rows.map(claimOf))}::jsonb)
+           AS c(id uuid, generation int, stamp timestamptz)
+     WHERE l.id = c.id AND l.generation = c.generation AND l.attempted_at = c.stamp
+       AND l.state = 'pending' AND ${boardsConnectionUnmoved(ctx.connection)}`);
 }
 
+const MAKES_CREATED = `l.state = 'pending' OR (l.state = 'failed' AND l.failure ->> 'code' = 'outcome_unknown')`;
 /** The rows a created answer makes `created`: pending, or failed `outcome_unknown` by the pass. */
-const LATE_CREATED = sql.raw(
-  `l.state = 'pending' OR (l.state = 'failed' AND l.failure ->> 'code' = 'outcome_unknown')`,
-);
+const LATE_CREATED = sql.raw(MAKES_CREATED);
+/** The rows a created answer writes at all: those, and a row dismissed in flight (R19). */
+const CREATED_WRITABLE = sql.raw(`(l.state = 'dismissed' OR ${MAKES_CREATED})`);
 
 /**
- * Answers, in one short transaction fenced on `(id, generation)`: a row re-armed meanwhile is
- * another create's. The state changes only from `pending` (and a created answer also takes a row
- * the pass failed `outcome_unknown` meanwhile): a row dismissed while its create was in flight
- * keeps the work item id Azure DevOps gave, and fails nothing. Nothing is written once the
- * connection is gone or has another address.
+ * Answers, in one short transaction fenced on the row's claim ({@link claimOf}): a row re-armed
+ * meanwhile, or reset and claimed by another run, is another create's. A failure is written only
+ * to a `pending` row. A created answer makes `created` a `pending` row (or one the pass failed
+ * `outcome_unknown` meanwhile), and gives a row dismissed while its create was in flight the work
+ * item id Azure DevOps gave (Jira's R19); it never touches a `created` or `missing` row. Nothing is
+ * written once the connection is gone or has another address.
  */
 async function record(
   ctx: BoardsRunContext,
@@ -294,7 +334,7 @@ async function record(
     if (created.length > 0) {
       const json = recordset(
         created.map((c) => ({
-          ...fenceOf(c.row),
+          ...claimOf(c.row),
           work_item_id: c.workItemId,
           state_name: c.stateName,
           state_category: c.stateCategory,
@@ -309,22 +349,24 @@ async function record(
                state_checked_at = CASE WHEN c.state_name IS NULL THEN l.state_checked_at ELSE now() END,
                updated_at = now()
           FROM jsonb_to_recordset(${json}::jsonb)
-               AS c(id uuid, generation int, work_item_id int, state_name text, state_category text)
-         WHERE l.id = c.id AND l.generation = c.generation AND ${unmoved}`);
+               AS c(id uuid, generation int, stamp timestamptz, work_item_id int, state_name text,
+                    state_category text)
+         WHERE l.id = c.id AND l.generation = c.generation AND l.attempted_at = c.stamp
+           AND ${CREATED_WRITABLE} AND ${unmoved}`);
       made = result.rowCount ?? 0;
     }
     if (failed.length > 0) {
       const json = recordset(
-        failed.map((f) => ({ ...fenceOf(f.row), code: f.code, message: f.message })),
+        failed.map((f) => ({ ...claimOf(f.row), code: f.code, message: f.message })),
       );
       const result = await tx.execute(sql`
         UPDATE boards_links l
            SET state = 'failed', failure = jsonb_build_object('code', c.code, 'message', c.message),
                updated_at = now()
           FROM jsonb_to_recordset(${json}::jsonb)
-               AS c(id uuid, generation int, code text, message text)
-         WHERE l.id = c.id AND l.generation = c.generation AND l.state = 'pending'
-           AND ${unmoved}`);
+               AS c(id uuid, generation int, stamp timestamptz, code text, message text)
+         WHERE l.id = c.id AND l.generation = c.generation AND l.attempted_at = c.stamp
+           AND l.state = 'pending' AND ${unmoved}`);
       refused = result.rowCount ?? 0;
     }
     return { created: made, failed: refused };
@@ -532,19 +574,34 @@ async function prepare(run: CreateRun, rows: readonly BoardsLinkRow[]): Promise<
 }
 
 /**
- * Whether the row may still be sent, just before its create: the connection is gone or moved
- * (the run ends), the row was dismissed or re-armed since its claim (it is skipped), or it is
- * still the run's to send.
+ * The row taken again just before its create, as the run's own: `attempted_at` stamped anew
+ * where it still holds this run's stamp, the row is `pending` at its generation and the connection
+ * has the run's address. The new stamp restarts the pass's reconcile clock at the call (a row sent
+ * minutes after its chunk was claimed is never reset under it). Else the row is skipped: dismissed
+ * or re-armed since its claim, or reset by the reconcile and claimed by another run; or the run
+ * ends when the connection is gone or moved.
  */
-async function sendable(run: CreateRun, row: BoardsLinkRow): Promise<'send' | 'skip' | 'gone'> {
-  const found = await run.ctx.deps.db.execute<{ unmoved: boolean; pending: boolean }>(sql`
-    SELECT ${boardsConnectionUnmoved(run.ctx.connection)} AS unmoved,
-           EXISTS (SELECT 1 FROM boards_links l
-                    WHERE l.id = ${row.id} AND l.generation = ${row.generation}
-                      AND l.state = 'pending') AS pending`);
-  const answer = found.rows[0];
-  if (answer?.unmoved !== true) return 'gone';
-  return answer.pending ? 'send' : 'skip';
+async function retake(
+  run: CreateRun,
+  row: BoardsLinkRow,
+): Promise<BoardsLinkRow | 'skip' | 'gone'> {
+  const { ctx } = run;
+  if (row.attemptedAt === null) return 'skip';
+  const [held] = await ctx.deps.db
+    .update(boardsLinks)
+    .set({ attemptedAt: STAMP, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(boardsLinks.id, row.id),
+        eq(boardsLinks.generation, row.generation),
+        eq(boardsLinks.state, 'pending'),
+        eq(boardsLinks.attemptedAt, row.attemptedAt),
+        boardsConnectionUnmoved(ctx.connection),
+      ),
+    )
+    .returning({ attemptedAt: boardsLinks.attemptedAt });
+  if (held) return { ...row, attemptedAt: held.attemptedAt };
+  return (await connectionUnmoved(ctx)) ? 'skip' : 'gone';
 }
 
 /**
@@ -554,21 +611,17 @@ async function sendable(run: CreateRun, row: BoardsLinkRow): Promise<'send' | 's
  */
 async function send(run: CreateRun, ready: Ready): Promise<void> {
   const { ctx, outcome } = run;
-  const verdict = await sendable(run, ready.row);
-  if (verdict === 'gone') {
+  const row = await retake(run, ready.row);
+  if (row === 'gone') {
     run.gone = true;
     return;
   }
-  if (verdict === 'skip') return;
+  if (row === 'skip') return;
   try {
-    const item = await ctx.client.createWorkItem(
-      ready.row.azureProjectId,
-      ready.type.name,
-      ready.ops,
-    );
+    const item = await ctx.client.createWorkItem(row.azureProjectId, ready.type.name, ready.ops);
     run.answered += 1;
     const created: Created = {
-      row: ready.row,
+      row,
       workItemId: item.id,
       stateName: item.state,
       stateCategory: stateCategoryOf(ready.type, item.state),
@@ -578,16 +631,20 @@ async function send(run: CreateRun, ready: Ready): Promise<void> {
     const refused = createFailureOf(err);
     if (refused !== null) {
       if (answeredBy(err)) run.answered += 1;
-      outcome.failed += (await record(ctx, [], [{ row: ready.row, ...refused }])).failed;
+      outcome.failed += (await record(ctx, [], [{ row, ...refused }])).failed;
       return;
     }
     outcome.stop = await stopOn(run, err);
     if (outcome.stop === null || outcome.stop === 'transient') outcome.unanswered += 1;
-    else await releaseLinks(ctx, [ready.row]);
+    else await releaseLinks(ctx, [row]);
   }
 }
 
-/** One chunk: its rows prepared, the failures written, then each ready row sent on its own. */
+/**
+ * One chunk: its rows prepared, the failures written, then each ready row sent on its own. When a
+ * send throws something unexpected, the rows after it go back (never the one in flight, which may
+ * have reached Azure DevOps) and the error goes on.
+ */
 async function createChunk(run: CreateRun, rows: readonly BoardsLinkRow[]): Promise<void> {
   const { ctx, outcome } = run;
   let prepared: Prepared;
@@ -599,15 +656,18 @@ async function createChunk(run: CreateRun, rows: readonly BoardsLinkRow[]): Prom
     throw err;
   }
   outcome.failed += (await record(ctx, [], prepared.failed)).failed;
+  const after = (i: number) => prepared.ready.slice(i).map((r) => r.row);
   for (const [i, ready] of prepared.ready.entries()) {
     if (outcome.stop !== null || run.gone) {
-      await releaseLinks(
-        ctx,
-        prepared.ready.slice(i).map((r) => r.row),
-      );
+      await releaseLinks(ctx, after(i));
       return;
     }
-    await send(run, ready);
+    try {
+      await send(run, ready);
+    } catch (err) {
+      await releaseLinks(ctx, after(i + 1));
+      throw err;
+    }
   }
 }
 
