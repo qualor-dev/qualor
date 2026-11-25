@@ -4,6 +4,7 @@ import {
   boardsLink,
   boardsProjectSettings,
   dependencyFix,
+  type FakeReply,
   FakeServer,
   fixSettings,
   jiraLink,
@@ -1016,6 +1017,62 @@ describe('IssuePage', () => {
         h.textContent?.trim(),
       );
       expect(headings).not.toContain('Jira');
+    });
+  });
+
+  describe('while the Boards state is unknown', () => {
+    const BOARDS = '/api/v0/projects/p1/boards';
+    const headings = (root: HTMLElement) =>
+      [...root.querySelectorAll('.issue-aside section.card h3')].map((h) => h.textContent?.trim());
+
+    beforeEach(() => {
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+    });
+
+    it('Boards read pending shows no Jira call to action', async () => {
+      let answer: (reply: FakeReply) => void = () => undefined;
+      server.on('GET', BOARDS, () => new Promise<FakeReply>((resolve) => (answer = resolve)));
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ jiraLinkable: true }) });
+      const { fixture, root } = await render();
+      expect(server.requestsTo('GET', BOARDS)).toHaveLength(1);
+      expect(buttonIn(root, 'Create Jira issue')).toBeUndefined();
+      expect(headings(root)).not.toContain('Jira');
+      expect(headings(root)).not.toContain('Azure Boards');
+
+      // Read, and not mapped to Boards: the Jira card as before.
+      answer({ body: boardsProjectSettings({ mapped: false }) });
+      await settle(fixture);
+      expect(buttonIn(root, 'Create Jira issue')).toBeDefined();
+    });
+
+    it('shows a finding’s own Jira link while the Boards read is pending', async () => {
+      let answer: (reply: FakeReply) => void = () => undefined;
+      server.on('GET', BOARDS, () => new Promise<FakeReply>((resolve) => (answer = resolve)));
+      server.on('GET', `/api/v0/issues/${ID}`, {
+        body: detail({ jira: jiraLink(), jiraLinkable: true }),
+      });
+      const { fixture, root } = await render();
+      expect(root.querySelector('.issue-aside a.jira-key')?.textContent?.trim()).toBe('PAY-12');
+      answer({ body: boardsProjectSettings({ mapped: false }) });
+      await settle(fixture);
+    });
+
+    it('a failed Boards read falls back to Jira for a finding without a Boards link', async () => {
+      server.on('GET', BOARDS, { status: 500, body: problem(500, 'INTERNAL') });
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ jiraLinkable: true }) });
+      const { root } = await render();
+      // The Jira-mapped project keeps its Jira card.
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Jira']);
+      expect(buttonIn(root, 'Create Jira issue')).toBeDefined();
+    });
+
+    it('a failed Boards read still shows the finding’s Boards link', async () => {
+      server.on('GET', BOARDS, { status: 500, body: problem(500, 'INTERNAL') });
+      server.on('GET', `/api/v0/issues/${ID}`, { body: detail({ boards: boardsLink() }) });
+      const { root } = await render();
+      expect(headings(root).slice(0, 2)).toEqual(['Details', 'Azure Boards']);
+      expect(root.querySelector('.issue-aside a.boards-id')?.textContent?.trim()).toBe('#42');
+      expect(root.querySelector('q-jira-link')).toBeNull();
     });
   });
 

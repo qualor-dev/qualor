@@ -378,7 +378,11 @@ export class IssuesPage {
   });
   protected readonly overLimit = computed(() => this.selected().size > BULK_MAX_IDS);
   /** The project is mapped to Jira: the bulk bar offers "Create Jira issues". */
-  protected readonly jiraReady = computed(() => this.jira.of(this.projectId())()?.mapped === true);
+  protected readonly jiraReady = computed(
+    () =>
+      this.jira.of(this.projectId())()?.mapped === true &&
+      this.boards.of(this.projectId())().settled,
+  );
   protected readonly canCreateJira = computed(
     () => !this.busy() && this.selected().size > 0 && this.selected().size <= JIRA_ISSUES_MAX,
   );
@@ -386,9 +390,7 @@ export class IssuesPage {
    * The project is mapped to Azure Boards: the bulk bar offers "Create Azure Boards work items"
    * instead (a project has one tracker).
    */
-  protected readonly boardsReady = computed(
-    () => this.boards.of(this.projectId())()?.mapped === true,
-  );
+  protected readonly boardsReady = computed(() => this.boards.of(this.projectId())().mapped);
   protected readonly canCreateBoards = computed(
     () => !this.busy() && this.selected().size > 0 && this.selected().size <= BOARDS_ISSUES_MAX,
   );

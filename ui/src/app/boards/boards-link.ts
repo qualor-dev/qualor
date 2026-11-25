@@ -62,7 +62,7 @@ function skippedText(skipped: BoardsLinkItem['skipped'] | undefined): string {
 /**
  * `q-boards-link`: a finding's Azure Boards work item, the same in the issue page's "Azure Boards"
  * card and, `compact`, as a pill in a list row. The page shows it in place of `q-jira-link` when
- * the finding has a Boards link or the project is mapped to Boards (`showsBoards`).
+ * the finding has a Boards link or the project is mapped to Boards (`findingTracker`).
  * - No link: "Create work item" with `canTriage`, a `linkable` finding and a mapped project.
  * - Pending: "Creating…". Created: `#<id>`, linked to Azure DevOps in a new tab, the work item's
  *   state pill and when it was read. Failed: why, and Retry. Missing: "Not found in Azure Boards",
@@ -104,7 +104,7 @@ export class BoardsLinkView {
   });
   private readonly state = computed(() => this.boards.of(this.projectId())());
   protected readonly canCreate = computed(
-    () => this.canTriage() && this.linkable() && this.state()?.mapped === true,
+    () => this.canTriage() && this.linkable() && this.state().mapped,
   );
   protected readonly visible = computed(
     () => this.shown() !== null || this.canCreate() || this.error() !== null,

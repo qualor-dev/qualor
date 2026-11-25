@@ -3,6 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import {
   boardsLink,
   boardsProjectSettings,
+  type FakeReply,
   FakeServer,
   jiraLink,
   jiraProjectSettings,
@@ -860,6 +861,37 @@ describe('IssuesPage', () => {
       await selectAll(root, fixture);
       expect(boardsButton(root)).toBeDefined();
       expect(bulkButtons(root)).not.toContain('Create Jira issues');
+    });
+
+    it('offers no tracker button while the Boards read is pending, then Jira once it is not mapped', async () => {
+      let answer: (reply: FakeReply) => void = () => undefined;
+      server.on(
+        'GET',
+        '/api/v0/projects/p1/boards',
+        () => new Promise<FakeReply>((resolve) => (answer = resolve)),
+      );
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(bulkButtons(root)).not.toContain('Create Jira issues');
+      expect(boardsButton(root)).toBeUndefined();
+
+      answer({ body: boardsProjectSettings({ mapped: false }) });
+      await settle(fixture);
+      expect(bulkButtons(root)).toContain('Create Jira issues');
+      expect(boardsButton(root)).toBeUndefined();
+    });
+
+    it('offers "Create Jira issues" when the Boards read fails', async () => {
+      server.on('GET', '/api/v0/projects/p1/boards', {
+        status: 500,
+        body: problem(500, 'INTERNAL'),
+      });
+      server.on('GET', '/api/v0/projects/p1/jira', { body: jiraProjectSettings() });
+      const { fixture, root } = await render();
+      await selectAll(root, fixture);
+      expect(bulkButtons(root)).toContain('Create Jira issues');
+      expect(boardsButton(root)).toBeUndefined();
     });
 
     it('offers no Boards button while the project is not mapped to Boards', async () => {

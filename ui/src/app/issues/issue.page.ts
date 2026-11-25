@@ -21,7 +21,7 @@ import { LabelPipe } from '../i18n/label.pipe';
 import { label } from '../i18n/labels';
 import { can } from '../auth/permissions';
 import { BoardsLinkView } from '../boards/boards-link';
-import { BoardsProjectState, showsBoards } from '../boards/boards-project';
+import { BoardsProjectState, findingTracker } from '../boards/boards-project';
 import { FixLinkView } from '../fixes/fix-link';
 import { FixProjectState } from '../fixes/fix-project';
 import { type FixTarget, fixPending } from '../fixes/fix-request';
@@ -90,7 +90,8 @@ export function readSnippet(raw: unknown): Snippet | null {
  * - The aside's "Jira" card shows the issue's Jira link; while it is pending, the issue is read
  *   again every 3 s, at most 40 times (R22). An issue with an Azure Boards link, or of a project
  *   mapped to Boards, shows the "Azure Boards" card in its place (one tracker per finding), read
- *   again the same way while its work item is pending.
+ *   again the same way while its work item is pending. An issue with neither link shows neither
+ *   card until the project's Boards state is read (or failed to be).
  * - A Trivy issue of main also gets a "Fix MR" card after it: the fix MR of its package, read
  *   again the same way while it waits, is prepared or is rebuilt.
  */
@@ -136,9 +137,9 @@ export class IssuePage {
     return permissions !== undefined && !can(permissions, 'issue.triage');
   });
 
-  /** The issue shows its Azure Boards card in place of the Jira one (one tracker per finding). */
-  protected boardsShown(issue: IssueDetail): boolean {
-    return showsBoards(issue, this.boards.of(this.projectId())());
+  /** The card the issue shows: Jira, Azure Boards or, while that is not known yet, neither. */
+  protected trackerOf(issue: IssueDetail): 'jira' | 'boards' | null {
+    return findingTracker(issue, this.boards.of(this.projectId())());
   }
 
   /** The directory (with its last slash) and the file name, so the name can stay whole. */

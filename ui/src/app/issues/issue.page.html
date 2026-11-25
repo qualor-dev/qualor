@@ -291,8 +291,10 @@
         </dl>
       </section>
 
-      <!-- One tracker per finding: its Boards link, or Boards for a project mapped to it; else Jira. -->
-      @if (boardsShown(i)) {
+      <!-- One tracker per finding: its Jira link; its Boards link, or Boards for a project mapped
+           to it; Jira once the project's Boards state is known; neither until then. -->
+      @let tracker = trackerOf(i);
+      @if (tracker === 'boards') {
         <q-boards-link
           [link]="i.boards"
           [linkable]="i.boardsLinkable"
@@ -301,7 +303,7 @@
           [target]="{ issueId: i.id }"
           (changed)="issue.reload()"
         />
-      } @else {
+      } @else if (tracker === 'jira') {
         <q-jira-link
           [link]="i.jira"
           [linkable]="i.jiraLinkable"
