@@ -390,11 +390,23 @@ export const item: ProbeItem = {
     }
 
     const spId = await qualorIdentityId(ctx);
-    // Server under --qualor-identity contributor: Qualor is probe-user, whose own comments it never
-    // answers, so qualor-bot writes the reply and the command.
-    const asOther = ctx.qualorAs?.identity === 'contributor' && ctx.target === 'server';
-    const commenter = asOther ? ctx.bot : ctx.user;
-    const me = await whoAmI(ctx, commenter);
+    // Qualor never answers its own comments. Under a weaker identity the user who comments can be
+    // Qualor's identity itself: probe-user on Server under contributor, and on Services under
+    // minimal-pat the PAT owner, the account of the user PAT on the bench. Another identity then
+    // writes the reply and the command: qualor-bot on Server, the bench service principal on Services.
+    const userMe = await whoAmI(ctx, ctx.user);
+    const other =
+      ctx.target === 'server'
+        ? { client: ctx.bot, label: 'qualor-bot' }
+        : ctx.entra
+          ? { client: ctx.entra('secret'), label: 'the bench service principal' }
+          : undefined;
+    const asOther =
+      ctx.qualorAs !== undefined &&
+      other !== undefined &&
+      userMe.id.toLowerCase() === spId.toLowerCase();
+    const commenter = asOther && other ? other.client : ctx.user;
+    const me = asOther ? await whoAmI(ctx, commenter) : userMe;
     addIdentity(ctx.redaction, me);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
@@ -457,9 +469,9 @@ export const item: ProbeItem = {
         `subscribe route: ${subscribed.projects.map((p) => `comment ${p.comment}, updated ${p.updated}`).join('; ') || 'no projects'}`,
       );
     }
-    if (asOther) {
+    if (asOther && other) {
       notes.push(
-        "Qualor's identity is probe-user's: qualor-bot writes the reply and the command (Qualor never answers its own comments)",
+        `Qualor's identity is the commenting user's own: ${other.label} writes the reply and the command (Qualor never answers its own comments)`,
       );
     }
     // The verdict: as before for the bot; a weaker identity's steps and refusals are recorded.
