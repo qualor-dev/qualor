@@ -1,6 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
-import picomatch from 'picomatch';
 import { z } from 'zod';
 import type { RouteDeps } from '../app';
 import { actorOf } from '../audit/recorder';
@@ -21,7 +20,7 @@ import { notFound, validationFailed } from '../http/problem';
 import { idParams, iso, noContent, noNul } from '../http/schemas';
 import { projectForUser } from '../projects/access';
 import { distributionOf } from '../versions/distribution';
-import { branchMatcher, normalizePatterns } from '../versions/branches';
+import { branchMatcher, normalizePatterns, validGlob } from '../versions/branches';
 import { parseVersionLabel } from '../versions/label';
 import { vulnerabilitySettings, type VulnerabilitySettings } from '../versions/settings';
 import { computeTracking, type TrackingReason } from '../versions/tracking';
@@ -106,21 +105,6 @@ const monitoringBody = z.strictObject({
   versionRule: versionRuleSchema,
   labelVersions: z.boolean(),
 });
-
-/** Whether picomatch can compile the glob and it holds no control character. */
-function validGlob(pattern: string): boolean {
-  for (let i = 0; i < pattern.length; i++) {
-    const code = pattern.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return false;
-  }
-  try {
-    // Without debug, picomatch swallows the RegExp error and returns a match-nothing regex.
-    picomatch.makeRe(pattern, { dot: true, debug: true });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /** Code-unit order (not locale-dependent). */
 function compare(a: string, b: string): number {

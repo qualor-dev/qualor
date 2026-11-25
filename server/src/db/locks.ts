@@ -166,4 +166,6 @@ export const LOCKS = {
   azurePollSchedule: 7_310_042,
   /** `pg_advisory_xact_lock(key)`: schedule lock of the Azure Boards create and sync jobs (sub-plan 8). */
   boardsSchedule: 7_310_043,
+  /** `pg_advisory_xact_lock(key)`: one writer of the `cleanup` settings row at a time (issue #38). */
+  cleanupSettings: 7_310_044,
 } as const;

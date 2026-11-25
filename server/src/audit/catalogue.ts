@@ -40,6 +40,7 @@ export const AUDIT_TARGET_TYPES = [
   'mcp_settings',
   'vulnerability_decision',
   'jira_connection',
+  'cleanup_settings',
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -152,6 +153,21 @@ export const PROJECT_BOARDS_CHANGED_FIELDS = [
 ] as const;
 /** 0.16 fix MRs §6.1: the names `project.fixes_updated` may list (names only). */
 export const PROJECT_FIXES_CHANGED_FIELDS = ['enabled', 'autoCreate', 'maxOpen'] as const;
+/** Issue #38: the names `project.cleanup_updated` may list (names only, never the patterns). */
+export const PROJECT_CLEANUP_CHANGED_FIELDS = [
+  'branchesDays',
+  'mergeRequestsDays',
+  'keepBranches',
+] as const;
+/** Issue #38: the names `cleanup.settings_updated` may list (names only). */
+export const CLEANUP_SETTINGS_CHANGED_FIELDS = ['branchesDays', 'mergeRequestsDays'] as const;
+/** A list of distinct names among `fields`, at most all of them. */
+function changedNames<const F extends readonly [string, ...string[]]>(fields: F) {
+  return z
+    .array(z.enum(fields))
+    .max(fields.length)
+    .refine((names) => new Set(names).size === names.length, 'A name is listed twice');
+}
 /** E1 spec: the names `mail.settings_updated` may list (names only, never a value). */
 export const MAIL_SETTINGS_CHANGED_FIELDS = [
   'server',
@@ -461,6 +477,11 @@ export const AUDIT_CATALOGUE = {
       allowedClients: z.number().int().min(0).max(100),
     }),
   },
+  // Issue #38: PUT /system/cleanup changed the server defaults.
+  'cleanup.settings_updated': {
+    target: 'cleanup_settings',
+    details: z.strictObject({ changed: changedNames(CLEANUP_SETTINGS_CHANGED_FIELDS) }),
+  },
   'organization.created': {
     target: 'organization',
     details: z.strictObject({ key: organizationKey, name: str }),
@@ -534,6 +555,11 @@ export const AUDIT_CATALOGUE = {
         .array(z.enum(PROJECT_FIXES_CHANGED_FIELDS))
         .max(PROJECT_FIXES_CHANGED_FIELDS.length),
     }),
+  },
+  // Issue #38: PUT /projects/:id/cleanup changed the project's own rules or keep patterns.
+  'project.cleanup_updated': {
+    target: 'project',
+    details: z.strictObject({ changed: changedNames(PROJECT_CLEANUP_CHANGED_FIELDS) }),
   },
   'vulnerability.decision_changed': {
     target: 'vulnerability_decision',

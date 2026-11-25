@@ -10,6 +10,7 @@ import { boardsLinkRoutes } from './boards-links';
 import { boardsProjectRoutes } from './boards-projects';
 import { authRoutes } from './auth';
 import { branchRoutes } from './branches';
+import { cleanupRoutes } from './cleanup';
 import { dependencyRoutes } from './dependencies';
 import { gateRoutes } from './gates';
 import { githubWebhookRoutes } from './github-webhooks';
@@ -72,6 +73,7 @@ export async function registerRoutes(app: FastifyInstance, deps: RouteDeps): Pro
   await app.register(projectRoutes, { prefix: '/api/v0', deps });
   await app.register(projectMemberRoutes, { prefix: '/api/v0', deps });
   await app.register(branchRoutes, { prefix: '/api/v0', deps });
+  await app.register(cleanupRoutes, { prefix: '/api/v0', deps });
   await app.register(analysisRoutes, { prefix: '/api/v0', deps, uploadSlots });
   await app.register(newCodeRoutes, { prefix: '/api/v0', deps });
   await app.register(measureRoutes, { prefix: '/api/v0', deps });

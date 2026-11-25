@@ -77,8 +77,9 @@ describe('runMigrations / pendingMigrations', () => {
     // background problem of an SCM connection, approved 2026-11-23), 0036_azure_ci_setup (the Azure
     // DevOps CI setup columns of the onboarding items and runs, approved 2026-11-24),
     // 0037_azure_boards (the Azure Boards mappings and links of the Azure DevOps design §8, sub-plan 8
-    // Ruling 1, 2026-11-25).
-    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(38);
+    // Ruling 1, 2026-11-25), 0038_branch_cleanup (issue #38, the cleanup of inactive branches and
+    // merge requests on projects, approved 2026-11-25).
+    expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(39);
     expect(await readinessCheck(t.db, MIGRATIONS_DIR)()).toBe(false);
     await runMigrations(t.pool, MIGRATIONS_DIR);
     expect(await pendingMigrations(t.db, MIGRATIONS_DIR)).toBe(0);
@@ -299,7 +300,8 @@ describe('runMigrations / pendingMigrations', () => {
       [randomUUID(), admin],
     );
 
-    // Every row of every table, as JSON, before and after (the new column aside).
+    // Every row of every table, as JSON, before and after (the new columns aside: 0006's
+    // managed_by_connection_id, 0038's cleanup columns of projects, checked below).
     const snapshot = async (): Promise<Record<string, string[]>> => {
       const { rows: tables } = await db.pool.query<{ name: string }>(
         `SELECT table_name AS name FROM information_schema.tables
@@ -308,7 +310,9 @@ describe('runMigrations / pendingMigrations', () => {
       const out: Record<string, string[]> = {};
       for (const { name } of tables) {
         const { rows } = await db.pool.query<{ r: string }>(
-          `SELECT (to_jsonb(x) - 'managed_by_connection_id')::text AS r FROM "${name}" x ORDER BY 1`,
+          `SELECT (to_jsonb(x) - 'managed_by_connection_id' - 'cleanup_branches_days'
+                   - 'cleanup_merge_requests_days' - 'cleanup_keep_branches')::text AS r
+             FROM "${name}" x ORDER BY 1`,
         );
         out[name] = rows.map((row) => row.r);
       }
@@ -382,6 +386,13 @@ describe('runMigrations / pendingMigrations', () => {
               (SELECT count(*)::int FROM project_memberships WHERE managed_by_connection_id IS NULL) AS p`,
     );
     expect(managed).toEqual([{ m: 2, p: 1 }]);
+    // 0038 (issue #38): an existing project follows the server default, which is off, and keeps
+    // no pattern: an upgrade deletes nothing more than before.
+    const { rows: cleanup } = await db.pool.query(
+      `SELECT cleanup_branches_days AS b, cleanup_merge_requests_days AS m,
+              cleanup_keep_branches AS k FROM projects`,
+    );
+    expect(cleanup).toEqual([{ b: null, m: null, k: [] }]);
   });
 
   it('adds the review tables to a database that holds AI requests and keeps every request (0016, phase 6I-3)', async () => {

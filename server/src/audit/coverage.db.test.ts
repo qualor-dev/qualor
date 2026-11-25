@@ -397,6 +397,24 @@ describe('the audit catalogue end to end (rbac-audit.md §19 criteria 7–8)', (
     ]);
   });
 
+  it('names the changed cleanup fields of a project and of the server (issue #38)', async () => {
+    const changedOf = async (action: string) =>
+      (
+        await ctx.db.execute<{ changed: string[] }>(
+          sql`SELECT details->'changed' AS changed FROM audit_events
+              WHERE action = ${action} ORDER BY seq`,
+        )
+      ).rows.map((r) => r.changed);
+    expect(await changedOf('project.cleanup_updated')).toEqual([
+      ['branchesDays', 'mergeRequestsDays', 'keepBranches'],
+      ['keepBranches'],
+    ]);
+    expect(await changedOf('cleanup.settings_updated')).toEqual([
+      ['branchesDays'],
+      ['mergeRequestsDays'],
+    ]);
+  });
+
   it('is one valid chain', async () => {
     expect(await verifyAuditChain(ctx.db)).toMatchObject({ ok: true, break: null });
   });

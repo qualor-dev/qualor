@@ -32,6 +32,24 @@ export function branchMatches(name: string, patterns: readonly string[]): boolea
   return match(name);
 }
 
+/**
+ * Whether picomatch can compile the glob and it holds no control character: the check of every
+ * stored branch pattern (the monitoring patterns, the cleanup keep patterns).
+ */
+export function validGlob(pattern: string): boolean {
+  for (let i = 0; i < pattern.length; i++) {
+    const code = pattern.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return false;
+  }
+  try {
+    // Without debug, picomatch swallows the RegExp error and returns a match-nothing regex.
+    picomatch.makeRe(pattern, { dot: true, debug: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Trims, drops empty entries and removes duplicates, keeping order. */
 export function normalizePatterns(input: readonly string[]): string[] {
   const seen = new Set<string>();

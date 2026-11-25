@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { branchMatcher, branchMatches, normalizePatterns } from './branches';
+import { branchMatcher, branchMatches, normalizePatterns, validGlob } from './branches';
 import { isTrackedBranch, type VulnerabilitySettings } from './settings';
 
 describe('branchMatches', () => {
@@ -42,6 +42,22 @@ describe('normalizePatterns', () => {
   it('trims, drops empties and dedupes', () => {
     expect(normalizePatterns([' release/* ', '', 'release/*', '  '])).toEqual(['release/*']);
   });
+});
+
+describe('validGlob', () => {
+  it.each(['release/*', 'hotfix/**', 'v1.[0-9]*', 'f/{a,b}', '.hidden', 'main'])(
+    'takes %s',
+    (pattern) => {
+      expect(validGlob(pattern)).toBe(true);
+    },
+  );
+
+  it.each(['release/[z-a]*', 'a{', '[z-a]', 'a\u0001b', 'a\u007fb', 'tab\there'])(
+    'refuses %j',
+    (pattern) => {
+      expect(validGlob(pattern)).toBe(false);
+    },
+  );
 });
 
 describe('isTrackedBranch', () => {

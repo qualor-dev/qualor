@@ -308,6 +308,41 @@ describe('Azure Boards link events (Azure DevOps design §7.8)', () => {
   });
 });
 
+describe('cleanup settings events (issue #38)', () => {
+  it('records a project change on the project, with the names of the changed fields only', () => {
+    const d = AUDIT_CATALOGUE['project.cleanup_updated'];
+    expect(d.target).toBe('project');
+    for (const [changed, ok] of [
+      [['branchesDays', 'mergeRequestsDays', 'keepBranches'], true],
+      [['keepBranches'], true],
+      [[], true],
+      [['enabled'], false],
+      [['branchesDays', 'mergeRequestsDays', 'keepBranches', 'keepBranches'], false],
+    ] as const) {
+      expect(d.details.safeParse({ changed }).success, JSON.stringify(changed)).toBe(ok);
+    }
+    expect(d.details.safeParse({ changed: ['keepBranches'], keepBranches: ['x'] }).success).toBe(
+      false,
+    );
+  });
+
+  it('records the server defaults on the cleanup settings, with the names of the changed rules only', () => {
+    const d = AUDIT_CATALOGUE['cleanup.settings_updated'];
+    expect(d.target).toBe('cleanup_settings');
+    for (const [changed, ok] of [
+      [['branchesDays', 'mergeRequestsDays'], true],
+      [['mergeRequestsDays'], true],
+      [['keepBranches'], false],
+      [['branchesDays', 'mergeRequestsDays', 'branchesDays'], false],
+    ] as const) {
+      expect(d.details.safeParse({ changed }).success, JSON.stringify(changed)).toBe(ok);
+    }
+    expect(d.details.safeParse({ changed: ['branchesDays'], branchesDays: 30 }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('the support bundle event (4E-3b §4)', () => {
   it('names no target and records the source and the size', () => {
     const d = AUDIT_CATALOGUE['support.bundle_downloaded'];

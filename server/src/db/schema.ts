@@ -504,6 +504,15 @@ export const projects = pgTable(
       onDelete: 'set null',
     }),
     scmProjectRef: text('scm_project_ref'),
+    /**
+     * Issue #38: delete branches not analysed for this many days. NULL takes the server default
+     * (instance_settings `cleanup`), 0 is off for this project.
+     */
+    cleanupBranchesDays: integer('cleanup_branches_days'),
+    /** Issue #38: the same for merge requests. */
+    cleanupMergeRequestsDays: integer('cleanup_merge_requests_days'),
+    /** Issue #38: globs of the branches the cleanup never deletes (as the monitoring patterns). */
+    cleanupKeepBranches: text('cleanup_keep_branches').array().notNull().default(emptyTextArray),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -516,6 +525,15 @@ export const projects = pgTable(
       .on(t.scmConnectionId)
       .where(sql`scm_connection_id IS NOT NULL`),
     check('projects_key_format', sql`key ~ '^[A-Za-z0-9._/:-]{1,255}$'`),
+    check(
+      'projects_cleanup_branches_days_check',
+      sql`cleanup_branches_days IS NULL OR (cleanup_branches_days BETWEEN 0 AND 3650)`,
+    ),
+    check(
+      'projects_cleanup_merge_requests_days_check',
+      sql`cleanup_merge_requests_days IS NULL OR (cleanup_merge_requests_days BETWEEN 0 AND 3650)`,
+    ),
+    check('projects_cleanup_keep_branches_check', sql`cardinality(cleanup_keep_branches) <= 20`),
   ],
 );
 

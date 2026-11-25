@@ -672,6 +672,13 @@ export async function runAuditScenario(
   };
   await call('PUT', `/projects/${main.id}/fixes/settings`, 200, fixSettings);
   await call('PUT', `/projects/${main.id}/fixes/settings`, 200, { ...fixSettings, maxOpen: 4 });
+  // project.cleanup_updated (issue #38): a rule of the project's own, then a keep pattern more.
+  const cleanup = { branchesDays: 90, mergeRequestsDays: 0, keepBranches: ['keep/*'] };
+  await call('PUT', `/projects/${main.id}/cleanup`, 200, cleanup);
+  await call('PUT', `/projects/${main.id}/cleanup`, 200, {
+    ...cleanup,
+    keepBranches: ['keep/*', 'demo/**'],
+  });
   await call('PUT', `/organizations/${org}/jira`, 200, {
     deployment: 'cloud',
     siteUrl: 'https://scenario.atlassian.net',
@@ -788,6 +795,10 @@ export async function runAuditScenario(
 
   // oauth.settings_changed (6N): the instance's MCP client policy
   await call('PUT', '/system/mcp', 200, { dcr: false, cimd: true, allowedClients: [] });
+
+  // cleanup.settings_updated (issue #38): the server default for branches, then for merge requests
+  await call('PUT', '/system/cleanup', 200, { branchesDays: 180, mergeRequestsDays: null });
+  await call('PUT', '/system/cleanup', 200, { branchesDays: 180, mergeRequestsDays: 60 });
 
   // organization.auto_fix_changed: the organisation's automatic fix suggestions, kept off (switching
   // them off needs no licence, so the community run makes the same call)

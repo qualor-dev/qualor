@@ -64,6 +64,9 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'GET /system/mail/messages': 'instance-admin',
   'GET /system/mcp': 'instance-admin',
   'PUT /system/mcp': 'instance-admin',
+  // Issue #38: the server defaults of the cleanup of inactive branches and merge requests.
+  'GET /system/cleanup': 'instance-admin',
+  'PUT /system/cleanup': 'instance-admin',
   'GET /oauth/requests/:id': 'self',
   'POST /oauth/requests/:id/decision': 'self',
   'GET /me/oauth-grants': 'self',
@@ -132,6 +135,9 @@ export const ROUTE_PERMISSIONS: Readonly<Record<string, RouteRule>> = Object.fre
   'DELETE /projects/:id/tokens/:tokenId': 'project.tokens.manage',
   'GET /projects/:id/branches': 'project.read',
   'DELETE /branches/:id': 'project.branches.delete',
+  // Issue #38: a project's own cleanup of inactive branches and merge requests.
+  'GET /projects/:id/cleanup': 'project.read',
+  'PUT /projects/:id/cleanup': 'project.settings',
   'POST /analyses': 'project.analyze',
   // 6I-2: the repository snapshot of a merge request, uploaded by the scanner after its report.
   'POST /analyses/:id/review-snapshot': 'project.analyze',
