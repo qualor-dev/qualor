@@ -102,6 +102,7 @@ class CommandFlow extends JobSteps {
         branch: target.branch,
         logger,
         authorMayReview,
+        azureAuth: target.connection?.azureAuth ?? null,
       });
     } catch (err) {
       if (!(err instanceof NothingToReview)) throw err;

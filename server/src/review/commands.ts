@@ -3,6 +3,7 @@ import type { Db, Tx } from '../db/client';
 import { analyses, branches, reviewReplies, reviewRuns, reviewSnapshots } from '../db/schema';
 import type { StoredLlmSettings } from '../llm/settings';
 import type { WorkerLogger } from '../queue/worker';
+import type { AzureAuthKind } from '../scm/azure/auth-kinds';
 import { codeSpan } from '../scm/markdown';
 import { lockBranchQueue } from '../scm/queue';
 import { recordCommandDecision, type ReplyOutcome, type ReplyRow } from './replies';
@@ -45,6 +46,8 @@ export interface CommandContext {
    * `unreadable`: Qualor's own credential could not read the rights, which blames no author.
    */
   authorMayReview: ReviewRight;
+  /** How the project's Azure DevOps connection signs in; null for GitLab and GitHub. */
+  azureAuth: AzureAuthKind | null;
 }
 
 /**
@@ -64,9 +67,19 @@ const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
 /**
  * The rights of the author could not be read: Azure DevOps refused Qualor's own identities or
  * permissions read (check 1 of 2026-11-25: a personal access token with Code only answered 401).
+ * A token is told its missing scope; a service principal, which has no scopes, the group whose
+ * members may read both.
  */
-export const RIGHTS_UNREADABLE =
-  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
+export const RIGHTS_UNREADABLE = {
+  pat: 'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).',
+  principal:
+    "Qualor could not check your rights: its Azure DevOps service principal cannot read identities and permissions (add it to the project's Contributors group).",
+} as const;
+
+/** The text of rights Qualor could not read, by how the connection signs in. */
+function rightsUnreadable(azureAuth: AzureAuthKind | null): string {
+  return (azureAuth ?? 'pat') === 'pat' ? RIGHTS_UNREADABLE.pat : RIGHTS_UNREADABLE.principal;
+}
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 /** A commit as the review summary writes it: its first 12 characters, in a code span. */
@@ -116,7 +129,7 @@ async function reviewDecision(
   ctx: CommandContext,
 ): Promise<CommandDecision> {
   if (ctx.authorMayReview === 'unreadable') {
-    return { outcome: 'not_available', text: RIGHTS_UNREADABLE };
+    return { outcome: 'not_available', text: rightsUnreadable(ctx.azureAuth) };
   }
   if (!ctx.authorMayReview) return { outcome: 'not_available', text: NOT_A_MEMBER };
   if (!reviewActive(ctx.settings, ctx.project).active) {

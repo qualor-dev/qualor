@@ -506,7 +506,8 @@ answers is not answered.
 | The note | Qualor answers |
 |---|---|
 | `qualor review` from a person who may not ask | `Only project members can ask for an AI review.` |
-| `qualor review` on Azure DevOps, and Qualor's identity cannot read permissions: give it [the scopes](./azure-devops.md#a-personal-access-token) | `Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).` |
+| `qualor review` on Azure DevOps, and Qualor's personal access token cannot read permissions: give it [the scopes](./azure-devops.md#a-personal-access-token) | `Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).` |
+| `qualor review` on Azure DevOps, and Qualor's service principal cannot read permissions: [add it to Contributors](./azure-devops.md#the-identitys-permissions) | `Qualor could not check your rights: its Azure DevOps service principal cannot read identities and permissions (add it to the project's Contributors group).` |
 | `qualor review`, and AI review was switched off after the note was written | `AI review is not switched on for this project.` |
 | `qualor review`, and the commit was reviewed (the review is done, or found the same changes as the last one) | ``This commit (`<sha>`) has been reviewed. Push a new commit to review again.`` |
 | `qualor review`, and a review of the commit is waiting or running | `A review of this commit is in progress.` |

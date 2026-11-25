@@ -27,6 +27,7 @@ import {
 import { createLlmRuntime } from '../llm/job';
 import { readLlmSettings } from '../llm/settings';
 import { runUntilIdle } from '../queue/worker';
+import type { AzureAuthKind } from '../scm/azure/auth-kinds';
 import { codeSpan } from '../scm/markdown';
 import { lockBranchQueue, SCM_QUEUE } from '../scm/queue';
 import { parseInternalHosts } from '../scm/url';
@@ -217,6 +218,7 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
   const contextOf = async (
     mr: Mr,
     authorMayReview: ReviewRight = true,
+    azureAuth: AzureAuthKind | null = null,
   ): Promise<CommandContext> => ({
     settings: await readLlmSettings(h.ctx.db),
     project: {
@@ -227,9 +229,14 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
     branch: { id: mr.branchId },
     logger: silentLogger,
     authorMayReview,
+    azureAuth,
   });
-  const decide = async (mr: Mr, row: ReplyRow, authorMayReview: ReviewRight = true) =>
-    handleCommand(h.ctx.db, row, await contextOf(mr, authorMayReview));
+  const decide = async (
+    mr: Mr,
+    row: ReplyRow,
+    authorMayReview: ReviewRight = true,
+    azureAuth: AzureAuthKind | null = null,
+  ) => handleCommand(h.ctx.db, row, await contextOf(mr, authorMayReview, azureAuth));
 
   const jobDeps = (): ReviewJobDeps => ({
     db: h.ctx.db,
@@ -516,14 +523,24 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
     });
     const before = await runsOfBranch(mr.branchId);
     const row = await command(mr, 'review', 'octocat');
-    expect(await decide(mr, row, 'unreadable')).toEqual({
+    expect(await decide(mr, row, 'unreadable', 'pat')).toEqual({
       outcome: 'not_available',
-      text: RIGHTS_UNREADABLE,
+      text: RIGHTS_UNREADABLE.pat,
     });
     expect(await rowById(row.id)).toMatchObject({
       outcome: 'not_available',
-      answer: RIGHTS_UNREADABLE,
+      answer: RIGHTS_UNREADABLE.pat,
     });
+    expect(RIGHTS_UNREADABLE.pat).toContain('Identity (Read) scope');
+    // A service principal has no scopes: its text names the group that may read.
+    for (const auth of ['service_principal_secret', 'service_principal_certificate'] as const) {
+      const asked = await command(mr, 'review', `principal-${auth}`);
+      expect(await decide(mr, asked, 'unreadable', auth), auth).toEqual({
+        outcome: 'not_available',
+        text: RIGHTS_UNREADABLE.principal,
+      });
+    }
+    expect(RIGHTS_UNREADABLE.principal).not.toMatch(/token|scope/);
     expect(await runsOfBranch(mr.branchId)).toEqual(before);
     // An author who may not is still told so.
     expect(await decide(mr, await command(mr, 'review', 'eve'), false)).toEqual({

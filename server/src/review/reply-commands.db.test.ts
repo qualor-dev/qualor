@@ -918,9 +918,9 @@ describe('the answer job (6I-4)', () => {
       expect(await commandRow(mr.branchId, sent.noteId)).toMatchObject({
         status: 'done',
         outcome: 'not_available',
-        answer: RIGHTS_UNREADABLE,
+        answer: RIGHTS_UNREADABLE.pat,
       });
-      expect(answerIn(mr, sent.threadId!).content).toBe(commandNote(row.id, RIGHTS_UNREADABLE));
+      expect(answerIn(mr, sent.threadId!).content).toBe(commandNote(row.id, RIGHTS_UNREADABLE.pat));
       expect(await runOf(mr.analysisId)).toEqual(before);
     });
 
