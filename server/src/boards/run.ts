@@ -16,6 +16,7 @@ import {
   boardsPassWanted,
   scheduleBoardsSync,
 } from './jobs';
+import { runBoardsPass } from './sync';
 
 /** The `boards` queue's own worker runs two jobs at once ... */
 export const BOARDS_WORKER_CONCURRENCY = 2;
@@ -89,16 +90,14 @@ async function runCreate(deps: BoardsJobDeps, connectionId: string): Promise<voi
 }
 
 /**
- * One pass, then the next one 15 minutes out, from `finally` so a pass that throws keeps its
- * schedule too, while the connection still wants a pass (a mapping or a live link): a pass whose
- * connection is gone ends without an error and queues nothing.
- *
- * Plan Task 6: until the pass's steps exist (Task 7), the pass runs the create step alone.
+ * One pass ({@link runBoardsPass}), then the next one 15 minutes out, from `finally` so a pass that
+ * throws keeps its schedule too, while the connection still wants a pass (a mapping or a live
+ * link): a pass whose connection is gone ends without an error and queues nothing.
  */
 async function runSync(deps: BoardsJobDeps, connectionId: string): Promise<void> {
   try {
     const ctx = await openBoardsRun(deps, connectionId);
-    if (ctx !== null) await createPendingWorkItems(ctx);
+    if (ctx !== null) await runBoardsPass(ctx);
   } finally {
     if (await boardsPassWanted(deps.db, connectionId)) {
       await scheduleBoardsSync(deps.db, connectionId, BOARDS_SYNC_INTERVAL_SECONDS);

@@ -1059,6 +1059,11 @@ export class AzureDevOpsClient {
     return this.#requestCount;
   }
 
+  /** Requests the budget still allows. */
+  get remaining(): number {
+    return Math.max(0, (this.#options.maxRequests ?? MAX_AZURE_REQUESTS) - this.#requestCount);
+  }
+
   async connectionData(): Promise<AzureIdentity> {
     const answer = await this.#get(
       '/_apis/connectionData',
@@ -2101,17 +2106,25 @@ export class AzureDevOpsClient {
   /**
    * Reads up to {@link MAX_WORK_ITEM_BATCH} work items on the organisation route (it reads items
    * moved to another project), with `errorPolicy: 'omit'` and {@link WORK_ITEM_BATCH_FIELDS}: a
-   * deleted or unknown id is simply absent (probe item 30g).
+   * deleted or unknown id is simply absent (probe item 30g). With `description: false` the
+   * description is not asked for (it is null): a state read of 200 items stays far below 8 MiB.
    */
-  async workItemsBatch(ids: readonly number[]): Promise<AzureWorkItem[]> {
+  async workItemsBatch(
+    ids: readonly number[],
+    options: { description?: boolean } = {},
+  ): Promise<AzureWorkItem[]> {
     if (ids.length > MAX_WORK_ITEM_BATCH) {
       throw new AzureError('refused', AZURE_TEXT.workItemBatch, { reason: 'invalid_input' });
     }
     for (const id of ids) checkWorkItemId(id);
     if (ids.length === 0) return [];
+    const fields =
+      options.description === false
+        ? WORK_ITEM_BATCH_FIELDS.filter((f) => f !== 'System.Description')
+        : WORK_ITEM_BATCH_FIELDS;
     const answer = await this.#call('POST', '/_apis/wit/workitemsbatch', workItemBatch, {
       ids: [...ids],
-      fields: WORK_ITEM_BATCH_FIELDS,
+      fields,
       errorPolicy: 'omit',
     });
     return answer.value.filter((w) => w !== null).map(workItemOf);

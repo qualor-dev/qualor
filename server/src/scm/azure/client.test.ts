@@ -518,6 +518,16 @@ describe('the request budget (Azure DevOps design §7.4: 400 per job)', () => {
     expect(services.requests).toHaveLength(2);
   });
 
+  it('says how many requests the budget still allows', async () => {
+    const client = clientOf(services, undefined, { maxRequests: 2 });
+    expect(client.remaining).toBe(2);
+    await client.connectionData();
+    expect(client.remaining).toBe(1);
+    await client.connectionData();
+    await failure(client.connectionData());
+    expect(client.remaining).toBe(0);
+  });
+
   it('allows 400 by default', async () => {
     expect(MAX_AZURE_REQUESTS).toBe(400);
     const client = new AzureDevOpsClient(
@@ -3197,6 +3207,21 @@ describe('the Boards calls (sub-plan 8, task 2; probe items 13 and 30)', () => {
       expect(items).toEqual([
         read(a.id, 2, 'Bug', ['qualor', 'team-a']),
         read(b.id, 1, 'Issue', ['qualor']),
+      ]);
+    });
+
+    it('batch without the description: the other four fields only, the description null', async () => {
+      const client = clientOf(fake);
+      const a = await client.createWorkItem(agile.id, 'Bug', ops('a'));
+      fake.clearRequests();
+      const items = await client.workItemsBatch([a.id], { description: false });
+      expect(JSON.parse(lastRequest().body)).toEqual({
+        ids: [a.id],
+        fields: BATCH_FIELDS.filter((f) => f !== 'System.Description'),
+        errorPolicy: 'omit',
+      });
+      expect(items).toEqual([
+        expect.objectContaining({ id: a.id, state: 'New', typeName: 'Bug', description: null }),
       ]);
     });
 

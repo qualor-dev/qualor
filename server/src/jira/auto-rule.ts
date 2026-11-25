@@ -57,12 +57,14 @@ export function qualifyingRow(min: JiraAutoSeverity | null, exploited: boolean, 
  * the oldest qualifying row first. A pair qualifies with a row on a tracked target
  * (`trackedTargets`: none while monitoring is off for the instance or the project) that is not
  * ignored, whose effective decision is open and that is new and severe or exploited
- * ({@link qualifyingRow}), and no link row in any state (`dismissed` included). `exploited` is the
- * rule's own as it applies now: stored and `vuln.priority` active.
+ * ({@link qualifyingRow}), and no link row in any state (`dismissed` included) of either tracker:
+ * a Jira link or an Azure Boards link (design §7.8: a finding has at most one tracker link). The
+ * Azure Boards rule asks the same with its own mapping. `exploited` is the rule's own as it applies
+ * now: stored and `vuln.priority` active.
  */
 export async function qualifyingPairs(
   db: Executor,
-  mapping: JiraMappingRow,
+  mapping: Pick<JiraMappingRow, 'projectId' | 'autoMinSeverity' | 'autoSince'>,
   options: { exploited: boolean; limit: number },
 ): Promise<VulnerabilityPair[]> {
   const { projectId, autoMinSeverity: min, autoSince: since } = mapping;
@@ -78,6 +80,10 @@ export async function qualifyingPairs(
          SELECT 1 FROM jira_links l
           WHERE l.project_id = ${projectId} AND l.kind = 'vulnerability'
             AND l.package_name = r.package_name AND l.vulnerability_id = r.vulnerability_id)
+       AND NOT EXISTS (
+         SELECT 1 FROM boards_links b
+          WHERE b.project_id = ${projectId} AND b.kind = 'vulnerability'
+            AND b.package_name = r.package_name AND b.vulnerability_id = r.vulnerability_id)
      GROUP BY package_name, vulnerability_id
      ORDER BY min(first_seen_at), package_name COLLATE "C", vulnerability_id COLLATE "C"
      LIMIT ${options.limit}`);

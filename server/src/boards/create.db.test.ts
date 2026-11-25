@@ -733,7 +733,7 @@ describe('the Boards create job (design §7.8, plan Task 6)', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
-  it('the pass (create step only until Task 7): creates, then queues the next pass while wanted', async () => {
+  it('the pass creates, then queues the next pass while wanted', async () => {
     const queuedSyncs = () =>
       db()
         .select()
