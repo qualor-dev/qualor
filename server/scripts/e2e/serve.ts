@@ -89,6 +89,11 @@ const AZURE_REPOSITORIES = [
   { id: 'a2e00000-0000-4000-8000-000000000001', name: 'storefront', projectName: 'Shop' },
   { id: 'a2e00000-0000-4000-8000-000000000002', name: 'ledger', projectName: 'Billing' },
 ];
+/**
+ * Azure Boards (sub-plan 8): the Agile project of the fake Azure DevOps that azure-boards.spec.ts
+ * maps, and the area below its root (ui/e2e/seed-data.ts AZURE.boards).
+ */
+const AZURE_BOARDS = { project: 'Fabrikam', area: 'Security' };
 
 /** The fake GitLab project Payments API is mapped to, and its merge request !42 (seed.ts). */
 const GITLAB_PROJECT = { id: 4711, path: 'acme/payments-api' };
@@ -273,6 +278,8 @@ async function main(): Promise<void> {
     },
     repositories: AZURE_REPOSITORIES,
   });
+  const boardsProject = azure.addProject({ name: AZURE_BOARDS.project, process: 'agile' });
+  azure.addClassificationNode(boardsProject.id, 'areas', AZURE_BOARDS.area);
   const azureCaDir = mkdtempSync(path.join(tmpdir(), 'qualor-e2e-azure-'));
   const azureCaFile = path.join(azureCaDir, 'test-ca.pem');
   writeFileSync(azureCaFile, TEST_CA_PEM);

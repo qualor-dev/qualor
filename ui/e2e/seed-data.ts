@@ -108,7 +108,8 @@ export const CHAT_URL = `http://127.0.0.1:${CHAT_PORT}`;
 /**
  * The fake Azure DevOps of server/scripts/e2e/serve.ts and its service principal (passed to it by
  * playwright.config.ts). The seed holds a PAT connection to ${address}; a test adds one with the
- * principal's secret.
+ * principal's secret. `boards` is the Agile project serve.ts adds for Azure Boards, with one area
+ * below its root (in the create's form).
  */
 export const AZURE = {
   address: 'https://dev.azure.com/probe-org',
@@ -116,6 +117,7 @@ export const AZURE = {
   client: 'a2e00000-0000-4000-8000-0000000000b2',
   secret: 'e2e-azure-client-secret',
   repository: { id: 'a2e00000-0000-4000-8000-000000000001', label: 'Shop / storefront' },
+  boards: { project: 'Fabrikam', area: 'Fabrikam\\Security' },
 } as const;
 
 /**
