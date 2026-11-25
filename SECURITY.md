@@ -40,7 +40,7 @@ files through their `SHA256SUMS`. The public key is `cosign.pub` in the Qualor r
 <https://qualor.dev/cosign.pub>. Verify with that key, not with the copy a release carries.
 
 Every command below carries `--insecure-ignore-tlog=true`. The signatures are checked against our
-public key only and are not uploaded to the public Rekor transparency log, so without the flag
+public key only and are not recorded in the public Rekor transparency log, so without the flag
 cosign looks for a log entry and fails.
 
 ```sh

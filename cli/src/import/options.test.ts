@@ -12,6 +12,8 @@ const SQU_ENV = ['squ_env', '0123456789'].join('');
 const SQU_FLAG = ['squ_flag', '0123456789'].join('');
 const SQU_FLAG_ORDER = ['squ_flag_order', '0123'].join('');
 const QLR_PAT = ['qlr_pat_', '0123456789'].join('');
+/** A token-shaped value built at run time, so this file holds no token literal (Gitleaks). */
+const pat = (rest: string): string => ['qlr_pat_', rest].join('');
 
 const dir = mkdtempSync(path.join(os.tmpdir(), 'qualor-import-options-'));
 const flags = (over: Partial<ImportFlags> = {}): ImportFlags => ({
@@ -85,26 +87,24 @@ describe('resolveImportSetup (import-sonarqube.md §3, §14)', () => {
   });
 
   it('reads the Qualor token from --qualor-token-file before QUALOR_TOKEN', () => {
-    writeFileSync(path.join(dir, 'qtok'), 'qlr_pat_file0123456789\n');
-    expect(setup(flags({ qualorTokenFile: 'qtok' })).s.qualor.token).toBe('qlr_pat_file0123456789');
+    writeFileSync(path.join(dir, 'qtok'), `${pat('file0123456789')}\n`);
+    expect(setup(flags({ qualorTokenFile: 'qtok' })).s.qualor.token).toBe(pat('file0123456789'));
   });
 
   it('takes the Qualor token from QUALOR_TOKEN_FD, ignoring QUALOR_TOKEN, and closes it', () => {
-    writeFileSync(path.join(dir, 'fdtok'), 'qlr_pat_fromfd0123456789\n');
+    writeFileSync(path.join(dir, 'fdtok'), `${pat('fromfd0123456789')}\n`);
     const open = openSync(path.join(dir, 'fdtok'), 'r');
-    const e = { ...env, QUALOR_TOKEN_FD: String(open), QUALOR_TOKEN: 'qlr_pat_other0123456789' };
-    expect(setup(flags(), e).s.qualor.token).toBe('qlr_pat_fromfd0123456789');
+    const e = { ...env, QUALOR_TOKEN_FD: String(open), QUALOR_TOKEN: pat('other0123456789') };
+    expect(setup(flags(), e).s.qualor.token).toBe(pat('fromfd0123456789'));
     expect(() => fstatSync(open)).toThrow();
   });
 
   it('--qualor-token-file wins over the descriptor, which is closed all the same', () => {
-    writeFileSync(path.join(dir, 'qtok'), 'qlr_pat_file0123456789\n');
-    writeFileSync(path.join(dir, 'fdtok'), 'qlr_pat_fromfd0123456789\n');
+    writeFileSync(path.join(dir, 'qtok'), `${pat('file0123456789')}\n`);
+    writeFileSync(path.join(dir, 'fdtok'), `${pat('fromfd0123456789')}\n`);
     const open = openSync(path.join(dir, 'fdtok'), 'r');
     const e = { ...env, QUALOR_TOKEN_FD: String(open) };
-    expect(setup(flags({ qualorTokenFile: 'qtok' }), e).s.qualor.token).toBe(
-      'qlr_pat_file0123456789',
-    );
+    expect(setup(flags({ qualorTokenFile: 'qtok' }), e).s.qualor.token).toBe(pat('file0123456789'));
     expect(() => fstatSync(open)).toThrow();
   });
 
