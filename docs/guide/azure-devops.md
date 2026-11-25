@@ -5,6 +5,8 @@ An organisation administrator adds a connection, tests it and maps each Qualor p
 repository. A project admin can also map the project to [Azure Boards](#azure-boards), so that
 findings become work items.
 
+Qualor 0.17 was tested end to end on Azure DevOps Services and on Azure DevOps Server 20.0.
+
 ## Before you start
 
 - An organisation administrator account in Qualor.
