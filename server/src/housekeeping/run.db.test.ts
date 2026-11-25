@@ -198,6 +198,7 @@ describe('daily housekeeping (data-model.md §7)', () => {
     const errors: { obj: object; msg: string }[] = [];
     const logger = {
       info: () => undefined,
+      warn: () => undefined,
       error: (obj: object, msg: string) => errors.push({ obj, msg }),
     };
     try {

@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mainBranchId, seedIssue, seedRule } from '../../test/issues';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { file, finding, reportWith } from '../../test/reports';
@@ -19,9 +19,21 @@ import {
   reviewRuns,
   scmConnections,
 } from '../db/schema';
-import { runHousekeeping } from '../housekeeping/run';
+import {
+  ensureHousekeepingScheduled,
+  HOUSEKEEPING_QUEUE,
+  housekeepingHandlers,
+  runHousekeeping,
+} from '../housekeeping/run';
 import { analysisConcurrencyKey, ANALYSIS_QUEUE } from '../ingest/service';
-import { applyCleanupPlan, cleanInactiveBranches, CLEANUP_BATCH, readCleanupPlan } from './run';
+import { runUntilIdle } from '../queue/worker';
+import {
+  applyCleanupPlan,
+  cleanInactiveBranches,
+  CLEANUP_BATCH,
+  CLEANUP_CHUNK,
+  readCleanupPlan,
+} from './run';
 import { CLEANUP_SETTINGS_KEY, writeCleanupDefaults } from './settings';
 
 const ENVELOPE = { v: 1 as const, iv: 'aXY=', ct: 'Y3Q=', tag: 'dGFn' };
@@ -94,6 +106,41 @@ describe('the cleanup of inactive branches and merge requests (issue #38)', () =
       .from(analyses)
       .where(eq(analyses.branchId, branchId));
     return row!.id;
+  };
+
+  /** A queued upload of the project: its branch is unknown until the job reads the report (R3). */
+  const queueAnalysis = async (projectId: string) => {
+    const id = uuidv7();
+    await db().execute(sql`
+      INSERT INTO jobs (id, queue, concurrency_key, payload)
+      VALUES (${id}, ${ANALYSIS_QUEUE}, ${analysisConcurrencyKey(projectId)}, '{}'::jsonb)`);
+    return id;
+  };
+
+  /**
+   * Runs `body` while deleting the branch named `name` also runs `action` (PL/pgSQL), `timing` the
+   * row's delete: what happens beside one chunk of the cleanup, in the middle of a run.
+   */
+  const onDeleteOf = async (
+    name: string,
+    timing: 'BEFORE' | 'AFTER',
+    action: string,
+    body: () => Promise<void>,
+  ) => {
+    await db().execute(
+      sql.raw(`CREATE FUNCTION cleanup_test_hook() RETURNS trigger LANGUAGE plpgsql
+                 AS $$ BEGIN ${action} RETURN OLD; END $$`),
+    );
+    await db().execute(
+      sql.raw(`CREATE TRIGGER cleanup_test_hook ${timing} DELETE ON branches FOR EACH ROW
+                 WHEN (OLD.name = '${name}') EXECUTE FUNCTION cleanup_test_hook()`),
+    );
+    try {
+      await body();
+    } finally {
+      await db().execute(sql.raw('DROP TRIGGER cleanup_test_hook ON branches'));
+      await db().execute(sql.raw('DROP FUNCTION cleanup_test_hook()'));
+    }
   };
 
   beforeAll(async () => {
@@ -212,10 +259,7 @@ describe('the cleanup of inactive branches and merge requests (issue #38)', () =
       await seed(p.id, 'branch', ['feature/x'], 40);
       await seed(p.id, 'merge_request', ['3'], 40);
     }
-    // A queued upload: its branch is unknown until the job reads the report (ruling R3).
-    await db().execute(sql`
-      INSERT INTO jobs (id, queue, concurrency_key, payload)
-      VALUES (${uuidv7()}, ${ANALYSIS_QUEUE}, ${analysisConcurrencyKey(busy.id)}, '{}'::jsonb)`);
+    await queueAnalysis(busy.id);
     expect(await cleanInactiveBranches(db())).toEqual({ branches: 1, mergeRequests: 1 });
     expect(await remaining(busy.id)).toEqual(['branch feature/x', 'branch main', 'mr 3']);
 
@@ -305,6 +349,113 @@ describe('the cleanup of inactive branches and merge requests (issue #38)', () =
     expect(left).toHaveLength(CLEANUP_BATCH + 11);
     expect(left).not.toContain('branch old/1');
     expect(left).not.toContain('branch old/2');
+  });
+
+  it('deletes in chunks, and stops at the next chunk once the settings changed', async () => {
+    expect(CLEANUP_CHUNK).toBe(50);
+    const p = await project({ branchesDays: 30 });
+    const names = Array.from(
+      { length: 2 * CLEANUP_CHUNK + 10 },
+      (_, i) => `feature/${String(i).padStart(3, '0')}`,
+    );
+    await seed(p.id, 'branch', names, 40);
+    // A project admin switches the rule off while the first chunk is deleted.
+    await onDeleteOf(
+      'feature/000',
+      'AFTER',
+      'UPDATE projects SET cleanup_branches_days = 0 WHERE id = OLD.project_id;',
+      async () => {
+        expect(await cleanInactiveBranches(db())).toEqual({
+          branches: CLEANUP_CHUNK,
+          mergeRequests: 0,
+        });
+      },
+    );
+    const left = await remaining(p.id);
+    expect(left).toHaveLength(CLEANUP_CHUNK + 10 + 1);
+    expect(left).not.toContain('branch feature/000');
+    expect(left).toContain(`branch feature/0${CLEANUP_CHUNK}`);
+  });
+
+  it('tries a project an analysis kept busy again at the end of the run, and logs those still busy once', async () => {
+    await writeCleanupDefaults(db(), { branchesDays: 30, mergeRequestsDays: 30 });
+    // Ids grow with creation (UUIDv7): the run takes the projects in this order.
+    const freed = await project();
+    const busy = await project();
+    const after = await project();
+    await seed(freed.id, 'branch', ['feature/x'], 40);
+    await seed(busy.id, 'branch', ['feature/y'], 40);
+    await seed(busy.id, 'merge_request', ['4'], 40);
+    await seed(after.id, 'branch', ['frees-the-first'], 40);
+    const freedJob = await queueAnalysis(freed.id);
+    await queueAnalysis(busy.id);
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    // The first project's analysis ends while the run deletes the third project's branch.
+    await onDeleteOf(
+      'frees-the-first',
+      'AFTER',
+      `UPDATE jobs SET status = 'succeeded' WHERE id = '${freedJob}';`,
+      async () => {
+        expect(await cleanInactiveBranches(db(), { logger })).toEqual({
+          branches: 2,
+          mergeRequests: 0,
+        });
+      },
+    );
+    expect(await remaining(freed.id)).toEqual(['branch main']);
+    expect(await remaining(busy.id)).toEqual(['branch feature/y', 'branch main', 'mr 4']);
+    expect(await remaining(after.id)).toEqual(['branch main']);
+    expect(logger.info.mock.calls).toEqual([
+      [
+        { component: 'branch-cleanup', projectIds: [busy.id] },
+        'cleanup skipped projects while an analysis of them waits or runs; the next run tries them again',
+      ],
+    ]);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('a chunk that fails stops its project only, and housekeeping logs it and completes', async () => {
+    await writeCleanupDefaults(db(), { branchesDays: 30, mergeRequestsDays: null });
+    const failing = await project();
+    const next = await project();
+    await seed(failing.id, 'branch', ['feature/a', 'explode', 'feature/b'], 40);
+    await seed(next.id, 'branch', ['feature/c'], 40);
+    // An expired session: a step of the same run, which still completes.
+    await db().execute(sql`
+      INSERT INTO sessions (id, user_id, expires_at)
+      VALUES (decode('c1ea', 'hex'), ${h.ctx.adminId}, now() - interval '1 minute')`);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    // A statement timeout, a lock wait or any other error of one chunk.
+    await onDeleteOf('explode', 'BEFORE', `RAISE EXCEPTION 'boom';`, async () => {
+      await ensureHousekeepingScheduled(db());
+      expect(
+        await runUntilIdle(db(), housekeepingHandlers({ db: db(), logger }), h.ctx.app.log),
+      ).toBe(1);
+    });
+    // The run succeeded, and the next one waits for tomorrow.
+    const housekeeping = await db().execute<{ status: string }>(
+      sql`SELECT status FROM jobs WHERE queue = ${HOUSEKEEPING_QUEUE} ORDER BY status`,
+    );
+    expect(housekeeping.rows.map((r) => r.status)).toEqual(['queued', 'succeeded']);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ sessions: 1, inactiveBranches: 1, inactiveMergeRequests: 0 }),
+      'housekeeping finished',
+    );
+    expect(await remaining(failing.id)).toEqual([
+      'branch explode',
+      'branch feature/a',
+      'branch feature/b',
+      'branch main',
+    ]);
+    expect(await remaining(next.id)).toEqual(['branch main']);
+    // Logged once, with the project and the error's code: no branch name, no error text.
+    expect(logger.warn.mock.calls).toEqual([
+      [
+        { component: 'branch-cleanup', projectId: failing.id, code: 'P0001' },
+        'the cleanup of a project failed; the next run tries it again',
+      ],
+    ]);
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it('keeps a branch whose analysis a project version takes its inventory from', async () => {
@@ -516,11 +667,11 @@ describe('the cleanup of inactive branches and merge requests (issue #38)', () =
     const p = await project({ branchesDays: 30, mergeRequestsDays: 30 });
     await seed(p.id, 'branch', ['feature/x'], 10);
     await seed(p.id, 'merge_request', ['1'], 10);
-    expect(await cleanInactiveBranches(db(), new Date(Date.now() + 15 * DAY_MS))).toEqual({
+    expect(await cleanInactiveBranches(db(), { now: new Date(Date.now() + 15 * DAY_MS) })).toEqual({
       branches: 0,
       mergeRequests: 0,
     });
-    expect(await cleanInactiveBranches(db(), new Date(Date.now() + 25 * DAY_MS))).toEqual({
+    expect(await cleanInactiveBranches(db(), { now: new Date(Date.now() + 25 * DAY_MS) })).toEqual({
       branches: 1,
       mergeRequests: 1,
     });

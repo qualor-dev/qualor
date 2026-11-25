@@ -136,7 +136,28 @@ export interface HousekeepingResult {
 
 export interface HousekeepingLogger {
   info: (obj: object, msg: string) => void;
+  warn: (obj: object, msg: string) => void;
   error: (obj: object, msg: string) => void;
+}
+
+/**
+ * Issue #38, the last step of a run: it deletes whole histories, so it runs after the cheap steps,
+ * and an error of it is logged (the error's code only: no branch name, no error text) and ends it
+ * for the day. The run still completes; the next one starts it again.
+ */
+async function cleanupStep(
+  db: Db,
+  logger: HousekeepingLogger | undefined,
+): Promise<{ branches: number; mergeRequests: number }> {
+  try {
+    return await cleanInactiveBranches(db, { logger });
+  } catch (err) {
+    logger?.warn(
+      { component: 'branch-cleanup', code: pgErrorCode(err) ?? null },
+      'the cleanup of inactive branches and merge requests failed; the next run starts it again',
+    );
+    return { branches: 0, mergeRequests: 0 };
+  }
 }
 
 /**
@@ -225,7 +246,8 @@ export async function cleanOAuth(
  *   cascade to those analyses, which this rule keeps);
  * - an analysed branch or merge request only under the cleanup rule a project has in force (issue
  *   #38, off by default), with its analyses; never the main branch nor a tracked or kept one, and
- *   skipping what an analysis or review still needs (cleanInactiveBranches);
+ *   skipping what an analysis or review still needs (cleanInactiveBranches). It runs last, and its
+ *   error never fails the run (cleanupStep);
  * - a dead analysis job only once its analysis left `queued`/`processing`
  *   (`reconcileDeadAnalyses` reads it);
  * - a webhook delivery a delivery worker holds locked is skipped;
@@ -295,7 +317,6 @@ export async function runHousekeeping(
          LIMIT ${limit}
          FOR UPDATE OF b SKIP LOCKED)`,
   );
-  const inactive = await cleanInactiveBranches(db);
   const webhookDeliveries = await deleteInBatches(
     db,
     BATCH,
@@ -430,6 +451,7 @@ export async function runHousekeeping(
   const accountTokens = await pruneAccountTokens(db);
   const clock = await db.execute<{ now: Date | string }>(sql`SELECT now() AS now`);
   const oauth = await cleanOAuth(db, new Date(clock.rows[0]?.now ?? Date.now()));
+  const inactive = await cleanupStep(db, logger);
   return {
     analysisReports,
     closedIssues,
