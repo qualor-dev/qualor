@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pruneAccountTokens } from '../auth/account-tokens';
 import { pruneAuditEvents } from '../audit/retention';
 import { AuditAnchorMalformedError, readAuditSettings } from '../audit/settings';
+import { cleanInactiveBranches } from '../cleanup/run';
 import type { Db, Executor } from '../db/client';
 import { uuidv7 } from '../db/ids';
 import { pgErrorCode } from '../db/errors';
@@ -100,6 +101,9 @@ export interface HousekeepingResult {
   analysisReports: number;
   closedIssues: number;
   branches: number;
+  /** Branches and merge requests not analysed within their project's cleanup days (issue #38). */
+  inactiveBranches: number;
+  inactiveMergeRequests: number;
   webhookDeliveries: number;
   /** Pending deliveries failed because their next attempt's job was lost. */
   stalledWebhookDeliveries: number;
@@ -217,8 +221,11 @@ export async function cleanOAuth(
  * - closed issues and analysis-less branches only on branches no ingestion currently holds (the
  *   ingestion transaction locks its branch row from its upsert to its commit; `SKIP LOCKED` leaves
  *   those branches to the next run, so tracking never loses a candidate it has already loaded);
- * - a branch only if no analysis row at all refers to it (deleting it would cascade to those
- *   analyses, which are kept forever);
+ * - a branch without an analysis only if no analysis row at all refers to it (deleting it would
+ *   cascade to those analyses, which this rule keeps);
+ * - an analysed branch or merge request only under the cleanup rule a project has in force (issue
+ *   #38, off by default), with its analyses; never the main branch nor a tracked or kept one, and
+ *   skipping what an analysis or review still needs (cleanInactiveBranches);
  * - a dead analysis job only once its analysis left `queued`/`processing`
  *   (`reconcileDeadAnalyses` reads it);
  * - a webhook delivery a delivery worker holds locked is skipped;
@@ -288,6 +295,7 @@ export async function runHousekeeping(
          LIMIT ${limit}
          FOR UPDATE OF b SKIP LOCKED)`,
   );
+  const inactive = await cleanInactiveBranches(db);
   const webhookDeliveries = await deleteInBatches(
     db,
     BATCH,
@@ -426,6 +434,8 @@ export async function runHousekeeping(
     analysisReports,
     closedIssues,
     branches,
+    inactiveBranches: inactive.branches,
+    inactiveMergeRequests: inactive.mergeRequests,
     webhookDeliveries,
     stalledWebhookDeliveries,
     llmRequests,
