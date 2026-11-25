@@ -22,6 +22,7 @@ import { branches, jobs, llmRequests, reviewReplies } from '../db/schema';
 import { enqueue } from '../queue/queue';
 import { codeSpan, firstLineOf, markerOf, replyMarker } from '../scm/markdown';
 import { SCM_CIRCUIT_FAILURES } from '../scm/runtime';
+import { RIGHTS_UNREADABLE } from './commands';
 import { commandNote } from './render';
 import { AI_REPLY_QUEUE, reconcileStuckReplies, replyKey } from './reply-queue';
 import { AI_REVIEW_QUEUE } from './runs';
@@ -43,8 +44,6 @@ const RIGHTS_LOOKUP = /\/members\/all\/|\/collaborators\/[^/]+\/permission/;
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const NOT_AVAILABLE = 'Auto-fix is not switched on for this project.';
 const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
-const RIGHTS_UNREADABLE =
-  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 const requested = (sha: string) => `Reviewing this commit (${codeSpan(sha.slice(0, 12))}).`;
 /** The review of HEAD ended without its findings: a command restarts it. */

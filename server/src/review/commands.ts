@@ -65,7 +65,7 @@ const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
  * The rights of the author could not be read: Azure DevOps refused Qualor's own identities or
  * permissions read (check 1 of 2026-11-25: a personal access token with Code only answered 401).
  */
-const RIGHTS_UNREADABLE =
+export const RIGHTS_UNREADABLE =
   'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const IN_PROGRESS = 'A review of this commit is in progress.';

@@ -105,12 +105,14 @@ export function itemState(item: RunItem, run: SetupRun | null): ItemState {
 
 /**
  * Why a repository failed, in the page's own words: the server's are English (setup-run.ts).
- * The run's `connection` names the provider when it is known. The texts never read the server's
- * message, only its code and, for a refusal, the stage it happened in.
+ * The run's `connection` names the provider (and on Azure DevOps how it signs in) when it is known.
+ * The texts never read the server's message, only its code and, for a refusal, the stage it
+ * happened in.
  */
 export function errorText(
   item: RunItem,
-  connection: Pick<Connection, 'provider' | 'baseUrl'> | null,
+  connection:
+    (Pick<Connection, 'provider' | 'baseUrl'> & Partial<Pick<Connection, 'azure'>>) | null,
 ): string {
   const error = item.error;
   const who =
@@ -128,7 +130,7 @@ export function errorText(
     case 'project_gone':
       return $localize`:@@addRepos.error.projectGone:The project was deleted.`;
     case 'permission':
-      return permissionText(connection?.provider ?? null, error.stage);
+      return permissionText(connection, error.stage);
     case 'rate_limited':
       return $localize`:@@addRepos.error.rateLimited:${who}:provider: is rate limiting Qualor. Try again later.`;
     case 'unavailable':
@@ -156,20 +158,28 @@ export function errorText(
 
 /**
  * What a refused permission needs, by provider and stage: a read (or an unknown provider or
- * stage) says the same for all; a change names what CI setup needs on the provider.
+ * stage) says the same for all; a change names what CI setup needs on the provider. On Azure
+ * DevOps a personal access token without the pipelines scopes is refused (HTTP 401) as `change`
+ * too: the text names them unless the connection signs in as a service principal, which has none.
  */
-function permissionText(provider: Provider | null, stage: 'read' | 'change' | null): string {
-  if (provider === null || stage !== 'change') {
+function permissionText(
+  connection: (Pick<Connection, 'provider'> & Partial<Pick<Connection, 'azure'>>) | null,
+  stage: 'read' | 'change' | null,
+): string {
+  if (connection === null || stage !== 'change') {
     return $localize`:@@addRepos.error.readPermission:The connection was refused access to the repository.`;
   }
+  const { provider } = connection;
   switch (provider) {
     case 'github':
       return $localize`:@@addRepos.error.githubPermission:The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.`;
     case 'gitlab':
       return $localize`:@@addRepos.error.gitlabPermission:The GitLab token needs the api scope and the Maintainer role.`;
     case 'azure':
-      // A personal access token without the pipelines scopes is refused (HTTP 401) as `change` too.
-      return $localize`:@@addRepos.error.azurePermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools. A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes.`;
+      if ((connection.azure?.auth ?? 'pat') !== 'pat') {
+        return $localize`:@@addRepos.error.azurePermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools.`;
+      }
+      return $localize`:@@addRepos.error.azurePatPermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools. A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes.`;
     default:
       return assertNever(provider, 'provider');
   }

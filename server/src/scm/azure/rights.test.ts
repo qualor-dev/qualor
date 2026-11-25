@@ -189,20 +189,32 @@ describe('azureTriageRight', () => {
     expect(await azureTriageRight(clientOf(), repositoryId(), [unknown])).toBe('may_not');
   });
 
-  it("says unreadable when Qualor's own credential is refused (401 or 403) on the identities host or the ACL", async () => {
-    for (const path of [IDENTITIES, ACL]) {
-      for (const status of [401, 403]) {
-        const user = fake.addUser({ role: 'owner' });
-        fake.inject('GET', path, { status, body: { message: MARKER } });
-        const log = logger();
-        expect(
-          await azureTriageRight(clientOf(), repositoryId(), [user.id], log),
-          `${String(path)} ${status}`,
-        ).toBe('unreadable');
-        expect(log.warn).toHaveBeenCalledTimes(1);
-        expect(JSON.stringify(log.warn.mock.calls[0])).not.toContain(MARKER);
-      }
+  it("says unreadable when Qualor's own credential is refused: a 401 of the identities host or the ACL, a 403 of the repository or the ACL", async () => {
+    const refusals: [RegExp, number][] = [
+      [IDENTITIES, 401],
+      [ACL, 401],
+      [REPOSITORY, 403],
+      [ACL, 403],
+    ];
+    for (const [path, status] of refusals) {
+      const user = fake.addUser({ role: 'owner' });
+      fake.inject('GET', path, { status, body: { message: MARKER } });
+      const log = logger();
+      expect(
+        await azureTriageRight(clientOf(), repositoryId(), [user.id], log),
+        `${String(path)} ${status}`,
+      ).toBe('unreadable');
+      expect(log.warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(log.warn.mock.calls[0])).not.toContain(MARKER);
     }
+  });
+
+  it('says may_not on a 403 of one author’s identity lookup: that hides the author, it does not refuse Qualor', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    fake.inject('GET', IDENTITIES, { status: 403, body: { message: MARKER } });
+    const log = logger();
+    expect(await azureTriageRight(clientOf(), repositoryId(), [user.id], log)).toBe('may_not');
+    expect(log.warn).toHaveBeenCalledTimes(1);
   });
 
   it('says may_not for an answer that refuses or is not found, which is no refusal of the credential', async () => {

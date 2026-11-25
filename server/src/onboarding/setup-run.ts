@@ -213,23 +213,38 @@ const AZURE_PERMISSION_TEXT: Record<Exclude<CiStep, 'read'>, string> = {
 /**
  * Azure DevOps answers a personal access token without the scope a request needs with HTTP 401 and
  * an empty body (Server, check 1 of 2026-11-25: a Code-only token read the repository, then
- * `build/definitions` answered 401). A 401 of a pipelines API names those scopes, not the
- * repository.
+ * `build/definitions` answered 401). A 401 of a pipelines API names those scopes for a token, and
+ * the rights for a service principal, which has no scopes; never the repository.
  */
-const AZURE_PIPELINES_SCOPE_TEXT =
-  'The Azure DevOps credential was refused for pipelines: a personal access token needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes';
+const AZURE_PIPELINES_REFUSED_TEXT = {
+  pat: 'The Azure DevOps credential was refused for pipelines: a personal access token needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes',
+  principal:
+    'The Azure DevOps credential was refused for pipelines: the identity needs access to build pipelines, agent pools and pipeline resources',
+} as const;
 /** The pipelines APIs, by the route Qualor names a request with: definitions, queues, permissions. */
+// No `policy`: CI setup calls no policy route (the Build validation policy is azure-policy.ts's).
 const AZURE_PIPELINES_ROUTE = /\/_apis\/(?:build|distributedtask|pipelines)\//;
 
-/** Whether Azure DevOps refused the credential (401) for a pipelines API: a scope it lacks. */
-function pipelinesScopeMissing(err: ScmError, provider: ScmProvider): boolean {
-  return (
-    provider === 'azure' &&
-    err.kind === 'auth' &&
-    err.status === 401 &&
-    err.request !== null &&
-    AZURE_PIPELINES_ROUTE.test(err.request)
-  );
+/** The connection, as a refusal's text needs it: the provider, and how Azure DevOps signs in. */
+type RefusedConnection = Pick<ScmConnectionRow, 'provider' | 'azureAuth'>;
+
+/**
+ * The text of Azure DevOps refusing the credential (401) for a pipelines API, a scope or right it
+ * lacks, by how the connection signs in; null for any other error.
+ */
+function pipelinesRefused(err: ScmError, connection: RefusedConnection): string | null {
+  if (
+    connection.provider !== 'azure' ||
+    err.kind !== 'auth' ||
+    err.status !== 401 ||
+    err.request === null ||
+    !AZURE_PIPELINES_ROUTE.test(err.request)
+  ) {
+    return null;
+  }
+  return (connection.azureAuth ?? 'pat') === 'pat'
+    ? AZURE_PIPELINES_REFUSED_TEXT.pat
+    : AZURE_PIPELINES_REFUSED_TEXT.principal;
 }
 
 /** What a refused permission tells: the read, else what CI setup needs on the provider. */
@@ -352,18 +367,20 @@ function errorOf(
  */
 function scmErrorOf(
   err: ScmError,
-  provider: ScmProvider,
+  connection: RefusedConnection,
   stage: 'open' | 'ci_read' | 'change',
   step: CiStep = 'read',
 ): ItemError {
   switch (err.kind) {
     case 'not_found':
       return errorOf('not_found');
-    case 'auth':
-      if (stage !== 'open' && pipelinesScopeMissing(err, provider)) {
-        return { code: 'permission', message: AZURE_PIPELINES_SCOPE_TEXT };
-      }
-      return { code: 'permission', message: permissionText(provider, stage, step) };
+    case 'auth': {
+      const pipelines = stage === 'open' ? null : pipelinesRefused(err, connection);
+      return {
+        code: 'permission',
+        message: pipelines ?? permissionText(connection.provider, stage, step),
+      };
+    }
     case 'rate_limited':
       return errorOf('rate_limited');
     case 'transient':
@@ -1569,7 +1586,7 @@ async function recordOpenFailure(ctx: ItemContext, err: unknown, log: ItemLog): 
       { ...log, request: err.request, kind: err.kind, reason: err.reason, status: err.status },
       'repository setup could not read the repository',
     );
-    error = scmErrorOf(err, connection.provider, 'open');
+    error = scmErrorOf(err, connection, 'open');
   } else {
     throw err;
   }
@@ -1636,7 +1653,7 @@ async function recordCiFailure(ctx: ItemContext, err: unknown, log: ItemLog): Pr
   );
   const error = scmErrorOf(
     err,
-    connection.provider,
+    connection,
     // The agent pools are read before anything is written.
     ctx.ciStep === 'read' || ctx.ciStep === 'pool' ? 'ci_read' : 'change',
     ctx.ciStep,
@@ -1663,7 +1680,7 @@ async function setUpRepository(ctx: ItemContext): Promise<void> {
   if (project === null) return;
   if (run.ciSetup && ctx.statusFailure !== null) {
     // Never a snippet for want of an answer: the CI setup fails, with why.
-    const error = scmErrorOf(ctx.statusFailure, connection.provider, 'open');
+    const error = scmErrorOf(ctx.statusFailure, connection, 'open');
     return updateItem(deps.db, item, {
       ciOutcome: 'failed',
       errorCode: error.code,

@@ -30,7 +30,13 @@ import { runUntilIdle } from '../queue/worker';
 import { codeSpan } from '../scm/markdown';
 import { lockBranchQueue, SCM_QUEUE } from '../scm/queue';
 import { parseInternalHosts } from '../scm/url';
-import { handleCommand, NothingToReview, type CommandContext, type ReviewRight } from './commands';
+import {
+  handleCommand,
+  NothingToReview,
+  RIGHTS_UNREADABLE,
+  type CommandContext,
+  type ReviewRight,
+} from './commands';
 import { reviewHandlers, type ReviewJobDeps } from './job';
 import { claimReply, insertReplies, type ReplyRow } from './replies';
 import { AI_REVIEW_QUEUE } from './runs';
@@ -69,8 +75,6 @@ const CHANGE: SnapshotLine[] = [
 
 const NOT_AVAILABLE = 'Auto-fix is not switched on for this project.';
 const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
-const RIGHTS_UNREADABLE =
-  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 const reviewed = (sha: string) =>

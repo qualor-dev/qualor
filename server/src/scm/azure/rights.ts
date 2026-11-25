@@ -35,10 +35,10 @@ export type AzureTriageRight = 'may' | 'may_not' | 'unreadable';
  * `MAX_AUTHORS_LOOKED_UP` distinct authors (no request is sent for those). A definitive failure
  * (refused, 403 included, not found, an answer not understood, and a 401 of the identities or ACL
  * read, which is a scope the credential lacks) is no too, with one warn line that names its kind
- * and never the text of the answer: `unreadable` when it is an auth error (401 or 403), as that
- * refused Qualor's credential, not the author; `may_not` otherwise. A transient or rate-limited
- * failure, or a credential (a 401 of the repository read) or budget problem, is thrown, so that
- * the reply job retries, as for GitHub.
+ * and never the text of the answer: `unreadable` when it refused Qualor's credential, not the
+ * author ({@link credentialRefused}); `may_not` otherwise. A transient or rate-limited failure,
+ * or a credential (a 401 of the repository read) or budget problem, is thrown, so that the reply
+ * job retries, as for GitHub.
  */
 export async function azureTriageRight(
   client: AzureDevOpsClient,
@@ -51,22 +51,33 @@ export async function azureTriageRight(
   // Unlike GitHub's and GitLab's checks, no author is no (not a vacuous yes): a comment whose
   // author is unknown (a deleted comment has none) must never change a status.
   if (authors.length === 0 || authors.length > MAX_AUTHORS_LOOKED_UP) return 'may_not';
-  let rightsRead = false;
+  let reading: 'repository' | 'identity' | 'acl' = 'repository';
   try {
     const { projectId } = await client.repository(repositoryId);
-    rightsRead = true;
     for (const author of authors) {
+      reading = 'identity';
       const descriptor = await client.identityDescriptor(author);
       if (descriptor === null) return 'may_not';
+      reading = 'acl';
       if (!(await client.contributeAllowed(projectId, repositoryId, descriptor))) return 'may_not';
     }
     return 'may';
   } catch (err) {
     if (!(err instanceof ScmError)) throw err;
+    const rightsRead = reading !== 'repository';
     if (!isDefinitive(err) && !(rightsRead && isMissingScope(err))) throw err;
     logger?.warn({ kind: err.kind }, 'azure devops contribute check failed');
-    return err.kind === 'auth' ? 'unreadable' : 'may_not';
+    return credentialRefused(err, reading) ? 'unreadable' : 'may_not';
   }
+}
+
+/**
+ * Whether a failure of the check refused Qualor's credential rather than told of an author: a 401
+ * (a scope it lacks), or a 403 of the repository or its ACL. A 403 of one author's identity lookup
+ * hides that author: it is no.
+ */
+function credentialRefused(err: ScmError, reading: 'repository' | 'identity' | 'acl'): boolean {
+  return err.kind === 'auth' && (err.status === 401 || reading !== 'identity');
 }
 
 /** {@link azureTriageRight} as a yes or no: only `may` may. */

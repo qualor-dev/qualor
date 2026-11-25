@@ -1,7 +1,7 @@
 import { and, asc, eq, like, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { addMember, createUser, login, type Session } from '../../test/app';
-import { servicesUrlOf } from '../../test/azure';
+import { AZURE_TEST_PRINCIPAL, servicesUrlOf } from '../../test/azure';
 import {
   createFakeAzureDevOps,
   recordedAnswer,
@@ -19,6 +19,7 @@ import { createFakeGitLab, type FakeGitLab } from '../../test/fake-gitlab';
 import { createIngestHarness, type IngestHarness } from '../../test/ingest';
 import { rbacPlugins } from '../../test/rbac';
 import { PUBLIC_URL } from '../../test/scm';
+import { trustTestCa } from '../../test/tls';
 import type { AuditRecorder } from '../audit/recorder';
 import { hashToken } from '../auth/tokens';
 import {
@@ -1876,6 +1877,51 @@ describe('the repository-setup run', () => {
           },
         ],
       ]);
+    });
+
+    it('names the rights, not a token scope, when a service principal is refused a pipelines API with a bare 401', async () => {
+      // The fake Entra token endpoint is https, with the test CA.
+      const untrust = trustTestCa();
+      closers.push(() => Promise.resolve(untrust()));
+      const fake = await createFakeAzureDevOps({
+        deployment: 'services',
+        principal: AZURE_TEST_PRINCIPAL,
+      });
+      closers.push(() => fake.close());
+      hosts.add(new URL(fake.url).host);
+      const repo = repository(fake, { name: 'definitions', projectName: 'Chi' });
+      fake.inject('GET', new RegExp(`^/${repo.projectId}/_apis/build/definitions$`), {
+        status: 401,
+      });
+      const { tenantId, clientId, secret } = AZURE_TEST_PRINCIPAL;
+      const connectionId = await connect({
+        provider: 'azure',
+        baseUrl: servicesUrlOf(fake),
+        azureAuth: 'service_principal_secret',
+        token: secret,
+        tenantId,
+        clientId,
+        ciSetupAllowed: true,
+      });
+      const runId = await start({ connectionId, repositories: [repo.id], ciSetup: true });
+      await runAzure(fake, {
+        scm: {
+          ...deps().scm,
+          azureTestOrigin: new URL(fake.url).origin,
+          azureTokenOrigin: new URL(fake.tokenUrl(tenantId)).origin,
+        },
+      });
+
+      expect((await read(runId)).items[0]).toMatchObject({
+        projectOutcome: 'created',
+        ciOutcome: 'failed',
+        error: {
+          code: 'permission',
+          message:
+            'The Azure DevOps credential was refused for pipelines: the identity needs access to build pipelines, agent pools and pipeline resources',
+          stage: 'change',
+        },
+      });
     });
 
     it('leaves a pipeline Qualor did not create on the file alone: no write, a foreign_pipeline snippet, no token', async () => {
