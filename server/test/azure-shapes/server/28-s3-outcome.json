@@ -1,0 +1,6 @@
+{
+  "scenario": "S3 after a manual run",
+  "fired": false,
+  "reason": null,
+  "secondsAfterPush": null
+}

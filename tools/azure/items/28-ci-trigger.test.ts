@@ -17,6 +17,14 @@ describe('item 28 helpers', () => {
     expect(text).toContain('script: echo probe');
   });
 
+  it('on Server the pipeline file runs on the pool Default', () => {
+    const text = triggerYaml('server');
+    expect(text).toContain("include: ['*']");
+    expect(text).toContain('pool:\n  name: Default\n');
+    expect(text).not.toContain('vmImage');
+    expect(triggerYaml('services')).toBe(triggerYaml());
+  });
+
   it('the definition carries the setup CI trigger and the YAML file', () => {
     const body = definitionBody('probe-28-s1-1', 7, { id: 'r', name: 'n' });
     expect(body['triggers']).toEqual([

@@ -16,12 +16,15 @@ import {
   sleep,
   type ProbeContext,
   type ProbeItem,
+  type TargetName,
 } from './common.js';
 
 /** The kept repository of this item; its main holds the pipeline file alone. */
 export const TRIGGER_REPOSITORY = 'qualor-probe-trigger';
 const YAML_PATH = '.azure-pipelines/qualor.yml';
 const HOSTED_QUEUE = 'Azure Pipelines';
+/** Azure DevOps Server has no hosted pool: the bench's own pool `Default` takes its place. */
+const SERVER_QUEUE = 'Default';
 const ZEROS = '0'.repeat(40);
 /** How long a push may take to start a CI build before the answer is no. */
 const FIRE_WAIT_MS = 5 * 60_000;
@@ -33,14 +36,14 @@ const POLL_MS = 5000;
 const MAIN = 'refs/heads/main';
 const API = { apiVersion: '7.0-preview.1' };
 
-/** The pipeline file: one echo step on the hosted pool, CI on every branch. */
-export function triggerYaml(): string {
+/** The pipeline file: one echo step on the hosted pool (Server: the pool `Default`), CI on every branch. */
+export function triggerYaml(target: TargetName = 'services'): string {
   return [
     'trigger:',
     '  branches:',
     "    include: ['*']",
     'pool:',
-    '  vmImage: ubuntu-latest',
+    target === 'server' ? `  name: ${SERVER_QUEUE}` : '  vmImage: ubuntu-latest',
     'steps:',
     '- script: echo probe',
     '',
@@ -117,11 +120,8 @@ type Outcome = { scenario: string; fired: boolean; text: string; defId: number }
 
 export const item = {
   id: 28,
-  title: 'when Azure DevOps Services honours the YAML CI trigger of a REST-created pipeline',
+  title: 'when Azure DevOps honours the YAML CI trigger of a REST-created pipeline',
   async run(ctx: ProbeContext) {
-    if (ctx.target !== 'services') {
-      return result(ctx, 'no', 'item 28 runs on the Services target only');
-    }
     const notes: string[] = [];
     const root = `/${ctx.project}/_apis`;
     const created = await ensureRepository(ctx, notes, TRIGGER_REPOSITORY);
@@ -140,7 +140,7 @@ export const item = {
                   {
                     changeType: 'add',
                     item: { path: `/${YAML_PATH}` },
-                    newContent: { content: triggerYaml(), contentType: 'rawtext' },
+                    newContent: { content: triggerYaml(ctx.target), contentType: 'rawtext' },
                   },
                 ],
               },
@@ -160,8 +160,10 @@ export const item = {
         .json,
       'queues',
     ).value;
-    const hosted = queueNamed(queues, HOSTED_QUEUE);
-    if (!hosted) return result(ctx, 'no', `no queue named ${HOSTED_QUEUE}`);
+    // Server: the Default queue (its runs are cancelled as soon as they are seen, as on Services).
+    const wanted = ctx.target === 'server' ? SERVER_QUEUE : HOSTED_QUEUE;
+    const hosted = queueNamed(queues, wanted);
+    if (!hosted) return result(ctx, 'no', `no queue named ${wanted}`);
 
     const defs = `${root}/build/definitions`;
     const buildsOf = async (defId: number): Promise<Build[]> =>
