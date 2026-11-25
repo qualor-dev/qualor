@@ -6,6 +6,14 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The Qualor extension for Azure Pipelines is public in the
+  [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Qualor.qualor):
+  Azure DevOps Services installs it from there
+  ([Pick a pipeline](docs/guide/azure-devops.md#pick-a-pipeline)).
+- The extension and its task show the Qualor icon.
+
 ## [0.17.0] - 2026-11-25
 
 ### Added

@@ -104,9 +104,9 @@ The images are on Docker Hub: [`qualor/server`](https://hub.docker.com/r/qualor/
 [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet). The GitLab CI/CD
 component is [`gitlab.com/qualor/qualor`](https://gitlab.com/qualor/qualor), and the GitHub Action
 is [`qualor-dev/scan-action`](https://github.com/qualor-dev/scan-action). The Azure Pipelines
-extension's VSIX file is attached to the
-[GitHub release](https://github.com/qualor-dev/qualor/releases). On Azure DevOps Services, use the
-`docker run` pipeline files until its Marketplace listing is public
+extension is [Qualor](https://marketplace.visualstudio.com/items?itemName=Qualor.qualor) in the
+Visual Studio Marketplace; for Azure DevOps Server, its VSIX file is attached to the
+[GitHub release](https://github.com/qualor-dev/qualor/releases)
 ([Pick a pipeline](./azure-devops.md#pick-a-pipeline)). You need nothing else from the repository
 to run Qualor.
 

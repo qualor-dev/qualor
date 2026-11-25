@@ -248,6 +248,68 @@ A pipeline runs the scanner on Linux agents with Docker and uploads the report t
 server. Pipelines on Azure Repos are detected: Qualor reads the branch, the tag, the pull request
 and its target, and the commit from the agent's variables.
 
+### Set up a pipeline with the extension
+
+The Qualor extension adds the `Qualor@0` task to Azure Pipelines. A pipeline then needs a checkout
+and that one task. [Add repositories](#add-repositories-and-set-up-ci) can do all of this for you,
+with the docker pipeline, which needs no extension.
+
+1. Install the extension.
+
+   | Deployment | How |
+   |---|---|
+   | Azure DevOps Services | Open [Qualor in the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=Qualor.qualor), press **Get it free** and pick your organisation. An organisation owner or a Project Collection Administrator installs it; another member can request it |
+   | Azure DevOps Server | Download `qualor.qualor-<version>.vsix` from the [GitHub release](https://github.com/qualor-dev/qualor/releases) of your server's version. Open **Collection settings → Extensions → Browse local extensions → Manage extensions**, upload the file, then install it into the collection |
+
+2. In Qualor, create the project and a project analysis token: **Project → Settings → Analysis
+   tokens → New token** ([Project analysis tokens](./users-projects-tokens.md#project-analysis-tokens)).
+3. Add `azure-pipelines.yml` to the repository:
+
+   ```yaml
+   trigger:
+     branches:
+       include: ['*']
+     tags:
+       include: ['*']
+
+   pool:
+     vmImage: ubuntu-latest
+
+   steps:
+     - checkout: self
+       fetchDepth: 0
+       persistCredentials: false
+
+     - task: Qualor@0
+       displayName: Qualor scan
+       inputs:
+         imageTag: '0.17'
+       env:
+         QUALOR_TOKEN: $(QUALOR_TOKEN)
+   ```
+
+   On Azure DevOps Server, replace `vmImage: ubuntu-latest` with `name: <your agent pool>`. Its
+   agents need Linux and Docker. Set `imageTag` to your Qualor server's release line: the extension
+   updates itself on Azure DevOps Services, and the tag keeps the scanner in step with the server.
+4. Create the pipeline: **Pipelines → New pipeline → Azure Repos Git**, pick the repository, then
+   **Existing Azure Pipelines YAML file** and the file.
+5. Before the first run, press **Variables** and add two.
+
+   | Variable | Value |
+   |---|---|
+   | `QUALOR_URL` | The address of your Qualor server |
+   | `QUALOR_TOKEN` | The token from step 2, with **Keep this value secret** |
+
+6. Press **Run**. The step **Qualor scan** ends with the quality gate's result, and the analysis of
+   the branch shows in Qualor.
+7. For pull requests, add the pipeline as a Build validation policy: **Repos → Branches**, the
+   default branch's **⋯ → Branch policies → Build Validation → +**. Azure Repos ignores `pr:` in
+   the YAML. To block the merge when the gate fails, see
+   [Block the merge on the gate](#block-the-merge-on-the-gate).
+
+For C#, start from [`qualor-dotnet.yml`](../../integrations/azure-devops/qualor-dotnet.yml): it
+sets `dotnet: true` and runs your build inside the scan ([C#](#c)).
+
 ### The project key
 
 The scanner's project key is `<project>/<repository>`, the names of the Azure DevOps project and
@@ -286,12 +348,8 @@ Copy one file to `azure-pipelines.yml`.
 | [`integrations/azure-devops/qualor-dotnet.yml`](../../integrations/azure-devops/qualor-dotnet.yml) | C#, with the `Qualor@0` task |
 | [`integrations/azure-devops/qualor-dotnet-docker.yml`](../../integrations/azure-devops/qualor-dotnet-docker.yml) | C#, with `docker run` and no extension |
 
-The `Qualor@0` task needs the Qualor extension.
-
-| Deployment | How to get the extension |
-|---|---|
-| Azure DevOps Server | Upload the extension's VSIX file, from the release page, under **Collection settings → Extensions** (the local gallery) |
-| Azure DevOps Services | Only the Marketplace installs an extension: use the `docker run` examples until the extension's Marketplace listing is public |
+The `Qualor@0` task needs the Qualor extension
+([install it](#set-up-a-pipeline-with-the-extension)).
 
 The task needs agent 3.218 or later. On Azure DevOps Server 2022, agent 3.238 runs it on Node 20.
 

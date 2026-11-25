@@ -345,6 +345,7 @@ const NOT_WRITTEN = [
   'deploy/dockerhub/scanner.md',
   'deploy/dockerhub/server.md',
   'docs/guide/ai-prompts.md',
+  'docs/guide/azure-devops.md',
   'docs/guide/cli.md',
   'docs/guide/fix-merge-requests.md',
   'docs/guide/github.md',
