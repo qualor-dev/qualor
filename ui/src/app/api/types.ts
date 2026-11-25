@@ -72,6 +72,20 @@ export type JiraMapping = NonNullable<JiraProjectSettings['mapping']>;
 export type JiraPickedProject = ItemOf<'/api/v0/projects/{id}/jira/projects'>;
 /** `GET /projects/{id}/jira/issue-types`: an issue type of a Jira project. */
 export type JiraIssueType = ItemOf<'/api/v0/projects/{id}/jira/issue-types'>;
+
+/**
+ * `GET /projects/{id}/boards`: the Azure Boards mapping, the organisation's Azure DevOps
+ * connections and the rule's switches.
+ */
+export type BoardsProjectSettings = ResponseBody<'/api/v0/projects/{id}/boards', 'get'>;
+export type BoardsMapping = NonNullable<BoardsProjectSettings['mapping']>;
+export type BoardsConnection = BoardsProjectSettings['connections'][number];
+/** `GET /projects/{id}/boards/projects`: one Azure DevOps project the connection sees. */
+export type BoardsPickedProject = ItemOf<'/api/v0/projects/{id}/boards/projects'>;
+/** `GET /projects/{id}/boards/work-item-types`: a work item type of an Azure DevOps project. */
+export type BoardsWorkItemType = ItemOf<'/api/v0/projects/{id}/boards/work-item-types'>;
+/** `GET /projects/{id}/boards/paths`: the area and iteration paths, the root first. */
+export type BoardsPaths = ResponseBody<'/api/v0/projects/{id}/boards/paths', 'get'>;
 /**
  * A finding's Jira link, as issue and vulnerability items embed it (`jira`, null while the finding
  * has none: a dismissed link reads as none).

@@ -77,10 +77,11 @@ function jiraMessage(err: unknown): string {
 /**
  * Project → Settings → Jira (spec §6.9): which Jira project and issue type this project's Jira
  * issues go to, their labels and priorities, and the automatic rule. The panel reads its own state
- * (it is not part of the project). After a failed load it shows only the error and Try again, so
- * a Save can never overwrite a mapping whose state is unknown. Without a connection an
- * organisation admin sees a link to Settings → Jira and everybody else nothing (`shown` tells the
- * page, which hides the panel's index link).
+ * (it is not part of the project) and, beside it, the Azure Boards mapping: a project uses one
+ * tracker, so while Boards is mapped the panel says only that. After a failed load it shows only
+ * the error and Try again, so a Save can never overwrite a mapping whose state is unknown. Without
+ * a connection an organisation admin sees a link to Settings → Jira and everybody else nothing
+ * (`shown` tells the page, which hides the panel's index link).
  */
 @Component({
   selector: 'q-project-jira-panel',
@@ -94,6 +95,7 @@ export class ProjectJiraPanel {
   private readonly injector = inject(Injector);
   /** Bumped by every load; an answer of an older one is dropped. */
   private loadSeq = 0;
+  private otherSeq = 0;
   private searchSeq = 0;
   private typesSeq = 0;
   private searchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -101,13 +103,22 @@ export class ProjectJiraPanel {
   private typesFor: string | null = null;
 
   readonly project = input.required<ProjectDto>();
+  /**
+   * Bumped by the page when the Azure Boards panel saved or removed its mapping: the panel reads
+   * the Boards mapping again (0 is the first render).
+   */
+  readonly otherTrackerVersion = input(0);
   /** Whether the panel has anything to show; the page hides its index link when not. */
   readonly shown = output<boolean>();
+  /** The mapping was saved or removed; the page tells the Azure Boards panel. */
+  readonly mappingChanged = output();
 
   protected readonly severities = SEVERITIES;
   protected readonly loaded = signal<JiraProjectSettings | null>(null);
   protected readonly loadError = signal<string | null>(null);
   protected readonly loading = signal(false);
+  /** Whether the project has an Azure Boards mapping: the panel then shows one line. */
+  protected readonly boardsMapped = signal(false);
 
   protected readonly isOrgAdmin = computed(() =>
     this.session.orgCan(this.project().organizationId, 'org.jira.manage'),
@@ -220,6 +231,10 @@ export class ProjectJiraPanel {
       untracked(() => void this.load(id));
     });
     effect(() => {
+      const version = this.otherTrackerVersion();
+      if (version !== 0) untracked(() => void this.loadOther());
+    });
+    effect(() => {
       const shown = this.isShown();
       untracked(() => this.shown.emit(shown));
     });
@@ -247,18 +262,36 @@ export class ProjectJiraPanel {
     }
   }
 
+  /**
+   * Whether the project has an Azure Boards mapping; an unreadable answer counts as none (the PUT
+   * refuses a second tracker anyway).
+   */
+  private async boardsMappedNow(id: string): Promise<boolean> {
+    try {
+      const state = await ok(
+        this.api.client.GET('/api/v0/projects/{id}/boards', { params: { path: { id } } }),
+      );
+      return state.mapping !== null;
+    } catch {
+      return false;
+    }
+  }
+
   protected async load(id: string, retry = false): Promise<void> {
     const seq = ++this.loadSeq;
+    ++this.otherSeq;
     this.loaded.set(null);
     // A retry keeps the alert and its button until the answer, so focus is not dropped.
     if (!retry) this.loadError.set(null);
     this.loading.set(true);
     try {
-      const state = await ok(
-        this.api.client.GET('/api/v0/projects/{id}/jira', { params: { path: { id } } }),
-      );
+      const [state, boardsMapped] = await Promise.all([
+        ok(this.api.client.GET('/api/v0/projects/{id}/jira', { params: { path: { id } } })),
+        this.boardsMappedNow(id),
+      ]);
       if (seq === this.loadSeq) {
         this.loadError.set(null);
+        this.boardsMapped.set(boardsMapped);
         this.seed(state);
       }
     } catch (err) {
@@ -266,6 +299,13 @@ export class ProjectJiraPanel {
     } finally {
       if (seq === this.loadSeq) this.loading.set(false);
     }
+  }
+
+  /** Reads the Azure Boards mapping again; the form appears when it went. */
+  private async loadOther(): Promise<void> {
+    const seq = ++this.otherSeq;
+    const mapped = await this.boardsMappedNow(this.project().id);
+    if (seq === this.otherSeq) this.boardsMapped.set(mapped);
   }
 
   protected async loadTypes(key: string): Promise<void> {
@@ -430,6 +470,7 @@ export class ProjectJiraPanel {
         this.seed(state);
         this.announcement.set($localize`:@@vulnerabilities.saved:Saved.`);
       }
+      this.mappingChanged.emit();
     } catch (err) {
       if (current()) this.error.set(jiraMessage(err));
     } finally {
@@ -466,6 +507,7 @@ export class ProjectJiraPanel {
     this.busy.set(false);
     this.closeRemove();
     this.touched();
+    this.mappingChanged.emit();
     await this.load(id);
   }
 }

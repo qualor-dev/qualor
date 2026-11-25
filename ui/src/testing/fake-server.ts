@@ -7,6 +7,7 @@ import type {
   PortfolioProjectRow,
 } from '../app/api/ee';
 import type {
+  BoardsProjectSettings,
   FixSettingsAnswer,
   ItemOf,
   JiraConnection,
@@ -264,6 +265,47 @@ export function jiraProjectSettings(
     connection: connected
       ? { deployment: 'data_center', siteUrl: 'https://jira.example.com', problem: null }
       : null,
+    monitoringOn: true,
+    exploitedAvailable: false,
+  };
+}
+
+/** The organisation's Azure DevOps connection that the Boards stubs use. */
+export const BOARDS_CONNECTION_ID = '0190a6c2-0000-7000-8000-0000000000a7';
+
+/**
+ * A project's Azure Boards state as `GET /projects/{id}/boards` answers it: one Azure DevOps
+ * Services connection and a mapping to the Bug type of Fabrikam by default; `connected: false`
+ * answers no connection (and so no mapping).
+ */
+export function boardsProjectSettings(
+  given: { connected?: boolean; mapped?: boolean } = {},
+): BoardsProjectSettings {
+  const connected = given.connected ?? true;
+  const mapped = connected && (given.mapped ?? true);
+  return {
+    mapping: mapped
+      ? {
+          connectionId: BOARDS_CONNECTION_ID,
+          azureProject: { id: '6ce954b1-ce1f-45d1-b94d-e6bf2464ba2c', name: 'Fabrikam' },
+          workItemType: { referenceName: 'Microsoft.VSTS.WorkItemTypes.Bug', name: 'Bug' },
+          areaPath: null,
+          iterationPath: null,
+          tags: [],
+          autoCreate: { minSeverity: null, exploited: false, since: null },
+          updatedAt: '2026-11-25T10:00:00.000Z',
+        }
+      : null,
+    connections: connected
+      ? [
+          {
+            id: BOARDS_CONNECTION_ID,
+            name: 'contoso',
+            baseUrl: 'https://dev.azure.com/contoso',
+            problem: null,
+          },
+        ]
+      : [],
     monitoringOn: true,
     exploitedAvailable: false,
   };

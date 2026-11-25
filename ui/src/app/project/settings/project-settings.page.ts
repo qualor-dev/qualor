@@ -15,6 +15,7 @@ import { can } from '../../auth/permissions';
 import { SessionStore } from '../../auth/session';
 import { CurrentProject } from '../current-project';
 import { ProjectAiPanel } from './ai-panel';
+import { ProjectBoardsPanel } from './boards-panel';
 import { ProjectFixesPanel } from './fixes-panel';
 import { GateProfilesPanel } from './gate-profiles-panel';
 import { ProjectJiraPanel } from './jira-panel';
@@ -47,6 +48,7 @@ const MOVED: ReadonlyMap<string, string> = new Map([
     MainBranchPanel,
     NewCodePanel,
     ProjectAiPanel,
+    ProjectBoardsPanel,
     ProjectFixesPanel,
     ProjectJiraPanel,
     ProjectTokensPanel,
@@ -68,6 +70,12 @@ export class ProjectSettingsPage {
   readonly projectId = input.required<string>();
   /** Whether the Jira panel has anything for this caller; its index link follows. */
   protected readonly jiraShown = signal(false);
+  /** Whether the Azure Boards panel has anything for this caller; its index link follows. */
+  protected readonly boardsShown = signal(false);
+  /** Bumped when the Jira panel saved or removed its mapping; the Boards panel reads it again. */
+  protected readonly jiraVersion = signal(0);
+  /** Bumped when the Boards panel saved or removed its mapping; the Jira panel reads it again. */
+  protected readonly boardsVersion = signal(0);
 
   protected readonly project = this.store.current;
   protected readonly show = computed(() => {
@@ -98,8 +106,9 @@ export class ProjectSettingsPage {
     // A URL that already names a panel: scroll to it once the panels have rendered.
     afterRenderEffect(() => {
       const fragment = this.fragment();
-      // The Jira panel appears after its own read: its arrival tries the address again.
+      // The tracker panels appear after their own read: their arrival tries the address again.
       this.jiraShown();
+      this.boardsShown();
       if (this.scrolledToFragment || fragment === null || this.show() === null) return;
       if (this.reveal(fragment)) this.scrolledToFragment = true;
     });

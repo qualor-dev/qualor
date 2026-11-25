@@ -1,7 +1,19 @@
 import { type ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { FakeServer, me, ORG_ID, problem, provideFakeServer } from '../../../testing/fake-server';
-import type { JiraIssueType, JiraMapping, JiraProjectSettings } from '../../api/types';
+import {
+  boardsProjectSettings,
+  FakeServer,
+  me,
+  ORG_ID,
+  problem,
+  provideFakeServer,
+} from '../../../testing/fake-server';
+import type {
+  BoardsProjectSettings,
+  JiraIssueType,
+  JiraMapping,
+  JiraProjectSettings,
+} from '../../api/types';
 import { SessionStore } from '../../auth/session';
 import type { ProjectDto } from '../current-project';
 import { ProjectJiraPanel } from './jira-panel';
@@ -10,6 +22,7 @@ const PROJECT = '0190a6c2-0000-7000-8000-0000000000f1';
 const URL = `/api/v0/projects/${PROJECT}/jira`;
 const PICKER = `${URL}/projects`;
 const TYPES = `${URL}/issue-types`;
+const BOARDS = `/api/v0/projects/${PROJECT}/boards`;
 
 function project(): ProjectDto {
   return {
@@ -73,6 +86,8 @@ function settings(over: Partial<JiraProjectSettings> = {}): JiraProjectSettings 
 interface Options {
   admin?: boolean;
   types?: JiraIssueType[];
+  /** The project's Azure Boards state; unmapped by default. */
+  boards?: BoardsProjectSettings;
 }
 
 let fixture: ComponentFixture<ProjectJiraPanel>;
@@ -89,6 +104,7 @@ function setup(body: JiraProjectSettings = settings(), options: Options = {}): F
     },
   }));
   server.on('GET', TYPES, { body: { items: options.types ?? [issueType()] } });
+  server.on('GET', BOARDS, { body: options.boards ?? boardsProjectSettings({ mapped: false }) });
   TestBed.configureTestingModule({ providers: [provideRouter([]), provideFakeServer(server)] });
   TestBed.inject(SessionStore).set(me({ admin: options.admin ?? false }));
   return server;
@@ -170,6 +186,58 @@ describe('ProjectJiraPanel', () => {
       const root = fixture.nativeElement as HTMLElement;
       expect(root.querySelector('section')).toBeNull();
       expect(shown.at(-1)).toBe(false);
+    });
+  });
+
+  describe('one tracker', () => {
+    it('shows only "This project uses Azure Boards." while Boards is mapped', async () => {
+      const server = setup(settings(), { boards: boardsProjectSettings() });
+      const { root } = await render();
+      expect(root.querySelector('section#jira')!.textContent).toContain(
+        'This project uses Azure Boards.',
+      );
+      expect(root.querySelector('#jira-project-search')).toBeNull();
+      expect(root.querySelector('#jira-auto')).toBeNull();
+      expect(button(root, 'Save')).toBeUndefined();
+      expect(server.requestsTo('GET', TYPES)).toHaveLength(0);
+    });
+
+    it('shows the form when the Boards state cannot be read: the server still refuses both', async () => {
+      const server = setup();
+      server.on('GET', BOARDS, { status: 500, body: problem(500, 'INTERNAL') });
+      const { root } = await render();
+      expect(root.textContent).not.toContain('This project uses Azure Boards.');
+      expect(root.querySelector('#jira-project-search')).not.toBeNull();
+    });
+
+    it('reads the Boards mapping again when the page says it changed', async () => {
+      const server = setup(settings(), { boards: boardsProjectSettings() });
+      const { root } = await render();
+      server.on('GET', BOARDS, { body: boardsProjectSettings({ mapped: false }) });
+      fixture.componentRef.setInput('otherTrackerVersion', 1);
+      await flush();
+      expect(root.textContent).not.toContain('This project uses Azure Boards.');
+      expect(root.querySelector('#jira-project-search')).not.toBeNull();
+      expect(server.requestsTo('GET', URL)).toHaveLength(1);
+    });
+
+    it('tells the page after a save and after a remove', async () => {
+      const server = setup();
+      server.on('PUT', URL, { body: settings({ mapping: mapping() }) });
+      server.on('DELETE', URL, { status: 204 });
+      const { root } = await render();
+      const changed: unknown[] = [];
+      fixture.componentInstance.mappingChanged.subscribe((v) => changed.push(v));
+      await pick(root);
+      button(root, 'Save').click();
+      await flush();
+      expect(changed).toHaveLength(1);
+      button(root, 'Remove mapping').click();
+      await flush();
+      server.on('GET', URL, { body: settings() });
+      button(root.querySelector('dialog')!, 'Remove mapping').click();
+      await flush();
+      expect(changed).toHaveLength(2);
     });
   });
 

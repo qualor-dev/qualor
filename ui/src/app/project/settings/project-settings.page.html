@@ -49,6 +49,16 @@
             >Jira</a
           >
         }
+        @if (boardsShown()) {
+          <a
+            [routerLink]="[]"
+            fragment="boards"
+            [replaceUrl]="true"
+            (click)="go('boards', $event)"
+            i18n="@@project.settings.boards"
+            >Azure Boards</a
+          >
+        }
         <a
           [routerLink]="[]"
           fragment="fixes"
@@ -108,7 +118,19 @@
           <q-gate-profiles-panel [project]="p" (saved)="store.reload()" />
           <q-main-branch-panel [project]="p" (saved)="store.reload()" />
           <q-vulnerability-panel [project]="p" />
-          <q-project-jira-panel [project]="p" (shown)="jiraShown.set($event)" />
+          <!-- One tracker per project: each panel reads the other's mapping again after a change. -->
+          <q-project-jira-panel
+            [project]="p"
+            [otherTrackerVersion]="boardsVersion()"
+            (shown)="jiraShown.set($event)"
+            (mappingChanged)="jiraVersion.set(jiraVersion() + 1)"
+          />
+          <q-project-boards-panel
+            [project]="p"
+            [otherTrackerVersion]="jiraVersion()"
+            (shown)="boardsShown.set($event)"
+            (mappingChanged)="boardsVersion.set(boardsVersion() + 1)"
+          />
           <q-project-fixes-panel [project]="p" />
           <q-project-ai-panel [project]="p" (saved)="store.reload()" />
         }

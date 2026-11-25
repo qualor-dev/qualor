@@ -1,0 +1,85 @@
+/*
+ * Project → Settings → Azure Boards: a section card of setting rows, like the Jira section, built
+ * from the shared parts of styles.css (the head with its purpose, the rows, the switch, the
+ * actions), plus the tag chips and the quote of Azure DevOps' own words.
+ */
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.setting-field > p,
+.one-tracker {
+  margin: 0;
+}
+
+.alert.panel-alert > p {
+  margin: 0;
+}
+
+.alert.panel-alert > p + p {
+  margin-top: 4px;
+}
+
+/* Azure DevOps' words, as it wrote them: line breaks kept, long words wrapped. */
+.azure-words {
+  margin: 8px 0 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 36rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-list > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding-right: 2px;
+}
+
+.tag-text {
+  overflow-wrap: anywhere;
+}
+
+.tag-remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-remove:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tag-remove:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}

@@ -1,0 +1,391 @@
+@if (isShown()) {
+  <section class="card panel" id="boards" aria-labelledby="boards-heading">
+    <div class="panel-head">
+      <div class="sec-title">
+        <h2 id="boards-heading" tabindex="-1" i18n="@@project.settings.boards">Azure Boards</h2>
+        <!-- One sentence and a link to the guide, as on the Azure DevOps settings card. -->
+        <p class="sec-purpose">
+          <ng-container i18n="@@boards.panel.purpose"
+            >The Azure DevOps project this project's work items go to, and when Qualor creates them
+            by itself.</ng-container
+          >&ngsp;<a
+            routerLink="/docs/azure-devops"
+            fragment="azure-boards"
+            i18n="@@azure.guideRights"
+            >Details and the rights it needs</a
+          >
+        </p>
+      </div>
+    </div>
+
+    <div class="panel-notes" role="status">
+      @if (announcement(); as message) {
+        <p class="alert alert-success panel-alert">{{ message }}</p>
+      }
+    </div>
+    @if (error(); as e) {
+      <div class="alert alert-error panel-alert" role="alert">
+        <p>
+          {{ e.text }}
+          @if (e.toJira) {
+            <a
+              [routerLink]="[]"
+              fragment="jira"
+              [replaceUrl]="true"
+              (click)="goToJira($event)"
+              i18n="@@boards.panel.toJira"
+              >Go to Jira</a
+            >
+          }
+        </p>
+        @if (e.quote !== null) {
+          <!-- Azure DevOps' own words, as text: the one place they are shown. -->
+          <blockquote class="azure-words">{{ e.quote }}</blockquote>
+        }
+      </div>
+    }
+
+    @if (loadError(); as message) {
+      <div class="panel-body">
+        <p class="alert alert-error" role="alert">{{ message }}</p>
+        <button
+          type="button"
+          class="btn"
+          [disabled]="loading()"
+          (click)="load(project().id, true)"
+          i18n="@@boards.panel.retry"
+        >
+          Try again
+        </button>
+      </div>
+    } @else if (loaded(); as l) {
+      @if (jiraMapped()) {
+        <div class="panel-body">
+          <p class="one-tracker" i18n="@@boards.panel.usesJira">This project uses Jira.</p>
+        </div>
+      } @else if (connections().length === 0) {
+        <div class="setting-row" data-line="connection">
+          <div class="setting-text">
+            <span class="setting-name" i18n="@@boards.panel.connection">Connection</span>
+          </div>
+          <div class="setting-field">
+            <p i18n="@@boards.panel.notConnected">
+              This organization is not connected to Azure DevOps.
+            </p>
+            <p>
+              <a routerLink="/settings/azure-devops" i18n="@@boards.panel.settingsLink"
+                >Settings → Azure DevOps</a
+              >
+            </p>
+          </div>
+        </div>
+      } @else {
+        @if (problem(); as text) {
+          <div class="alert alert-error panel-alert" role="alert">
+            <p>{{ text }}</p>
+            <p i18n="@@boards.panel.problemFix">
+              An organization admin fixes the connection under Settings → Azure DevOps.
+            </p>
+          </div>
+        }
+
+        @if (connections().length > 1) {
+          <div class="setting-row" data-line="connection">
+            <div class="setting-text">
+              <label for="boards-connection" i18n="@@boards.panel.connection">Connection</label>
+            </div>
+            <div class="setting-field">
+              <select id="boards-connection" (change)="setConnection($event)">
+                @for (c of connections(); track c.id) {
+                  <option [value]="c.id" [selected]="c.id === connectionId()">
+                    {{ connectionLabel(c) }}
+                  </option>
+                }
+              </select>
+            </div>
+          </div>
+        }
+
+        <div class="setting-row" data-line="project">
+          <div class="setting-text">
+            <label for="boards-project" i18n="@@boards.panel.project">Azure DevOps project</label>
+          </div>
+          <div class="setting-field">
+            @if (projectsError(); as message) {
+              <span id="boards-project-error" class="field-error" role="alert">{{ message }}</span>
+            } @else if (projects() === null) {
+              <span class="hint" i18n="@@boards.panel.loadingProjects">Loading projects…</span>
+            } @else if (projectOptions().length === 0) {
+              <span class="hint" i18n="@@boards.panel.noProjects"
+                >The connection sees no Azure DevOps project.</span
+              >
+            } @else {
+              <select id="boards-project" (change)="setProject($event)">
+                <option
+                  value=""
+                  [selected]="azureProjectId() === ''"
+                  i18n="@@boards.panel.chooseProject"
+                >
+                  Choose a project
+                </option>
+                @for (p of projectOptions(); track p.id) {
+                  <option [value]="p.id" [selected]="p.id === azureProjectId()">
+                    {{ p.name }}
+                  </option>
+                }
+              </select>
+            }
+          </div>
+        </div>
+
+        @if (azureProjectId() !== '') {
+          <div class="setting-row" data-line="type">
+            <div class="setting-text">
+              <label for="boards-type" i18n="@@boards.panel.type">Work item type</label>
+            </div>
+            <div class="setting-field">
+              @if (typesError(); as message) {
+                <span class="field-error" role="alert">{{ message }}</span>
+              } @else if (types() === null) {
+                <span class="hint" i18n="@@boards.panel.loadingTypes"
+                  >Loading work item types…</span
+                >
+              } @else {
+                <select id="boards-type" (change)="setType($event)">
+                  <option value="" [selected]="typeRef() === ''" i18n="@@boards.panel.chooseType">
+                    Choose a work item type
+                  </option>
+                  @for (t of typeOptions(); track t.referenceName) {
+                    <option
+                      [value]="t.referenceName"
+                      [disabled]="!t.supported"
+                      [selected]="t.referenceName === typeRef()"
+                    >
+                      {{ typeLabel(t) }}
+                    </option>
+                  }
+                </select>
+              }
+            </div>
+          </div>
+
+          <div class="setting-row" data-line="area">
+            <div class="setting-text">
+              <label for="boards-area" i18n="@@boards.panel.area">Area path</label>
+            </div>
+            <div class="setting-field">
+              <select id="boards-area" (change)="setArea($event)">
+                <option value="" [selected]="areaPath() === ''" i18n="@@boards.panel.root">
+                  Project root
+                </option>
+                @for (a of areaOptions(); track a) {
+                  <option [value]="a" [selected]="a === areaPath()">{{ a }}</option>
+                }
+              </select>
+              @if (pathsError(); as message) {
+                <span class="field-error" role="alert">{{ message }}</span>
+              } @else if (paths() === null) {
+                <span class="hint" i18n="@@boards.panel.loadingPaths">Loading paths…</span>
+              }
+            </div>
+          </div>
+
+          <div class="setting-row" data-line="iteration">
+            <div class="setting-text">
+              <label for="boards-iteration" i18n="@@boards.panel.iteration">Iteration path</label>
+            </div>
+            <div class="setting-field">
+              <select id="boards-iteration" (change)="setIteration($event)">
+                <option value="" [selected]="iterationPath() === ''" i18n="@@boards.panel.root">
+                  Project root
+                </option>
+                @for (i of iterationOptions(); track i) {
+                  <option [value]="i" [selected]="i === iterationPath()">{{ i }}</option>
+                }
+              </select>
+            </div>
+          </div>
+
+          <div class="setting-row" data-line="tags">
+            <div class="setting-text">
+              <label for="boards-tags" i18n="@@boards.panel.tags">Tags</label>
+              <p id="boards-tags-hint" i18n="@@boards.panel.tagsHint">
+                Up to 10. Press Enter after each one. Qualor always adds the tag qualor.
+              </p>
+            </div>
+            <div class="setting-field">
+              @if (tags().length > 0) {
+                <ul class="tag-list">
+                  @for (tag of tags(); track tag) {
+                    <li class="chip">
+                      <span class="tag-text">{{ tag }}</span>
+                      <button
+                        type="button"
+                        class="tag-remove"
+                        [attr.aria-label]="removeTagLabel(tag)"
+                        (click)="removeTag(tag)"
+                      >
+                        <span aria-hidden="true">×</span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              <input
+                #tagField
+                id="boards-tags"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                [attr.aria-describedby]="
+                  tagError() ? 'boards-tags-error boards-tags-hint' : 'boards-tags-hint'
+                "
+                [attr.aria-invalid]="tagError() ? 'true' : null"
+                [value]="tagText()"
+                (input)="typeTags($event)"
+                (keydown.enter)="enterTag($event)"
+                (blur)="leaveTags()"
+              />
+              @if (tagError(); as message) {
+                <span id="boards-tags-error" class="field-error" role="alert">{{ message }}</span>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="setting-row" data-line="auto">
+          <div class="setting-text">
+            <label for="boards-auto" i18n="@@boards.panel.autoLabel"
+              >Create work items for new vulnerabilities</label
+            >
+            <p id="boards-auto-hint" i18n="@@boards.panel.autoNote">
+              Counts vulnerabilities first found after you save.
+            </p>
+            @if (!l.monitoringOn) {
+              <p i18n="@@boards.panel.monitoringOff">
+                Vulnerability monitoring is off for this project.
+              </p>
+            }
+          </div>
+          <div class="setting-field">
+            <select
+              id="boards-auto"
+              aria-describedby="boards-auto-hint"
+              (change)="setMinSeverity($event)"
+            >
+              <option value="" [selected]="minSeverity() === null" i18n="@@boards.panel.auto.off">
+                Off
+              </option>
+              <option
+                value="critical"
+                [selected]="minSeverity() === 'critical'"
+                i18n="@@boards.panel.auto.critical"
+              >
+                Critical
+              </option>
+              <option
+                value="high"
+                [selected]="minSeverity() === 'high'"
+                i18n="@@boards.panel.auto.high"
+              >
+                High and above
+              </option>
+              <option
+                value="medium"
+                [selected]="minSeverity() === 'medium'"
+                i18n="@@boards.panel.auto.medium"
+              >
+                Medium and above
+              </option>
+              <option
+                value="low"
+                [selected]="minSeverity() === 'low'"
+                i18n="@@boards.panel.auto.low"
+              >
+                Low and above
+              </option>
+            </select>
+            <div class="switch-row">
+              <input
+                id="boards-exploited"
+                class="switch"
+                type="checkbox"
+                role="switch"
+                [checked]="exploited()"
+                [disabled]="!l.exploitedAvailable && !exploited()"
+                (change)="setExploited($event)"
+              />
+              <label for="boards-exploited">
+                <span class="sw-name" i18n="@@boards.panel.exploited"
+                  >Exploited vulnerabilities (CISA KEV)</span
+                >
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="setting-actions">
+          @if (l.mapping) {
+            <button type="button" class="btn btn-danger" [disabled]="busy()" (click)="openRemove()">
+              <ng-container i18n="@@boards.panel.remove">Remove mapping</ng-container>
+            </button>
+          }
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="canSave()"
+            [disabled]="!canSave() || busy()"
+            (click)="save()"
+            i18n="@@boards.panel.save"
+          >
+            Save
+          </button>
+        </div>
+      }
+    } @else {
+      <div class="panel-body">
+        <p class="hint" i18n="@@boards.panel.loading">Loading…</p>
+      </div>
+    }
+  </section>
+
+  @if (loaded()?.mapping) {
+    <dialog
+      #dialog
+      id="remove-boards-mapping"
+      class="dialog"
+      aria-labelledby="remove-boards-title"
+      aria-describedby="remove-boards-text"
+    >
+      <form novalidate (submit)="remove($event)">
+        <div class="dialog-head">
+          <h2 id="remove-boards-title" i18n="@@boards.panel.removeTitle">
+            Remove the Azure Boards mapping
+          </h2>
+        </div>
+        <div class="dialog-body">
+          @if (removeError(); as message) {
+            <p class="alert alert-error" role="alert">{{ message }}</p>
+          }
+          <p id="remove-boards-text" i18n="@@boards.panel.removeText">
+            Qualor stops creating work items for this project. Work items that exist stay in Azure
+            Boards, and Qualor keeps reading their state.
+          </p>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" class="btn" (click)="closeRemove()" i18n="@@dialog.cancel">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="btn btn-danger-solid"
+            [disabled]="busy()"
+            i18n="@@boards.panel.removeConfirm"
+          >
+            Remove mapping
+          </button>
+        </div>
+      </form>
+    </dialog>
+  }
+}

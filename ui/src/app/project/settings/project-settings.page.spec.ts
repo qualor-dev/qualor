@@ -3,6 +3,7 @@ import { provideRouter, Router, type Routes, withComponentInputBinding } from '@
 import { RouterTestingHarness } from '@angular/router/testing';
 import { orgAi } from '../../../testing/ai-settings';
 import {
+  boardsProjectSettings,
   FakeServer,
   fixSettings,
   me,
@@ -19,6 +20,8 @@ const PROJECT = '0190a6c2-0000-7000-8000-0000000000f1';
 interface Setup {
   /** Whether the organisation has a Jira connection (the Jira panel shows for a project admin). */
   jira?: boolean;
+  /** Whether the organisation has an Azure DevOps connection (the Boards panel shows). */
+  boards?: boolean;
   projectPermissions: string[];
   orgRole: 'admin' | 'member';
   /** The app's routes; by default the page is rendered outside any. */
@@ -68,6 +71,9 @@ function setup(options: Setup): FakeServer {
       monitoringOn: true,
       exploitedAvailable: true,
     },
+  });
+  server.on('GET', `/api/v0/projects/${PROJECT}/boards`, {
+    body: boardsProjectSettings({ connected: options.boards ?? false, mapped: false }),
   });
   server.on('GET', `/api/v0/projects/${PROJECT}/fixes/settings`, { body: fixSettings() });
   TestBed.configureTestingModule({
@@ -153,6 +159,26 @@ describe('ProjectSettingsPage', () => {
     expect(texts(root, 'nav.settings-index a')).not.toContain('Jira');
   });
 
+  it('shows the Azure Boards panel and its index link after Jira when the organisation has an Azure DevOps connection', async () => {
+    setup({
+      projectPermissions: ['project.read', 'project.settings'],
+      orgRole: 'member',
+      boards: true,
+    });
+    const { root } = await render();
+    const headings = texts(root, '.card.panel h2');
+    expect(headings.slice(4, 7)).toEqual(['Jira', 'Azure Boards', 'Fix MRs']);
+    expect(texts(root, 'nav.settings-index a')).toEqual(headings);
+    expect(root.querySelector('section#boards')).not.toBeNull();
+  });
+
+  it('hides the Azure Boards panel and its index link from a member without an Azure DevOps connection', async () => {
+    setup({ projectPermissions: ['project.read', 'project.settings'], orgRole: 'member' });
+    const { root } = await render();
+    expect(texts(root, '.card.panel h2')).not.toContain('Azure Boards');
+    expect(texts(root, 'nav.settings-index a')).not.toContain('Azure Boards');
+  });
+
   it('shows only Webhooks to a caller who holds org.webhooks.manage and no project setting', async () => {
     setup({ projectPermissions: ['project.read'], orgRole: 'admin' });
     const { root, navigate } = await render();
@@ -180,10 +206,11 @@ function catchScrolls() {
 }
 
 /** The page at its own address, `/projects/<id>/settings` with `fragment`, as the app routes it. */
-async function open(fragment: string | null) {
+async function open(fragment: string | null, boards = false) {
   setup({
     projectPermissions: ['project.read', 'project.settings', 'project.delete'],
     orgRole: 'member',
+    boards,
     routes: [{ path: 'projects/:projectId/settings', component: ProjectSettingsPage }],
   });
   const harness = await RouterTestingHarness.create();
@@ -252,6 +279,14 @@ describe('ProjectSettingsPage index', () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     expect(scroll.mock.contexts[0]).toBe(root.querySelector('section#jira'));
     expect(document.activeElement).toBe(root.querySelector('section#jira h2'));
+  });
+
+  it('reveals the Azure Boards panel for the address #boards once the panel has loaded', async () => {
+    const scroll = catchScrolls();
+    const { root } = await open('boards', true);
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.contexts[0]).toBe(root.querySelector('section#boards'));
+    expect(document.activeElement).toBe(root.querySelector('section#boards h2'));
   });
 
   it('reveals the Fix MRs panel for the address #fixes', async () => {

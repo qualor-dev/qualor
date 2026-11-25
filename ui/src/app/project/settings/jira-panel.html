@@ -32,7 +32,11 @@
         </button>
       </div>
     } @else if (loaded(); as l) {
-      @if (!l.connection) {
+      @if (boardsMapped()) {
+        <div class="panel-body">
+          <p class="one-tracker" i18n="@@jira.panel.usesBoards">This project uses Azure Boards.</p>
+        </div>
+      } @else if (!l.connection) {
         <div class="setting-row" data-line="connection">
           <div class="setting-text">
             <span class="setting-name" i18n="@@jira.panel.connection">Connection</span>
