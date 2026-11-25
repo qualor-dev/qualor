@@ -333,7 +333,6 @@ export async function hookRights(
     {
       publisherId: 'tfs',
       eventType: 'git.pullrequest.updated',
-      resourceVersion: '1.0',
       consumerId: 'webHooks',
       consumerActionId: 'httpRequest',
       publisherInputs: { projectId, repository: repositoryId },
