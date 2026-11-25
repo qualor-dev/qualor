@@ -20,6 +20,21 @@ All notable changes to Qualor are listed here, newest first. The format follows
   [Service hooks](docs/guide/azure-devops.md#service-hooks)).
 - Fix pull requests, and AI fix suggestions as threads with **Apply**
   ([Fix pull requests](docs/guide/azure-devops.md#fix-pull-requests)).
+- Azure Boards, in every edition: **Create work item** turns a code issue of the main branch or a
+  vulnerability into a work item. Qualor shows its id and state, and adds a note to its discussion
+  when the problem is gone or back ([Azure Boards](docs/guide/azure-devops.md#azure-boards)).
+- A Project admin maps each project in **Project → Settings → Azure Boards**: an Azure DevOps
+  project, a work item type Qualor can fill, the area and iteration paths and up to 10 tags. A
+  project uses Jira or Azure Boards, not both
+  ([Map a project to Azure Boards](docs/guide/azure-devops.md#map-a-project-to-azure-boards)).
+- **Create work items for new vulnerabilities** creates work items at or above a severity. It is
+  off by default. Business and Enterprise add **Exploited vulnerabilities (CISA KEV)**
+  ([The automatic rule](docs/guide/azure-devops.md#the-automatic-rule)).
+- **Test** on an Azure DevOps connection says when the identity may not create work items in a
+  mapped project.
+- API: `/projects/{id}/boards`, `/projects/{id}/boards/links` and `/boards-links/{id}`; `boards`
+  and `boardsLinkable` on issues and vulnerabilities; `work_items` in a connection test's
+  `missingAccess`.
 - **Add repositories** sets up CI on Azure DevOps: it opens a pull request with the pipeline file,
   creates the pipeline and its secret variable, and adds a Build validation policy that does not
   block the merge ([Add repositories and set up CI](docs/guide/azure-devops.md#add-repositories-and-set-up-ci)).
@@ -43,7 +58,7 @@ All notable changes to Qualor are listed here, newest first. The format follows
 
 ### Upgrade notes
 
-- Migrations 0034 to 0036 run at the server's first start.
+- Migrations 0034 to 0037 run at the server's first start.
 - Move the server to 0.17 before you point an Azure Pipelines task at it.
 
 ## [0.16.0] - 2026-11-19

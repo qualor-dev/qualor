@@ -28,6 +28,8 @@ SIEM also needs `audit-log.stream`, which only the Enterprise plan lists
 | Connect, test and remove the organisation's [Jira](./jira.md) connection (permission `org.jira.manage`) | ✓ | | | |
 | Map a project to Jira and set its automatic rule (part of changing project settings) | ✓ | ✓ | | |
 | Create, retry and unlink Jira issues (permission `issue.triage`) | ✓ | ✓ | ✓ | |
+| Map a project to [Azure Boards](./azure-devops.md#azure-boards) and set its automatic rule (part of changing project settings) | ✓ | ✓ | | |
+| Create, retry and unlink Azure Boards work items (permission `issue.triage`) | ✓ | ✓ | ✓ | |
 | Allow [fix merge requests](./fix-merge-requests.md) on a GitLab, GitHub or Azure DevOps connection (part of managing connections) | ✓ | | | |
 | Turn fix merge requests on for a project and set their automatic mode (part of changing project settings) | ✓ | ✓ | | |
 | Request, retry and cancel a fix merge request (permission `issue.triage`) | ✓ | ✓ | ✓ | |
@@ -166,6 +168,11 @@ in `.*` (for example `issue.*`).
   (`organization.ai_review_changed`, with whether it is on, its scope, how many projects it lists,
   whether this change confirmed the warning, and the provider's host and model).
 - **Jira** ([Jira](./jira.md)): a connection created, changed (the names of the changed fields only) or deleted (`jira_connection.created`, `.updated`, `.deleted`, with the deployment, the site's address and, on delete, how many links it had); a project's mapping changed or removed (`project.jira_updated`); Jira issues requested (`jira_link.requested`, with how many and whether from issues or vulnerabilities) and a link removed (`jira_link.dismissed`, with the Jira key). The automatic rule's Jira issues are not recorded.
+- **Azure Boards** ([Azure Boards](./azure-devops.md#azure-boards)): a project's mapping changed or
+  removed (`project.boards_updated`, with the names of the changed fields only); work items
+  requested (`boards_link.requested`, with how many and whether from issues or vulnerabilities) and
+  a link removed (`boards_link.dismissed`, with the work item id). The automatic rule's work items
+  are not recorded.
 - **Fix merge requests** ([Fix merge requests](./fix-merge-requests.md)): a project's settings changed (`project.fixes_updated`, with the names of the changed fields only), and a fix requested, retried or cancelled (`dependency_fix.requested`, `.retried`, `.cancelled`, with the package and its family). The connection's **Allow fix MRs** switch is a changed field of `scm_connection.updated` (`fixMrsAllowed`). The automatic mode's requests are not recorded.
 - **Email:** its settings changed (the names of the changed fields only, never the password), and a
   test message sent, with whether it was delivered.

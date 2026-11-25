@@ -151,9 +151,10 @@ it; see the [configuration reference](docs/guide/configuration.md).
   request data into SQL, shell commands, file paths, templates, redirects and outgoing requests.
 - **Merge request comments** on GitLab, GitHub and Azure DevOps: a summary, a thread on each new
   issue, and a commit status, check run or pull request status.
-- **Jira.** One click, or a rule for new vulnerabilities, turns a code issue or a vulnerability into
-  a Jira issue. It shows the Jira status and comments when the finding is fixed. See
-  [Jira](docs/guide/jira.md).
+- **Jira and Azure Boards.** One click, or a rule for new vulnerabilities, turns a code issue or a
+  vulnerability into a Jira issue or an Azure Boards work item. Qualor shows its status, and
+  comments when the finding is fixed. See [Jira](docs/guide/jira.md) and
+  [Azure Boards](docs/guide/azure-devops.md#azure-boards).
 - **SonarQube import**: quality gates, profiles and issue statuses
   ([Migrating from SonarQube](#migrating-from-sonarqube)).
 

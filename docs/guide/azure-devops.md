@@ -2,9 +2,8 @@
 
 Qualor connects to Azure DevOps Services (`dev.azure.com`) and Azure DevOps Server 2022 or later.
 An organisation administrator adds a connection, tests it and maps each Qualor project to a
-repository.
-
-Not yet available in this release: Azure Boards.
+repository. A project admin can also map the project to [Azure Boards](#azure-boards), so that
+findings become work items.
 
 ## Before you start
 
@@ -76,6 +75,9 @@ sees:
 
 With a mapped repository, a passing test can add that the identity cannot read who may change
 findings. Fix it as [the identity's permissions](#the-identitys-permissions) say.
+
+With an [Azure Boards](#azure-boards) mapping, a passing test can add that the identity may not
+create work items. Fix it as [What Boards needs](#what-boards-needs) says.
 
 A failing test shows one of these:
 
@@ -439,6 +441,207 @@ Changing the connection's address clears the password. Subscribe again afterward
 Deleting a connection leaves its subscriptions in Azure DevOps. Remove them under **Project
 settings → Service hooks**.
 
+## Azure Boards
+
+Qualor turns a code issue or a dependency vulnerability into an Azure Boards work item with one
+click, or by itself for new vulnerabilities. It shows the work item's id and state next to the
+finding. When Qualor stops finding the problem, it adds a note to the work item's discussion.
+
+Azure Boards is in every edition. It uses the organisation's Azure DevOps connection: there is
+nothing more to connect. A project admin maps each project to an Azure DevOps project. Everyone who
+may triage issues creates work items.
+
+### What Boards needs
+
+- An [Azure DevOps connection](#connect) in the organisation.
+- For a personal access token, the scope **Work Items: Read & write** (`vso.work_write`).
+- For the identity, the **Basic** access level and **Edit work items in this node** on the area
+  path the project maps. Azure DevOps does not let Stakeholder access create new tags, such as
+  `qualor`.
+- `QUALOR_PUBLIC_URL` on the server. Without it work items carry no link back to Qualor
+  ([Server settings](./install-server.md#server-settings)).
+
+**Save** in the project's panel and **Test** on the connection both check the right to create work
+items.
+
+### Map a project to Azure Boards
+
+A **project admin** opens **Project → Settings → Azure Boards**. The panel shows when the
+organisation has an Azure DevOps connection. Without one, an org admin sees a link to **Settings →
+Azure DevOps**.
+
+| Field | Meaning |
+|---|---|
+| **Connection** | shown with more than one Azure DevOps connection. The default is the project's repository connection, else the first |
+| **Azure DevOps project** | the projects the connection sees. It may differ from the repository's project |
+| **Work item type** | the type Qualor creates, such as Issue or Bug ([Which work item types work](#which-work-item-types-work)) |
+| **Area path**, **Iteration path** | **Project root** by default, or a path the project lists |
+| **Tags** | up to 10 extra tags, each 1 to 100 characters, without `;` or `,`. Qualor always adds `qualor` |
+| **Create work items for new vulnerabilities** | [the automatic rule](#the-automatic-rule), off by default |
+
+**Save** asks Azure DevOps to check a test work item with these settings, without making it. A
+missing right, a required field or a rule then stops the save. For a refused field or rule, the
+panel shows Azure DevOps's own words.
+
+**Remove mapping** stops new work items for the project. Existing work items stay in Azure Boards,
+and Qualor keeps reading their state and adding notes. Mapping the project to another Azure DevOps
+project later changes only the new work items.
+
+### Which work item types work
+
+Qualor offers a type when it can fill every field the type requires. It fills the title, the
+description, the tags, the area path and the iteration path. A required field with a default, such
+as State or Value Area, is no problem. A type with another required field is listed disabled, with
+the reference names of the fields it needs: "Defect — Needs: Custom.Team". Choose another type, or
+ask the process administrator to make those fields optional or give them a default.
+
+The description also goes into **Repro Steps** whenever the type has that field:
+
+| Process | Type | The description goes into |
+|---|---|---|
+| Basic | Issue | **Description** |
+| Agile, Scrum | Bug | **Description** and **Repro Steps**. The Bug form shows only Repro Steps |
+
+Hidden types, such as Test Plan or Shared Steps, are not offered.
+
+Qualor stores the type by its reference name, so a renamed type keeps working. **Save** checks the
+type again. A type that is removed or gains a required field later makes new work items fail: map
+the project again.
+
+### Create work items
+
+Qualor makes one work item per finding. The findings that qualify are those of
+[Jira](./jira.md#create-jira-issues): a code issue on the main branch, and a vulnerability once per
+project, package and vulnerability. A closed finding shows no button.
+
+| Where | How |
+|---|---|
+| The issue page | the **Azure Boards** card, **Create work item** |
+| The **Issues** tab | select rows and **Create Azure Boards work items**: at most 500 issues. A row with a work item shows a pill with its id and state |
+| The **Vulnerabilities** tab | **Create work item** on a row, or tick rows and **Create Azure Boards work items**: at most 100 vulnerabilities |
+
+A bulk request ends with a line such as "12 work items queued, 3 already linked, 1 not linkable".
+Creation runs in the background. Each new work item counts against the same per-user limit as
+status changes: 120 a minute, with a burst of 500.
+
+The issue page's **Azure Boards** card and a Vulnerabilities row offer the same actions:
+
+| State | What you see | What you can do |
+|---|---|---|
+| Waiting | **Creating…** | wait |
+| Created | `#<id>` as a link to the work item, its state, "checked 5 min ago" | **Unlink** |
+| Failed | the reason | **Retry**, **Unlink** |
+| Missing | "Not found in Azure Boards" | **Create again**, **Unlink** |
+| Unlinked | no link | **Create work item** |
+
+**Unlink** asks for confirmation. The work item stays in Azure Boards, Qualor stops updating it,
+and the [automatic rule](#the-automatic-rule) never creates another one for that finding.
+
+A person needs the permission to triage issues. A request needs a mapped project and a connection
+without a credential problem: otherwise the screen says what is missing.
+
+### What the work item holds
+
+| Part | Content |
+|---|---|
+| Title | the issue's message, or `<vulnerability id> in <package> (<severity>)`. At most 255 characters, on one line |
+| Description | the lines of a [Jira issue's description](./jira.md#what-the-jira-issue-holds), with a link to the finding in Qualor. Its last paragraph is `Qualor reference: qualor-<id>-<number>` |
+| Repro Steps | the description again, when the type has the field |
+| Tags | `qualor` and the mapping's tags |
+| Links | a **Hyperlink** to the finding in Qualor |
+| Area path, iteration path | the mapping's |
+
+Do not edit or remove the line `Qualor reference: …`, and keep the tag `qualor`. When Azure
+DevOps's answer to a create is lost, Qualor finds the work item by both, so the finding gets one
+work item, not two.
+
+There is no code snippet: code stays in Qualor. Qualor escapes everything that came from a report,
+a rule, an advisory or a model, so it cannot become a link, a mention, an image or markup in Azure
+DevOps. The links to Qualor appear only when the server has `QUALOR_PUBLIC_URL`.
+
+### States and notes
+
+Every 15 minutes Qualor reads the state of its work items, and at once after a changed mapping is
+saved. The state shows next to the finding, coloured by its category: grey for Proposed and
+Removed, blue for In Progress, green for Resolved and Completed. A work item that moved to another
+project keeps its link. A work item that Qualor cannot find in two passes in a row becomes
+**Missing**.
+
+Qualor adds notes to the work item's discussion, and never changes its state:
+
+| When | Note |
+|---|---|
+| Qualor no longer finds the issue or the vulnerability | "Qualor no longer finds …" |
+| It finds it again | "Qualor finds this again: …" |
+
+What counts as gone is the same as for [Jira](./jira.md#status-and-comments). A closed work item
+gets notes too.
+
+### The automatic rule
+
+**Create work items for new vulnerabilities** creates work items without a click. It takes one of
+**Off**, **Critical**, **High and above**, **Medium and above**, **Low and above**, and is off by
+default. **Exploited vulnerabilities (CISA KEV)** adds the exploited ones; it needs Business or
+Enterprise.
+
+It follows [Jira's automatic rule](./jira.md#the-automatic-rule):
+
+- Only vulnerabilities first found after you save count, never the backlog.
+- At most 50 new work items per organisation in one pass. The rest follow in the next passes.
+- A finding you unlinked is never created again.
+- It needs vulnerability monitoring on for the project.
+
+No audit entry records an automatic work item, because Qualor acts, not a person.
+
+### One tracker per project
+
+A project uses Jira or Azure Boards, never both. While one is mapped, the other's panel shows one
+line: "This project uses Jira." or "This project uses Azure Boards.". To switch, remove the other
+mapping first.
+
+A finding has one tracker too. A finding with a Jira issue gets no work item, and a finding with a
+work item gets no Jira issue, also after the project switched. The automatic rule skips such
+findings. Existing links of the old tracker keep syncing.
+
+### Permissions
+
+| To do this | Permission | Role |
+|---|---|---|
+| Map a project, set the rule | `project.settings` | Project admin and above |
+| Create, retry and unlink work items | `issue.triage` | Maintainer and above |
+| See the work items | `project.read` | everyone who reads the project |
+
+Every change is in the [audit log](./roles-and-audit.md#what-is-recorded).
+
+### Troubleshooting
+
+A credential problem of the connection stops new work items and state reads: a refused credential,
+a sign-in page instead of data, a stored credential that can no longer be read, or an address the
+server no longer allows. **Settings → Azure DevOps** shows it, and the fixes are those of
+[a failing test](#test-the-connection). Each pass makes one call to check it and resumes when the
+call succeeds.
+
+| Problem | Cause | Fix |
+|---|---|---|
+| "The credential may not create work items in the mapped area path of Azure DevOps." | Azure DevOps refused the create (HTTP 403) | give the identity the rights in [What Boards needs](#what-boards-needs), then **Retry** |
+| A failed work item shows Azure DevOps's own words | Azure DevOps refused a field, such as a required one or a rule | fix it in Azure DevOps or in the mapping, then **Retry** |
+| "The mapped work item type no longer exists or needs fields Qualor does not set. Map the project again." | the type was removed, or gained a required field | [map the project](#map-a-project-to-azure-boards) with a type that works, then **Retry** |
+| "Azure DevOps did not find the project, or the credential cannot see it." | the Azure DevOps project is gone, or the identity cannot see it | map the project again, or add the identity to the Azure DevOps project |
+| "Azure DevOps refused the work item as too large." | Azure DevOps refused the request as too large | ask the Azure DevOps administrator about the limit |
+| "Qualor could not tell whether Azure DevOps created the work item." | the answer to a create was lost, and Azure DevOps refused the search for it | look in Azure Boards for a work item with the tag `qualor`. **Retry** creates it again |
+| "Not found in Azure Boards" | Qualor did not find the work item in two passes in a row: it was deleted, or the identity cannot see it any more | **Create again** makes a new one |
+| "The project had no Azure Boards mapping when the work item was to be created." | the mapping was removed before creation | map the project, then **Retry** |
+| "The finding is closed or can no longer have a work item." | the finding was deleted, or was closed, before the work item was made | nothing to do |
+| "This finding already has a Jira issue." | [one tracker per finding](#one-tracker-per-project) | nothing to do |
+| **Save**: "Azure DevOps refused a test work item with this mapping. It said: …" | a required field Qualor does not fill, or a rule | fix what Azure DevOps names, then **Save** again |
+| **Save**: "Qualor cannot fill these required fields of the work item type: …" | the type requires fields Qualor cannot fill | [Which work item types work](#which-work-item-types-work) |
+| **Save**: "The Azure DevOps project no longer lists the chosen area path or iteration path. Choose them again." | the path was renamed or deleted | choose the paths again |
+| **Save**: "The credential may not read or create work items in Azure DevOps. …" | Azure DevOps refused the identity (HTTP 403) | [What Boards needs](#what-boards-needs) |
+| **Test**: "The identity lacks a right: Create work items in the mapped Azure Boards project (Work items: Read & write)." | Azure DevOps refused a test work item of a mapped project | [What Boards needs](#what-boards-needs) |
+| "This project uses Jira. Remove its Jira mapping first." | the project has a Jira mapping | remove the Jira mapping in **Project → Settings → Jira**, or keep Jira |
+| Work items have no link back to Qualor | `QUALOR_PUBLIC_URL` is not set on the server | set it |
+| Nothing is created and no problem shows | the project is not mapped, or vulnerability monitoring is off for an automatic rule | check the panel |
+
 ## Roles and audit
 
 Only organisation administrators see and change Azure DevOps connections. Creating, changing and
@@ -447,3 +650,4 @@ deleting one, and subscribing its hooks, is recorded in the [audit log](./roles-
 ## Delete a connection
 
 Press **Delete** on the connection. Projects mapped to it lose their mapping. Their analyses stay.
+Its Azure Boards mappings and work item links go too. The work items stay in Azure Boards.
