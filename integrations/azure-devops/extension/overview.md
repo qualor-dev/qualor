@@ -29,6 +29,8 @@ Set two variables on the pipeline:
 - `QUALOR_URL`: the address of your Qualor server.
 - `QUALOR_TOKEN`: your project's analysis token, stored as a secret variable.
 
+Set `imageTag` to your Qualor server's release line.
+
 ## Where it runs
 
 - Azure DevOps Services and Azure DevOps Server 2022 or later.
@@ -36,5 +38,5 @@ Set two variables on the pipeline:
 
 ## Learn more
 
-The [Azure DevOps guide](https://qualor.dev/docs/azure-devops) walks through the connection, pull request
-builds and .NET projects.
+The [Azure DevOps guide](https://qualor.dev/docs/azure-devops) walks through the connection,
+pull request builds and .NET projects.

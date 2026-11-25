@@ -122,13 +122,17 @@ Ultimate only. A self-managed GitLab needs its own copy of the component. See
 See [GitHub](docs/guide/github.md) for the whole workflow and the GitHub App that posts check runs
 and review comments.
 
-**Azure Pipelines**, with the `Qualor@0` task (or `docker run`, with no extension):
+**Azure Pipelines**: copy
+[`integrations/azure-devops/qualor-docker.yml`](integrations/azure-devops/qualor-docker.yml) to
+`azure-pipelines.yml`. It runs the scanner image with `docker run` and needs no extension. With the
+Qualor extension installed, the `Qualor@0` task does the same:
 
 ```yaml
 - checkout: self
   fetchDepth: 0
   persistCredentials: false
 - task: Qualor@0
+  inputs: { imageTag: <your server's release line> }
   env:
     QUALOR_TOKEN: $(QUALOR_TOKEN)
 ```
@@ -185,9 +189,8 @@ classes for SpotBugs, downloaded Go modules. C# runs inside your own build with 
 ## AI review
 
 A model reviews GitLab merge requests, GitHub pull requests and Azure DevOps pull requests on the
-projects you choose. It reads
-the change and any file of the repository it needs, and it is told what the analyzers already
-found.
+projects you choose. It reads the change and any file of the repository it needs, and it is told
+what the analyzers already found.
 
 - It comments in threads on the changed lines, with suggested changes a person applies in one
   click.

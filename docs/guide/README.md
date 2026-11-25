@@ -103,8 +103,12 @@ The images are on Docker Hub: [`qualor/server`](https://hub.docker.com/r/qualor/
 [`qualor/scanner`](https://hub.docker.com/r/qualor/scanner) and
 [`qualor/scanner-dotnet`](https://hub.docker.com/r/qualor/scanner-dotnet). The GitLab CI/CD
 component is [`gitlab.com/qualor/qualor`](https://gitlab.com/qualor/qualor), and the GitHub Action
-is [`qualor-dev/scan-action`](https://github.com/qualor-dev/scan-action). You need nothing else from
-the repository to run Qualor.
+is [`qualor-dev/scan-action`](https://github.com/qualor-dev/scan-action). The Azure Pipelines
+extension's VSIX file is attached to the
+[GitHub release](https://github.com/qualor-dev/qualor/releases). On Azure DevOps Services, use the
+`docker run` pipeline files until its Marketplace listing is public
+([Pick a pipeline](./azure-devops.md#pick-a-pipeline)). You need nothing else from the repository
+to run Qualor.
 
 SonarQube and SonarCloud are trademarks of SonarSource SA. Qualor is an independent project. It is
 not affiliated with, sponsored by or endorsed by SonarSource. The names are used only to describe

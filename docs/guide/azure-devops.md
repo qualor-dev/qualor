@@ -256,9 +256,11 @@ The `Qualor@0` task needs the Qualor extension.
 | `imageTag` | The tag of `qualor/scanner` and `qualor/scanner-dotnet`. Default: the extension's version |
 | `arguments` | Extra arguments for `qualor scan`, and for `qualor dotnet end` with `dotnet: true`. Never put a token or password here: the task logs its command line |
 
-The extension updates itself on Azure DevOps Services. Set `imageTag` to your Qualor server's release line.
+The extension updates itself on Azure DevOps Services. Set `imageTag` to your Qualor server's
+release line.
 
-The checkout step needs `fetchDepth: 0`. In a pull request build the task fails with that hint on a shallow clone. Branch builds deepen the clone themselves.
+The checkout step needs `fetchDepth: 0`. In a pull request build the task fails with that hint on a
+shallow clone. Branch builds deepen the clone themselves.
 
 ### Cache the vulnerability database
 
@@ -476,7 +478,8 @@ may triage issues creates work items.
 ### What Boards needs
 
 - An [Azure DevOps connection](#connect) in the organisation.
-- For a personal access token, the scope **Work Items: Read & write** (`vso.work_write`).
+- For a personal access token, the scopes **Work Items: Read & write** (`vso.work_write`) and
+  **Project and Team: Read** (`vso.project`) for the list of Azure DevOps projects.
 - For the identity, the **Basic** access level and **Edit work items in this node** on the area
   path the project maps. Azure DevOps does not let Stakeholder access create new tags, such as
   `qualor`.

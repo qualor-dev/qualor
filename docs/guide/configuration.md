@@ -199,8 +199,8 @@ finding older than that commit.
 
 When present, the scanner reads the revision, the branch, the merge or pull request id and its
 target, the default branch and the project path: from `CI_*` on GitLab, from `GITHUB_*` and the
-event payload on GitHub, and from `BUILD_*` and `SYSTEM_*` on Azure Pipelines. Outside CI, it uses `git rev-parse HEAD` and the current branch, and never
-assumes a merge request.
+event payload on GitHub, and from `BUILD_*` and `SYSTEM_*` on Azure Pipelines. Outside CI, it uses
+`git rev-parse HEAD` and the current branch, and never assumes a merge request.
 
 For [AI review](./ai-review.md#what-your-ci-needs) it also reads three values. They go into the AI
 review snapshot only, never into the report.

@@ -14,8 +14,8 @@ All notable changes to Qualor are listed here, newest first. The format follows
 - On a pull request, Qualor posts a `qualor/<project key>` status, a summary thread and a thread on
   each new issue. A Status check policy on that status blocks the merge when the gate fails
   ([Block the merge on the gate](docs/guide/azure-devops.md#block-the-merge-on-the-gate)).
-- AI review, replies and `qualor review`, `qualor fix` and `qualor stop` commands work on Azure
-  DevOps pull requests. Service hooks deliver the replies and commands at once
+- AI review, replies and commands work on Azure DevOps pull requests. Service hooks deliver the
+  replies and commands at once
   ([AI review](docs/guide/azure-devops.md#ai-review-replies-and-commands),
   [Service hooks](docs/guide/azure-devops.md#service-hooks)).
 - Fix pull requests, and AI fix suggestions as threads with **Apply**
@@ -32,20 +32,22 @@ All notable changes to Qualor are listed here, newest first. The format follows
   ([The automatic rule](docs/guide/azure-devops.md#the-automatic-rule)).
 - **Test** on an Azure DevOps connection says when the identity may not create work items in a
   mapped project.
-- API: `/projects/{id}/boards`, `/projects/{id}/boards/links` and `/boards-links/{id}`; `boards`
-  and `boardsLinkable` on issues and vulnerabilities; `work_items` in a connection test's
+- API: the Azure Boards routes ([Webhooks and API](docs/guide/webhooks-and-api.md)); `boards` and
+  `boardsLinkable` on issues and vulnerabilities; `work_items` in a connection test's
   `missingAccess`.
 - **Add repositories** sets up CI on Azure DevOps: it opens a pull request with the pipeline file,
   creates the pipeline and its secret variable, and adds a Build validation policy that does not
   block the merge ([Add repositories and set up CI](docs/guide/azure-devops.md#add-repositories-and-set-up-ci)).
 - The `Qualor@0` task of the Qualor extension for Azure Pipelines, and pipeline files that run the
   scanner with `docker run` and need no extension
-  ([Pick a pipeline](docs/guide/azure-devops.md#pick-a-pipeline)).
+  ([Pick a pipeline](docs/guide/azure-devops.md#pick-a-pipeline)). The extension's VSIX file is
+  attached to the GitHub release. On Azure DevOps Services, use the `docker run` files until its
+  Marketplace listing is public.
 - The scanner detects Azure Pipelines by itself. The project key is `<project>/<repository>`, with
   characters a key cannot hold replaced by `-`, the key **Add repositories** gives
   ([The project key](docs/guide/azure-devops.md#the-project-key)).
-- Telemetry counts Azure DevOps connections and analyses
-  ([Telemetry](docs/guide/telemetry.md)).
+- Telemetry reports whether an Azure DevOps connection exists, and counts pull request analyses and
+  analyses that ran in Azure Pipelines ([Telemetry](docs/guide/telemetry.md)).
 
 ### Changed
 
