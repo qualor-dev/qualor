@@ -5,7 +5,8 @@ An organisation administrator adds a connection, tests it and maps each Qualor p
 repository. A project admin can also map the project to [Azure Boards](#azure-boards), so that
 findings become work items.
 
-Qualor 0.17 was tested end to end on Azure DevOps Services and on Azure DevOps Server 20.0.
+Qualor 0.17 was tested end to end on Azure DevOps Services, Azure DevOps Server 20.0 and Azure
+DevOps Server 2022.2.
 
 ## Before you start
 
@@ -15,6 +16,24 @@ Qualor 0.17 was tested end to end on Azure DevOps Services and on Azure DevOps S
   personal access token.
 - For Azure DevOps Server on your network: its host and port in `QUALOR_SCM_INTERNAL_HOSTS`
   ([Server settings](./install-server.md#server-settings)).
+
+## What each feature needs
+
+A project Contributor is an identity with the **Basic** access level in the project's
+**Contributors** group, and nothing more. It can do most of what Qualor does.
+
+| Feature | For a Contributor |
+|---|---|
+| [Comments and status on pull requests](#comments-and-status-on-pull-requests) | Works |
+| [Fix pull requests](#fix-pull-requests) | Works |
+| [Azure Boards](#azure-boards) | Works |
+| [Replies and `qualor` commands](#ai-review-replies-and-commands) | Works. Without service hooks, Qualor answers from its pass every 15 minutes |
+| [Service hooks](#service-hooks) | Needs **Edit subscriptions** in the project, which Project Administrators have. Azure DevOps refuses a Contributor's subscriptions (HTTP 403) |
+| [CI setup](#add-repositories-and-set-up-ci) | Needs the **User** role on the agent pool's queue besides **Edit build pipeline** ([each step's rights](#what-the-identity-needs)) |
+
+A personal access token also needs [the scopes](#a-personal-access-token).
+
+On Azure DevOps Server, a Contributor was not checked for CI setup, Azure Boards and commands.
 
 ## Connect
 
@@ -44,7 +63,8 @@ A service principal does not depend on a person's account. Set it up in three st
    (client) id**.
 2. Under **Certificates & secrets**, create a client secret, or upload a certificate.
 3. In Azure DevOps, open **Organization settings → Users** and add the app's service principal with
-   the **Basic** access level. Add it to each project whose repositories Qualor should see.
+   the **Basic** access level. Add it to the **Contributors** group of each project whose
+   repositories Qualor should see ([What each feature needs](#what-each-feature-needs)).
 
 The organisation must be connected to the same Microsoft Entra tenant.
 
@@ -58,12 +78,37 @@ from the server only.
 
 ### A personal access token
 
-Create the token in Azure DevOps under **User settings → Personal access tokens**. The scope
-**Code: Read** is enough for the test. For
-[comments and status on pull requests](#comments-and-status-on-pull-requests) the token needs
-**Code: Read & write**. Replies and commands need more: see
-[the identity's permissions](#the-identitys-permissions). It sees what its owner sees, and it stops
-working when it expires or its owner loses access.
+Create the token in Azure DevOps under **User settings → Personal access tokens**. It sees what its
+owner sees, and it stops working when it expires or its owner loses access.
+
+This set of scopes covers every feature:
+
+| Scope | Access |
+|---|---|
+| Code | **Read & write**, and **Status** |
+| Build | **Read & execute** |
+| Pipeline Resources | **Use and manage** |
+| Agent Pools | **Read** |
+| Work Items | **Read & write** |
+| Project and Team | **Read** |
+| Identity | **Read** |
+
+**Code: Read** is enough for the test. **Code: Read & write** alone covers
+[comments and status on pull requests](#comments-and-status-on-pull-requests),
+[fix pull requests](#fix-pull-requests) and answers to replies.
+[CI setup](#add-repositories-and-set-up-ci), [Azure Boards](#azure-boards) and `qualor` commands
+need the other scopes.
+
+The page lists no **Service Hooks** scope, and none is needed: the set above creates
+[the subscriptions](#let-qualor-subscribe). No **Pull Request Threads** scope is needed either.
+
+Azure DevOps answers a missing scope with HTTP 401:
+
+| Without the other scopes | What you see |
+|---|---|
+| CI setup | "The connection was refused access to the repository." |
+| Azure Boards | "Azure DevOps refused the credential." in the project's panel |
+| `qualor` commands | No answer. **Test** says that the identity cannot read who may change findings |
 
 If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
 `NODE_EXTRA_CA_CERTS`.
@@ -165,21 +210,20 @@ The result of the setup shows the state of the policy.
 ### What the identity needs
 
 When Azure DevOps refuses a step, the result names the rights that step needs. A Project
-Administrator can do every step. The minimal role set for a service principal is the **Basic**
-access level and **Contributors**, plus **Edit policies**. Whether Contributors alone are enough is
-not checked yet.
+Administrator can do every step. A member of **Contributors** with the **Basic** access level also
+needs the **User** role on the agent pool's queue, and **Edit policies** for the policy.
 
 | Step | Right |
 |---|---|
 | Push the branch | **Contribute** and **Create branch** on the repository |
 | Open the pull request | **Contribute to pull requests** on the repository |
-| Create the pipeline and its secret | **Edit build pipeline** in the project |
+| Create the pipeline and its secret | **Edit build pipeline** in the project, and the **User** role on the agent pool's queue: **Project settings → Agent pools**, the pool, **Security**. Without the role, Azure DevOps refuses the pipeline (HTTP 403) |
 | Find the agent pool | Read access to the project's agent pools |
-| Authorise the pipeline on a self-hosted pool | The **Administrator** role on the pool: **Project settings → Agent pools**, the pool, **Security**. Otherwise a manual step |
+| Authorise the pipeline on a self-hosted pool | The **Administrator** role on the pool, in the same **Security** page. Otherwise a manual step |
 | Add the policy | **Edit policies** on the repository. Otherwise a manual step |
 
-A personal access token also needs the matching scopes. The PAT scopes are not verified yet. The
-fix rights are in [the fix table](./fix-merge-requests.md#turning-it-on).
+A personal access token also needs [the scopes](#a-personal-access-token). The fix rights are in
+[the fix table](./fix-merge-requests.md#turning-it-on).
 
 ### When Qualor writes nothing
 
@@ -248,6 +292,8 @@ The `Qualor@0` task needs the Qualor extension.
 |---|---|
 | Azure DevOps Server | Upload the extension's VSIX file, from the release page, under **Collection settings → Extensions** (the local gallery) |
 | Azure DevOps Services | Only the Marketplace installs an extension: use the `docker run` examples until the extension's Marketplace listing is public |
+
+The task needs agent 3.218 or later. On Azure DevOps Server 2022, agent 3.238 runs it on Node 20.
 
 | Task input | Meaning |
 |---|---|
@@ -342,14 +388,14 @@ also needs the right [scope](#a-personal-access-token). Without the permission, 
 the status, the threads and the summary, so none of them appears. **Settings → Azure DevOps** then
 shows the problem.
 
-[Replies and commands](#ai-review-replies-and-commands) need two more reads. Qualor looks up each
-commenter on the identities host, and reads the repository's permissions. Members of **Project
-Administrators** may read both. Whether a Contributor alone may, and which personal access token
-scopes are enough, is not verified yet.
+[Commands](#ai-review-replies-and-commands), and a reply that changes a finding's status, need two
+more reads. Qualor looks up each commenter on the identities host, and reads the repository's
+permissions. A member of **Contributors** may read both. A personal access token needs more than
+**Code: Read & write** for them: [the scopes](#a-personal-access-token).
 
-If `qualor review` is refused for everyone, the identity cannot read permissions. **Test** then
-says that it cannot read who may change findings. Add the identity to **Project Administrators** in
-that project.
+If `qualor review` gets no answer for anyone, the identity cannot read permissions. **Test** then
+says that it cannot read who may change findings. Give a personal access token the scopes, or add
+the identity to the project's **Contributors**.
 
 The service hooks need **Edit subscriptions**
 ([Let Qualor subscribe](#let-qualor-subscribe)).
@@ -361,7 +407,7 @@ Press the switch **Allow fix pull requests** on the connection in **Settings →
 off, also for connections that existed before. The pull requests show as **PR !12**.
 
 Grant the identity the rights [the token table](./fix-merge-requests.md#turning-it-on) lists in the
-repository's **Security** settings.
+repository's **Security** settings. A member of **Contributors** needs nothing more.
 
 The [fix job](./fix-merge-requests.md#azure-pipelines) runs in a pipeline of the main branch.
 
@@ -420,10 +466,10 @@ only there. Without one, **Create or update Qualor's subscriptions** is disabled
 
 Press **Create or update Qualor's subscriptions**. Qualor makes two subscriptions in each Azure
 DevOps project that holds a mapped repository. The identity needs **Edit subscriptions** in that
-project, which Project Administrators have by default.
+project, which Project Administrators have by default and Contributors lack.
 
-A personal access token may not be allowed to create subscriptions. If the button is refused, use a
-[service principal](#a-service-principal) or subscribe by hand.
+A personal access token needs no extra scope for them ([the scopes](#a-personal-access-token)). If
+the button is refused, give the identity **Edit subscriptions**, or subscribe by hand.
 
 ### Subscribe by hand
 
@@ -479,10 +525,11 @@ may triage issues creates work items.
 
 - An [Azure DevOps connection](#connect) in the organisation.
 - For a personal access token, the scopes **Work Items: Read & write** (`vso.work_write`) and
-  **Project and Team: Read** (`vso.project`) for the list of Azure DevOps projects.
+  **Project and Team: Read** (`vso.project`) for the list of Azure DevOps projects
+  ([the scopes](#a-personal-access-token)).
 - For the identity, the **Basic** access level and **Edit work items in this node** on the area
-  path the project maps. Azure DevOps does not let Stakeholder access create new tags, such as
-  `qualor`.
+  path the project maps. A member of **Contributors** has it and may create the tag `qualor`. Azure
+  DevOps does not let Stakeholder access create new tags, such as `qualor`.
 - `QUALOR_PUBLIC_URL` on the server. Without it work items carry no link back to Qualor
   ([Server settings](./install-server.md#server-settings)).
 

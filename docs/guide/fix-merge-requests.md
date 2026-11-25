@@ -47,7 +47,7 @@ The connection's token needs:
 |---|---|
 | GitLab | the `api` scope, and the Developer role or higher on the project |
 | GitHub | the App's permissions `contents: write` and `pull_requests: write` |
-| Azure DevOps | on the repository, for the connection's identity: **Contribute**, **Create branch**, **Force push** and **Contribute to pull requests**. **Force push** is there because Qualor moves and deletes its own `qualor/fix/…` branches. A personal access token also needs **Code: Read & write** |
+| Azure DevOps | on the repository, for the connection's identity: **Contribute**, **Create branch**, **Force push** and **Contribute to pull requests**. **Force push** is there because Qualor moves and deletes its own `qualor/fix/…` branches. A member of the project's **Contributors** has it on the branches it created, and needs nothing more. A personal access token also needs **Code: Read & write** |
 
 The permissions the connection already needs for [comments](./gitlab.md#3-merge-request-comments-and-commit-status)
 and [CI setup](./github.md#set-up-ci-with-a-pull-request) cover them on GitLab and GitHub. On Azure
