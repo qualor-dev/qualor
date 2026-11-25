@@ -10,14 +10,25 @@ import { format, resolveConfig } from 'prettier';
 import { z } from 'zod';
 import type { AzureAuth, AzureClient, AzureResponse } from '../client.js';
 import { LISTED_KINDS, redact, type RedactionTable } from '../record.js';
+import type { QualorIdentity } from '../targets.js';
 
 /** The policy type id of a Build validation branch policy. */
 export const BUILD_POLICY = '0609b952-1397-4640-95ec-e00a01b2c241';
 
 export type TargetName = 'services' | 'server';
-/** An item's answer; `interrupted`: stopped by Ctrl+C before it could answer. */
+/**
+ * An item's answer; `interrupted`: stopped by Ctrl+C before it could answer; `recorded`: run under a
+ * weaker Qualor identity (`--qualor-identity`), each step's outcome recorded, refusals included.
+ */
 export type Answer =
-  'yes' | 'no' | 'partly' | 'manual' | 'per-collection' | 'per-pull-request' | 'interrupted';
+  | 'yes'
+  | 'no'
+  | 'partly'
+  | 'manual'
+  | 'per-collection'
+  | 'per-pull-request'
+  | 'interrupted'
+  | 'recorded';
 /** `links` (pull request URLs for a visual check) go to the console and the local results only. */
 export type ProbeResult = {
   answer: Answer;
@@ -52,6 +63,12 @@ export type ProbeContext = {
   pat: AzureClient;
   /** A client signed in with an Entra credential kind; undefined where there is no Entra (server). */
   entra?: (kind: 'secret' | 'certificate') => AzureClient;
+  /**
+   * `--qualor-identity contributor|minimal-pat`: the weaker identity the bench Qualor's connection
+   * holds (seed-qualor.mjs --identity) and a client with its credential. Undefined for bot: the items
+   * then run exactly as before.
+   */
+  qualorAs?: { identity: WeakerIdentity; client: AzureClient };
   hookBase: string;
   recorderSecret: string;
   project: string;
@@ -172,7 +189,10 @@ export function buildRedactionTable(env: Record<string, string | undefined>): Re
     secrets,
     emails: [],
     names: [],
-    tenantIds: env['AZURE_PROBE_TENANT_ID'] ? [env['AZURE_PROBE_TENANT_ID']] : [],
+    // The contributor service principal's tenant, when it is given apart (--qualor-identity).
+    tenantIds: [env['AZURE_PROBE_TENANT_ID'], env['AZURE_PROBE_CONTRIBUTOR_TENANT_ID']].filter(
+      (t): t is string => typeof t === 'string' && t.length > 0,
+    ),
     hosts: withCases([
       ...hostsOf(env['AZURE_PROBE_SERVER_URL']),
       ...hostsOf(env['AZURE_PROBE_HOOK_BASE']),
@@ -259,6 +279,9 @@ export function scrubEmails(text: string): string {
 
 export type AuthKind = 'pat' | 'secret' | 'certificate';
 
+/** The identities a bench Qualor connection can hold besides the bot (seed-qualor.mjs --identity). */
+export type WeakerIdentity = Exclude<QualorIdentity, 'bot'>;
+
 /**
  * The target, the items a `--items 1,3,4` list names (all known items when absent) and the main
  * identity's credential kind `--auth pat|secret|certificate` (pat when absent; Entra kinds on
@@ -270,12 +293,14 @@ export function parseArgs(argv: string[]): {
   cleanupManual?: true;
   auth?: AuthKind;
   verifyApply?: number;
+  qualorIdentity?: WeakerIdentity;
 } {
   let target: string | undefined;
   let items: number[] | undefined;
   let cleanupManual = false;
   let auth: AuthKind | undefined;
   let verifyApply: number | undefined;
+  let qualorIdentity: QualorIdentity | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const [flag, inline] = (arg ?? '').split('=', 2);
@@ -291,6 +316,12 @@ export function parseArgs(argv: string[]): {
         throw new Error(`--auth pat|secret|certificate, not ${kind}`);
       }
       auth = kind;
+    } else if (flag === '--qualor-identity') {
+      const who = value();
+      if (who !== 'bot' && who !== 'contributor' && who !== 'minimal-pat') {
+        throw new Error(`--qualor-identity bot|contributor|minimal-pat, not ${who}`);
+      }
+      qualorIdentity = who;
     } else if (flag === '--verify-apply') {
       const raw = value();
       const n = Number(raw);
@@ -318,9 +349,16 @@ export function parseArgs(argv: string[]): {
   if (verifyApply !== undefined && !(items?.length === 1 && items[0] === 23)) {
     throw new Error('--verify-apply <prId> goes with --items 23 only');
   }
+  if (qualorIdentity === 'minimal-pat' && target !== 'services') {
+    throw new Error(
+      '--qualor-identity minimal-pat: services only (the Server bench has no minimal PAT)',
+    );
+  }
   const withAuth = {
     ...(auth ? { auth } : {}),
     ...(verifyApply !== undefined ? { verifyApply } : {}),
+    // bot is the default: the arguments then read as they did before the flag existed.
+    ...(qualorIdentity && qualorIdentity !== 'bot' ? { qualorIdentity } : {}),
   };
   if (cleanupManual) return { target, cleanupManual: true, ...withAuth };
   return items ? { target, items, ...withAuth } : { target, ...withAuth };

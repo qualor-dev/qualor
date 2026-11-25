@@ -13,6 +13,7 @@ import {
   type Check,
 } from './19-decoration.js';
 import { QualorApi } from './21-review.js';
+import { qualorConnectionRecord, recordedResult, setupRights } from './identity.js';
 import { pushedCommit } from './22-fix-writes.js';
 import {
   buildProblem,
@@ -55,6 +56,7 @@ import {
   waitFor,
   type ProbeContext,
   type ProbeItem,
+  type ProbeResult,
   type Repo,
 } from './common.js';
 
@@ -1200,13 +1202,16 @@ export const item: ProbeItem = {
     const scmUrl = benchScmUrl(ctx.target);
     const checks: Check[] = [];
     const notes: string[] = [];
-    const finish = () => done(ctx, checks, notes);
+    // What a weaker identity's verdict needs, as far as the run got (--qualor-identity).
+    const seen: WeakerSeen = {};
+    const finish = () =>
+      ctx.qualorAs ? weakerDone(ctx, checks, notes, seen) : done(ctx, checks, notes);
 
     // Qualor's identity's names (the service principal; Server: the PAT's owner) join the
     // redaction table before anything is recorded: the setup's pull request, pipeline and policy
     // are its.
     const spId = await qualorIdentityId(ctx);
-    const who = qualorIdentityName(ctx.target);
+    const who = qualorIdentityName(ctx.target, ctx.qualorAs?.identity);
 
     // ---- The bench Qualor: organisation `bench`, its Azure connection, CI setup available.
     const api = new QualorApi(qualorUrl);
@@ -1223,6 +1228,7 @@ export const item: ProbeItem = {
     ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+    seen.bench = { api, orgId: org.id, connectionId: connection.id };
     if (!connection.ciSetup.available) {
       return result(
         ctx,
@@ -1237,6 +1243,7 @@ export const item: ProbeItem = {
     await resetMain(ctx, created.id, notes);
     const setupCtx: ProbeContext = { ...ctx, repo: SETUP_REPOSITORY };
     const repo = await repoInfo(setupCtx);
+    seen.repo = repo;
     // A run that stops before the merge leaves no open setup pull request or branch.
     ctx.cleanup.add(
       `abandon the setup pull request and delete ${SETUP_BRANCH} if left`,
@@ -1565,6 +1572,47 @@ export const item: ProbeItem = {
     return finish();
   },
 };
+
+type WeakerSeen = {
+  repo?: Repo;
+  bench?: { api: QualorApi; orgId: string; connectionId: string };
+};
+
+/**
+ * A weaker identity's verdict: the steps as they went (the run's error, ciReason, queue and policy
+ * state are Qualor's own texts), the identity's own calls of the setup's writes, and Qualor's record
+ * of the connection.
+ */
+async function weakerDone(
+  ctx: ProbeContext,
+  checks: Check[],
+  notes: string[],
+  seen: WeakerSeen,
+): Promise<ProbeResult> {
+  const record: string[] = [];
+  if (seen.repo) {
+    record.push(
+      ...(await setupRights(ctx, seen.repo, await defaultQueueId(ctx), PIPELINE_PATH.slice(1))),
+    );
+  }
+  if (seen.bench) {
+    record.push(
+      ...(await qualorConnectionRecord(
+        seen.bench.api,
+        seen.bench.orgId,
+        seen.bench.connectionId,
+        seen.repo?.id,
+      )),
+    );
+  }
+  return recordedResult(
+    ctx,
+    `repository ${SETUP_REPOSITORY}; setup on the agent pool ${POOL}; the item pins the image to qualor/scanner:${BENCH_IMAGE_TAG} in the setup pull request`,
+    checks,
+    notes,
+    record,
+  );
+}
 
 /**
  * The checks the full flow makes: the run, 3 on the setup's pull request, 2 on the pipeline, the

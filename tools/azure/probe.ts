@@ -7,13 +7,16 @@
  * (`AZURE_PROBE_RESULTS_FILE`, kept out of the repository).
  * `--items 23 --verify-apply <prId>` reads item 23's file after the Apply clicks and judges each thread.
  * `--cleanup-manual` closes the pull requests and branches the manual items left open.
+ * `--qualor-identity contributor|minimal-pat`: the bench Qualor's connection holds that weaker
+ * identity (seed-qualor.mjs --identity); items 19, 21, 24, 27 and 31 then record each step's
+ * outcome, refusals included, and answer `recorded` (items/identity.ts).
  */
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { appendFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { AzureClient, type AzureAuth } from './client.js';
 import { redact, type RedactionTable } from './record.js';
-import { loadEnvFiles, loadTarget, type Target } from './targets.js';
+import { loadEnvFiles, loadTarget, qualorIdentityAuth, type Target } from './targets.js';
 import {
   abandonPr,
   addIdentity,
@@ -37,6 +40,7 @@ import {
   type ProbeContext,
   type ProbeResult,
   type TargetName,
+  type WeakerIdentity,
 } from './items/common.js';
 import { ITEMS } from './items/index.js';
 import { verifyApply } from './items/23-suggestion-ranges.js';
@@ -73,6 +77,7 @@ async function appendResult(
   stamp: string,
   cleanupFailures: string[],
   manual: ManualPr | undefined,
+  identity?: WeakerIdentity,
 ): Promise<void> {
   await ensureResultsFile(file);
   const lines = [
@@ -81,6 +86,7 @@ async function appendResult(
     '',
     `Date: ${new Date().toISOString().slice(0, 10)} (run ${stamp})`,
     '',
+    ...(identity ? [`Qualor's identity: ${identity}`, ''] : []),
     `Answer: **${res.answer}**`,
     '',
     res.detail,
@@ -132,6 +138,8 @@ type Clients = {
   user: AzureClient;
   reader?: AzureClient;
   admin?: AzureClient;
+  /** `--qualor-identity`: the weaker identity the bench Qualor's connection holds, and its client. */
+  qualorAs?: { identity: WeakerIdentity; client: AzureClient };
 };
 
 /**
@@ -194,6 +202,7 @@ function contextFor(
     ...(c.reader ? { reader: c.reader } : {}),
     ...(c.admin ? { admin: c.admin } : {}),
     ...(entra ? { entra } : {}),
+    ...(c.qualorAs ? { qualorAs: c.qualorAs } : {}),
     hookBase: c.target.hookBase,
     recorderSecret: c.target.recorderSecret,
     project: c.target.project,
@@ -292,6 +301,22 @@ async function main(): Promise<void> {
     ...(target.adminAuth ? { admin: client(target.adminAuth) } : {}),
   };
   await learnIdentities(clients, redaction);
+  if (args.qualorIdentity) {
+    const qualorClient = client(qualorIdentityAuth(args.target, args.qualorIdentity));
+    clients.qualorAs = { identity: args.qualorIdentity, client: qualorClient };
+    console.log(
+      `Qualor's connection identity: ${args.qualorIdentity} (the items record its refusals)`,
+    );
+    // Its names join the redaction table; a minimal PAT may not read connectionData (its owner is the
+    // main PAT's, whose names are in the table already).
+    const who = await qualorClient.request('GET', '/_apis/connectionData', undefined, {
+      apiVersion: '7.0-preview',
+    });
+    const data = ConnectionDataSchema.safeParse(who.json);
+    if (who.status < 300 && data.success) addIdentity(redaction, data.data.authenticatedUser);
+    else
+      console.log(`  (connectionData for the ${args.qualorIdentity} identity: HTTP ${who.status})`);
+  }
   const say = (line: string): string => String(redact(line, redaction));
 
   if (args.cleanupManual) {
@@ -373,7 +398,16 @@ async function main(): Promise<void> {
     for (const link of res.links ?? []) console.log(`  open: ${link}`);
     if (ctx.manualPr) console.log(`  left open for a visual check: ${manualLine(ctx.manualPr)}`);
     if (cleanupFailures.length) console.log(`  clean-up FAILED: ${cleanupFailures.join('; ')}`);
-    await appendResult(file, args.target, item, res, stamp, cleanupFailures, ctx.manualPr);
+    await appendResult(
+      file,
+      args.target,
+      item,
+      res,
+      stamp,
+      cleanupFailures,
+      ctx.manualPr,
+      args.qualorIdentity,
+    );
   }
   console.log(`results appended to ${file}`);
   if (stop.requested) {

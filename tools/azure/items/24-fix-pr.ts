@@ -26,6 +26,7 @@ import {
   type Thr,
 } from './19-decoration.js';
 import { QualorApi } from './21-review.js';
+import { fixRights, qualorConnectionRecord, recordedResult } from './identity.js';
 import { DESCRIPTION_LIMIT } from './22-fix-writes.js';
 import {
   abandonPr,
@@ -48,6 +49,7 @@ import {
   type NewFile,
   type ProbeContext,
   type ProbeItem,
+  type ProbeResult,
   type Repo,
 } from './common.js';
 
@@ -677,7 +679,10 @@ export const item: ProbeItem = {
     const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
-    const finish = () => done(ctx, checks, notes);
+    // What a weaker identity's verdict needs, as far as the run got (--qualor-identity).
+    const seen: WeakerSeen = {};
+    const finish = () =>
+      ctx.qualorAs ? weakerDone(ctx, checks, notes, seen) : done(ctx, checks, notes);
 
     // Qualor's identity's names (the service principal; Server: the PAT's owner) join the
     // redaction table before anything is recorded.
@@ -688,6 +693,7 @@ export const item: ProbeItem = {
     await seedMain(ctx, created.id, notes);
     const fixCtx: ProbeContext = { ...ctx, repo: FIX_REPOSITORY };
     const repo = await repoInfo(fixCtx);
+    seen.fix = { ctx: fixCtx, repo };
 
     // ---- The bench Qualor: project bench-fix mapped to the repository, fixes usable.
     const api = new QualorApi(qualorUrl);
@@ -707,6 +713,7 @@ export const item: ProbeItem = {
     ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+    seen.bench = { api, orgId: org.id, connectionId: connection.id };
     const project = (
       await api.items(
         `/api/v0/projects?organizationId=${org.id}`,
@@ -981,6 +988,49 @@ export const item: ProbeItem = {
     return finish();
   },
 };
+
+type WeakerSeen = {
+  fix?: { ctx: ProbeContext; repo: Repo };
+  bench?: { api: QualorApi; orgId: string; connectionId: string };
+};
+
+/**
+ * A weaker identity's verdict: the steps as they went (the fix's failure is Qualor's own text), the
+ * identity's own calls of a fix's writes in the fix repository, and Qualor's record of the connection.
+ */
+async function weakerDone(
+  ctx: ProbeContext,
+  checks: Check[],
+  notes: string[],
+  seen: WeakerSeen,
+): Promise<ProbeResult> {
+  const record: string[] = [];
+  if (seen.fix) {
+    const main = await refHead(seen.fix.ctx, 'refs/heads/main');
+    record.push(
+      ...(main
+        ? await fixRights(seen.fix.ctx, seen.fix.repo, main)
+        : ['rights the fix writes: not tried (the fix repository has no main)']),
+    );
+  }
+  if (seen.bench) {
+    record.push(
+      ...(await qualorConnectionRecord(
+        seen.bench.api,
+        seen.bench.orgId,
+        seen.bench.connectionId,
+        seen.fix?.repo.id,
+      )),
+    );
+  }
+  return recordedResult(
+    ctx,
+    `repository ${FIX_REPOSITORY}; image qualor/scanner:${BENCH_IMAGE_TAG}`,
+    checks,
+    notes,
+    record,
+  );
+}
 
 /** The checks the full flow makes: analysis, vulnerability, open, target, branch, files, 4 on the PR, cancel, 3 after it. */
 const ALL_CHECKS = 14;

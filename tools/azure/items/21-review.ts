@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import type { AzureClient } from '../client.js';
 import { redact } from '../record.js';
+import { QualorApi } from './qualor-api.js';
+import {
+  hookRights,
+  qualorAnswerText,
+  qualorConnectionRecord,
+  recordedResult,
+} from './identity.js';
 import { CONNECTION_DATA_VERSION } from './01-identity.js';
 import { authorizeDefinitions, EXAMPLES } from './18-ci.js';
 import {
@@ -49,6 +57,7 @@ import {
   waitFor,
   type ProbeContext,
   type ProbeItem,
+  type ProbeResult,
   type Repo,
 } from './common.js';
 
@@ -235,99 +244,9 @@ export function withoutProvider(current: unknown): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The bench Qualor's API (admin session)
+// The bench Qualor's API (admin session): qualor-api.ts, re-exported for the items that import it from here
 
-/** A body read as JSON; null when it is empty or not JSON (a proxy's HTML page, say). */
-function jsonOrNull(text: string): unknown {
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
-export class QualorApi {
-  #cookie = '';
-  #csrf = '';
-  constructor(private readonly base: string) {}
-
-  /** One call, whatever its status: the status, the body read as JSON (else null) and its text. */
-  async send(
-    method: string,
-    p: string,
-    body?: unknown,
-  ): Promise<{ status: number; json: unknown; text: string }> {
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (this.#cookie) headers['Cookie'] = this.#cookie;
-    if (this.#csrf && method !== 'GET') headers['X-Qualor-CSRF'] = this.#csrf;
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const res = await fetch(`${this.base.replace(/\/+$/, '')}${p}`, {
-      method,
-      headers,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const text = await res.text();
-    return { status: res.status, json: jsonOrNull(text), text };
-  }
-
-  async call(
-    method: string,
-    p: string,
-    body?: unknown,
-  ): Promise<{ status: number; json: unknown }> {
-    const res = await this.send(method, p, body);
-    if (res.status < 200 || res.status >= 300) {
-      throw new Error(`${method} ${p} -> ${res.status}: ${res.text.slice(0, 300)}`);
-    }
-    return { status: res.status, json: res.json };
-  }
-
-  async login(password: string): Promise<void> {
-    const res = await fetch(`${this.base.replace(/\/+$/, '')}/api/v0/auth/login`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!res.ok) throw new Error(`Qualor admin login -> ${res.status}`);
-    this.#cookie = res.headers
-      .getSetCookie()
-      .map((c) => c.split(';')[0])
-      .join('; ');
-    if (!this.#cookie.includes('qualor_session=')) throw new Error('login set no session cookie');
-    const me = shape(
-      z.object({ csrfToken: z.string() }).loose(),
-      (await this.call('GET', '/api/v0/auth/me')).json,
-      'auth/me',
-    );
-    this.#csrf = me.csrfToken;
-  }
-
-  async items<T extends z.ZodType>(p: string, schema: T): Promise<z.infer<T>[]> {
-    const sep = p.includes('?') ? '&' : '?';
-    const res = await this.call('GET', `${p}${sep}limit=100`);
-    return shape(z.object({ items: z.array(schema) }), res.json, p).items;
-  }
-
-  /** Every item of a keyset-paged list (`nextCursor`), at most `maxPages` pages of 100. */
-  async all<T extends z.ZodType>(p: string, schema: T, maxPages = 20): Promise<z.infer<T>[]> {
-    const page = z.object({ items: z.array(schema), nextCursor: z.string().nullish() });
-    const out: z.infer<T>[] = [];
-    const sep = p.includes('?') ? '&' : '?';
-    let cursor: string | null = null;
-    for (let i = 0; i < maxPages; i++) {
-      const at: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
-      const answer = await this.call('GET', `${p}${sep}limit=100${at}`);
-      const got = shape(page, answer.json, p);
-      out.push(...got.items);
-      cursor = got.nextCursor ?? null;
-      if (cursor === null) return out;
-    }
-    throw new Error(`${p}: more than ${maxPages} pages`);
-  }
-}
+export { QualorApi };
 
 /** Removes the provider (and so the stored key) from the bench Qualor's settings; throws when it is still there. */
 export async function removeProvider(api: QualorApi): Promise<void> {
@@ -341,9 +260,9 @@ export async function removeProvider(api: QualorApi): Promise<void> {
 // ---------------------------------------------------------------------------------------------
 // Azure DevOps calls
 
-async function whoAmI(ctx: ProbeContext) {
+async function whoAmI(ctx: ProbeContext, client: AzureClient = ctx.user) {
   const res = ok(
-    await ctx.user.request('GET', '/_apis/connectionData', undefined, {
+    await client.request('GET', '/_apis/connectionData', undefined, {
       apiVersion: CONNECTION_DATA_VERSION,
     }),
     'connectionData (PAT user)',
@@ -373,26 +292,26 @@ const CommentThread = z
   })
   .loose();
 
-/** Posts a reply (`parentCommentId` set) or opens a thread (not) as the PAT user. */
+/**
+ * Posts a reply (`parentCommentId` set) or opens a thread (not) as the PAT user (`client`: another
+ * commenter, when Qualor's identity is the PAT user's).
+ */
 async function postAsUser(
   ctx: ProbeContext,
   repo: Repo,
   prId: number,
   content: string,
   reply?: { threadId: number; parentCommentId: number },
+  client: AzureClient = ctx.user,
 ) {
   const res = ok(
     reply
-      ? await ctx.user.request(
-          'POST',
-          threadsPath(ctx, repo, prId, `/${reply.threadId}/comments`),
-          {
-            parentCommentId: reply.parentCommentId,
-            content,
-            commentType: 1,
-          },
-        )
-      : await ctx.user.request('POST', threadsPath(ctx, repo, prId), {
+      ? await client.request('POST', threadsPath(ctx, repo, prId, `/${reply.threadId}/comments`), {
+          parentCommentId: reply.parentCommentId,
+          content,
+          commentType: 1,
+        })
+      : await client.request('POST', threadsPath(ctx, repo, prId), {
           comments: [{ parentCommentId: 0, content, commentType: 1 }],
           status: 1,
         }),
@@ -460,7 +379,11 @@ export const item: ProbeItem = {
     }
 
     const spId = await qualorIdentityId(ctx);
-    const me = await whoAmI(ctx);
+    // Server under --qualor-identity contributor: Qualor is probe-user, whose own comments it never
+    // answers, so qualor-bot writes the reply and the command.
+    const asOther = ctx.qualorAs?.identity === 'contributor' && ctx.target === 'server';
+    const commenter = asOther ? ctx.bot : ctx.user;
+    const me = await whoAmI(ctx, commenter);
     addIdentity(ctx.redaction, me);
     const repo = await repoInfo(ctx);
     const base = await refHead(ctx, repo.defaultBranch);
@@ -499,18 +422,45 @@ export const item: ProbeItem = {
       Buffer.from(`:${secret.password}`).toString('base64'),
       Buffer.from(`qualor:${secret.password}`).toString('base64'),
     );
-    const subscribed = shape(
-      z.object({
-        projects: z.array(
-          z.object({ projectId: z.string(), comment: z.string(), updated: z.string() }).loose(),
-        ),
-      }),
-      (await api.call('POST', `/api/v0/scm-connections/${connection.id}/azure-hooks`)).json,
-      'azure-hooks',
-    );
-    notes.push(
-      `subscribe route: ${subscribed.projects.map((p) => `comment ${p.comment}, updated ${p.updated}`).join('; ') || 'no projects'}`,
-    );
+    const hooksPath = `/api/v0/scm-connections/${connection.id}/azure-hooks`;
+    // A weaker identity may be refused: Qualor's answer is recorded, and the run goes on.
+    const hooksAnswer = ctx.qualorAs
+      ? await api.send('POST', hooksPath)
+      : await api.call('POST', hooksPath);
+    if (ctx.qualorAs) {
+      notes.push(
+        `subscribe route (POST …/azure-hooks): ${hooksAnswer.status < 300 ? `HTTP ${hooksAnswer.status}` : qualorAnswerText(hooksAnswer.status, hooksAnswer.json)}`,
+      );
+    }
+    if (hooksAnswer.status < 300) {
+      const subscribed = shape(
+        z.object({
+          projects: z.array(
+            z.object({ projectId: z.string(), comment: z.string(), updated: z.string() }).loose(),
+          ),
+        }),
+        hooksAnswer.json,
+        'azure-hooks',
+      );
+      notes.push(
+        `subscribe route: ${subscribed.projects.map((p) => `comment ${p.comment}, updated ${p.updated}`).join('; ') || 'no projects'}`,
+      );
+    }
+    if (asOther) {
+      notes.push(
+        "Qualor's identity is probe-user's: qualor-bot writes the reply and the command (Qualor never answers its own comments)",
+      );
+    }
+    // The verdict: as before for the bot; a weaker identity's steps and refusals are recorded.
+    const end = (prId: number): Promise<ProbeResult> =>
+      ctx.qualorAs
+        ? weakerEnd(ctx, checks, notes, prId, {
+            api,
+            orgId: org.id,
+            connectionId: connection.id,
+            repo,
+          })
+        : finish(ctx, checks, notes, prId);
     const enabled = await waitFor(
       async () => {
         const got = await azureSubscriptions(ctx, repo);
@@ -596,7 +546,7 @@ export const item: ProbeItem = {
     const build = await buildAt(ctx, def.id, []);
     if (!build) {
       checks.push(check('a build queued by the pull request', false, 'none within 3 minutes'));
-      return finish(ctx, checks, notes, prId);
+      return end(prId);
     }
     const done = await waitBuild(ctx, build.id, { timeoutMs: 30 * 60_000 });
     await rec(ctx, 'build', answerOf(done.res));
@@ -619,7 +569,7 @@ export const item: ProbeItem = {
           'none within the wait',
         ),
       );
-      return finish(ctx, checks, notes, prId);
+      return end(prId);
     }
     // The AI review runs after the upload: its threads follow the summary, which says when it is done.
     const afterAi = await waitFor(
@@ -680,10 +630,14 @@ export const item: ProbeItem = {
       const root = a.comments[0];
       if (!root) throw new Error('the analyzer thread has no comment');
       const postedAt = Date.now();
-      const replyRes = await postAsUser(ctx, repo, prId, REPLY_TEXT, {
-        threadId: a.id,
-        parentCommentId: root.id,
-      });
+      const replyRes = await postAsUser(
+        ctx,
+        repo,
+        prId,
+        REPLY_TEXT,
+        { threadId: a.id, parentCommentId: root.id },
+        commenter,
+      );
       await rec(ctx, 'reply-post', answerOf(replyRes));
       const reply = shape(
         z
@@ -707,7 +661,7 @@ export const item: ProbeItem = {
       if (answered) await rec(ctx, 'reply-thread', answerOf(answered.res));
       checks.push(
         check(
-          `Qualor's answer to the reply: a comment of ${qualorIdentityName(ctx.target)} with the reply marker, within 3 minutes`,
+          `Qualor's answer to the reply: a comment of ${qualorIdentityName(ctx.target, ctx.qualorAs?.identity)} with the reply marker, within 3 minutes`,
           answered !== undefined,
           answered
             ? `answered in ${seconds} s`
@@ -716,7 +670,7 @@ export const item: ProbeItem = {
       );
       if (answered) {
         notes.push(
-          `answer author id ${answered.answer.author.id.toLowerCase() === spId.toLowerCase() ? 'equals' : 'differs from'} ${qualorIdentityName(ctx.target)}'s identity id`,
+          `answer author id ${answered.answer.author.id.toLowerCase() === spId.toLowerCase() ? 'equals' : 'differs from'} ${qualorIdentityName(ctx.target, ctx.qualorAs?.identity)}'s identity id`,
         );
         notes.push(`reply to answer: ${seconds} s`);
         // Whether the answer rode the hook: the comment-event subscription's history shows a delivery after the reply.
@@ -743,7 +697,7 @@ export const item: ProbeItem = {
     }
 
     // ---- Step 5: a command, a new thread `qualor review` by the PAT user.
-    const commandRes = await postAsUser(ctx, repo, prId, COMMAND_TEXT);
+    const commandRes = await postAsUser(ctx, repo, prId, COMMAND_TEXT, undefined, commenter);
     await rec(ctx, 'command-post', answerOf(commandRes));
     const command = shape(CommentThread, commandRes.json, 'new thread');
     const commandAt = Date.now();
@@ -765,9 +719,30 @@ export const item: ProbeItem = {
           : `no answer within ${COMMAND_WAIT_MS / 60000} minutes`,
       ),
     );
-    return finish(ctx, checks, notes, prId);
+    return end(prId);
   },
 };
+
+/** A weaker identity's verdict: the steps, its own subscribe calls, and Qualor's record of the connection. */
+async function weakerEnd(
+  ctx: ProbeContext,
+  checks: Check[],
+  notes: string[],
+  prId: number,
+  bench: { api: QualorApi; orgId: string; connectionId: string; repo: Repo },
+): Promise<ProbeResult> {
+  const record = [
+    ...(await hookRights(ctx, bench.repo.project.id, bench.repo.id)),
+    ...(await qualorConnectionRecord(bench.api, bench.orgId, bench.connectionId, bench.repo.id)),
+  ];
+  return recordedResult(
+    ctx,
+    `pull request ${prId} into a probe target branch`,
+    checks,
+    notes.map((n) => String(redact(n, ctx.redaction))),
+    record,
+  );
+}
 
 function finish(ctx: ProbeContext, checks: Check[], notes: string[], prId: number) {
   for (const c of checks) ctx.log(`${c.pass ? 'yes' : 'NO '} ${c.what}: ${c.got}`);

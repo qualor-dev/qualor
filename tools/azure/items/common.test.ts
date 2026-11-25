@@ -209,6 +209,25 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--target', 'services', '--auth', 'oauth'])).toThrow(/oauth/);
     expect(() => parseArgs(['--target', 'services', '--auth'])).toThrow(/needs a value/);
   });
+
+  it("reads the bench Qualor's weaker identity; the bot reads as no flag at all", () => {
+    expect(
+      parseArgs(['--target', 'server', '--items', '19', '--qualor-identity', 'contributor']),
+    ).toEqual({ target: 'server', items: [19], qualorIdentity: 'contributor' });
+    expect(parseArgs(['--target=services', '--qualor-identity=minimal-pat'])).toEqual({
+      target: 'services',
+      qualorIdentity: 'minimal-pat',
+    });
+    expect(parseArgs(['--target', 'services', '--qualor-identity', 'bot'])).toEqual({
+      target: 'services',
+    });
+    expect(() => parseArgs(['--target', 'server', '--qualor-identity', 'minimal-pat'])).toThrow(
+      /services only/,
+    );
+    expect(() => parseArgs(['--target', 'services', '--qualor-identity', 'admin'])).toThrow(
+      /admin/,
+    );
+  });
 });
 
 describe('build log helpers', () => {

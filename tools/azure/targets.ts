@@ -52,6 +52,38 @@ function servicesAuth(kind: 'pat' | 'secret' | 'certificate'): AzureAuth {
   };
 }
 
+/**
+ * Whose credential the bench Qualor's Azure DevOps connection holds (seed-qualor.mjs --identity):
+ * `bot` (the bench service principal on Services, qualor-bot's PAT on Server: every earlier run),
+ * `contributor` (a project Contributor) or `minimal-pat` (Services: a PAT with the candidate minimal
+ * scopes).
+ */
+export type QualorIdentity = 'bot' | 'contributor' | 'minimal-pat';
+
+/**
+ * The credential of a weaker Qualor identity, for the probe's own calls as that identity:
+ * Services' contributor service principal (`AZURE_PROBE_CONTRIBUTOR_CLIENT_ID`/`_SECRET`, tenant
+ * `AZURE_PROBE_CONTRIBUTOR_TENANT_ID` or else `AZURE_PROBE_TENANT_ID`) or minimal PAT
+ * (`AZURE_PROBE_MINIMAL_PAT`); Server's probe-user PAT (`AZURE_PROBE_SERVER_USER_PAT`, a
+ * Contributor's Code read & write PAT). Server has no minimal PAT.
+ */
+export function qualorIdentityAuth(
+  name: 'services' | 'server',
+  identity: Exclude<QualorIdentity, 'bot'>,
+): AzureAuth {
+  if (name === 'server') {
+    if (identity !== 'contributor') throw new Error(`--qualor-identity ${identity}: services only`);
+    return pat('AZURE_PROBE_SERVER_USER_PAT');
+  }
+  if (identity === 'minimal-pat') return pat('AZURE_PROBE_MINIMAL_PAT');
+  return {
+    kind: 'secret',
+    tenantId: process.env['AZURE_PROBE_CONTRIBUTOR_TENANT_ID'] || need('AZURE_PROBE_TENANT_ID'),
+    clientId: need('AZURE_PROBE_CONTRIBUTOR_CLIENT_ID'),
+    secret: need('AZURE_PROBE_CONTRIBUTOR_CLIENT_SECRET'),
+  };
+}
+
 /** The only base URL a client can be built for is the one in the environment. */
 export function loadTarget(
   name: 'services' | 'server',

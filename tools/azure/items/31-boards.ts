@@ -15,16 +15,24 @@ import {
   type Check,
 } from './19-decoration.js';
 import { QualorApi } from './21-review.js';
+import {
+  boardsRights,
+  qualorAnswerText,
+  qualorConnectionRecord,
+  recordedResult,
+} from './identity.js';
 import { problemText } from './27-onboarding.js';
 import { describeAnswer, escapeHtml, tagsOf, wiqlIds } from './30-boards-facts.js';
 import {
   answerOf,
   ok,
+  repoInfo,
   result,
   shape,
   waitFor,
   type ProbeContext,
   type ProbeItem,
+  type ProbeResult,
 } from './common.js';
 
 const PATCH_JSON = 'application/json-patch+json';
@@ -393,7 +401,12 @@ export const item: ProbeItem = {
     const projectKey = bench.key;
     const checks: Check[] = [];
     const notes: string[] = [];
-    const finish = () => done(ctx, checks, notes, projectKey);
+    // What a weaker identity's verdict needs, as far as the run got (--qualor-identity).
+    const weak: WeakerSeen = {};
+    const finish = () =>
+      ctx.qualorAs
+        ? weakerDone(ctx, checks, notes, projectKey, weak)
+        : done(ctx, checks, notes, projectKey);
 
     // The work item is Qualor's, made as its identity (the service principal; Server: the PAT's
     // owner): its names join the redaction table before anything is recorded.
@@ -417,6 +430,7 @@ export const item: ProbeItem = {
     ).find((c) => c.provider === 'azure' && c.baseUrl.replace(/\/+$/, '') === scmUrl);
     if (!connection)
       throw new Error('the bench Qualor has no Azure DevOps connection (run seed-qualor.mjs)');
+    weak.bench = { api, orgId: org.id, connectionId: connection.id };
     const project = (
       await api.items(
         `/api/v0/projects?organizationId=${org.id}`,
@@ -431,29 +445,40 @@ export const item: ProbeItem = {
 
     // ---- The probe project and the Bug type, as Qualor's pickers list them.
     const boardsBase = `/api/v0/projects/${project.id}/boards`;
-    const azureProjects = shape(
-      NamedItems,
-      (await api.call('GET', `${boardsBase}/projects?connection=${connection.id}`)).json,
-      'Boards projects',
-    ).items;
+    // A weaker identity's pickers may be refused: Qualor's answer is recorded and the run ends there.
+    const picked = async (what: string, path: string): Promise<unknown> => {
+      if (!ctx.qualorAs) return (await api.call('GET', path)).json;
+      const got = await api.send('GET', path);
+      checks.push(
+        check(
+          `Qualor's ${what} picker answers (GET …/boards/${what === 'project' ? 'projects' : 'work-item-types'})`,
+          got.status === 200,
+          got.status === 200 ? 'HTTP 200' : qualorAnswerText(got.status, got.json),
+        ),
+      );
+      return got.status === 200 ? got.json : undefined;
+    };
+    const projectsJson = await picked(
+      'project',
+      `${boardsBase}/projects?connection=${connection.id}`,
+    );
+    if (projectsJson === undefined) return finish();
+    const azureProjects = shape(NamedItems, projectsJson, 'Boards projects').items;
     const azureProject = azureProjects.find(
       (p) => p.name.toLowerCase() === ctx.project.toLowerCase(),
     );
     if (!azureProject) {
-      throw new Error(
-        `Qualor's project picker does not list the probe project (${azureProjects.length} listed)`,
-      );
+      const unlisted = `Qualor's project picker does not list the probe project (${azureProjects.length} listed)`;
+      if (!ctx.qualorAs) throw new Error(unlisted);
+      checks.push(check('the probe project is among the Azure projects listed', false, unlisted));
+      return finish();
     }
-    const types = shape(
-      TypeItems,
-      (
-        await api.call(
-          'GET',
-          `${boardsBase}/work-item-types?connection=${connection.id}&azureProject=${azureProject.id}`,
-        )
-      ).json,
-      'work item types',
-    ).items;
+    const typesJson = await picked(
+      'work item type',
+      `${boardsBase}/work-item-types?connection=${connection.id}&azureProject=${azureProject.id}`,
+    );
+    if (typesJson === undefined) return finish();
+    const types = shape(TypeItems, typesJson, 'work item types').items;
     const bug = types.find((t) => t.name === TYPE_NAME);
     notes.push(
       `pickers: ${azureProjects.length} Azure project(s), the probe project among them; ${types.length} type(s), ${TYPE_NAME} ${bug ? (bug.supported ? 'supported' : 'NOT supported') : 'not listed'}`,
@@ -779,6 +804,41 @@ export const item: ProbeItem = {
     return finish();
   },
 };
+
+type WeakerSeen = { bench?: { api: QualorApi; orgId: string; connectionId: string } };
+
+/**
+ * A weaker identity's verdict: the steps as they went (a link's failure is Qualor's own text), the
+ * identity's own Boards calls in the probe project, and Qualor's record of the connection (its test
+ * on the probe repository checks work items too: missingAccess `work_items`).
+ */
+async function weakerDone(
+  ctx: ProbeContext,
+  checks: Check[],
+  notes: string[],
+  projectKey: string,
+  seen: WeakerSeen,
+): Promise<ProbeResult> {
+  const probeRepo = await repoInfo(ctx);
+  const record = [
+    ...(await boardsRights(ctx, probeRepo.project.id, TYPE_NAME, TAG)),
+    ...(seen.bench
+      ? await qualorConnectionRecord(
+          seen.bench.api,
+          seen.bench.orgId,
+          seen.bench.connectionId,
+          probeRepo.id,
+        )
+      : []),
+  ];
+  return recordedResult(
+    ctx,
+    `Qualor project ${projectKey}, mapped to the probe project for the run`,
+    checks,
+    notes.map((n) => String(redact(n, ctx.redaction))),
+    record,
+  );
+}
 
 function done(ctx: ProbeContext, checks: Check[], notes: string[], projectKey: string) {
   for (const c of checks) ctx.log(`${c.pass ? 'yes' : 'NO '} ${c.what}: ${c.got}`);

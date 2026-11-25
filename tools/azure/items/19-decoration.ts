@@ -34,7 +34,9 @@ import {
   type ProbeItem,
   type Repo,
   type TargetName,
+  type WeakerIdentity,
 } from './common.js';
+import { benchQualorRecord, decorationRights, identityLabel, recordedResult } from './identity.js';
 import {
   authorizeDefinitions,
   BENCH_IMAGE_TAG,
@@ -533,9 +535,9 @@ export function benchProject(
   return { key: env[`${ownPrefix}_PROJECT_KEY`] ?? ownKey, tokenEnv: `${ownPrefix}_TOKEN` };
 }
 
-/** Who Qualor acts as on the target, for the item's texts. */
-export const qualorIdentityName = (target: TargetName): string =>
-  target === 'server' ? "Qualor's PAT identity" : 'the service principal';
+/** Who Qualor acts as on the target, for the item's texts (`identity`: a weaker one, --qualor-identity). */
+export const qualorIdentityName = (target: TargetName, identity?: WeakerIdentity): string =>
+  identityLabel(target, identity);
 
 /**
  * The id of the identity Qualor acts as, whose names join the redaction table: the service
@@ -543,6 +545,7 @@ export const qualorIdentityName = (target: TargetName): string =>
  * the main identity's PAT (`AZURE_PROBE_SERVER_PAT`), so Qualor's comments are the probe's own.
  */
 export async function qualorIdentityId(ctx: ProbeContext): Promise<string> {
+  if (ctx.qualorAs) return weakerIdentityId(ctx, ctx.qualorAs);
   if (ctx.target !== 'server') return servicePrincipalId(ctx);
   const res = ok(
     await ctx.bot.request('GET', '/_apis/connectionData', undefined, {
@@ -551,6 +554,29 @@ export async function qualorIdentityId(ctx: ProbeContext): Promise<string> {
     "connectionData of Qualor's PAT identity",
   );
   const data = shape(ConnectionDataSchema, res.json, "connectionData (Qualor's PAT identity)");
+  addIdentity(ctx.redaction, data.authenticatedUser);
+  return data.authenticatedUser.id;
+}
+
+/**
+ * The id of a weaker identity the bench Qualor's connection holds (--qualor-identity). A minimal PAT
+ * that may not read connectionData stands in by its owner, the main PAT's (the maintainer's).
+ */
+async function weakerIdentityId(
+  ctx: ProbeContext,
+  as: NonNullable<ProbeContext['qualorAs']>,
+): Promise<string> {
+  const what = `connectionData of ${identityLabel(ctx.target, as.identity)}`;
+  let res = await as.client.request('GET', '/_apis/connectionData', undefined, {
+    apiVersion: '7.0-preview',
+  });
+  if (res.status >= 300 && as.identity === 'minimal-pat') {
+    ctx.log(`${what}: HTTP ${res.status}; the main PAT's owner (the same account) stands in`);
+    res = await ctx.pat.request('GET', '/_apis/connectionData', undefined, {
+      apiVersion: '7.0-preview',
+    });
+  }
+  const data = shape(ConnectionDataSchema, ok(res, what).json, what);
   addIdentity(ctx.redaction, data.authenticatedUser);
   return data.authenticatedUser.id;
 }
@@ -596,7 +622,8 @@ export const item: ProbeItem = {
       },
     });
     const dummy = ['qlr', 'bench', randomBytes(12).toString('hex')].join('_');
-    const dotnetForms: Form[] = ext.installed ? ['docker', 'task'] : ['docker'];
+    // A weaker Qualor identity changes nothing of the .NET forms (dry runs, no Qualor): they are left out then.
+    const dotnetForms: Form[] = ctx.qualorAs ? [] : ext.installed ? ['docker', 'task'] : ['docker'];
     const dotnetRuns: Run[] = [];
     for (const form of dotnetForms) {
       const def = await createDefinition(ctx, {
@@ -714,7 +741,7 @@ export const item: ProbeItem = {
       // Qualor reads its own statuses by this id: the listing must carry the service principal's.
       const author = st1.status.createdBy?.id;
       notes.push(
-        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? `${qualorIdentityName(ctx.target)}'s id` : 'another id'}`,
+        `status author in the listing: ${author === undefined ? 'absent' : author.toLowerCase() === spId.toLowerCase() ? `${qualorIdentityName(ctx.target, ctx.qualorAs?.identity)}'s id` : 'another id'}`,
       );
     }
     const verdict1 = await policyVerdict(ctx, pr1, statusPolicy.id, 'rejected');
@@ -892,6 +919,22 @@ async function finish(
   repo: Repo,
   base: string,
 ) {
+  if (ctx.qualorAs) {
+    // A weaker identity: each step as it went, the identity's own calls of Qualor's writes, and
+    // what the bench Qualor recorded of the connection.
+    const { pr } = await getPr(ctx, prId);
+    const record = [
+      ...(await decorationRights(ctx, repo, prId, pr.lastMergeSourceCommit?.commitId)),
+      ...(await benchQualorRecord(benchScmUrl(ctx.target), BENCH_ORG, repo.id)),
+    ];
+    return recordedResult(
+      ctx,
+      `pull request ${prId} into a probe target branch; image qualor/scanner:${BENCH_IMAGE_TAG}`,
+      checks,
+      notes,
+      record,
+    );
+  }
   const outcomes: { pass: boolean; text: string }[] = [];
   if (runs.length > 0) {
     const target = await createBranchAt(ctx, `probe/19-${ctx.stamp}-dotnet-target`, base);
