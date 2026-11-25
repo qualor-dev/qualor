@@ -9,6 +9,7 @@
   "targets": [{ "id": "Microsoft.VisualStudio.Services" }],
   "icons": { "default": "images/icon.png" },
   "galleryFlags": ["Preview"],
+  "public": true,
   "tags": ["code quality", "static analysis", "security", "SAST", "SCA"],
   "content": { "details": { "path": "overview.md" } },
   "links": {
