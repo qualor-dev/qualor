@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "value": [
+      {
+        "repositoryId": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+        "name": "refs/heads/probe/22-fix-20261125012634",
+        "oldObjectId": "becddfac480a51f156988eb5c38aa1f7e260291f",
+        "newObjectId": "0000000000000000000000000000000000000000",
+        "isLocked": false,
+        "updateStatus": "succeededNonExistentRef",
+        "success": true
+      }
+    ],
+    "count": 1
+  }
+}

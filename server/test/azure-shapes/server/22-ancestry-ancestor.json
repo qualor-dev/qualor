@@ -1,0 +1,29 @@
+{
+  "status": 200,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "changeCounts": {
+      "Edit": 1,
+      "Add": 1
+    },
+    "changes": [
+      {
+        "item": {
+          "objectId": "f70d1d7baaa943a46f30c718736d9e0cbd2725cb",
+          "originalObjectId": "658edb1576dcd8c25de8d98d295de3810fdb2dfc",
+          "gitObjectType": "tree",
+          "commitId": "e4b4c0196c0269bc409abe5a8385852500610cf7",
+          "path": "/probe",
+          "isFolder": true,
+          "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/items/probe?versionType=Commit&version=e4b4c0196c0269bc409abe5a8385852500610cf7"
+        },
+        "changeType": "edit"
+      }
+    ],
+    "commonCommit": "0098a5f97c21b08dfcca28652fcf554ef709e88b",
+    "baseCommit": "0098a5f97c21b08dfcca28652fcf554ef709e88b",
+    "targetCommit": "e4b4c0196c0269bc409abe5a8385852500610cf7",
+    "aheadCount": 1,
+    "behindCount": 0
+  }
+}

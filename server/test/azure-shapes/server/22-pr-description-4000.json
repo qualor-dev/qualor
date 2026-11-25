@@ -1,0 +1,96 @@
+{
+  "status": 201,
+  "contentType": "application/json; charset=utf-8; api-version=7.0",
+  "body": {
+    "repository": {
+      "id": "0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+      "name": "probe",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9",
+      "project": {
+        "id": "828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "name": "probe-org",
+        "description": "Qualor probe bench (Agile)",
+        "url": "https://ado.example.invalid/DefaultCollection/_apis/projects/828b9239-8828-4b4e-82e8-fa6e00000c8f",
+        "state": "wellFormed",
+        "revision": 8,
+        "visibility": "private",
+        "lastUpdateTime": "2026-11-21T06:14:01.837Z"
+      },
+      "size": 940,
+      "remoteUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe",
+      "sshUrl": "ssh://ado.example.invalid:22/DefaultCollection/probe-org/_git/probe",
+      "webUrl": "https://ado.example.invalid/DefaultCollection/probe-org/_git/probe",
+      "isDisabled": false,
+      "isInMaintenance": false
+    },
+    "pullRequestId": 21,
+    "codeReviewId": 21,
+    "status": "active",
+    "createdBy": {
+      "displayName": "Probe User",
+      "url": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "_links": {
+        "avatar": {
+          "href": "https://ado.example.invalid/DefaultCollection/_apis/GraphProfile/MemberAvatars/win.<sid>"
+        }
+      },
+      "id": "0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "uniqueName": "ado.example.invalid\\Probe User",
+      "imageUrl": "https://ado.example.invalid/DefaultCollection/_api/_common/identityImage?id=0b3835b3-4012-468c-87a4-fa6e00009bc6",
+      "descriptor": "win.<sid>"
+    },
+    "creationDate": "2026-11-25T01:26:43.2429728Z",
+    "title": "Qualor probe item 22 (20261125012634)",
+    "description": "<secret>",
+    "sourceRefName": "refs/heads/probe/22-fix-20261125012634",
+    "targetRefName": "refs/heads/probe/22-base-20261125012634",
+    "mergeStatus": "queued",
+    "isDraft": false,
+    "mergeId": "44e87d9a-a98d-458b-8c2f-fa6e000079ad",
+    "lastMergeSourceCommit": {
+      "commitId": "becddfac480a51f156988eb5c38aa1f7e260291f",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/becddfac480a51f156988eb5c38aa1f7e260291f"
+    },
+    "lastMergeTargetCommit": {
+      "commitId": "e4b4c0196c0269bc409abe5a8385852500610cf7",
+      "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/e4b4c0196c0269bc409abe5a8385852500610cf7"
+    },
+    "reviewers": [],
+    "labels": [],
+    "url": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/21",
+    "_links": {
+      "self": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/21"
+      },
+      "repository": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9"
+      },
+      "workItems": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/21/workitems"
+      },
+      "sourceBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/refs/heads/probe/22-fix-20261125012634"
+      },
+      "targetBranch": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/refs/heads/probe/22-base-20261125012634"
+      },
+      "statuses": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/21/statuses"
+      },
+      "sourceCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/becddfac480a51f156988eb5c38aa1f7e260291f"
+      },
+      "targetCommit": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/commits/e4b4c0196c0269bc409abe5a8385852500610cf7"
+      },
+      "createdBy": {
+        "href": "https://ado.example.invalid/DefaultCollection/_apis/Identities/0b3835b3-4012-468c-87a4-fa6e00009bc6"
+      },
+      "iterations": {
+        "href": "https://ado.example.invalid/DefaultCollection/828b9239-8828-4b4e-82e8-fa6e00000c8f/_apis/git/repositories/0c3c575c-2bee-44bc-8f5c-fa6e000067a9/pullRequests/21/iterations"
+      }
+    },
+    "supportsIterations": true,
+    "artifactId": "vstfs:///Git/PullRequestId/828b9239-8828-4b4e-82e8-fa6e00000c8f%2f0c3c575c-2bee-44bc-8f5c-fa6e000067a9%2f21"
+  }
+}
