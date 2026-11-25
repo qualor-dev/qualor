@@ -7,7 +7,7 @@ import {
   type AzureThread,
 } from '../scm/azure/client';
 import { azureClientFor } from '../scm/azure/connections';
-import { azureMayTriage, type RightsLogger } from '../scm/azure/rights';
+import { azureMayTriage, azureTriageRight, type RightsLogger } from '../scm/azure/rights';
 import { AZURE_REPOSITORY_ID } from '../scm/azure/url';
 import { gitlabClientFor, type ScmConnectionRow } from '../scm/connections';
 import {
@@ -32,6 +32,7 @@ import { MAX_DISCUSSION_PAGES } from '../scm/inline';
 import { firstLineOf, markerOf, replyMarker } from '../scm/markdown';
 import { ScmError } from '../scm/provider';
 import { MAX_AUTHORS_LOOKED_UP } from '../scm/rights-limits';
+import type { ReviewRight } from './commands';
 import type { ReviewJobDeps } from './job';
 import type { ReplyRow } from './replies';
 import {
@@ -525,9 +526,10 @@ export interface CommandSide {
    * `qualor review` needs, which are the ones a reply needs to change a finding's status: one
    * request, through the same functions. It fails closed: no author found (a note a listing cut at
    * its page bound does not show, an account that is gone, no read yet), a login GitHub could not
-   * have and an answer of GitHub's that does not parse have no rights.
+   * have and an answer of GitHub's that does not parse have no rights. `unreadable` (Azure DevOps):
+   * Qualor's own credential was refused the reads that tell.
    */
-  mayReview(): Promise<boolean>;
+  mayReview(): Promise<ReviewRight>;
   /** Posts `body` as the answer: answers the new note's id. Comes after `read`. */
   post(body: string): Promise<number>;
 }
@@ -638,7 +640,8 @@ export function githubCommandSide(
  * opened (`threadId`), which is read alone. A thread Azure DevOps no longer has is not found (the
  * job's `orGone`); a command's comment that was deleted, or that its thread no longer holds, is
  * gone. Whether its author may ask for a review is whether they have Contribute on the repository
- * (`azureMayTriage`), as for a reply's status change.
+ * (`azureTriageRight`), as for a reply's status change; `unreadable` when Azure DevOps refused
+ * Qualor's own identities or permissions read.
  */
 export function azureCommandSide(
   connectionId: string,
@@ -671,7 +674,13 @@ export function azureCommandSide(
     },
     async mayReview() {
       if (author === undefined) return false;
-      return azureMayTriage(client, repositoryId, [author], forReply(logger, row.id));
+      const right = await azureTriageRight(
+        client,
+        repositoryId,
+        [author],
+        forReply(logger, row.id),
+      );
+      return right === 'unreadable' ? right : right === 'may';
     },
     post: async (body) =>
       azureNoteId(thread, await client.reply(repositoryId, prId, thread, commandId, body)),

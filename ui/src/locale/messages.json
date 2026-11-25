@@ -1713,7 +1713,7 @@
     "addRepos.error.readPermission": "The connection was refused access to the repository.",
     "addRepos.error.githubPermission": "The GitHub App needs the Contents, Workflows and Secrets permissions, read and write.",
     "addRepos.error.gitlabPermission": "The GitLab token needs the api scope and the Maintainer role.",
-    "addRepos.error.azurePermission": "The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools.",
+    "addRepos.error.azurePermission": "The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools. A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes.",
     "addRepos.state.pullRequest": "Pull request opened",
     "addRepos.state.mergeRequest": "Merge request opened",
     "addRepos.state.snippet": "CI job to add",

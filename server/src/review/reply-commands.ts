@@ -1,6 +1,6 @@
 import { assertNever } from '@qualor/shared';
 import { readLlmSettings } from '../llm/settings';
-import { handleCommand, NothingToReview, type CommandDecision } from './commands';
+import { handleCommand, NothingToReview, type CommandDecision, type ReviewRight } from './commands';
 import type { ReviewJobDeps } from './job';
 import { commandNote } from './render';
 import { recordAnswerNote, type ReplyRow } from './replies';
@@ -77,7 +77,7 @@ class CommandFlow extends JobSteps {
     row: ReplyRow,
     target: Target,
     side: CommandSide,
-  ): Promise<{ answered: number | null; mayReview: boolean } | typeof CLOSED | null> {
+  ): Promise<{ answered: number | null; mayReview: ReviewRight } | typeof CLOSED | null> {
     if (await this.closed(row, target)) return CLOSED;
     const found = await orGone(() => side.read());
     if (found === GONE || found === null) return null;
@@ -92,7 +92,7 @@ class CommandFlow extends JobSteps {
   private async decideCommand(
     row: ReplyRow,
     target: Target,
-    authorMayReview: boolean,
+    authorMayReview: ReviewRight,
   ): Promise<CommandDecision | null> {
     const { db, logger } = this.deps;
     try {

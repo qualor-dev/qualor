@@ -168,7 +168,8 @@ function permissionText(provider: Provider | null, stage: 'read' | 'change' | nu
     case 'gitlab':
       return $localize`:@@addRepos.error.gitlabPermission:The GitLab token needs the api scope and the Maintainer role.`;
     case 'azure':
-      return $localize`:@@addRepos.error.azurePermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools.`;
+      // A personal access token without the pipelines scopes is refused (HTTP 401) as `change` too.
+      return $localize`:@@addRepos.error.azurePermission:The Azure DevOps identity needs Contribute and Create branch on the repository, Contribute to pull requests, Edit build pipeline in the project, the User role on the agent pool's queue, and read access to the project's agent pools. A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes.`;
     default:
       return assertNever(provider, 'provider');
   }

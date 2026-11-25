@@ -106,9 +106,9 @@ Azure DevOps answers a missing scope with HTTP 401:
 
 | Without the other scopes | What you see |
 |---|---|
-| CI setup | "The connection was refused access to the repository." |
+| CI setup | "A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes." |
 | Azure Boards | "Azure DevOps refused the credential." in the project's panel |
-| `qualor` commands | No answer. **Test** says that the identity cannot read who may change findings |
+| `qualor review` | "Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope)." **Test** says that the identity cannot read who may change findings |
 
 If Azure DevOps Server's certificate comes from a private CA, give the server that CA with
 `NODE_EXTRA_CA_CERTS`.
@@ -393,9 +393,9 @@ more reads. Qualor looks up each commenter on the identities host, and reads the
 permissions. A member of **Contributors** may read both. A personal access token needs more than
 **Code: Read & write** for them: [the scopes](#a-personal-access-token).
 
-If `qualor review` gets no answer for anyone, the identity cannot read permissions. **Test** then
-says that it cannot read who may change findings. Give a personal access token the scopes, or add
-the identity to the project's **Contributors**.
+If `qualor review` answers "Qualor could not check your rights", the identity cannot read
+permissions. **Test** then says that it cannot read who may change findings. Give a personal access
+token the scopes, or add the identity to the project's **Contributors**.
 
 The service hooks need **Edit subscriptions**
 ([Let Qualor subscribe](#let-qualor-subscribe)).

@@ -30,7 +30,7 @@ import { runUntilIdle } from '../queue/worker';
 import { codeSpan } from '../scm/markdown';
 import { lockBranchQueue, SCM_QUEUE } from '../scm/queue';
 import { parseInternalHosts } from '../scm/url';
-import { handleCommand, NothingToReview, type CommandContext } from './commands';
+import { handleCommand, NothingToReview, type CommandContext, type ReviewRight } from './commands';
 import { reviewHandlers, type ReviewJobDeps } from './job';
 import { claimReply, insertReplies, type ReplyRow } from './replies';
 import { AI_REVIEW_QUEUE } from './runs';
@@ -69,6 +69,8 @@ const CHANGE: SnapshotLine[] = [
 
 const NOT_AVAILABLE = 'Auto-fix is not switched on for this project.';
 const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
+const RIGHTS_UNREADABLE =
+  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 const reviewed = (sha: string) =>
@@ -208,7 +210,10 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
   const rowById = async (id: string) =>
     first(await h.ctx.db.select().from(reviewReplies).where(eq(reviewReplies.id, id)));
   /** The job's loads; the author has the rights `qualor review` needs unless the case says not. */
-  const contextOf = async (mr: Mr, authorMayReview = true): Promise<CommandContext> => ({
+  const contextOf = async (
+    mr: Mr,
+    authorMayReview: ReviewRight = true,
+  ): Promise<CommandContext> => ({
     settings: await readLlmSettings(h.ctx.db),
     project: {
       id: mr.project.id,
@@ -219,7 +224,7 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
     logger: silentLogger,
     authorMayReview,
   });
-  const decide = async (mr: Mr, row: ReplyRow, authorMayReview = true) =>
+  const decide = async (mr: Mr, row: ReplyRow, authorMayReview: ReviewRight = true) =>
     handleCommand(h.ctx.db, row, await contextOf(mr, authorMayReview));
 
   const jobDeps = (): ReviewJobDeps => ({
@@ -495,6 +500,32 @@ describe('the qualor review, fix and stop commands (6I-4)', () => {
       }
       expect(await decorations(mr.analysisId), which).toEqual([]);
     }
+  });
+
+  it("qualor review whose rights Qualor's own credential cannot read names that credential, not the author, and makes no run", async () => {
+    const mr = await mergeRequest();
+    await settle(mr, {
+      status: 'failed',
+      reason: 'internal',
+      headSha: HEAD,
+      startedAt: new Date(),
+    });
+    const before = await runsOfBranch(mr.branchId);
+    const row = await command(mr, 'review', 'octocat');
+    expect(await decide(mr, row, 'unreadable')).toEqual({
+      outcome: 'not_available',
+      text: RIGHTS_UNREADABLE,
+    });
+    expect(await rowById(row.id)).toMatchObject({
+      outcome: 'not_available',
+      answer: RIGHTS_UNREADABLE,
+    });
+    expect(await runsOfBranch(mr.branchId)).toEqual(before);
+    // An author who may not is still told so.
+    expect(await decide(mr, await command(mr, 'review', 'eve'), false)).toEqual({
+      outcome: 'not_available',
+      text: NOT_A_MEMBER,
+    });
   });
 
   it('the refusal comes before the AI-review-off answer', async () => {

@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FakeAzureDevOps } from '../../test/fake-azure-devops';
 import type { FakeGitHub } from '../../test/fake-github';
 import type { FakeGitLab } from '../../test/fake-gitlab';
 import type { FakeLlm } from '../../test/fake-llm';
@@ -42,6 +43,8 @@ const RIGHTS_LOOKUP = /\/members\/all\/|\/collaborators\/[^/]+\/permission/;
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const NOT_AVAILABLE = 'Auto-fix is not switched on for this project.';
 const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
+const RIGHTS_UNREADABLE =
+  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 const requested = (sha: string) => `Reviewing this commit (${codeSpan(sha.slice(0, 12))}).`;
 /** The review of HEAD ended without its findings: a command restarts it. */
@@ -74,9 +77,10 @@ describe('the answer job (6I-4)', () => {
   let gitlab: FakeGitLab;
   let github: FakeGitHub;
   let llm: FakeLlm;
+  let azure: FakeAzureDevOps;
 
   beforeAll(async () => {
-    ({ h, gitlab, github, llm } = await harness.start());
+    ({ h, gitlab, github, llm, azure } = await harness.start());
   });
   afterAll(async () => {
     await harness.close();
@@ -904,6 +908,21 @@ describe('the answer job (6I-4)', () => {
         // No run was made or restarted.
         expect(await runOf(mr.analysisId), who).toEqual(before);
       }
+    });
+
+    it("`qualor review` whose rights Qualor's own credential cannot read is answered so, not as a refusal of the author (check 1 of 2026-11-25)", async () => {
+      const { mr, sent, row } = await commanded('rights-unreadable', { end: FAILED });
+      const before = await runOf(mr.analysisId);
+      // A personal access token without the scope: the identities host answers 401, no body.
+      azure.inject('GET', /\/_apis\/identities$/, { status: 401 });
+      expect(await answer()).toBe(1);
+      expect(await commandRow(mr.branchId, sent.noteId)).toMatchObject({
+        status: 'done',
+        outcome: 'not_available',
+        answer: RIGHTS_UNREADABLE,
+      });
+      expect(answerIn(mr, sent.threadId!).content).toBe(commandNote(row.id, RIGHTS_UNREADABLE));
+      expect(await runOf(mr.analysisId)).toEqual(before);
     });
 
     it('`qualor review` by a contributor asks for a review of the commit, answered in the command’s thread', async () => {

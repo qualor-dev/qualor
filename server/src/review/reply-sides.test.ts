@@ -869,6 +869,23 @@ describe('the sides of a reply and of a command on Azure DevOps (Azure sub-plan 
       expect(await side.read()).toEqual({ answered: posted });
     });
 
+    it("says unreadable when Qualor's own credential may not read the permissions (401 or 403), not that the author may not", async () => {
+      for (const status of [401, 403]) {
+        const { side } = commanded(contributor.id);
+        await side.read();
+        fake.inject('GET', /accesscontrollists/, {
+          status,
+          headers: { 'content-type': 'application/json' },
+          body: { message: 'no' },
+        });
+        expect(await side.mayReview(), String(status)).toBe('unreadable');
+      }
+      // A reader is still one who may not.
+      const { side } = commanded(reader.id);
+      await side.read();
+      expect(await side.mayReview()).toBe(false);
+    });
+
     it('throws a transient failure of the rights check of a command, so that the job tries again', async () => {
       const { side } = commanded(contributor.id);
       await side.read();

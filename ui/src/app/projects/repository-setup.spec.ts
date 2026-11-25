@@ -41,6 +41,10 @@ describe('errorText', () => {
     expect(change(azure)).toContain(
       "Edit build pipeline in the project, the User role on the agent pool's queue",
     );
+    // Azure DevOps refuses a personal access token without the pipelines scopes (HTTP 401).
+    expect(change(azure)).toContain(
+      'A personal access token also needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes.',
+    );
     expect(errorText(failed('permission', 'The GitHub App needs', 'read'), github)).toBe(
       'The connection was refused access to the repository.',
     );

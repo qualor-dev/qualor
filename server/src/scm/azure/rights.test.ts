@@ -4,7 +4,7 @@ import { createFakeAzureDevOps, type FakeAzureDevOps } from '../../../test/fake-
 import { trustTestCa } from '../../../test/tls';
 import { MAX_AUTHORS_LOOKED_UP } from '../rights-limits';
 import { AzureDevOpsClient } from './client';
-import { azureMayTriage, azureRightsReadable } from './rights';
+import { azureMayTriage, azureRightsReadable, azureTriageRight } from './rights';
 
 const MARKER = 'azure-answer-marker-91c2';
 const ACL = /[/]_apis[/]accesscontrollists[/]/;
@@ -176,6 +176,39 @@ describe('azureMayTriage', () => {
       kind: 'transient',
       reason: 'timeout',
     });
+  });
+});
+
+describe('azureTriageRight', () => {
+  it('says may for a contributor, may_not for a reader and for an identity the organisation does not know', async () => {
+    const contributor = fake.addUser({ role: 'contributor' });
+    const reader = fake.addUser({ role: 'reader' });
+    const unknown = '11111111-2222-4333-8444-555555555555';
+    expect(await azureTriageRight(clientOf(), repositoryId(), [contributor.id])).toBe('may');
+    expect(await azureTriageRight(clientOf(), repositoryId(), [reader.id])).toBe('may_not');
+    expect(await azureTriageRight(clientOf(), repositoryId(), [unknown])).toBe('may_not');
+  });
+
+  it("says unreadable when Qualor's own credential is refused (401 or 403) on the identities host or the ACL", async () => {
+    for (const path of [IDENTITIES, ACL]) {
+      for (const status of [401, 403]) {
+        const user = fake.addUser({ role: 'owner' });
+        fake.inject('GET', path, { status, body: { message: MARKER } });
+        const log = logger();
+        expect(
+          await azureTriageRight(clientOf(), repositoryId(), [user.id], log),
+          `${String(path)} ${status}`,
+        ).toBe('unreadable');
+        expect(log.warn).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(log.warn.mock.calls[0])).not.toContain(MARKER);
+      }
+    }
+  });
+
+  it('says may_not for an answer that refuses or is not found, which is no refusal of the credential', async () => {
+    const user = fake.addUser({ role: 'owner' });
+    fake.inject('GET', ACL, { status: 404, body: { message: MARKER } });
+    expect(await azureTriageRight(clientOf(), repositoryId(), [user.id])).toBe('may_not');
   });
 });
 

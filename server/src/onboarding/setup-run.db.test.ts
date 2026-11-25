@@ -1833,6 +1833,51 @@ describe('the repository-setup run', () => {
       expect(items[2]!.azure).toMatchObject({ queue: 'open', policy: null });
     });
 
+    it('names the pipelines scopes when Server refuses a pipelines API with a bare 401, and the repository for a refused repository read', async () => {
+      // Azure DevOps Server answers a personal access token without the scope with 401 and an
+      // empty body (check 1 of 2026-11-25: a Code-only token).
+      const fake = await azure('server');
+      const definitions = repository(fake, { name: 'definitions', projectName: 'Pi' });
+      const queues = repository(fake, { name: 'queues', projectName: 'Rho' });
+      const create = repository(fake, { name: 'create', projectName: 'Tau' });
+      const items = repository(fake, { name: 'items', projectName: 'Phi' });
+      const bare = { status: 401 };
+      fake.inject('GET', new RegExp(`^/${definitions.projectId}/_apis/build/definitions$`), bare);
+      fake.inject('GET', new RegExp(`^/${queues.projectId}/_apis/distributedtask/queues$`), bare);
+      fake.inject('POST', new RegExp(`^/${create.projectId}/_apis/build/definitions$`), bare);
+      fake.inject('GET', new RegExp(`/repositories/${items.id}/items$`), bare);
+      const runId = await start({
+        connectionId: await connectAzure(fake),
+        repositories: [definitions.id, queues.id, create.id, items.id],
+        ciSetup: true,
+        azurePool: 'Default',
+      });
+      await runAzure(fake);
+
+      const scopes = {
+        code: 'permission',
+        message:
+          'The Azure DevOps credential was refused for pipelines: a personal access token needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes',
+        stage: 'change',
+      };
+      expect(
+        (await read(runId)).items.map((i) => [i.projectOutcome, i.ciOutcome, i.error]),
+      ).toEqual([
+        ['created', 'failed', scopes],
+        ['created', 'failed', scopes],
+        ['created', 'failed', scopes],
+        [
+          'created',
+          'failed',
+          {
+            code: 'permission',
+            message: 'The connection was refused access to the repository',
+            stage: 'read',
+          },
+        ],
+      ]);
+    });
+
     it('leaves a pipeline Qualor did not create on the file alone: no write, a foreign_pipeline snippet, no token', async () => {
       const fake = await azure();
       const repo = repository(fake, { name: 'planted', projectName: 'Sigma' });

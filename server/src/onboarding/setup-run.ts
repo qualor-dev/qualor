@@ -210,6 +210,28 @@ const AZURE_PERMISSION_TEXT: Record<Exclude<CiStep, 'read'>, string> = {
   merge_request: 'The Azure DevOps identity needs Contribute to pull requests',
 };
 
+/**
+ * Azure DevOps answers a personal access token without the scope a request needs with HTTP 401 and
+ * an empty body (Server, check 1 of 2026-11-25: a Code-only token read the repository, then
+ * `build/definitions` answered 401). A 401 of a pipelines API names those scopes, not the
+ * repository.
+ */
+const AZURE_PIPELINES_SCOPE_TEXT =
+  'The Azure DevOps credential was refused for pipelines: a personal access token needs the Build (Read & execute), Agent Pools (Read) and Pipeline Resources (Use and manage) scopes';
+/** The pipelines APIs, by the route Qualor names a request with: definitions, queues, permissions. */
+const AZURE_PIPELINES_ROUTE = /\/_apis\/(?:build|distributedtask|pipelines)\//;
+
+/** Whether Azure DevOps refused the credential (401) for a pipelines API: a scope it lacks. */
+function pipelinesScopeMissing(err: ScmError, provider: ScmProvider): boolean {
+  return (
+    provider === 'azure' &&
+    err.kind === 'auth' &&
+    err.status === 401 &&
+    err.request !== null &&
+    AZURE_PIPELINES_ROUTE.test(err.request)
+  );
+}
+
 /** What a refused permission tells: the read, else what CI setup needs on the provider. */
 function permissionText(provider: ScmProvider, stage: 'open' | 'ci_read' | 'change', step: CiStep) {
   if (stage === 'open') return PERMISSION_TEXT.read;
@@ -228,8 +250,8 @@ function permissionText(provider: ScmProvider, stage: 'open' | 'ci_read' | 'chan
  * Where a provider's refusal happened, for the page, which never reads the message (Ruling 9):
  * `read` while Qualor opened or read the repository, `change` while CI setup wrote to it. No
  * column keeps the stage: the fixed texts above tell it (a refused permission while reading for
- * GitHub or GitLab CI setup names what the change needs, so it counts as `change`). Null for the
- * other codes.
+ * CI setup names what the change needs, so it counts as `change`: GitHub's and GitLab's rights,
+ * Azure DevOps' agent pools or pipelines scopes). Null for the other codes.
  */
 export function setupErrorStage(code: string, message: string): 'read' | 'change' | null {
   switch (code) {
@@ -338,6 +360,9 @@ function scmErrorOf(
     case 'not_found':
       return errorOf('not_found');
     case 'auth':
+      if (stage !== 'open' && pipelinesScopeMissing(err, provider)) {
+        return { code: 'permission', message: AZURE_PIPELINES_SCOPE_TEXT };
+      }
       return { code: 'permission', message: permissionText(provider, stage, step) };
     case 'rate_limited':
       return errorOf('rate_limited');

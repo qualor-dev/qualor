@@ -25,6 +25,12 @@ export interface CommandDecision {
   text: string;
 }
 
+/**
+ * Whether the author of a `qualor review` has the rights it needs; `unreadable` when Qualor's own
+ * credential was refused the reads that tell (Azure DevOps: a scope or right its identity lacks).
+ */
+export type ReviewRight = boolean | 'unreadable';
+
 /** What the answer job has loaded when it asks for a decision. */
 export interface CommandContext {
   /** The stored AI settings: whether AI review is active for the project now. */
@@ -36,8 +42,9 @@ export interface CommandContext {
    * Whether the author of the command's note has the SCM rights `qualor review` needs (the ones a
    * reply needs to change a finding's status). The job asks the provider for a `qualor review`
    * that has no decision yet, and says false otherwise: only such a command looks at it.
+   * `unreadable`: Qualor's own credential could not read the rights, which blames no author.
    */
-  authorMayReview: boolean;
+  authorMayReview: ReviewRight;
 }
 
 /**
@@ -54,6 +61,12 @@ export class NothingToReview extends Error {
 
 const NOT_AVAILABLE = 'Auto-fix is not switched on for this project.';
 const NOT_A_MEMBER = 'Only project members can ask for an AI review.';
+/**
+ * The rights of the author could not be read: Azure DevOps refused Qualor's own identities or
+ * permissions read (check 1 of 2026-11-25: a personal access token with Code only answered 401).
+ */
+const RIGHTS_UNREADABLE =
+  'Qualor could not check your rights: its Azure DevOps credential cannot read identities and permissions (a personal access token needs the Identity (Read) scope).';
 const REVIEW_OFF = 'AI review is not switched on for this project.';
 const IN_PROGRESS = 'A review of this commit is in progress.';
 /** A commit as the review summary writes it: its first 12 characters, in a code span. */
@@ -91,9 +104,10 @@ async function commitOf(tx: Tx, analysisId: string, runHead: string | null): Pro
 
 /**
  * `qualor review`. Someone without the rights is refused, before anything else: no run is made,
- * started again or looked at, and AI review being off is not said. Otherwise the run of the
- * branch's newest analysis, as it is under the branch's lock: a review that was done (or found the
- * same diff as the last one that was) is not repeated, one that waits or runs is not asked for
+ * started again or looked at, and AI review being off is not said; rights Qualor's own credential
+ * could not read are refused alike, with a text that names that credential. Otherwise the run of
+ * the branch's newest analysis, as it is under the branch's lock: a review that was done (or found
+ * the same diff as the last one that was) is not repeated, one that waits or runs is not asked for
  * twice, and any other run (or none) is made or started again for the person who asked.
  */
 async function reviewDecision(
@@ -101,6 +115,9 @@ async function reviewDecision(
   row: ReplyRow,
   ctx: CommandContext,
 ): Promise<CommandDecision> {
+  if (ctx.authorMayReview === 'unreadable') {
+    return { outcome: 'not_available', text: RIGHTS_UNREADABLE };
+  }
   if (!ctx.authorMayReview) return { outcome: 'not_available', text: NOT_A_MEMBER };
   if (!reviewActive(ctx.settings, ctx.project).active) {
     return { outcome: 'review_off', text: REVIEW_OFF };
