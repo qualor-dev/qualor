@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   aiInProgress,
   aiSection,
+  commandWaitMs,
   deliveries,
   isAiNote,
   isReplyNote,
@@ -233,5 +234,14 @@ describe('notificationsRecording', () => {
   it('records nothing of an answer it does not read', () => {
     expect(notificationsRecording({ message: 'Basic abc' })).toEqual({ value: [] });
     expect(notificationsRecording('Basic abc')).toEqual({ value: [] });
+  });
+});
+
+describe('commandWaitMs', () => {
+  it('is 5 minutes unless AZURE_PROBE_COMMAND_WAIT_MINUTES names 1 to 30', () => {
+    expect(commandWaitMs(undefined)).toBe(5 * 60_000);
+    expect(commandWaitMs('')).toBe(5 * 60_000);
+    expect(commandWaitMs('17')).toBe(17 * 60_000);
+    for (const bad of ['0', '31', '2.5', 'x']) expect(() => commandWaitMs(bad)).toThrow(/1 to 30/);
   });
 });

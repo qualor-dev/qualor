@@ -68,8 +68,19 @@ const HOOK_EVENTS = ['git.pullrequest.updated', 'ms.vss-code.git-pullrequest-com
 const WEBHOOK_PATH = '/api/v0/azure-devops/webhooks/';
 /** The hook path's budget for one answer (the brief: within 3 minutes). */
 const REPLY_WAIT_MS = 3 * 60_000;
-/** A `qualor review` may run the review before it answers. */
-const COMMAND_WAIT_MS = 5 * 60_000;
+/**
+ * A `qualor review` may run the review before it answers: 5 minutes, or
+ * `AZURE_PROBE_COMMAND_WAIT_MINUTES` (1 to 30). Without service hooks (a weaker identity) only
+ * Qualor's poll answers, every 15 minutes (server/src/scm/azure/poll.ts), so a rights check waits 17.
+ */
+export function commandWaitMs(raw: string | undefined): number {
+  const minutes = raw === undefined || raw === '' ? 5 : Number(raw);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 30) {
+    throw new Error('AZURE_PROBE_COMMAND_WAIT_MINUTES must be a whole number from 1 to 30');
+  }
+  return minutes * 60_000;
+}
+const COMMAND_WAIT_MS = commandWaitMs(process.env['AZURE_PROBE_COMMAND_WAIT_MINUTES']);
 /** Qualor's AI review runs after the upload: the wait for its threads after the summary. */
 const AI_WAIT_MS = 8 * 60_000;
 const REPLY_TEXT = 'Qualor probe item 21: why is this an issue, and how do I fix it?';
