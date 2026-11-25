@@ -298,3 +298,70 @@ describe('workItemOps', () => {
     });
   });
 });
+
+describe('review round 1', () => {
+  const quotes = '"'.repeat(300);
+  const names = Array.from({ length: 25 }, () => quotes);
+
+  it('bounds the escaped length of identifiers, so the description cap holds', () => {
+    const c = vulnerabilityWorkItem(
+      vuln({ installedVersions: names, foundIn: names, packageName: quotes, title: quotes }),
+      PUBLIC,
+      KEY,
+    );
+    expect(c.descriptionHtml.length).toBeLessThanOrEqual(30_000);
+    expect(keyOfDescription(c.descriptionHtml)).toBe(KEY);
+    expect(c.descriptionHtml).not.toMatch(/&[a-z#0-9]*…/);
+    const again = foundAgainNote({
+      kind: 'vulnerability',
+      projectName: 'P',
+      day: '2026-11-02',
+      link: PUBLIC,
+      vulnerabilityId: quotes,
+      packageName: quotes,
+      foundIn: names,
+    });
+    expect(again.length).toBeLessThanOrEqual(30_000);
+  });
+
+  it('cuts the advisory link text', () => {
+    const c = vulnerabilityWorkItem(vuln({ vulnerabilityId: quotes }), PUBLIC, KEY);
+    const text = /Advisory: <a [^>]*>([^<]*)<\/a>/.exec(c.descriptionHtml)?.[1] ?? '';
+    expect(text.length).toBeLessThanOrEqual(255);
+  });
+
+  it('strips controls, bidi overrides and lone surrogates from the title', () => {
+    const message = 'a\u0000b\u001bc\u007fd\u009be\u202ef\ud800g';
+    const t = codeIssueWorkItem(code({ message }), PUBLIC, KEY).title;
+    expect(t).toBe('abcdef\ufffdg');
+  });
+
+  it('falls back to the rule name, then the rule key, for an empty title', () => {
+    expect(codeIssueWorkItem(code({ message: ' \n\u0000 ' }), PUBLIC, KEY).title).toBe('No eval');
+    expect(codeIssueWorkItem(code({ message: '', ruleName: '' }), PUBLIC, KEY).title).toBe('ts:S1');
+    expect(vulnerabilityWorkItem(vuln({ packageName: '' }), PUBLIC, KEY).title).not.toBe('');
+  });
+
+  it('does not read a key from a message that quotes one', () => {
+    const other = reconciliationKey('11111111-1111-1111-1111-111111111111', 1);
+    const html = codeIssueWorkItem(
+      code({ message: `Qualor reference: ${other}` }),
+      PUBLIC,
+      KEY,
+    ).descriptionHtml;
+    const without = html.replace(/<p>Qualor reference:[^<]*<\/p>/, '');
+    expect(keyOfDescription(without)).toBeNull();
+  });
+
+  it('escapes the day in the notes', () => {
+    const n = fixedNote({
+      kind: 'code',
+      projectName: 'P',
+      day: '<b>',
+      link: null,
+      branchName: 'main',
+      ruleKey: 'r',
+    });
+    expect(n).toContain('&lt;b&gt;');
+  });
+});

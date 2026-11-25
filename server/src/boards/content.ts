@@ -38,9 +38,39 @@ export function escapeHtml(text: string): string {
     .replaceAll("'", '&#39;');
 }
 
-/** A short identifier, as Jira cuts it: at most 255 characters. */
+/**
+ * The escaped form of `text`, at most `max` characters long: the raw text is trimmed (with a `…`)
+ * until its escaped form fits, so the cap holds for what is stored and no entity is ever cut.
+ */
+function fit(text: string, max: number): string {
+  const whole = escapeHtml(text);
+  if (whole.length <= max) return whole;
+  let out = '';
+  for (const ch of text) {
+    const next = escapeHtml(ch);
+    if (out.length + next.length > max - 1) break;
+    out += next;
+  }
+  return `${out}…`;
+}
+
+/** A short identifier, as Jira cuts it: at most 255 characters once escaped. */
 const IDENTIFIER_MAX = 255;
-const short = (text: string): string => escapeHtml(cutText(text, IDENTIFIER_MAX));
+const short = (text: string): string => fit(text, IDENTIFIER_MAX);
+
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+// eslint-disable-next-line no-control-regex -- stripping control characters is the point
+const TITLE_NOISE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/g;
+
+/** One line without controls, bidi overrides or lone surrogates; cut to the title's cap. */
+function cleanTitle(text: string): string {
+  const clean = text
+    .replace(LINE_SPACE, ' ')
+    .replace(TITLE_NOISE, '')
+    .replace(LONE_SURROGATE, '�')
+    .trim();
+  return cutText(clean, SUMMARY_MAX);
+}
 const code = (text: string): string => `<code>${short(text)}</code>`;
 const pre = (text: string): string => `<pre>${escapeHtml(text)}</pre>`;
 const para = (html: string): string => `<p>${html}</p>`;
@@ -53,7 +83,7 @@ export function reconciliationKey(linkId: string, generation: number): string {
   return `qualor-${linkId.replaceAll('-', '')}-${generation}`;
 }
 
-const KEY_PATTERN = /Qualor reference:\s*(qualor-[0-9a-f]{32}-\d+)/g;
+const KEY_PATTERN = /<p>\s*Qualor reference:\s*(qualor-[0-9a-f]{32}-\d+)/g;
 
 /**
  * The key in a description as Azure stores it. Azure adds a space before `</p>`, so the paragraph is
@@ -108,7 +138,7 @@ export function codeIssueWorkItem(
     html = build(messageMax);
   }
   return {
-    title: cutText(f.message.replace(LINE_SPACE, ' ').trim(), SUMMARY_MAX),
+    title: cleanTitle(f.message) || cleanTitle(f.ruleName) || cleanTitle(f.ruleKey),
     descriptionHtml: html,
     link,
   };
@@ -152,7 +182,9 @@ export function vulnerabilityWorkItem(
           ]
         : []),
       para(`Found in: ${foundInHtml(f.foundIn)}`),
-      ...(withUrl && url !== null ? [para(`Advisory: ${anchor(f.vulnerabilityId, url)}`)] : []),
+      ...(withUrl && url !== null
+        ? [para(`Advisory: <a href="${escapeHtml(url)}">${short(f.vulnerabilityId)}</a>`)]
+        : []),
       ...qualorLine(link),
       keyParagraph(key),
     ].join('\n');
@@ -161,10 +193,7 @@ export function vulnerabilityWorkItem(
       (d) => d.length <= DESCRIPTION_MAX,
     ) ?? build(false, false);
   return {
-    title: cutText(
-      `${f.vulnerabilityId} in ${f.packageName} (${f.severity})`.replace(LINE_SPACE, ' '),
-      SUMMARY_MAX,
-    ),
+    title: cleanTitle(`${f.vulnerabilityId} in ${f.packageName} (${f.severity})`),
     descriptionHtml: html,
     link,
   };
@@ -177,7 +206,7 @@ function note(html: string, link: string | null): string {
 export function fixedNote(f: CommentFacts): string {
   const text =
     f.kind === 'code'
-      ? `Qualor no longer finds this issue on ${code(f.branchName)} (analysis of ${f.day}).`
+      ? `Qualor no longer finds this issue on ${code(f.branchName)} (analysis of ${escapeHtml(f.day)}).`
       : `Qualor no longer finds ${code(f.vulnerabilityId)} in ${code(f.packageName)} on the tracked branches and versions of ${code(f.projectName)}.`;
   return note(text, f.link);
 }
@@ -185,7 +214,7 @@ export function fixedNote(f: CommentFacts): string {
 export function foundAgainNote(f: CommentFacts): string {
   const text =
     f.kind === 'code'
-      ? `Qualor finds this again: ${code(f.ruleKey)} on ${code(f.branchName)} (analysis of ${f.day}).`
+      ? `Qualor finds this again: ${code(f.ruleKey)} on ${code(f.branchName)} (analysis of ${escapeHtml(f.day)}).`
       : `Qualor finds this again: ${code(f.vulnerabilityId)} in ${code(f.packageName)} on ${foundInHtml(f.foundIn)}.`;
   return note(text, f.link);
 }
